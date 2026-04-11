@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -11,7 +12,11 @@ import (
 
 func mockMCPExecutable(t *testing.T) string {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "mockmcp")
+	name := "mockmcp"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	out := filepath.Join(t.TempDir(), name)
 	cmd := exec.Command("go", "build", "-o", out, "./testdata/mockmcp")
 	cmd.Dir = "."
 	if b, err := cmd.CombinedOutput(); err != nil {
