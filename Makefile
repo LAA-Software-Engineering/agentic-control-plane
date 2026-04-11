@@ -1,7 +1,10 @@
 .PHONY: test build
 
 test:
-	go test ./...
+	go test ./... -race
+
+test-coverage:
+	go test ./... -race -coverprofile=coverage.out
 
 build:
 	mkdir -p bin

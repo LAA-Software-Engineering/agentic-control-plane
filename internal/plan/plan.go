@@ -35,8 +35,10 @@ type FieldChange struct {
 	New  string
 }
 
-// RiskSummary is reserved for richer risk deltas (§12.2); MVP planner leaves it empty.
-type RiskSummary struct{}
+// RiskSummary carries MVP plan risk signals (design doc §12.2, §10.2).
+type RiskSummary struct {
+	Messages []string
+}
 
 // Planner reads deployment state to compare desired vs applied resources (design doc §5.2).
 type Planner struct {
