@@ -1,0 +1,5 @@
+apiVersion: agentic.dev/v0
+kind: Agent
+metadata:
+  name: foo
+spec: {}
