@@ -1,0 +1,4 @@
+# LF everywhere for Go so gofmt -l matches Linux/macOS on Windows CI and locally.
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
