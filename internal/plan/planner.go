@@ -54,7 +54,13 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 		key := resourceMapKey(d.id.Kind, d.id.Name)
 		prev, ok := appliedByID[key]
 		if !ok {
-			ops = append(ops, Operation{Action: ActionCreate, Target: d.id, Diff: nil})
+			ops = append(ops, Operation{
+				Action:             ActionCreate,
+				Target:             d.id,
+				Diff:               nil,
+				SpecHash:           d.hash,
+				NormalizedSpecJSON: d.json,
+			})
 			continue
 		}
 		if prev.SpecHash == d.hash {
@@ -68,7 +74,13 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 		if err != nil {
 			return nil, err
 		}
-		ops = append(ops, Operation{Action: ActionUpdate, Target: d.id, Diff: diff})
+		ops = append(ops, Operation{
+			Action:             ActionUpdate,
+			Target:             d.id,
+			Diff:               diff,
+			SpecHash:           d.hash,
+			NormalizedSpecJSON: d.json,
+		})
 	}
 
 	for _, r := range applied {

@@ -35,6 +35,10 @@ func (s *stubDeploy) GetAppliedProject(context.Context, string, string) (*state.
 	return nil, errors.New("stub")
 }
 
+func (s *stubDeploy) DeleteAppliedResource(context.Context, string, spec.ResourceID) error {
+	return errors.New("stub")
+}
+
 func TestPlanner_listAppliedResources_usesDeploymentStoreOnly(t *testing.T) {
 	st := &stubDeploy{list: []state.AppliedResource{{Name: "agent-a", Env: "dev", Kind: "Agent"}}}
 	p := plan.NewPlanner(st)

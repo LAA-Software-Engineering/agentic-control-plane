@@ -34,6 +34,10 @@ func (f *fakeDeploy) GetAppliedProject(context.Context, string, string) (*state.
 	return nil, nil
 }
 
+func (f *fakeDeploy) DeleteAppliedResource(context.Context, string, spec.ResourceID) error {
+	return nil
+}
+
 func minimalGraph() *spec.ProjectGraph {
 	return &spec.ProjectGraph{
 		Meta:         spec.Metadata{Name: "acme"},
