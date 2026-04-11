@@ -7,14 +7,14 @@ type Event = state.TraceEvent
 
 // Event type names from design doc §12.2 I (Trace recorder).
 const (
-	EventRunStarted      = "run.started"
-	EventRunFinished     = "run.finished"
-	EventStepStarted     = "step.started"
-	EventStepFinished    = "step.finished"
-	EventStepFailed      = "step.failed"
-	EventToolCalled      = "tool.called"
-	EventToolCompleted   = "tool.completed"
-	EventModelCalled     = "model.called"
-	EventModelCompleted  = "model.completed"
-	EventPolicyDenied    = "policy.denied"
+	EventRunStarted     = "run.started"
+	EventRunFinished    = "run.finished"
+	EventStepStarted    = "step.started"
+	EventStepFinished   = "step.finished"
+	EventStepFailed     = "step.failed"
+	EventToolCalled     = "tool.called"
+	EventToolCompleted  = "tool.completed"
+	EventModelCalled    = "model.called"
+	EventModelCompleted = "model.completed"
+	EventPolicyDenied   = "policy.denied"
 )
