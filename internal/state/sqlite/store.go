@@ -11,7 +11,7 @@ import (
 	_ "modernc.org/sqlite" // register "sqlite" driver
 )
 
-// Store persists deployment state (design doc §14.1) in SQLite.
+// Store persists deployment state (§14.1) and runtime/trace state (§14.2) in SQLite.
 type Store struct {
 	db *sql.DB
 }
@@ -28,6 +28,12 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
+	}
+	// SQLite disables FK checks by default; enforce per connection. With MaxOpenConns(1) this
+	// covers the pooled connection used for all statements on this Store.
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys=ON`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("sqlite foreign_keys: %w", err)
 	}
 	if err := Migrate(ctx, db); err != nil {
 		_ = db.Close()
