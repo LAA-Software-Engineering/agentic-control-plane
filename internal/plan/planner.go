@@ -84,7 +84,8 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 
 	sortOperations(ops)
 
-	return &Plan{Operations: ops, Risk: RiskSummary{}}, nil
+	risk := summarizeRisks(appliedByID, desiredByID, ops)
+	return &Plan{Operations: ops, Risk: risk}, nil
 }
 
 func desiredRows(g *spec.ProjectGraph) ([]desiredRow, error) {

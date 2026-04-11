@@ -36,5 +36,11 @@ func FormatPlan(p *Plan) string {
 			fmt.Fprintf(&b, "- delete %s\n", op.Target.String())
 		}
 	}
+	if len(p.Risk.Messages) > 0 {
+		b.WriteString("\nRisk delta:\n")
+		for _, m := range p.Risk.Messages {
+			fmt.Fprintf(&b, "- %s\n", m)
+		}
+	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
