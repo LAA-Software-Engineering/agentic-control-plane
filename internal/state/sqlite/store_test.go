@@ -103,6 +103,98 @@ func TestOpen_twiceSameFile(t *testing.T) {
 	t.Cleanup(func() { _ = s2.Close() })
 }
 
+func TestRuntime_insertRunEventsQueryByRunID(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "runtime.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	started := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
+	run := state.Run{
+		RunID:        "run-1",
+		WorkflowName: "wf-a",
+		Env:          "dev",
+		Status:       "running",
+		StartedAt:    started,
+		InputJSON:    `{"k":1}`,
+		TotalCostUSD: 0,
+	}
+	if err := st.StartRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+
+	stepStarted := started.Add(time.Minute)
+	if err := st.UpsertRunStep(ctx, state.RunStep{
+		RunID:     run.RunID,
+		StepID:    "s1",
+		Status:    "ok",
+		StartedAt: &stepStarted,
+		InputJSON: `{}`,
+		CostUSD:   0.01,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ts1 := started.Add(2 * time.Minute)
+	seq1, err := st.AppendTraceEvent(ctx, run.RunID, ts1, "log", "", `{"m":"a"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts2 := started.Add(3 * time.Minute)
+	seq2, err := st.AppendTraceEvent(ctx, run.RunID, ts2, "metric", "s1", `{"cpu":1}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seq1 != 1 || seq2 != 2 {
+		t.Fatalf("seq = %d, %d want 1, 2", seq1, seq2)
+	}
+
+	events, err := st.ListTraceEventsByRunID(ctx, run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d", len(events))
+	}
+	if events[0].Seq != 1 || events[0].Type != "log" || events[0].DataJSON != `{"m":"a"}` {
+		t.Fatalf("event[0] = %+v", events[0])
+	}
+	if events[1].Seq != 2 || events[1].StepID != "s1" {
+		t.Fatalf("event[1] = %+v", events[1])
+	}
+
+	fin := started.Add(4 * time.Minute)
+	if err := st.FinishRun(ctx, run.RunID, "succeeded", fin, `{"out":true}`, "", 0.02); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetRun(ctx, run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "succeeded" || got.OutputJSON != `{"out":true}` || got.TotalCostUSD != 0.02 {
+		t.Fatalf("GetRun = %+v", got)
+	}
+	if got.FinishedAt == nil || !got.FinishedAt.Equal(fin) {
+		t.Fatalf("FinishedAt = %v want %v", got.FinishedAt, fin)
+	}
+}
+
+func TestAppendTraceEvent_foreignKeyRequiresRun(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "fk.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	_, err = st.AppendTraceEvent(ctx, "no-such-run", time.Now().UTC(), "log", "", `{}`)
+	if err == nil {
+		t.Fatal("expected error for missing run_id")
+	}
+}
+
 func TestGetAppliedResource_notFound(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, filepath.Join(t.TempDir(), "nf.db"))
