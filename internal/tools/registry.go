@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/mcp"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/native"
 )
 
-// Registry resolves workflow uses strings against declared tools and dispatches by transport (MVP: native, mock).
+// Registry resolves workflow uses strings against declared tools and dispatches by transport (MVP: native, mock, mcp stdio).
 type Registry struct {
 	graph  *spec.ProjectGraph
 	native *native.Registry
@@ -87,7 +88,16 @@ func (r *Registry) Call(ctx context.Context, req ToolCallRequest) (ToolCallRespo
 			ToolCallMeta{DurationMs: 1, CostUSD: 0},
 			start,
 		), nil
+	case "mcp":
+		if tr.Spec.MCP == nil {
+			return ToolCallResponse{}, fmt.Errorf("tools: mcp tool %q missing mcp configuration", toolName)
+		}
+		out, meta, err := mcp.CallStdio(ctx, tr.Spec.MCP, tr.Spec.Retry, operation, req.With)
+		if err != nil {
+			return ToolCallResponse{}, err
+		}
+		return normalizeResponse(out, ToolCallMeta{DurationMs: meta.DurationMs, CostUSD: meta.CostUSD}, start), nil
 	default:
-		return ToolCallResponse{}, fmt.Errorf("tools: tool %q type %q not supported by MVP registry (native|mock only)", toolName, tr.Spec.Type)
+		return ToolCallResponse{}, fmt.Errorf("tools: tool %q type %q not supported by MVP registry (native|mock|mcp)", toolName, tr.Spec.Type)
 	}
 }
