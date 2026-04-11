@@ -15,8 +15,15 @@ type DeploymentStore interface {
 	UpsertAppliedResource(ctx context.Context, r AppliedResource) error
 	GetAppliedResource(ctx context.Context, env string, id spec.ResourceID) (*AppliedResource, error)
 	ListAppliedResourcesByEnv(ctx context.Context, env string) ([]AppliedResource, error)
+	DeleteAppliedResource(ctx context.Context, env string, id spec.ResourceID) error
 	UpsertAppliedProject(ctx context.Context, p AppliedProject) error
 	GetAppliedProject(ctx context.Context, env, projectName string) (*AppliedProject, error)
+}
+
+// TransactionalDeployment runs deployment mutations in a single atomic transaction when supported
+// (design doc §12.2 D apply, issue #15).
+type TransactionalDeployment interface {
+	RunDeploymentTx(ctx context.Context, fn func(ctx context.Context, dep DeploymentStore) error) error
 }
 
 // RuntimeStore persists execution rows from design doc §14.2 (runs, run_steps, trace_events).

@@ -22,10 +22,13 @@ type Plan struct {
 }
 
 // Operation is one create, update, or delete against a resource identity.
+// SpecHash and NormalizedSpecJSON are set for create and update (apply material); they are empty for delete.
 type Operation struct {
-	Action string
-	Target spec.ResourceID
-	Diff   []FieldChange
+	Action             string
+	Target             spec.ResourceID
+	Diff               []FieldChange
+	SpecHash           string
+	NormalizedSpecJSON string
 }
 
 // FieldChange is one normalized field-level delta for updates (§10.2 plan output).
