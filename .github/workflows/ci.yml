@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Go ${{ matrix.go }} — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ["1.22.x"]
+        include:
+          # Extra Go patch line on Linux to catch regressions on newer toolchain.
+          - os: ubuntu-latest
+            go: "1.23.x"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Verify go.sum
+        run: go mod verify
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(gofmt -l .)"
+          if [[ -n "$out" ]]; then
+            echo "::error::Run gofmt on:"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Build agentctl
+        run: go build -v -o agentctl${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/agentctl
+
+      # Use bash on Windows: PowerShell misparses -coverprofile=coverage.out
+      # (".out" becomes a separate argument / package path).
+      - name: Unit tests
+        shell: bash
+        run: |
+          go test -v \
+            -race \
+            -count=1 \
+            -shuffle=on \
+            -timeout=10m \
+            -covermode=atomic \
+            -coverprofile=coverage.out \
+            ./...
+
+      - name: Coverage summary
+        if: runner.os == 'Linux'
+        run: go tool cover -func=coverage.out | tail -n1
+
+      - name: Upload coverage artifact
+        if: runner.os == 'Linux' && matrix.go == '1.22.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-linux-go122
+          path: coverage.out
+          if-no-files-found: error
