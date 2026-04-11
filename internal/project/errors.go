@@ -6,18 +6,8 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
-// MissingRefError reports a reference from Referrer to a target kind/name that is not in the graph.
-type MissingRefError struct {
-	Referrer spec.ResourceID
-	Missing  spec.ResourceID
-}
-
-func (e *MissingRefError) Error() string {
-	if e == nil {
-		return ""
-	}
-	return fmt.Sprintf("%s references missing %s", e.Referrer.String(), e.Missing.String())
-}
+// MissingRefError is reported when a graph reference does not resolve (see [spec.MissingRefError]).
+type MissingRefError = spec.MissingRefError
 
 // DuplicateResourceError is returned when two files define the same kind/name (§9.1).
 type DuplicateResourceError struct {
