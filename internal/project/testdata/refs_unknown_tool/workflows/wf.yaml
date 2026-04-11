@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: uses-unknown
+spec:
+  steps:
+    - id: call
+      uses: tool.nope.get
+      with: {}

@@ -1,0 +1,13 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: okwf
+spec:
+  steps:
+    - id: first
+      agent: helper
+      with: {}
+    - id: second
+      agent: helper
+      with:
+        x: ${steps.first.output}

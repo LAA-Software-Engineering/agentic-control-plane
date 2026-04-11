@@ -1,0 +1,13 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: badwf
+spec:
+  steps:
+    - id: first
+      agent: helper
+      with:
+        x: ${steps.second.output}
+    - id: second
+      agent: helper
+      with: {}

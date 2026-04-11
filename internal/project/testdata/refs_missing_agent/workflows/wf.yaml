@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: badwf
+spec:
+  steps:
+    - id: only
+      agent: ghost
+      with: {}

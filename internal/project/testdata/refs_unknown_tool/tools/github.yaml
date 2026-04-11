@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: github
+spec:
+  type: mcp
+  mcp:
+    transport: stdio
+    command: npx
