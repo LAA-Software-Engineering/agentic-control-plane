@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -72,6 +74,48 @@ func TestParseUses_githubExample(t *testing.T) {
 	}
 	if tool != "github" || op != "pull_request.get" {
 		t.Fatalf("%q %q", tool, op)
+	}
+}
+
+func mockMCPBinaryFromTools(t *testing.T) string {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "mockmcp")
+	cmd := exec.Command("go", "build", "-o", out, "./mcp/testdata/mockmcp")
+	cmd.Dir = "."
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build mockmcp: %v\n%s", err, b)
+	}
+	return out
+}
+
+func testGraphMCP(bin string) *spec.ProjectGraph {
+	return &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{
+			"mc": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindTool,
+				Metadata:   spec.Metadata{Name: "mc"},
+				Spec: spec.ToolSpec{
+					Type: "mcp",
+					MCP:  &spec.ToolMCP{Transport: "stdio", Command: bin},
+				},
+			},
+		},
+	}
+}
+
+func TestRegistry_MCP_stdio_mockServer(t *testing.T) {
+	bin := mockMCPBinaryFromTools(t)
+	reg := NewRegistry(testGraphMCP(bin))
+	resp, err := reg.Call(context.Background(), ToolCallRequest{
+		Uses: "tool.mc.echo",
+		With: map[string]any{"hello": "world"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Output["hello"] != "world" {
+		t.Fatalf("output %+v", resp.Output)
 	}
 }
 
