@@ -4,8 +4,39 @@ import (
 	"context"
 	"errors"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 )
+
+// Action* are [Operation.Action] values (design doc §12.2).
+const (
+	ActionCreate = "create"
+	ActionUpdate = "update"
+	ActionDelete = "delete"
+)
+
+// Plan is the result of comparing desired project resources to stored deployment rows (§12.2).
+type Plan struct {
+	Operations []Operation
+	Risk       RiskSummary
+}
+
+// Operation is one create, update, or delete against a resource identity.
+type Operation struct {
+	Action string
+	Target spec.ResourceID
+	Diff   []FieldChange
+}
+
+// FieldChange is one normalized field-level delta for updates (§10.2 plan output).
+type FieldChange struct {
+	Path string
+	Old  string
+	New  string
+}
+
+// RiskSummary is reserved for richer risk deltas (§12.2); MVP planner leaves it empty.
+type RiskSummary struct{}
 
 // Planner reads deployment state to compare desired vs applied resources (design doc §5.2).
 type Planner struct {
