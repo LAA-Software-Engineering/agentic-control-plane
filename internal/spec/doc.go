@@ -1,3 +1,3 @@
-// Package spec defines resource envelopes and MVP kind structs (design doc §6–§7).
-// Parsing, defaults, and validation live in future packages.
+// Package spec defines resource envelopes, MVP kind structs (§6–§7), and YAML loading.
+// Defaults, reference resolution, and semantic validation are out of scope for now.
 package spec
