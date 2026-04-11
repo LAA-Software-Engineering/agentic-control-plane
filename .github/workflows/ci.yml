@@ -5,7 +5,13 @@ on:
     branches:
       - main
       - master
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
