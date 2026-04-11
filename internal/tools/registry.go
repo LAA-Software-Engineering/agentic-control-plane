@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	httptool "github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/http"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/mcp"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/native"
 )
 
-// Registry resolves workflow uses strings against declared tools and dispatches by transport (MVP: native, mock, mcp stdio).
+// Registry resolves workflow uses strings against declared tools and dispatches by transport (MVP: native, mock, mcp stdio, http).
 type Registry struct {
 	graph  *spec.ProjectGraph
 	native *native.Registry
@@ -97,7 +98,16 @@ func (r *Registry) Call(ctx context.Context, req ToolCallRequest) (ToolCallRespo
 			return ToolCallResponse{}, err
 		}
 		return normalizeResponse(out, ToolCallMeta{DurationMs: meta.DurationMs, CostUSD: meta.CostUSD}, start), nil
+	case "http":
+		if tr.Spec.HTTP == nil {
+			return ToolCallResponse{}, fmt.Errorf("tools: http tool %q missing http configuration", toolName)
+		}
+		out, meta, err := httptool.Execute(ctx, tr.Spec.HTTP, tr.Spec.Retry, operation, req.With, nil)
+		if err != nil {
+			return ToolCallResponse{}, err
+		}
+		return normalizeResponse(out, ToolCallMeta{DurationMs: meta.DurationMs, CostUSD: meta.CostUSD}, start), nil
 	default:
-		return ToolCallResponse{}, fmt.Errorf("tools: tool %q type %q not supported by MVP registry (native|mock|mcp)", toolName, tr.Spec.Type)
+		return ToolCallResponse{}, fmt.Errorf("tools: tool %q type %q not supported by MVP registry (native|mock|mcp|http)", toolName, tr.Spec.Type)
 	}
 }

@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -106,6 +108,47 @@ func testGraphMCP(bin string) *spec.ProjectGraph {
 				},
 			},
 		},
+	}
+}
+
+func testGraphHTTP(baseURL string) *spec.ProjectGraph {
+	return &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{
+			"api": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindTool,
+				Metadata:   spec.Metadata{Name: "api"},
+				Spec: spec.ToolSpec{
+					Type: "http",
+					HTTP: &spec.ToolHTTP{BaseURL: baseURL},
+				},
+			},
+		},
+	}
+}
+
+func TestRegistry_HTTP_httptest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/v1/status" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"up":true}`))
+	}))
+	defer srv.Close()
+
+	reg := NewRegistry(testGraphHTTP(srv.URL))
+	resp, err := reg.Call(context.Background(), ToolCallRequest{
+		Uses: "tool.api.get.v1.status",
+		With: nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Output["up"] != true {
+		t.Fatalf("output %+v", resp.Output)
 	}
 }
 
