@@ -14,4 +14,4 @@ spec:
         type: mock
   traces:
     backend: sqlite
-    retentionDays: 30
+    retentionDays: 1

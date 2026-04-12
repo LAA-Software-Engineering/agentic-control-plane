@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 	"github.com/spf13/cobra"
@@ -75,6 +76,13 @@ func runLogs(cmd *cobra.Command, runID, workflow string) error {
 		return fmt.Errorf("logs: open sqlite %q: %w", dsn, err)
 	}
 	defer func() { _ = st.Close() }()
+
+	if n := spec.TraceRetentionDays(graph); n > 0 {
+		cutoff := time.Now().UTC().AddDate(0, 0, -n)
+		if _, err := st.DeleteRunsStartedBefore(ctx, cutoff); err != nil {
+			return fmt.Errorf("logs: prune trace runs: %w", err)
+		}
+	}
 
 	switch {
 	case runID != "":

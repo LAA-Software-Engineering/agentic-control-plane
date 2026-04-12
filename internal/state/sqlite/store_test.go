@@ -248,3 +248,62 @@ func TestListRecentRuns_and_ListRunsByWorkflow_order(t *testing.T) {
 		t.Fatalf("ListRunsByWorkflow wf-a = %#v", byA)
 	}
 }
+
+func TestDeleteRunsStartedBefore_cascadesChildRows(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "prune.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	oldStart := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	newStart := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: "old-run", WorkflowName: "wf", Env: "local", Status: "succeeded",
+		StartedAt: oldStart, InputJSON: `{}`, TotalCostUSD: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertRunStep(ctx, state.RunStep{
+		RunID: "old-run", StepID: "s1", Status: "done", StartedAt: &oldStart,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AppendTraceEvent(ctx, "old-run", oldStart, "log", "", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.StartRun(ctx, state.Run{
+		RunID: "new-run", WorkflowName: "wf", Env: "local", Status: "running",
+		StartedAt: newStart, InputJSON: `{}`, TotalCostUSD: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cutoff := time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC)
+	n, err := st.DeleteRunsStartedBefore(ctx, cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("RowsAffected = %d want 1", n)
+	}
+
+	if _, err := st.GetRun(ctx, "old-run"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("old run: %v", err)
+	}
+	evs, err := st.ListTraceEventsByRunID(ctx, "old-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 0 {
+		t.Fatalf("trace events for deleted run: %d", len(evs))
+	}
+	got, err := st.GetRun(ctx, "new-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RunID != "new-run" {
+		t.Fatalf("GetRun new: %+v", got)
+	}
+}

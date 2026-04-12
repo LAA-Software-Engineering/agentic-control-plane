@@ -259,3 +259,17 @@ ORDER BY seq ASC
 	}
 	return out, rows.Err()
 }
+
+// DeleteRunsStartedBefore deletes runs older than cutoff (by runs.started_at, RFC3339Nano text compare).
+// Foreign keys cascade to run_steps and trace_events (design doc 14.2, issue #75).
+func (s *Store) DeleteRunsStartedBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("sqlite: nil store")
+	}
+	cut := cutoff.UTC().Format(time.RFC3339Nano)
+	res, err := s.db.ExecContext(ctx, `DELETE FROM runs WHERE started_at < ?`, cut)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
