@@ -12,7 +12,10 @@ import "strings"
 //   - Workflow.spec.policy  ← defaults.policy when the workflow omits policy.
 //   - Workflow.spec.runtime ← defaults.runtime when the workflow omits runtime (issue #76).
 //
-// Environment overrides are out of scope (issue #4). Mutates graphs in place.
+// Environment overlays (design doc §7.6) are not applied here. Typical pipelines load the graph,
+// run NormalizeProjectGraph, then apply the selected environment with ApplyEnvironment in
+// internal/runtime/local (e.g. agentctl validate/plan/apply/run, local ExecuteWorkflow), and
+// finally validate. Mutates g in place.
 func NormalizeProjectGraph(g *ProjectGraph) {
 	if g == nil {
 		return
