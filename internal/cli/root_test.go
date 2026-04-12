@@ -19,8 +19,10 @@ func TestRootHelp_listsGlobalFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "diff") {
-		t.Fatalf("help should mention diff subcommand:\n%s", out)
+	for _, sub := range []string{"diff", "inspect"} {
+		if !strings.Contains(out, sub) {
+			t.Fatalf("help should mention %q subcommand:\n%s", sub, out)
+		}
 	}
 	for _, flag := range []string{"--env", "-e", "--output", "-o", "--project", "--state", "--no-color"} {
 		if !strings.Contains(out, flag) {

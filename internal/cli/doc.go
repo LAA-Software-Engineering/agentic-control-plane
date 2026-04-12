@@ -6,6 +6,9 @@
 // The validate command (section 10.2) loads the project, applies defaults and optional environment
 // overlays, then runs [spec.ValidateProjectGraph].
 //
+// The inspect command (section 10.2) uses the same preparation pipeline and prints one effective
+// normalized resource envelope (Kind/name) as JSON, YAML, or indented JSON for table output.
+//
 // The plan command compares that prepared graph to the SQLite deployment store (default
 // .agentic/state.db, or project.spec.state.dsn / --state) and prints a diff plus risk delta
 // via [plan.ComputePlan] and [plan.FormatPlan].

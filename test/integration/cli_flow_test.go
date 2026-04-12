@@ -70,6 +70,14 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("validate output:\n%s", out)
 		}
 
+		out, err = runCLI(t, "inspect", "-o", "json", "Workflow/hello", "--project", projDir)
+		if err != nil {
+			t.Fatalf("inspect: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, `"kind": "Workflow"`) || !strings.Contains(out, `"name": "hello"`) {
+			t.Fatalf("inspect output:\n%s", out)
+		}
+
 		out, err = runCLI(t, "plan", "--project", projDir, "--state", db)
 		if err != nil {
 			t.Fatalf("plan: %v\n%s", err, out)
