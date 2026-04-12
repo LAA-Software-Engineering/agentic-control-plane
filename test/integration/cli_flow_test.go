@@ -156,4 +156,93 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("exit=%d want %d err=%v", cli.ExitCodeOf(err), cli.ExitPolicyDenied, err)
 		}
 	})
+
+	// examples/pr-review-demo: structured review, then policy blocks simulated GitHub comment without --approve.
+	t.Run("pr_review_demo_policy_blocked_trace", func(t *testing.T) {
+		root := repoRoot(t)
+		demo := filepath.Join(root, "examples", "pr-review-demo")
+		input := filepath.Join(demo, "fixtures", "sample-pr.json")
+		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+			t.Fatalf("demo project: %v", err)
+		}
+		db := filepath.Join(t.TempDir(), "pr-review-demo.db")
+
+		out, err := runCLI(t, "validate", "--project", demo, "--no-color")
+		if err != nil {
+			t.Fatalf("validate: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Validation successful") {
+			t.Fatalf("validate:\n%s", out)
+		}
+
+		out, err = runCLI(t, "plan", "--project", demo, "--state", db)
+		if err != nil {
+			t.Fatalf("plan: %v\n%s", err, out)
+		}
+		out, err = runCLI(t, "apply", "--project", demo, "--state", db, "--auto-approve")
+		if err != nil {
+			t.Fatalf("apply: %v\n%s", err, out)
+		}
+
+		out, err = runCLI(t,
+			"run", "workflow/pr-review",
+			"--project", demo,
+			"--state", db,
+			"--input-file", input,
+		)
+		if err == nil {
+			t.Fatalf("expected policy denial, output:\n%s", out)
+		}
+		if cli.ExitCodeOf(err) != cli.ExitPolicyDenied {
+			t.Fatalf("exit=%d want %d err=%v\n%s", cli.ExitCodeOf(err), cli.ExitPolicyDenied, err, out)
+		}
+		if !strings.Contains(out, "Policy blocked this run") || !strings.Contains(out, "tool.github.pull_request.post_comment") {
+			t.Fatalf("expected policy UX in run output:\n%s", out)
+		}
+		runID := extractRunID(out)
+		if runID == "" {
+			t.Fatalf("no run id in:\n%s", out)
+		}
+
+		out, err = runCLI(t, "logs", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("logs: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, trace.EventPolicyDenied) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventPolicyDenied, out)
+		}
+		if !strings.Contains(out, "post_comment") {
+			t.Fatalf("logs should mention blocked step post_comment:\n%s", out)
+		}
+	})
+
+	t.Run("pr_review_demo_approve_allows_comment", func(t *testing.T) {
+		root := repoRoot(t)
+		demo := filepath.Join(root, "examples", "pr-review-demo")
+		input := filepath.Join(demo, "fixtures", "sample-pr.json")
+		db := filepath.Join(t.TempDir(), "pr-review-demo-approved.db")
+
+		_, err := runCLI(t, "plan", "--project", demo, "--state", db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = runCLI(t, "apply", "--project", demo, "--state", db, "--auto-approve")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := runCLI(t,
+			"run", "workflow/pr-review",
+			"--project", demo,
+			"--state", db,
+			"--input-file", input,
+			"--approve", "tool.github.pull_request.post_comment",
+		)
+		if err != nil {
+			t.Fatalf("run: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Status: succeeded") {
+			t.Fatalf("run output:\n%s", out)
+		}
+	})
 }

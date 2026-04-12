@@ -245,6 +245,14 @@ func writeRunOutput(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, e
 		} else if runErr != nil {
 			fmt.Fprintf(&b, "\nError: %s\n", runErr.Error())
 		}
+		if runErr != nil {
+			if d, ok := policy.AsDenied(runErr); ok {
+				fmt.Fprintf(&b, "\nPolicy blocked this run (%s).\n", d.Reason)
+				if strings.TrimSpace(d.Uses) != "" {
+					fmt.Fprintf(&b, "Gated action: %s\n", strings.TrimSpace(d.Uses))
+				}
+			}
+		}
 		_, err := fmt.Fprint(out, b.String())
 		return err
 	}

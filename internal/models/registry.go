@@ -51,7 +51,7 @@ func (r *Registry) ClientFor(modelRef string) (client ModelClient, modelID strin
 		return cl, id, nil
 	case "mock":
 		return &MockClient{
-			Content: `{"summary":"mock","findings":[]}`,
+			Content: `{"summary":"mock","findings":[{"severity":"high","file":"db/query.py","title":"Possible SQL injection","evidence":"User input is interpolated directly into SQL"}]}`,
 			Meta:    &GenerateMeta{DurationMs: 1, CostUSD: 0},
 		}, id, nil
 	case "anthropic":

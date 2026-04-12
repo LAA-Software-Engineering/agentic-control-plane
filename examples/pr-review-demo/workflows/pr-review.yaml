@@ -1,0 +1,34 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: pr-review
+spec:
+  description: |
+    Offline demo: load PR-shaped JSON, run a structured review, then attempt to post a comment.
+    The comment step is gated by policy unless you pass --approve for the exact uses string.
+  policy: guarded-writes
+  input:
+    schema: ./schemas/pr-review-input.json
+  steps:
+    - id: fetch_pr
+      uses: tool.github.pull_request.fetch
+      with:
+        pr: ${input.pr}
+    - id: review_diff
+      agent: reviewer
+      with:
+        pull_request: ${steps.fetch_pr.output.pull_request}
+    - id: post_comment
+      uses: tool.github.pull_request.post_comment
+      with:
+        body: |
+          ## Automated review
+
+          ${steps.review_diff.output.summary}
+
+          ${steps.review_diff.output.findings}
+  output:
+    value:
+      pull_request: ${steps.fetch_pr.output.pull_request}
+      review: ${steps.review_diff.output}
+      comment: ${steps.post_comment.output}

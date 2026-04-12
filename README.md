@@ -25,6 +25,8 @@ Most agent stacks today bury prompts, tool wiring, and permissions in applicatio
 
 The full product vision, YAML spec v0, and architecture are documented in [**`docs/DESIGN_DOC.md`**](docs/DESIGN_DOC.md).
 
+**Featured walkthrough:** declarative PR review with a **policy-blocked** (simulated) GitHub comment — no API keys required — in [**`examples/pr-review-demo/README.md`**](examples/pr-review-demo/README.md).
+
 ---
 
 ## Mental model
@@ -228,6 +230,7 @@ The **recommended implementation phases** are outlined in **section 20** of [`do
 ## Documentation
 
 - **[`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md)** — design document v0 (problem statement, spec, CLI, engine, state model, testing strategy, MVP vs end state, section 23 recommendation).  
+- **[`examples/pr-review-demo/README.md`](examples/pr-review-demo/README.md)** — end-to-end demo: structured review output, traceable run, **approval-gated** write (`validate` → `plan` → `apply` → `run` → `logs`).
 - **[`docs/EXAMPLES.md`](docs/EXAMPLES.md)** — copy-paste YAML and CLI examples (`init`, mock vs OpenAI, workflows, environment overlays).  
 - **[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)** — Contributor Covenant 2.1; participation expectations and reporting.  
 - **License:** [MIT](LICENSE)  
