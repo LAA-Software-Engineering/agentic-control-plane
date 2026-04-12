@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -118,13 +119,13 @@ func TestOpenAIClient_Generate_usesChatCompletions(t *testing.T) {
 			t.Errorf("Authorization %q", auth)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}],"usage":{"prompt_tokens":1000,"completion_tokens":500}}`))
 	}))
 	defer srv.Close()
 
 	c := &OpenAIClient{APIKey: "sk-mock", BaseURL: srv.URL + "/v1", HTTPClient: srv.Client()}
 	resp, err := c.Generate(context.Background(), GenerateRequest{
-		Model: "gpt-4.1",
+		Model: "gpt-4o-mini",
 		Messages: []ChatMessage{
 			{Role: "user", Content: "hi"},
 		},
@@ -134,6 +135,33 @@ func TestOpenAIClient_Generate_usesChatCompletions(t *testing.T) {
 	}
 	if resp.Content != "hello" {
 		t.Fatalf("content %q", resp.Content)
+	}
+	// 1000/1e6*0.15 + 500/1e6*0.60 = 0.00045
+	want := 1000.0/1e6*0.15 + 500.0/1e6*0.60
+	if math.Abs(resp.Meta.CostUSD-want) > 1e-9 {
+		t.Fatalf("CostUSD got %v want %v", resp.Meta.CostUSD, want)
+	}
+}
+
+func TestOpenAIClient_Generate_unknownModel_zeroCost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":100,"completion_tokens":100}}`))
+	}))
+	defer srv.Close()
+
+	c := &OpenAIClient{APIKey: "sk-mock", BaseURL: srv.URL + "/v1", HTTPClient: srv.Client()}
+	resp, err := c.Generate(context.Background(), GenerateRequest{
+		Model: "unknown-model-xyz",
+		Messages: []ChatMessage{
+			{Role: "user", Content: "hi"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Meta.CostUSD != 0 {
+		t.Fatalf("CostUSD %v", resp.Meta.CostUSD)
 	}
 }
 

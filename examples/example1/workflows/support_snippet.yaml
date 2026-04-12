@@ -1,0 +1,22 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: support_snippet
+spec:
+  policy: default
+  steps:
+    - id: context
+      uses: tool.helper.echo
+      with:
+        product: "${input.product}"
+        policy_line: "30-day returns on all SKUs; free outbound shipping on defects."
+    - id: compose
+      agent: support_writer
+      with:
+        product: "${steps.context.output.echo.product}"
+        return_policy: "${steps.context.output.echo.policy_line}"
+  output:
+    value:
+      product: ${steps.context.output.echo.product}
+      subject: ${steps.compose.output.subject}
+      line: ${steps.compose.output.line}

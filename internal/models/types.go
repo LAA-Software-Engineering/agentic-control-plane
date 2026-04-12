@@ -26,7 +26,9 @@ type GenerateResponse struct {
 	Meta    GenerateMeta
 }
 
-// GenerateMeta holds MVP placeholders for duration and cost (§13.2 style).
+// GenerateMeta holds duration and cost accounting (§13.2 style).
+// CostUSD is 0 for the mock client unless injected. For OpenAI chat completions it is a rough
+// estimate from usage × published per-million token rates when the model is recognized.
 type GenerateMeta struct {
 	DurationMs int64
 	CostUSD    float64
