@@ -200,13 +200,15 @@ The **recommended implementation phases** are outlined in **section 20** of [`do
 ## Documentation
 
 - **[`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md)** — design document v0 (problem statement, spec, CLI, engine, state model, testing strategy, MVP vs end state, section 23 recommendation).  
+- **[`docs/EXAMPLES.md`](docs/EXAMPLES.md)** — copy-paste YAML and CLI examples (`init`, mock vs OpenAI, workflows, environment overlays).  
+- **[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)** — Contributor Covenant 2.1; participation expectations and reporting.  
 - **License:** [MIT](LICENSE)  
 
 ---
 
 ## Contributing
 
-Issues and pull requests are welcome. Please run **`make fmt`**, **`make vet`**, and **`make test`** before submitting changes.
+Issues and pull requests are welcome. See **[`CONTRIBUTING.md`](CONTRIBUTING.md)** for local setup, tests, golden updates, and pull request expectations.
 
 ---
 
