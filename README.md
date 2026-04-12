@@ -67,7 +67,7 @@ cd agentic-control-plane
 make build   # writes bin/agentctl
 ```
 
-Or: `go install ./cmd/agentctl` (with `GOBIN` or `PATH` set appropriately).
+Or: `make install` / `go install ./cmd/agentctl` (honours `GOBIN` / `GOPATH/bin`; ensure that directory is on `PATH`).
 
 ### Create a project and run the loop
 
@@ -123,15 +123,24 @@ Exit codes are summarized in **section 11.2** of [`docs/design_doc.md`](docs/des
 
 ## Development
 
-```bash
-make fmt            # go fmt ./...
-make vet            # go vet ./...
-make test           # go test ./... -race
-make test-coverage  # coverage profile
-make build          # bin/agentctl
-```
+**`make`** defaults to **`help`**, which lists targets; the table below mirrors the [`Makefile`](Makefile) (`##` comments and recipes).
 
-CI (`.github/workflows/ci.yml`) runs **Linux, macOS, and Windows** on Go **1.22.x**, plus **Go 1.23.x** on Linux, with **race** and **shuffle** enabled.
+| Target | What it does |
+|--------|----------------|
+| `help` | Show usage and target list (default goal) |
+| `all` | `fmt` → `vet` → `test` → `build` (handy before a push) |
+| `build` | `go build` → `bin/agentctl` |
+| `install` | `go install ./cmd/agentctl` (`-trimpath`; uses `GOBIN` / `GOPATH/bin`) |
+| `clean` | Remove `bin/` and `coverage.out` |
+| `fmt` | `go fmt ./...` |
+| `verify-fmt` | Fail if `gofmt -l` would list files (matches CI-style formatting check) |
+| `vet` | `go vet ./...` |
+| `test` | `go test ./... -race` |
+| `test-coverage` | Tests with `-coverprofile=coverage.out` and a one-line `go tool cover -func` summary |
+| `check` | `vet` + `test` only (no formatting writes) |
+| `ci` | `verify-fmt` + `vet` + `test` (no build) |
+
+CI (`.github/workflows/ci.yml`) runs **Linux, macOS, and Windows** on Go **1.22.x**, plus **Go 1.23.x** on Linux, with **race** and **shuffle** enabled (workflow steps are defined in YAML, not via `make ci`).
 
 ### Updating CLI golden files
 
