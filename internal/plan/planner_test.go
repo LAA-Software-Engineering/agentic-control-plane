@@ -82,6 +82,17 @@ func appliedFromDesired(t *testing.T, env string, g *spec.ProjectGraph) []state.
 	return out
 }
 
+func TestListDesiredResourceIDs_minimalGraph(t *testing.T) {
+	g := minimalGraph()
+	ids, err := ListDesiredResourceIDs(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0].Kind != spec.KindProject || ids[0].Name != "acme" {
+		t.Fatalf("%+v", ids)
+	}
+}
+
 func TestComputePlan_emptyStore_allCreate(t *testing.T) {
 	g := minimalGraph()
 	p := NewPlanner(&fakeDeploy{list: nil})

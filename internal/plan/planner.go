@@ -199,3 +199,19 @@ func sortOperations(ops []Operation) {
 		return si < sj
 	})
 }
+
+// ListDesiredResourceIDs returns IDs for every resource in the normalized desired graph (same set as [Planner.ComputePlan]).
+func ListDesiredResourceIDs(g *spec.ProjectGraph) ([]spec.ResourceID, error) {
+	if g == nil {
+		return nil, errors.New("plan: nil project graph")
+	}
+	rows, err := desiredRows(g)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]spec.ResourceID, len(rows))
+	for i, r := range rows {
+		out[i] = r.id
+	}
+	return out, nil
+}

@@ -91,6 +91,14 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("expected empty plan:\n%s", out)
 		}
 
+		out, err = runCLI(t, "diff", "--project", projDir, "--state", db)
+		if err != nil {
+			t.Fatalf("diff: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "No differences between desired configuration and applied state.") {
+			t.Fatalf("diff after apply:\n%s", out)
+		}
+
 		out, err = runCLI(t, "run", "workflow/hello", "--project", projDir, "--state", db)
 		if err != nil {
 			t.Fatalf("run: %v\n%s", err, out)
