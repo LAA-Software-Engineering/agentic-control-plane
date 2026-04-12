@@ -10,6 +10,9 @@
 // .agentic/state.db, or project.spec.state.dsn / --state) and prints a diff plus risk delta
 // via [plan.ComputePlan] and [plan.FormatPlan].
 //
+// The diff command uses the same comparison but prints a detailed per-resource view (field-level
+// updates, full JSON for creates/deletes) and supports an optional Kind/name argument (§10.2).
+//
 // The apply command runs the same preparation and planning, then prompts on a TTY (unless
 // --auto-approve or AGENTCTL_AUTO_APPROVE) and persists via [apply.Applier.ApplyPlan].
 //
