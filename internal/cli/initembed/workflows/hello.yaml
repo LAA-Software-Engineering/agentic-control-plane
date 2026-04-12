@@ -1,0 +1,11 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: hello
+spec:
+  policy: default
+  steps:
+    - id: greet
+      uses: tool.helper.echo
+      with:
+        message: "hello"
