@@ -2,11 +2,15 @@ package local
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
@@ -14,6 +18,11 @@ import (
 func testRunProjRoot(t *testing.T) string {
 	t.Helper()
 	return filepath.Join("testdata", "runproj")
+}
+
+func testRetentionProjRoot(t *testing.T) string {
+	t.Helper()
+	return filepath.Join("testdata", "retention")
 }
 
 func TestExecuteWorkflow_persistsRunAndTraceInSQLite(t *testing.T) {
@@ -144,6 +153,50 @@ func TestNewRunID_generatedWhenEmpty(t *testing.T) {
 	}
 	_, err = st.GetRun(ctx, id)
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExecuteWorkflow_prunesOldTraceRuns(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "retention.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	fixed := time.Date(2026, 4, 12, 12, 0, 0, 0, time.UTC)
+	oldID := "stale-run"
+	oldStart := fixed.Add(-72 * time.Hour)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: oldID, WorkflowName: "demo", Env: "local", Status: "succeeded",
+		StartedAt: oldStart, InputJSON: `{}`, TotalCostUSD: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AppendTraceEvent(ctx, oldID, oldStart, trace.EventRunStarted, "", `{}`); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := NewRuntime(testRetentionProjRoot(t), st)
+	rt.Now = func() time.Time { return fixed }
+
+	newID := "fresh-run"
+	_, err = rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
+		RunID:           newID,
+		WorkflowName:    "demo",
+		EnvironmentName: "staging",
+		Env:             "dev",
+		InputJSON:       []byte(`{"topic":"p"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.GetRun(ctx, oldID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("old run: %v", err)
+	}
+	if _, err := st.GetRun(ctx, newID); err != nil {
 		t.Fatal(err)
 	}
 }

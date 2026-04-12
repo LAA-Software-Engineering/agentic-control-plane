@@ -66,6 +66,13 @@ func (r *Runtime) ExecuteWorkflow(ctx context.Context, opts runtime.WorkflowRunO
 		return "", err
 	}
 
+	if n := spec.TraceRetentionDays(graph); n > 0 {
+		cutoff := r.now().UTC().AddDate(0, 0, -n)
+		if _, err := r.Store.DeleteRunsStartedBefore(ctx, cutoff); err != nil {
+			return "", fmt.Errorf("local: prune trace runs: %w", err)
+		}
+	}
+
 	runID := strings.TrimSpace(opts.RunID)
 	if runID == "" {
 		runID = util.NewRunID()
