@@ -93,7 +93,7 @@ func (r *Registry) Call(ctx context.Context, req ToolCallRequest) (ToolCallRespo
 		if tr.Spec.MCP == nil {
 			return ToolCallResponse{}, fmt.Errorf("tools: mcp tool %q missing mcp configuration", toolName)
 		}
-		out, meta, err := mcp.CallStdio(ctx, tr.Spec.MCP, tr.Spec.Retry, operation, req.With)
+		out, meta, err := mcp.Call(ctx, tr.Spec.MCP, tr.Spec.Retry, operation, req.With)
 		if err != nil {
 			return ToolCallResponse{}, err
 		}

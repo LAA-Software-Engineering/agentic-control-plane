@@ -86,9 +86,11 @@ type ToolSpec struct {
 }
 
 type ToolMCP struct {
-	Transport string   `yaml:"transport,omitempty" json:"transport,omitempty"`
-	Command   string   `yaml:"command,omitempty" json:"command,omitempty"`
-	Args      []string `yaml:"args,omitempty" json:"args,omitempty"`
+	Transport string            `yaml:"transport,omitempty" json:"transport,omitempty"`
+	Command   string            `yaml:"command,omitempty" json:"command,omitempty"`
+	Args      []string          `yaml:"args,omitempty" json:"args,omitempty"`
+	URL       string            `yaml:"url,omitempty" json:"url,omitempty"`
+	Headers   map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 }
 
 type ToolHTTP struct {

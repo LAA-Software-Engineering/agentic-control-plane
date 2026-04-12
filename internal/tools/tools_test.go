@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -157,6 +158,88 @@ func TestRegistry_MCP_stdio_mockServer(t *testing.T) {
 	reg := NewRegistry(testGraphMCP(bin))
 	resp, err := reg.Call(context.Background(), ToolCallRequest{
 		Uses: "tool.mc.echo",
+		With: map[string]any{"hello": "world"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Output["hello"] != "world" {
+		t.Fatalf("output %+v", resp.Output)
+	}
+}
+
+func testGraphMCPHTTP(baseURL string) *spec.ProjectGraph {
+	return &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{
+			"remote": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindTool,
+				Metadata:   spec.Metadata{Name: "remote"},
+				Spec: spec.ToolSpec{
+					Type: "mcp",
+					MCP: &spec.ToolMCP{
+						Transport: "http",
+						URL:       baseURL + "/mcp",
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestRegistry_MCP_http_mockServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var msg map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		method, _ := msg["method"].(string)
+		switch method {
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+			return
+		case "initialize":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      msg["id"],
+				"result": map[string]any{
+					"protocolVersion": "2024-11-05",
+					"capabilities":    map[string]any{},
+					"serverInfo":      map[string]any{"name": "regtest", "version": "1"},
+				},
+			})
+			return
+		case "tools/call":
+			params, _ := msg["params"].(map[string]any)
+			args, _ := params["arguments"].(map[string]any)
+			if args == nil {
+				args = map[string]any{}
+			}
+			text, _ := json.Marshal(args)
+			result := map[string]any{
+				"content": []map[string]any{
+					{"type": "text", "text": string(text)},
+				},
+				"isError": false,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      msg["id"],
+				"result":  result,
+			})
+			return
+		default:
+			t.Fatalf("unexpected method %q", method)
+		}
+	}))
+	defer srv.Close()
+
+	reg := NewRegistry(testGraphMCPHTTP(srv.URL))
+	resp, err := reg.Call(context.Background(), ToolCallRequest{
+		Uses: "tool.remote.echo",
 		With: map[string]any{"hello": "world"},
 	})
 	if err != nil {

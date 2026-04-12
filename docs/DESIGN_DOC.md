@@ -625,6 +625,20 @@ spec:
     backoff: exponential
 ```
 
+### MCP HTTP tool (streamable HTTP)
+
+Remote MCP servers may expose a single JSON-RPC endpoint over HTTP(S). Set **`transport: http`**, **`url`** to that endpoint, and optional **`headers`** (including **`env:`** tokens). **`command`** / **`args`** must not be set together with **`url`** (see validator).
+
+```yaml
+spec:
+  type: mcp
+  mcp:
+    transport: http
+    url: https://mcp.example.com/v1/mcp
+    headers:
+      Authorization: env:MCP_TOKEN
+```
+
 ### Native HTTP tool
 
 ```yaml

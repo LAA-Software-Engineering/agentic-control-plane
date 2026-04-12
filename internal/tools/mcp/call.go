@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -15,19 +17,27 @@ type ExecMeta struct {
 	CostUSD    float64
 }
 
-// CallStdio runs one MCP tools/call over a fresh stdio subprocess, with optional retries on transport errors (§13.4).
-func CallStdio(ctx context.Context, cfg *spec.ToolMCP, retry *spec.ToolRetry, toolName string, arguments map[string]any) (map[string]any, ExecMeta, error) {
+// Call runs one MCP tools/call: stdio subprocess or HTTP endpoint per spec.mcp.transport (issue #77).
+func Call(ctx context.Context, cfg *spec.ToolMCP, retry *spec.ToolRetry, toolName string, arguments map[string]any) (map[string]any, ExecMeta, error) {
 	if cfg == nil {
 		return nil, ExecMeta{}, errors.New("mcp: nil mcp config")
 	}
-	if strings.ToLower(strings.TrimSpace(cfg.Transport)) != "stdio" {
-		return nil, ExecMeta{}, errors.New("mcp: only transport stdio is supported in MVP")
+	trans := strings.ToLower(strings.TrimSpace(cfg.Transport))
+	switch trans {
+	case "stdio":
+		return callStdioLoop(ctx, cfg, retry, toolName, arguments)
+	case "http":
+		return callHTTPLoop(ctx, cfg, retry, toolName, arguments)
+	default:
+		return nil, ExecMeta{}, fmt.Errorf("mcp: unsupported transport %q (stdio or http)", cfg.Transport)
 	}
+}
+
+func callStdioLoop(ctx context.Context, cfg *spec.ToolMCP, retry *spec.ToolRetry, toolName string, arguments map[string]any) (map[string]any, ExecMeta, error) {
 	cmd := strings.TrimSpace(cfg.Command)
 	if cmd == "" {
-		return nil, ExecMeta{}, errors.New("mcp: empty command")
+		return nil, ExecMeta{}, errors.New("mcp: stdio transport requires command")
 	}
-
 	attempts := 1
 	if retry != nil && retry.MaxAttempts > 0 {
 		attempts = retry.MaxAttempts
@@ -36,7 +46,6 @@ func CallStdio(ctx context.Context, cfg *spec.ToolMCP, retry *spec.ToolRetry, to
 	if retry != nil {
 		backoff = retry.Backoff
 	}
-
 	startAll := time.Now()
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
@@ -62,10 +71,54 @@ func oneStdioAttempt(ctx context.Context, command string, args []string, toolNam
 	}
 	defer tr.Close()
 
-	if err := tr.Initialize(ctx); err != nil {
+	if err := Initialize(ctx, tr); err != nil {
 		return nil, err
 	}
-	return tr.CallTool(ctx, toolName, arguments)
+	return CallTool(ctx, tr, toolName, arguments)
+}
+
+func callHTTPLoop(ctx context.Context, cfg *spec.ToolMCP, retry *spec.ToolRetry, toolName string, arguments map[string]any) (map[string]any, ExecMeta, error) {
+	u := strings.TrimSpace(cfg.URL)
+	if u == "" {
+		return nil, ExecMeta{}, errors.New("mcp: http transport requires url")
+	}
+	attempts := 1
+	if retry != nil && retry.MaxAttempts > 0 {
+		attempts = retry.MaxAttempts
+	}
+	backoff := ""
+	if retry != nil {
+		backoff = retry.Backoff
+	}
+	startAll := time.Now()
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			sleepBackoff(ctx, attempt, backoff)
+		}
+		out, err := oneHTTPAttempt(ctx, cfg, nil, toolName, arguments)
+		if err == nil {
+			return out, ExecMeta{DurationMs: time.Since(startAll).Milliseconds(), CostUSD: 0}, nil
+		}
+		lastErr = err
+		if !retryableTransportErr(err) {
+			break
+		}
+	}
+	return nil, ExecMeta{DurationMs: time.Since(startAll).Milliseconds(), CostUSD: 0}, lastErr
+}
+
+func oneHTTPAttempt(ctx context.Context, cfg *spec.ToolMCP, client *http.Client, toolName string, arguments map[string]any) (map[string]any, error) {
+	tr, err := NewHTTPTransport(cfg.URL, cfg.Headers, client)
+	if err != nil {
+		return nil, err
+	}
+	defer tr.Close()
+
+	if err := Initialize(ctx, tr); err != nil {
+		return nil, err
+	}
+	return CallTool(ctx, tr, toolName, arguments)
 }
 
 func retryableTransportErr(err error) bool {

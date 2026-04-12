@@ -124,37 +124,27 @@ func (t *StdioTransport) RoundTrip(ctx context.Context, method string, params an
 		if err := json.Unmarshal(line, &msg); err != nil {
 			continue
 		}
-		if _, hasMethod := msg["method"].(string); hasMethod && msg["id"] == nil {
-			continue
-		}
-		rid, ok := msg["id"]
-		if !ok {
-			continue
-		}
-		if !jsonRPCIDMatches(rid, id) {
-			continue
-		}
-		if errObj, ok := msg["error"]; ok && errObj != nil {
-			return nil, rpcErrorf("rpc error: %v", errObj)
-		}
-		raw, err := json.Marshal(msg["result"])
+		raw, matched, err := jsonRPCResultFromMap(msg, id)
 		if err != nil {
 			return nil, err
 		}
-		return json.RawMessage(raw), nil
+		if matched {
+			return raw, nil
+		}
 	}
 }
 
-func jsonRPCIDMatches(rid any, want int64) bool {
-	switch x := rid.(type) {
-	case float64:
-		return int64(x) == want
-	case json.Number:
-		n, err := x.Int64()
-		return err == nil && n == want
-	case int64:
-		return x == want
-	default:
-		return false
+// Notify sends a JSON-RPC notification (no id) on the stdio stream.
+func (t *StdioTransport) Notify(ctx context.Context, method string, params map[string]any) error {
+	_ = ctx
+	if params == nil {
+		params = map[string]any{}
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.writeMessage(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	})
 }

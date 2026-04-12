@@ -116,6 +116,32 @@ agentctl run    workflow/hello --project my-agent-system
 
 ---
 
+## 3b. MCP tool over HTTP (streamable HTTP)
+
+For MCP servers exposed over **HTTP** (streamable HTTP transport: one **POST** per JSON-RPC message), set **`spec.mcp.transport: http`** and **`spec.mcp.url`** to the MCP endpoint (must be **`http://`** or **`https://`**). Optional **`spec.mcp.headers`** use the same patterns as native HTTP tools (literal values or **`env:VAR_NAME`** for secrets).
+
+```yaml
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: remote_mcp
+spec:
+  type: mcp
+  mcp:
+    transport: http
+    url: https://mcp.example.com/v1/mcp
+    headers:
+      Authorization: env:MCP_BEARER_TOKEN
+```
+
+**Security**
+
+- Prefer **HTTPS** in production. The default Go client performs **normal TLS certificate verification** against the system trust store; do not disable verification for MCP calls.
+- **`stdio`** and **`http`** are mutually exclusive in **`spec.mcp`**: set **`command`** only for stdio, **`url`** only for HTTP (validated at `agentctl validate`).
+- Workflow trace events for tool steps record **`uses`** and cost, not HTTP headers or resolved env values; keep custom logging of MCP traffic free of secrets.
+
+---
+
 ## 4. Real OpenAI example (`gpt-4o-mini`)
 
 This is a small but **end-to-end** project: a **native echo** step supplies fixed “policy” text, then **`gpt-4o-mini`** drafts a one-line customer reply. You need a valid **[OpenAI API key](https://platform.openai.com/api-keys)** and outbound **HTTPS** to `api.openai.com`.

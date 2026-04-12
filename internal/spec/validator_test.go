@@ -221,6 +221,92 @@ func TestValidateProjectGraph_workflowRuntimeUnknown(t *testing.T) {
 	}
 }
 
+func TestValidateProjectGraph_mcpMissingTransport(t *testing.T) {
+	g := &ProjectGraph{
+		Tools: map[string]*ToolResource{
+			"x": {
+				Kind:     KindTool,
+				Metadata: Metadata{Name: "x"},
+				Spec: ToolSpec{
+					Type: "mcp",
+					MCP:  &ToolMCP{Command: "npx"},
+				},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "spec.mcp.transport is required") {
+		t.Fatalf("expected mcp transport error, got %v", err)
+	}
+}
+
+func TestValidateProjectGraph_mcpStdioWithURL(t *testing.T) {
+	g := &ProjectGraph{
+		Tools: map[string]*ToolResource{
+			"x": {
+				Kind:     KindTool,
+				Metadata: Metadata{Name: "x"},
+				Spec: ToolSpec{
+					Type: "mcp",
+					MCP: &ToolMCP{
+						Transport: "stdio",
+						Command:   "npx",
+						URL:       "http://bad",
+					},
+				},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "must not set url") {
+		t.Fatalf("expected stdio/url conflict, got %v", err)
+	}
+}
+
+func TestValidateProjectGraph_mcpHTTPWithCommand(t *testing.T) {
+	g := &ProjectGraph{
+		Tools: map[string]*ToolResource{
+			"x": {
+				Kind:     KindTool,
+				Metadata: Metadata{Name: "x"},
+				Spec: ToolSpec{
+					Type: "mcp",
+					MCP: &ToolMCP{
+						Transport: "http",
+						URL:       "https://example.com/mcp",
+						Command:   "npx",
+					},
+				},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "must not set command") {
+		t.Fatalf("expected http/command conflict, got %v", err)
+	}
+}
+
+func TestValidateProjectGraph_mcpHTTPMissingURL(t *testing.T) {
+	g := &ProjectGraph{
+		Tools: map[string]*ToolResource{
+			"x": {
+				Kind:     KindTool,
+				Metadata: Metadata{Name: "x"},
+				Spec: ToolSpec{
+					Type: "mcp",
+					MCP: &ToolMCP{
+						Transport: "http",
+					},
+				},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "http transport requires url") {
+		t.Fatalf("expected mcp http url error, got %v", err)
+	}
+}
+
 func TestValidateProjectGraph_runtimeLocalAccepted(t *testing.T) {
 	g := &ProjectGraph{
 		Spec: ProjectSpec{
