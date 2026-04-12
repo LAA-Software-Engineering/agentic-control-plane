@@ -6,8 +6,14 @@ import (
 	"fmt"
 )
 
+// Connector is an MCP session that can exchange JSON-RPC over a transport (stdio or HTTP).
+type Connector interface {
+	RoundTrip(ctx context.Context, method string, params any) (json.RawMessage, error)
+	Notify(ctx context.Context, method string, params map[string]any) error
+}
+
 // Initialize performs the MCP initialize + notifications/initialized handshake.
-func (t *StdioTransport) Initialize(ctx context.Context) error {
+func Initialize(ctx context.Context, c Connector) error {
 	params := map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
@@ -16,25 +22,18 @@ func (t *StdioTransport) Initialize(ctx context.Context) error {
 			"version": "0",
 		},
 	}
-	if _, err := t.RoundTrip(ctx, "initialize", params); err != nil {
+	if _, err := c.RoundTrip(ctx, "initialize", params); err != nil {
 		return err
 	}
-	// Notification (no response).
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.writeMessage(map[string]any{
-		"jsonrpc": "2.0",
-		"method":  "notifications/initialized",
-		"params":  map[string]any{},
-	})
+	return c.Notify(ctx, "notifications/initialized", map[string]any{})
 }
 
 // CallTool invokes tools/call and maps the MCP result into a plain map for §13.2 output.
-func (t *StdioTransport) CallTool(ctx context.Context, name string, arguments map[string]any) (map[string]any, error) {
+func CallTool(ctx context.Context, c Connector, name string, arguments map[string]any) (map[string]any, error) {
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
-	raw, err := t.RoundTrip(ctx, "tools/call", map[string]any{
+	raw, err := c.RoundTrip(ctx, "tools/call", map[string]any{
 		"name":      name,
 		"arguments": arguments,
 	})

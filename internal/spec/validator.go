@@ -147,6 +147,8 @@ func validateToolSpecs(g *ProjectGraph) []error {
 		case "mcp":
 			if tr.Spec.MCP == nil {
 				errs = append(errs, fmt.Errorf("Tool/%s: type mcp requires spec.mcp", name))
+			} else {
+				errs = append(errs, validateToolMCP(name, tr.Spec.MCP)...)
 			}
 		case "http":
 			if tr.Spec.HTTP == nil {
@@ -174,6 +176,34 @@ func validateToolSpecs(g *ProjectGraph) []error {
 		if tr.Spec.Retry != nil && tr.Spec.Retry.MaxAttempts < 0 {
 			errs = append(errs, fmt.Errorf("Tool/%s: retry.maxAttempts must be non-negative", name))
 		}
+	}
+	return errs
+}
+
+func validateToolMCP(name string, m *ToolMCP) []error {
+	var errs []error
+	trans := strings.ToLower(strings.TrimSpace(m.Transport))
+	if trans == "" {
+		errs = append(errs, fmt.Errorf("Tool/%s: spec.mcp.transport is required (stdio or http)", name))
+		return errs
+	}
+	switch trans {
+	case "stdio":
+		if strings.TrimSpace(m.URL) != "" {
+			errs = append(errs, fmt.Errorf("Tool/%s: mcp stdio transport must not set url", name))
+		}
+		if strings.TrimSpace(m.Command) == "" {
+			errs = append(errs, fmt.Errorf("Tool/%s: mcp stdio requires command", name))
+		}
+	case "http":
+		if strings.TrimSpace(m.Command) != "" || len(m.Args) > 0 {
+			errs = append(errs, fmt.Errorf("Tool/%s: mcp http transport must not set command or args", name))
+		}
+		if strings.TrimSpace(m.URL) == "" {
+			errs = append(errs, fmt.Errorf("Tool/%s: mcp http transport requires url", name))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("Tool/%s: unsupported mcp.transport %q (stdio or http)", name, m.Transport))
 	}
 	return errs
 }
