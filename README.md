@@ -41,11 +41,13 @@ The full product vision, YAML spec v0, and architecture are documented in [**`do
 ## Features (MVP today)
 
 - **`agentctl init`** — scaffold `project.yaml`, policies, tools, and a sample workflow  
-- **`agentctl validate`** — load project, apply defaults/env overlays, validate graph, schemas, and references  
-- **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints  
-- **`agentctl apply`** — persist plan (with TTY confirm or `--auto-approve` / `AGENTCTL_AUTO_APPROVE`)  
+- **`agentctl validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references  
+- **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints; JSON/YAML output includes a **`deploymentBaseline`** digest for the store snapshot  
+- **`agentctl apply`** — persist plan (TTY confirm or `--auto-approve` / `AGENTCTL_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
 - **`agentctl run`** — execute a workflow locally; JSON Schema for inputs where configured; policy gates  
 - **`agentctl logs`** — read **trace events** from SQLite (`--run`, `--workflow`, or recent runs)  
+- **Tools** — **`native`**, **`http`**, **`mock`**, and **`mcp`** — MCP supports **stdio** (subprocess) or **streamable HTTP** (`spec.mcp.transport: http`, `url`, optional `headers` with `env:` tokens)  
+- **Project defaults** — besides **`model`** and **`policy`**, optional **`runtime`** flows to **`spec.runtime`** on agents/workflows when omitted (MVP: **`local`** or unset; see spec validation)  
 - **Output** — table, JSON, or YAML (`-o` / `--output`)  
 - **State** — single SQLite file (default `.agentic/state.db` under the project root; override with `--state`)  
 - **Tests** — unit/integration coverage, golden CLI output tests, end-to-end `init → … → logs` in `test/integration`  
@@ -117,6 +119,7 @@ spec:
   defaults:
     policy: default
     model: openai/gpt-4o-mini
+    runtime: local
   providers:
     models:
       openai:
@@ -128,7 +131,7 @@ spec:
       #   apiKeyFrom: env:ANTHROPIC_API_KEY
 ```
 
-Field-by-field rules, extra kinds, and env overlays are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for an Anthropic **`project.yaml`** fragment and structured-output notes.
+Field-by-field rules, extra kinds, env overlays, MCP HTTP tools, and **`defaults.runtime`** are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for Anthropic fragments, MCP over HTTP, and structured-output notes.
 
 Notes:
 
@@ -205,8 +208,10 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 
 ### Near term (MVP hardening)
 
-- More **`diff` / drift** UX where the design doc calls for it  
-- **`inspect`** and richer **`logs`** filters (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`)  
+Recent landings already cover much of “hardening”: **plan/apply optimistic concurrency** (exit **3** when deployment state drifts), **MCP** over **streamable HTTP** as well as stdio, **trace retention** (`spec.traces.retentionDays`), **`defaults.runtime`** / **`spec.runtime`** (MVP `local`), and clearer **defaults vs environment overlay** documentation. What is still open for near-term polish:
+
+- More **`diff` / drift** UX where the design doc calls for it (beyond today’s resource-level diff)  
+- Richer **`inspect`** output and **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`)  
 - **`agentctl test`**-style workflow fixtures (**stretch** per design doc)  
 
 ### Post-MVP (from design doc section 19)
