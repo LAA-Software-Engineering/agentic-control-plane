@@ -1,0 +1,10 @@
+{
+  "pr": {
+    "title": "Add user CSV export",
+    "number": 42,
+    "head_ref": "feature/export",
+    "base_ref": "main",
+    "body": "Adds an admin endpoint that exports users to CSV.",
+    "files_changed": ["db/query.py", "api/handlers.go"]
+  }
+}

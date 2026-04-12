@@ -2,8 +2,10 @@ package native
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -37,9 +39,41 @@ func (r *Registry) Dispatch(ctx context.Context, operation string, with map[stri
 		v, ok := with["value"]
 		meta.DurationMs = time.Since(start).Milliseconds()
 		return map[string]any{"value": v, "ok": ok}, meta, nil
+	case "pull_request.fetch":
+		// Offline demo: parse JSON from `pr` (interpolated from workflow input). No network.
+		meta.DurationMs = time.Since(start).Milliseconds()
+		raw, _ := with["pr"].(string)
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return nil, meta, fmt.Errorf("native: pull_request.fetch requires string field pr (JSON)")
+		}
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+			return nil, meta, fmt.Errorf("native: pull_request.fetch pr: %w", err)
+		}
+		return map[string]any{"pull_request": obj}, meta, nil
+	case "pull_request.post_comment":
+		// Simulated GitHub comment post (no network). Used in demos; policy can gate this uses string.
+		meta.DurationMs = time.Since(start).Milliseconds()
+		body, _ := with["body"].(string)
+		return map[string]any{
+			"simulated":    true,
+			"body_preview": truncateRunes(body, 240),
+		}, meta, nil
 	default:
 		return nil, ExecMeta{}, fmt.Errorf("%w: %q", ErrUnknownOperation, operation)
 	}
+}
+
+func truncateRunes(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
 }
 
 func shallowCopy(m map[string]any) map[string]any {
