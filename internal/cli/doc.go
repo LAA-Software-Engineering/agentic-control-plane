@@ -9,6 +9,9 @@
 // The inspect command (section 10.2) uses the same preparation pipeline and prints one effective
 // normalized resource envelope (Kind/name) as JSON, YAML, or indented JSON for table output.
 //
+// The state command (section 10.2, §14.1) lists or shows rows from the SQLite deployment store
+// (applied_resources, applied_projects) read-only via [state.DeploymentStore].
+//
 // The plan command compares that prepared graph to the SQLite deployment store (default
 // .agentic/state.db, or project.spec.state.dsn / --state) and prints a diff plus risk delta
 // via [plan.ComputePlan] and [plan.FormatPlan].
