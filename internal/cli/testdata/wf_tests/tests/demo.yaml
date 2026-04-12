@@ -1,0 +1,13 @@
+# Fixture workflow tests (design doc §10.2, §17.4)
+workflow: demo
+cases:
+  - name: happy-path
+    input:
+      topic: acme-api
+    expect:
+      outputContains:
+        - acme-api
+        - echoed
+  - name: missing-topic
+    input: {}
+    expectError: true

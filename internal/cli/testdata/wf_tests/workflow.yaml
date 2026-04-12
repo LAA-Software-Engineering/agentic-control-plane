@@ -1,0 +1,15 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: demo
+spec:
+  policy: default
+  steps:
+    - id: ping
+      uses: tool.helper.echo
+      with:
+        msg: "${input.topic}"
+  output:
+    value:
+      topic: "${input.topic}"
+      echoed: "${steps.ping.output.echo.msg}"
