@@ -19,6 +19,11 @@ func lookupWorkflow(g *spec.ProjectGraph, name string) (*spec.WorkflowResource, 
 	return wf, nil
 }
 
+// ValidateWorkflowInput validates input against the workflow's input.schema when configured.
+func ValidateWorkflowInput(projectRoot string, wf *spec.WorkflowResource, input map[string]any) error {
+	return validateWorkflowInput(projectRoot, wf, input)
+}
+
 func validateWorkflowInput(projectRoot string, wf *spec.WorkflowResource, input map[string]any) error {
 	if wf == nil || wf.Spec.Input == nil {
 		return nil
