@@ -152,6 +152,20 @@ spec:
         apiKeyFrom: env:OPENAI_API_KEY
 ```
 
+**Anthropic (Claude)** — register a second namespace and point agents at **`anthropic/<model id>`** (same pattern as OpenAI). Keys use **`env:ANTHROPIC_API_KEY`**; the runtime calls Anthropic’s [**Messages API**](https://docs.anthropic.com/en/api/messages) (`POST /v1/messages`).
+
+```yaml
+  providers:
+    models:
+      anthropic:
+        type: anthropic
+        apiKeyFrom: env:ANTHROPIC_API_KEY
+  defaults:
+    model: anthropic/claude-sonnet-4-20250514
+```
+
+**Structured JSON output:** there is no MVP `response_format: json_object` equivalent in this adapter—agents rely on **instructions** (same as in **`agents/support_writer.yaml`**: one JSON object, no markdown fences). If you set **`spec.output.schema`**, the engine still validates the assistant text as JSON after generation.
+
 ### `agents/support_writer.yaml`
 
 `metadata.name` is the value you use in **`agent:`** on the workflow step.

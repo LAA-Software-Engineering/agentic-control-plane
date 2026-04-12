@@ -54,6 +54,12 @@ func (r *Registry) ClientFor(modelRef string) (client ModelClient, modelID strin
 			Content: `{"summary":"mock","findings":[]}`,
 			Meta:    &GenerateMeta{DurationMs: 1, CostUSD: 0},
 		}, id, nil
+	case "anthropic":
+		cl, err := NewAnthropicClientFromConfig(cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		return cl, id, nil
 	default:
 		return nil, "", fmt.Errorf("models: unsupported provider type %q for namespace %q", cfg.Type, ns)
 	}
