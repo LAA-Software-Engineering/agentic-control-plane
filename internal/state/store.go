@@ -35,5 +35,9 @@ type RuntimeStore interface {
 	UpsertRunStep(ctx context.Context, st RunStep) error
 	AppendTraceEvent(ctx context.Context, runID string, ts time.Time, eventType string, stepID string, dataJSON string) (seq int64, err error)
 	GetRun(ctx context.Context, runID string) (*Run, error)
+	// ListRecentRuns returns runs ordered by started_at descending (newest first), limited to limit rows.
+	ListRecentRuns(ctx context.Context, limit int) ([]Run, error)
+	// ListRunsByWorkflow returns runs for the given workflow_name ordered by started_at descending.
+	ListRunsByWorkflow(ctx context.Context, workflowName string, limit int) ([]Run, error)
 	ListTraceEventsByRunID(ctx context.Context, runID string) ([]TraceEvent, error)
 }

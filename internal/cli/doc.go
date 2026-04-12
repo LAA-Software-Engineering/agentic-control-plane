@@ -13,4 +13,7 @@
 //
 // The run command executes a workflow by name (workflow/<name>), validates input, writes trace
 // rows to the same SQLite file as plan/apply, and maps policy denials to exit code 5.
+//
+// The logs command reads runs and trace_events from that SQLite file (ordered by seq per run)
+// and supports listing recent runs, filtering by --run, or by --workflow.
 package cli

@@ -208,3 +208,43 @@ func TestGetAppliedResource_notFound(t *testing.T) {
 		t.Fatalf("want ErrNoRows, got %v", err)
 	}
 }
+
+func TestListRecentRuns_and_ListRunsByWorkflow_order(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "listruns.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	t0 := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Hour)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: "older", WorkflowName: "wf-a", Env: "local", Status: "running",
+		StartedAt: t0, InputJSON: `{}`, TotalCostUSD: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.StartRun(ctx, state.Run{
+		RunID: "newer", WorkflowName: "wf-b", Env: "local", Status: "running",
+		StartedAt: t1, InputJSON: `{}`, TotalCostUSD: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	recent, err := st.ListRecentRuns(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 2 || recent[0].RunID != "newer" || recent[1].RunID != "older" {
+		t.Fatalf("ListRecentRuns = %#v", recent)
+	}
+
+	byA, err := st.ListRunsByWorkflow(ctx, "wf-a", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byA) != 1 || byA[0].RunID != "older" {
+		t.Fatalf("ListRunsByWorkflow wf-a = %#v", byA)
+	}
+}
