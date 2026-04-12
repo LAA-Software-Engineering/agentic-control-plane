@@ -93,6 +93,10 @@ func (c *OpenAIClient) Generate(ctx context.Context, req GenerateRequest) (Gener
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage *struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(b, &out); err != nil {
 		return GenerateResponse{}, fmt.Errorf("models: decode openai response: %w", err)
@@ -100,9 +104,15 @@ func (c *OpenAIClient) Generate(ctx context.Context, req GenerateRequest) (Gener
 	if len(out.Choices) == 0 {
 		return GenerateResponse{}, fmt.Errorf("models: openai returned no choices")
 	}
+	var pt, ct int
+	if out.Usage != nil {
+		pt = out.Usage.PromptTokens
+		ct = out.Usage.CompletionTokens
+	}
+	cost := estimateOpenAIChatCostUSD(req.Model, pt, ct)
 	return GenerateResponse{
 		Content: out.Choices[0].Message.Content,
-		Meta:    GenerateMeta{DurationMs: time.Since(start).Milliseconds(), CostUSD: 0},
+		Meta:    GenerateMeta{DurationMs: time.Since(start).Milliseconds(), CostUSD: cost},
 	}, nil
 }
 

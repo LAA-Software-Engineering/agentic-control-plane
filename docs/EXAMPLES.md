@@ -1,6 +1,6 @@
 # Examples
 
-Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML spec, CLI behaviour, and field semantics, see [**`design_doc.md`**](design_doc.md).
+Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML spec, CLI behaviour, and field semantics, see [**`DESIGN_DOC.md`**](DESIGN_DOC.md).
 
 ---
 
@@ -20,7 +20,7 @@ my-agent-system/
   workflows/hello.yaml
 ```
 
-The generated files match the snippets in sections 2–4 below (with `metadata.name` set from the argument you pass to `init`).
+Sections **2–3** mirror what `init` creates. **Section 4** is a separate **`gpt-4o-mini`** project layout you can copy beside or instead of the scaffold.
 
 ---
 
@@ -102,23 +102,40 @@ agentctl run    workflow/hello --project my-agent-system
 
 ---
 
-## 4. OpenAI chat (real model)
+## 4. Real OpenAI example (`gpt-4o-mini`)
 
-The control plane currently wires **`type: openai`** to the OpenAI **`/v1/chat/completions`** API. Set a key via **`apiKeyFrom`** (MVP: **`env:VAR`** only).
+This is a small but **end-to-end** project: a **native echo** step supplies fixed “policy” text, then **`gpt-4o-mini`** drafts a one-line customer reply. You need a valid **[OpenAI API key](https://platform.openai.com/api-keys)** and outbound **HTTPS** to `api.openai.com`.
 
-**`project.yaml`** (add an `openai` provider and point defaults at an OpenAI model id):
+The runtime calls OpenAI’s **`/v1/chat/completions`** endpoint. The agent **must** answer with a **single JSON object** (no markdown fences); the engine parses that object and exposes its fields to **`spec.output`**.
+
+**`totalCostUsd` on runs** is accumulated from each step’s reported cost. Native tools report **0**. For **OpenAI**, the client estimates USD from the API **`usage`** token counts × approximate per-million rates for known models (**`gpt-4o-mini`**, **`gpt-4o`**, and dated variants such as **`gpt-4o-mini-…`**). Other model ids stay at **0** until their rates are added in code; see **`internal/models/openai_cost.go`** and verify against [OpenAI pricing](https://openai.com/api/pricing/).
+
+### Layout
+
+```text
+support-demo/
+  project.yaml
+  policies/default.yaml
+  tools/helper.yaml
+  agents/support_writer.yaml
+  workflows/support_snippet.yaml
+```
+
+Reuse **`policies/default.yaml`** and **`tools/helper.yaml`** from **section 3** unchanged.
+
+### `project.yaml`
 
 ```yaml
 apiVersion: agentic.dev/v0
 kind: Project
 metadata:
-  name: my-agent-system
+  name: support-demo
 spec:
   imports:
     - ./policies/default.yaml
     - ./tools/helper.yaml
-    - ./agents/assistant.yaml
-    - ./workflows/chat.yaml
+    - ./agents/support_writer.yaml
+    - ./workflows/support_snippet.yaml
   defaults:
     policy: default
     model: openai/gpt-4o-mini
@@ -131,46 +148,111 @@ spec:
         apiKeyFrom: env:OPENAI_API_KEY
 ```
 
-```bash
-export OPENAI_API_KEY="sk-..."   # required before validate/plan/apply/run
-```
+### `agents/support_writer.yaml`
 
-**`agents/assistant.yaml`** — `metadata.name` is what workflow steps reference in **`agent:`**. The executor expects the model’s reply to be a **JSON object** (plain text, not fenced code blocks).
+`metadata.name` is the value you use in **`agent:`** on the workflow step.
 
 ```yaml
 apiVersion: agentic.dev/v0
 kind: Agent
 metadata:
-  name: assistant
+  name: support_writer
 spec:
   model: openai/gpt-4o-mini
   policy: default
+  constraints:
+    timeoutSeconds: 60
   instructions: |
-    You are a concise assistant. Respond with a single JSON object only, no markdown.
-    Shape: {"message": "<your reply>"}
+    You draft short customer-facing email lines for a storefront.
+    You receive JSON in the user message: product name and a return-policy line from internal systems.
+    Respond with one JSON object only (no markdown, no code fences).
+    Use exactly this shape: {"subject": "<=8 words>", "line": "<=25 words, friendly>"}
 ```
 
-**`workflows/chat.yaml`**
+### `workflows/support_snippet.yaml`
+
+The compose step passes the echo step’s payload into the model via **`${steps.context.output.echo...}`** (see §13.1 in **`DESIGN_DOC.md`**).
+
+**CLI-driven product (requires `--input`).** If you use **`${input.product}`** anywhere in the workflow, you **must** pass **`--input product=...`** on **`run`**. Otherwise interpolation fails with **`undefined path "input.product"`** because the run input object is empty.
 
 ```yaml
 apiVersion: agentic.dev/v0
 kind: Workflow
 metadata:
-  name: chat
+  name: support_snippet
 spec:
   policy: default
   steps:
-    - id: reply
-      agent: assistant
+    - id: context
+      uses: tool.helper.echo
       with:
-        topic: "Say hello in one short sentence."
+        product: "${input.product}"
+        policy_line: "30-day returns on all SKUs; free outbound shipping on defects."
+    - id: compose
+      agent: support_writer
+      with:
+        product: "${input.product}"
+        return_policy: "${steps.context.output.echo.policy_line}"
+  output:
+    value:
+      product: ${input.product}
+      subject: ${steps.compose.output.subject}
+      line: ${steps.compose.output.line}
 ```
+
+**Zero-argument demo.** To run **`agentctl run workflow/support_snippet`** with no **`--input`**, put a literal product on the first step and thread it through **`steps.context.output.echo`** (same pattern as in the **`test1/`** sample in this repo):
+
+```yaml
+    - id: context
+      uses: tool.helper.echo
+      with:
+        product: "ACME USB-C hub" # literal default; or "${input.product}" + --input product=...
+        policy_line: "30-day returns on all SKUs; free outbound shipping on defects."
+    - id: compose
+      agent: support_writer
+      with:
+        product: "${steps.context.output.echo.product}"
+        return_policy: "${steps.context.output.echo.policy_line}"
+  output:
+    value:
+      product: ${steps.context.output.echo.product}
+      subject: ${steps.compose.output.subject}
+      line: ${steps.compose.output.line}
+```
+
+### Commands
 
 ```bash
-agentctl run workflow/chat --project my-agent-system
+export OPENAI_API_KEY="sk-..."   # required for any step that calls the model
+
+agentctl validate --project support-demo
+agentctl plan   --project support-demo
+agentctl apply  --project support-demo --auto-approve
+
+# If the workflow uses ${input.product}:
+agentctl run workflow/support_snippet --project support-demo --input product="ACME USB-C hub"
+
+# If the workflow uses a literal + steps.context... (no --input):
+agentctl run workflow/support_snippet --project support-demo
 ```
 
-Optional: add **`spec.output.schema`** on the agent (path relative to project root) to validate the JSON against JSON Schema; see test fixtures under `internal/engine/testdata/` and **`design_doc.md`**.
+Default **`run`** output is still **Run ID + status**. To see the workflow **`spec.output`** object ( **`product`**, **`subject`**, **`line`**, etc.):
+
+```bash
+agentctl logs --run <run-id> --project support-demo
+```
+
+After the trace table, the CLI prints **Workflow output (from spec.output)** as indented JSON when the run succeeded and **`output_json`** is non-empty.
+
+Or list recent runs as JSON (includes **`output`** on each run):
+
+```bash
+agentctl logs -o json --project support-demo
+```
+
+**`agentctl logs --run <id> -o json`** also includes top-level **`input`**, **`output`**, and **`workflowName`** alongside **`events`**.
+
+Optional: add **`spec.output.schema`** on the agent (path relative to the project root) so replies are validated with JSON Schema; see `internal/engine/testdata/wfproj/schemas/` and **`DESIGN_DOC.md`**.
 
 ---
 
