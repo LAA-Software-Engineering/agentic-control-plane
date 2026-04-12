@@ -148,7 +148,7 @@ Notes:
 | `-o` / `--output` | `table`, `json`, or `yaml` |
 | `--no-color` | ASCII-friendly validate output |
 
-Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md) (`0` success, `2` validation, `4` execution, `5` policy denial, …).
+Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md) (`0` success, `2` validation, **`3` plan/apply conflict** when deployment state changed after `plan`, `4` execution, `5` policy denial, …).
 
 ---
 

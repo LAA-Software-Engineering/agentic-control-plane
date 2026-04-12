@@ -150,7 +150,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		if op == nil {
 			return writeDiffInSync(cmd, env, dsn, id, g)
 		}
-		pl = &plan.Plan{Operations: []plan.Operation{*op}, Risk: plan.RiskSummary{}}
+		pl = &plan.Plan{Operations: []plan.Operation{*op}, Risk: plan.RiskSummary{}, DeploymentBaseline: pl.DeploymentBaseline}
 	}
 
 	entries := buildDiffEntries(pl, appliedByKey)

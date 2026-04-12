@@ -32,6 +32,16 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 	if err != nil {
 		return nil, err
 	}
+	projectName := ""
+	for _, d := range desired {
+		if d.id.Kind == spec.KindProject {
+			projectName = d.id.Name
+			break
+		}
+	}
+	if projectName == "" {
+		return nil, errors.New("plan: desired graph has no Project resource")
+	}
 
 	applied, err := p.Deploy.ListAppliedResourcesByEnv(ctx, env)
 	if err != nil {
@@ -97,7 +107,11 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 	sortOperations(ops)
 
 	risk := summarizeRisks(appliedByID, desiredByID, ops)
-	return &Plan{Operations: ops, Risk: risk}, nil
+	fp, err := DeploymentStateFingerprint(ctx, p.Deploy, env, projectName)
+	if err != nil {
+		return nil, err
+	}
+	return &Plan{Operations: ops, Risk: risk, DeploymentBaseline: fp}, nil
 }
 
 func desiredRows(g *spec.ProjectGraph) ([]desiredRow, error) {

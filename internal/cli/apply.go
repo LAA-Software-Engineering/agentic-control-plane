@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -33,6 +34,10 @@ then persist changes unless you decline at the prompt.
 Use --auto-approve to skip confirmation, or set ` + EnvAutoApprove + `=1 for non-interactive runs
 (CI, scripts). When stdin is not a terminal and the plan is non-empty, one of those is required.
 
+The plan is computed, then (after any prompt) applied in a single run. If another writer changes the
+same state database between those steps—e.g. a second terminal applying the same --state file while
+this process waits at the confirmation prompt—apply fails with exit code 3.
+
 The state database defaults to .agentic/state.db under --project, or project.spec.state.dsn,
 unless overridden by global --state.
 
@@ -40,7 +45,7 @@ Exit codes (section 11.2):
   0 — success (including nothing to apply)
   1 — generic failure (e.g. cannot open SQLite, non-interactive without approval, cancelled)
   2 — validation failure (invalid project), or non-table output without approval when the plan is non-empty
-  3 — plan/apply conflict (reserved for optimistic concurrency; not used in this MVP)`,
+  3 — plan/apply conflict: deployment store changed after this plan was computed (re-run plan, then apply)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
 			return runApply(cmd, autoApprove)
@@ -122,6 +127,9 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 
 	at := time.Now().UTC()
 	if err := apply.NewApplier(st).ApplyPlan(ctx, env, graph, pl, at); err != nil {
+		if errors.Is(err, apply.ErrDeploymentStateChanged) {
+			return NewExitError(ExitPlanApplyConflict, err)
+		}
 		return fmt.Errorf("apply: %w", err)
 	}
 
