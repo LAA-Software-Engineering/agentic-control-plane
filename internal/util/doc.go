@@ -1,2 +1,2 @@
-// Package util holds small shared helpers (fs, ids, errors, etc.).
+// Package util holds small shared helpers (identifiers, fs, errors, etc.).
 package util

@@ -1,0 +1,21 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: demo
+spec:
+  input:
+    schema: ./schemas/in.json
+  steps:
+    - id: fetch
+      uses: tool.helper.echo
+      with:
+        topic: "${input.topic}"
+        extra: "x"
+    - id: summarize
+      agent: reviewer
+      with:
+        echo: "${steps.fetch.output.echo}"
+  output:
+    value:
+      topic: "${input.topic}"
+      summary: "${steps.summarize.output.summary}"

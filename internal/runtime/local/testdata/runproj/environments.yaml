@@ -1,0 +1,10 @@
+apiVersion: agentic.dev/v0
+kind: Environment
+metadata:
+  name: staging
+spec:
+  overrides:
+    agents:
+      reviewer:
+        constraints:
+          timeoutSeconds: 99
