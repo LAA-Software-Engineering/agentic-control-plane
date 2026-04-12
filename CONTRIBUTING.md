@@ -2,6 +2,8 @@
 
 Thank you for helping improve Agentic Control Plane. This document describes how to work on the repo locally and what we expect in pull requests.
 
+All participants are expected to follow the **[Code of Conduct](CODE_OF_CONDUCT.md)**.
+
 ## Prerequisites
 
 - [Go 1.22+](https://go.dev/dl/) (see `go.mod`)
