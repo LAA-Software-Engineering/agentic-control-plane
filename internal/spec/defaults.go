@@ -3,8 +3,7 @@ package spec
 import "strings"
 
 // projectDefaults holds trimmed Project.spec.defaults values (design doc §7.1).
-// Runtime is included for API symmetry with the YAML schema; see NormalizeProjectGraph
-// for which fields are applied to MVP resource specs.
+// Runtime is copied onto Agent and Workflow specs when they omit spec.runtime (issue #76).
 type projectDefaults struct {
 	Runtime string
 	Model   string

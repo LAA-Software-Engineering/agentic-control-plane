@@ -39,6 +39,8 @@ Sections **2–3** mirror what `init` creates. **Section 4** is a separate **`gp
 
 `spec.imports` lists YAML files relative to the project root. `defaults.model` uses the form **`namespace/model_id`**, where **`namespace`** matches a key under `spec.providers.models`.
 
+Optional **`defaults.runtime`** sets where agents and workflows run in MVP: only **`local`** is valid (or omit for implicit local). Resources that omit **`spec.runtime`** inherit this value when the merged project graph is normalized.
+
 ```yaml
 apiVersion: agentic.dev/v0
 kind: Project
@@ -52,6 +54,7 @@ spec:
   defaults:
     policy: default
     model: mock/gpt-4
+    runtime: local
   providers:
     models:
       mock:

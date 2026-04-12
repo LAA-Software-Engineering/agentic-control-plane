@@ -23,6 +23,7 @@ func ValidateProjectGraph(g *ProjectGraph, projectRoot string) error {
 
 	var errs []error
 	errs = append(errs, validateMetadataKeys(g)...)
+	errs = append(errs, validateMVPRuntimes(g)...)
 	errs = append(errs, validateToolSpecs(g)...)
 	errs = append(errs, validatePolicySpecs(g)...)
 	errs = append(errs, validateAgentSpecs(g)...)
@@ -105,6 +106,34 @@ func metaName(v any) string {
 	default:
 		return ""
 	}
+}
+
+// validateMVPRuntimes rejects non-local explicit runtimes (design doc §7.1, §16 MVP; issue #76).
+// Empty means implicit local; only "local" is allowed when set.
+func validateMVPRuntimes(g *ProjectGraph) []error {
+	var errs []error
+	if g.Spec.Defaults != nil {
+		if r := strings.TrimSpace(g.Spec.Defaults.Runtime); r != "" && r != "local" {
+			errs = append(errs, fmt.Errorf("Project: defaults.runtime %q is not supported in MVP (use \"local\" or omit)", r))
+		}
+	}
+	for name, ar := range g.Agents {
+		if ar == nil {
+			continue
+		}
+		if r := strings.TrimSpace(ar.Spec.Runtime); r != "" && r != "local" {
+			errs = append(errs, fmt.Errorf("Agent/%s: spec.runtime %q is not supported in MVP (use \"local\" or omit)", name, r))
+		}
+	}
+	for name, wr := range g.Workflows {
+		if wr == nil {
+			continue
+		}
+		if r := strings.TrimSpace(wr.Spec.Runtime); r != "" && r != "local" {
+			errs = append(errs, fmt.Errorf("Workflow/%s: spec.runtime %q is not supported in MVP (use \"local\" or omit)", name, r))
+		}
+	}
+	return errs
 }
 
 func validateToolSpecs(g *ProjectGraph) []error {

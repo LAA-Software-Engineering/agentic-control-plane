@@ -49,6 +49,7 @@ type ProjectTracesConfig struct {
 type AgentSpec struct {
 	Description  string            `yaml:"description,omitempty" json:"description,omitempty"`
 	Model        string            `yaml:"model,omitempty" json:"model,omitempty"`
+	Runtime      string            `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Instructions string            `yaml:"instructions,omitempty" json:"instructions,omitempty"`
 	Tools        []string          `yaml:"tools,omitempty" json:"tools,omitempty"`
 	Policy       string            `yaml:"policy,omitempty" json:"policy,omitempty"`
@@ -109,6 +110,7 @@ type ToolRetry struct {
 
 type WorkflowSpec struct {
 	Description string           `yaml:"description,omitempty" json:"description,omitempty"`
+	Runtime     string           `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Trigger     *WorkflowTrigger `yaml:"trigger,omitempty" json:"trigger,omitempty"`
 	Input       *WorkflowInput   `yaml:"input,omitempty" json:"input,omitempty"`
 	Policy      string           `yaml:"policy,omitempty" json:"policy,omitempty"`
