@@ -33,6 +33,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	BindPersistentFlags(root)
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newValidateCmd())
 	return root
 }
 
