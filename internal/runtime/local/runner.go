@@ -10,6 +10,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
@@ -34,9 +35,13 @@ func (r *Runtime) ExecuteWorkflow(ctx context.Context, opts runtime.WorkflowRunO
 	if err != nil {
 		return "", fmt.Errorf("local: load project: %w", err)
 	}
+	spec.NormalizeProjectGraph(graph)
 	graph, err = ApplyEnvironment(graph, opts.EnvironmentName)
 	if err != nil {
 		return "", err
+	}
+	if err := spec.ValidateProjectGraph(graph, root); err != nil {
+		return "", fmt.Errorf("local: validate project: %w", err)
 	}
 
 	wfName := strings.TrimSpace(opts.WorkflowName)
