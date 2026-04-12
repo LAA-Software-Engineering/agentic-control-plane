@@ -2,11 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"path/filepath"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/spf13/cobra"
 )
@@ -27,24 +24,8 @@ Exit code 2 indicates validation failure (design doc sections 10.2, 11.2).`,
 func runValidate(cmd *cobra.Command, args []string) error {
 	_ = args
 	g := Globals()
-	root, err := filepath.Abs(filepath.Clean(g.ProjectRoot))
+	graph, _, err := prepareProjectGraph(g.ProjectRoot, g)
 	if err != nil {
-		return NewExitErrorf(ExitValidationError, "project root: %w", err)
-	}
-
-	graph, err := project.LoadProject(root)
-	if err != nil {
-		return NewExitErrorf(ExitValidationError, "%w", err)
-	}
-
-	spec.NormalizeProjectGraph(graph)
-
-	graph, err = local.ApplyEnvironment(graph, g.Env)
-	if err != nil {
-		return NewExitErrorf(ExitValidationError, "%w", err)
-	}
-
-	if err := spec.ValidateProjectGraph(graph, root); err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
 
