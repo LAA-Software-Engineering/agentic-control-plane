@@ -1,0 +1,10 @@
+Environment: local
+State: <STATE>
+
+Plan: 3 to add, 0 to change, 0 to delete
++ create Policy/default
++ create Project/plan-fixture
++ create Tool/helper
+
+Risk delta:
+- New policy defines a cost ceiling (Policy/default).

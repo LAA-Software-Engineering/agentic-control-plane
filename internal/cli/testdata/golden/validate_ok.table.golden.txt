@@ -1,0 +1,9 @@
+Project: validate-ok
+Environment: (none)
+
+* Loaded 4 resources
+* References resolved
+* Schemas valid
+* All workflows valid
+
+Validation successful

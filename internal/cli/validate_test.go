@@ -14,32 +14,6 @@ func testdataPath(t *testing.T, parts ...string) string {
 	return filepath.Join(append([]string{"testdata"}, parts...)...)
 }
 
-func TestValidate_successOutputGolden(t *testing.T) {
-	ResetGlobalsForTest()
-	cmd := NewRootCmd()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"validate", "--project", testdataPath(t, "validate_ok")})
-	if err := cmd.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	s := out.String()
-	for _, want := range []string{
-		"Project: validate-ok",
-		"Environment: (none)",
-		"Loaded 4 resources",
-		"References resolved",
-		"Schemas valid",
-		"All workflows valid",
-		"Validation successful",
-	} {
-		if !strings.Contains(s, want) {
-			t.Fatalf("output missing %q:\n%s", want, s)
-		}
-	}
-}
-
 func TestValidate_successWithEnv(t *testing.T) {
 	ResetGlobalsForTest()
 	cmd := NewRootCmd()
