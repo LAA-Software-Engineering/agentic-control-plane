@@ -3,12 +3,14 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models/anthropic"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
@@ -83,6 +85,30 @@ func TestRegistry_modelRefFormat(t *testing.T) {
 	}
 }
 
+func TestRegistry_resolvesAnthropicAndModelID(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	g := &spec.ProjectGraph{
+		Spec: spec.ProjectSpec{
+			Providers: &spec.ProjectProviders{
+				Models: map[string]spec.ModelProviderConfig{
+					"anthropic": {Type: "anthropic", APIKeyFrom: "env:ANTHROPIC_API_KEY"},
+				},
+			},
+		},
+	}
+	reg := NewRegistry(g)
+	cli, id, err := reg.ClientFor("anthropic/claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "claude-sonnet-4-20250514" {
+		t.Fatalf("model id %q", id)
+	}
+	if _, ok := cli.(*anthropicClient); !ok {
+		t.Fatalf("want *anthropicClient, got %T", cli)
+	}
+}
+
 func TestRegistry_resolvesOpenAIAndModelID(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-test")
 	g := &spec.ProjectGraph{
@@ -104,6 +130,54 @@ func TestRegistry_resolvesOpenAIAndModelID(t *testing.T) {
 	}
 	if _, ok := cli.(*OpenAIClient); !ok {
 		t.Fatalf("want *OpenAIClient, got %T", cli)
+	}
+}
+
+func TestAnthropicClient_Generate_mapsSystemAndUser(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			t.Errorf("path %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var req struct {
+			System   string `json:"system"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(b, &req); err != nil {
+			t.Fatal(err)
+		}
+		if req.System != "do json" {
+			t.Errorf("system %q", req.System)
+		}
+		if len(req.Messages) != 1 || req.Messages[0].Role != "user" {
+			t.Fatalf("messages %+v", req.Messages)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"{\"k\":1}"}]}`))
+	}))
+	defer srv.Close()
+
+	a := &anthropicClient{inner: &anthropic.Client{APIKey: "k", BaseURL: srv.URL, HTTPClient: srv.Client()}}
+	resp, err := a.Generate(context.Background(), GenerateRequest{
+		Model: "claude-test",
+		Messages: []ChatMessage{
+			{Role: "system", Content: "do json"},
+			{Role: "user", Content: `{}`},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Content != `{"k":1}` {
+		t.Fatalf("content %q", resp.Content)
 	}
 }
 

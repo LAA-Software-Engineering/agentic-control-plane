@@ -122,9 +122,13 @@ spec:
       openai:
         type: openai
         apiKeyFrom: env:OPENAI_API_KEY
+      # Optional: Claude via Messages API (set ANTHROPIC_API_KEY and use e.g. defaults.model: anthropic/claude-sonnet-4-20250514)
+      # anthropic:
+      #   type: anthropic
+      #   apiKeyFrom: env:ANTHROPIC_API_KEY
 ```
 
-Field-by-field rules, extra kinds, and env overlays are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md).
+Field-by-field rules, extra kinds, and env overlays are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for an Anthropic **`project.yaml`** fragment and structured-output notes.
 
 Notes:
 
