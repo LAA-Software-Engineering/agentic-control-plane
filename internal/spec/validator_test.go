@@ -176,3 +176,72 @@ func TestValidateProjectGraph_duplicateApprovalActions(t *testing.T) {
 		t.Fatalf("expected duplicate approvals error, got %v", err)
 	}
 }
+
+func TestValidateProjectGraph_defaultsRuntimeUnknown(t *testing.T) {
+	g := &ProjectGraph{
+		Spec: ProjectSpec{
+			Defaults: &ProjectDefaults{Runtime: "k8s"},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `defaults.runtime "k8s"`) {
+		t.Fatalf("expected defaults.runtime error, got %v", err)
+	}
+}
+
+func TestValidateProjectGraph_agentRuntimeUnknown(t *testing.T) {
+	g := &ProjectGraph{
+		Agents: map[string]*AgentResource{
+			"a": {
+				Kind:     KindAgent,
+				Metadata: Metadata{Name: "a"},
+				Spec:     AgentSpec{Runtime: "remote"},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `Agent/a: spec.runtime "remote"`) {
+		t.Fatalf("expected agent runtime error, got %v", err)
+	}
+}
+
+func TestValidateProjectGraph_workflowRuntimeUnknown(t *testing.T) {
+	g := &ProjectGraph{
+		Workflows: map[string]*WorkflowResource{
+			"w": {
+				Kind:     KindWorkflow,
+				Metadata: Metadata{Name: "w"},
+				Spec:     WorkflowSpec{Runtime: "lambda"},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `Workflow/w: spec.runtime "lambda"`) {
+		t.Fatalf("expected workflow runtime error, got %v", err)
+	}
+}
+
+func TestValidateProjectGraph_runtimeLocalAccepted(t *testing.T) {
+	g := &ProjectGraph{
+		Spec: ProjectSpec{
+			Defaults: &ProjectDefaults{Runtime: "local"},
+		},
+		Agents: map[string]*AgentResource{
+			"a": {
+				Kind:     KindAgent,
+				Metadata: Metadata{Name: "a"},
+				Spec:     AgentSpec{Runtime: "local"},
+			},
+		},
+		Workflows: map[string]*WorkflowResource{
+			"w": {
+				Kind:     KindWorkflow,
+				Metadata: Metadata{Name: "w"},
+				Spec:     WorkflowSpec{Runtime: "local"},
+			},
+		},
+	}
+	if err := ValidateProjectGraph(g, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+}
