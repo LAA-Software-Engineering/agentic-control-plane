@@ -6,6 +6,9 @@
 // The validate command (section 10.2) loads the project, applies defaults and optional environment
 // overlays, then runs [spec.ValidateProjectGraph].
 //
+// The fmt command (section 10.2) rewrites YAML files in the project import closure via [project.ListProjectYAMLFiles]
+// and [project.NormalizeYAML], with optional --check for CI.
+//
 // The inspect command (section 10.2) uses the same preparation pipeline and prints one effective
 // normalized resource envelope (Kind/name) as JSON, YAML, or indented JSON for table output.
 //

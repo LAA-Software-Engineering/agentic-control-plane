@@ -1,0 +1,8 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: fmt-messy
+spec:
+  imports:
+    - ./policy.yaml
+    - ./tool.yaml
