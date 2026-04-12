@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/apply"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 )
 
@@ -186,5 +187,12 @@ func TestApply_jsonAutoApprove_validJSON(t *testing.T) {
 	ops, ok := m["operations"].([]any)
 	if !ok || len(ops) != 3 {
 		t.Fatalf("operations: %v", m["operations"])
+	}
+}
+
+func TestApply_exitCode_planApplyConflict(t *testing.T) {
+	err := NewExitError(ExitPlanApplyConflict, apply.ErrDeploymentStateChanged)
+	if ExitCodeOf(err) != ExitPlanApplyConflict {
+		t.Fatalf("exit code = %d want %d", ExitCodeOf(err), ExitPlanApplyConflict)
 	}
 }

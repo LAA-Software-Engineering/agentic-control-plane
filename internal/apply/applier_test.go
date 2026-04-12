@@ -127,3 +127,47 @@ func TestApplyPlan_deleteRemovesRow(t *testing.T) {
 		t.Fatalf("want project only, got %+v", list)
 	}
 }
+
+func TestApplyPlan_rejectsStaleDeploymentBaseline(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "apply-stale.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	pl := plan.NewPlanner(st)
+	ap := NewApplier(st)
+	t0 := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
+
+	gFull := graphWithAgent()
+	pCreate, err := pl.ComputePlan(ctx, "dev", gFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pCreate.Operations) == 0 || pCreate.DeploymentBaseline == "" {
+		t.Fatalf("want non-empty plan with baseline, got ops=%d baseline=%q", len(pCreate.Operations), pCreate.DeploymentBaseline)
+	}
+	if err := ap.ApplyPlan(ctx, "dev", gFull, pCreate, t0); err != nil {
+		t.Fatal(err)
+	}
+
+	gOnly := minimalGraph()
+	pDelete, err := pl.ComputePlan(ctx, "dev", gOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pDelete.DeploymentBaseline == "" {
+		t.Fatal("missing baseline")
+	}
+
+	// Simulate another writer: deployment no longer matches the fingerprint embedded in pDelete.
+	if err := st.DeleteAppliedResource(ctx, "dev", spec.ResourceID{Kind: spec.KindAgent, Name: "rev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	err = ap.ApplyPlan(ctx, "dev", gOnly, pDelete, t0.Add(time.Hour))
+	if !errors.Is(err, ErrDeploymentStateChanged) {
+		t.Fatalf("want ErrDeploymentStateChanged, got %v", err)
+	}
+}

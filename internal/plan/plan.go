@@ -19,6 +19,9 @@ const (
 type Plan struct {
 	Operations []Operation
 	Risk       RiskSummary
+	// DeploymentBaseline is a digest of applied_resources + applied_projects for this env at plan time.
+	// Apply rejects the plan if the store diverges (exit code 3; issue #78).
+	DeploymentBaseline string
 }
 
 // Operation is one create, update, or delete against a resource identity.

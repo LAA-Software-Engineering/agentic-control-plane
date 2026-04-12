@@ -121,7 +121,7 @@ func planJSONModel(env, dsn string, p *plan.Plan) map[string]any {
 		}
 		ops = append(ops, entry)
 	}
-	return map[string]any{
+	m := map[string]any{
 		"environment": env,
 		"statePath":   dsn,
 		"summary": map[string]any{
@@ -132,6 +132,10 @@ func planJSONModel(env, dsn string, p *plan.Plan) map[string]any {
 		"operations": ops,
 		"risk":       riskStrings(p),
 	}
+	if p != nil && p.DeploymentBaseline != "" {
+		m["deploymentBaseline"] = p.DeploymentBaseline
+	}
+	return m
 }
 
 func riskStrings(p *plan.Plan) []string {

@@ -50,6 +50,9 @@ func (a *Applier) ApplyPlan(ctx context.Context, env string, g *spec.ProjectGrap
 	at = at.UTC()
 
 	run := func(ctx context.Context, dep state.DeploymentStore) error {
+		if err := assertDeploymentBaseline(ctx, dep, env, projectName, p); err != nil {
+			return err
+		}
 		return executePlan(ctx, dep, env, p, at, projectName, projectVersion)
 	}
 	if tx, ok := a.Deploy.(state.TransactionalDeployment); ok {
