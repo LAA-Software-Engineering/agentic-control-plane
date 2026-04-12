@@ -4,6 +4,15 @@ Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML
 
 A checked-in copy of the **OpenAI `support_snippet`** project from **section 4** lives under [**`examples/example1/`**](../examples/example1/). Its **`metadata.name`** is **`example1`**, matching that folder. From the repository root, pass **`--project examples/example1`** to **`agentctl`** (or **`cd` there** and use **`--project .`**).
 
+### Formatting YAML (`agentctl fmt`)
+
+Normalize indentation (2 spaces) for **`project.yaml`** / **`project.yml`** and every file in **`spec.imports`** (same closure as validate/load). **`--check`** exits **1** if any file would change (CI). **YAML comments may be lost** on rewrite—commit or branch before running.
+
+```bash
+agentctl fmt --project my-agent-system
+agentctl fmt --check --project .
+```
+
 ---
 
 ## 1. Scaffold with `agentctl init`
