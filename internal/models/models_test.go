@@ -152,8 +152,10 @@ func TestOpenAIClient_Generate_unknownModel_zeroCost(t *testing.T) {
 
 	c := &OpenAIClient{APIKey: "sk-mock", BaseURL: srv.URL + "/v1", HTTPClient: srv.Client()}
 	resp, err := c.Generate(context.Background(), GenerateRequest{
-		Model:    "unknown-model-xyz",
-		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
+		Model: "unknown-model-xyz",
+		Messages: []ChatMessage{
+			{Role: "user", Content: "hi"},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
