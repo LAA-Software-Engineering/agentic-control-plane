@@ -1,6 +1,7 @@
 # Agentic Control Plane
 
 [![CI](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/ci.yml)
+[![Release](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/agentic-control-plane.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/agentic-control-plane)
@@ -57,7 +58,8 @@ See **section 18 (MVP)** and **section 19 (End Goal)** in [`docs/DESIGN_DOC.md`]
 
 ### Prerequisites
 
-- [Go 1.22+](https://go.dev/dl/)
+- **From source:** [Go 1.22+](https://go.dev/dl/)
+- **From a [release binary](#prebuilt-binaries):** no Go toolchain; put `agentctl` (or `agentctl.exe`) on your `PATH` after extracting the archive
 
 ### Build
 
@@ -68,6 +70,22 @@ make build   # writes bin/agentctl
 ```
 
 Or: `make install` / `go install ./cmd/agentctl` (honours `GOBIN` / `GOPATH/bin`; ensure that directory is on `PATH`).
+
+### Prebuilt binaries
+
+[GitHub Releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases) ship **`agentctl`** for common platforms (`.tar.gz` on Linux/macOS, `.zip` on Windows) plus **`SHA256SUMS.txt`**. Pick the archive that matches your machine, for example:
+
+| Platform | Asset suffix |
+|----------|----------------|
+| Linux x86_64 | `linux-amd64.tar.gz` |
+| Linux arm64 | `linux-arm64.tar.gz` |
+| macOS Intel | `darwin-amd64.tar.gz` |
+| macOS Apple Silicon | `darwin-arm64.tar.gz` |
+| Windows x86_64 | `windows-amd64.zip` (contains `agentctl.exe`) |
+
+`agentctl version` reports the release tag (e.g. `v0.1.4`).
+
+Releases are **created automatically** when changes land on **`main`**, using a **patch** semver bump over the latest `vMAJOR.MINOR.PATCH` tag (merges that only touch Markdown or the root `Makefile` do not trigger a release). To cut **minor** or **major** bumps on demand, run the [**Release** workflow](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml) manually (**Actions → Release → Run workflow**) and choose the bump type.
 
 ### Create a project and run the loop
 

@@ -1,0 +1,154 @@
+# Auto-tag and publish cross-compiled agentctl binaries on each merge to main (patch bump),
+# or manually with workflow_dispatch (patch / minor / major).
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump over the latest v*.*.* tag"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag, build, and publish binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version tag
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BUMP: ${{ github.event.inputs.bump }}
+        run: |
+          set -euo pipefail
+          BUMP=patch
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            BUMP="${INPUT_BUMP:-patch}"
+          fi
+
+          git fetch --tags --force
+
+          latest=""
+          while IFS= read -r t; do
+            if [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              latest="$t"
+              break
+            fi
+          done < <(git tag -l 'v*' --sort=-v:refname)
+
+          if [ -z "$latest" ]; then
+            case "$BUMP" in
+              major) next="v1.0.0" ;;
+              *) next="v0.1.0" ;;
+            esac
+            echo "Latest stable tag: <none>"
+            echo "First release ($BUMP) → $next"
+            echo "tag=$next" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ver="${latest#v}"
+          major="${ver%%.*}"
+          rest="${ver#*.}"
+          minor="${rest%%.*}"
+          patch="${rest#*.}"
+
+          case "$BUMP" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+            *)
+              echo "unknown bump: $BUMP" >&2
+              exit 1
+              ;;
+          esac
+
+          next="v${major}.${minor}.${patch}"
+          echo "Latest stable tag: $latest"
+          echo "Bump: $BUMP → $next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: Verify modules
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Test
+        run: go test ./... -count=1 -timeout=10m
+
+      - name: Build release binaries
+        env:
+          CGO_ENABLED: "0"
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          MODULE=github.com/LAA-Software-Engineering/agentic-control-plane/internal/cli
+          LDFLAGS="-s -w -X ${MODULE}.Version=${VERSION}"
+          mkdir -p dist work/linux-amd64 work/linux-arm64 work/darwin-amd64 work/darwin-arm64 work/windows-amd64
+
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/linux-amd64/agentctl ./cmd/agentctl
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o work/linux-arm64/agentctl ./cmd/agentctl
+          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/darwin-amd64/agentctl ./cmd/agentctl
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o work/darwin-arm64/agentctl ./cmd/agentctl
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/windows-amd64/agentctl.exe ./cmd/agentctl
+
+          (cd work/linux-amd64 && tar czf "../../dist/agentctl-${VERSION}-linux-amd64.tar.gz" agentctl)
+          (cd work/linux-arm64 && tar czf "../../dist/agentctl-${VERSION}-linux-arm64.tar.gz" agentctl)
+          (cd work/darwin-amd64 && tar czf "../../dist/agentctl-${VERSION}-darwin-amd64.tar.gz" agentctl)
+          (cd work/darwin-arm64 && tar czf "../../dist/agentctl-${VERSION}-darwin-arm64.tar.gz" agentctl)
+          (cd work/windows-amd64 && zip -q "../../dist/agentctl-${VERSION}-windows-amd64.zip" agentctl.exe)
+
+          (cd dist && sha256sum *.tar.gz *.zip | tee SHA256SUMS.txt)
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
