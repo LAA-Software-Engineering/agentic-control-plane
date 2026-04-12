@@ -117,17 +117,15 @@ VALUES (?, ?, ?, ?, ?, ?)
 	return seq, nil
 }
 
-// GetRun returns the run row or sql.ErrNoRows.
-func (s *Store) GetRun(ctx context.Context, runID string) (*state.Run, error) {
-	row := s.db.QueryRowContext(ctx, `
-SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd
-FROM runs
-WHERE run_id = ?
-`, runID)
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanRunRow(sc rowScanner) (*state.Run, error) {
 	var r state.Run
 	var started, finished sql.NullString
 	var outJ, errT sql.NullString
-	if err := row.Scan(&r.RunID, &r.WorkflowName, &r.Env, &r.Status, &started, &finished, &r.InputJSON, &outJ, &errT, &r.TotalCostUSD); err != nil {
+	if err := sc.Scan(&r.RunID, &r.WorkflowName, &r.Env, &r.Status, &started, &finished, &r.InputJSON, &outJ, &errT, &r.TotalCostUSD); err != nil {
 		return nil, err
 	}
 	st, err := parseSQLiteTime(started.String)
@@ -149,6 +147,83 @@ WHERE run_id = ?
 		r.ErrorText = errT.String
 	}
 	return &r, nil
+}
+
+// GetRun returns the run row or sql.ErrNoRows.
+func (s *Store) GetRun(ctx context.Context, runID string) (*state.Run, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd
+FROM runs
+WHERE run_id = ?
+`, runID)
+	return scanRunRow(row)
+}
+
+func clampRunListLimit(limit int) int {
+	const defaultLimit = 50
+	const maxLimit = 500
+	if limit <= 0 {
+		return defaultLimit
+	}
+	if limit > maxLimit {
+		return maxLimit
+	}
+	return limit
+}
+
+// ListRecentRuns returns runs ordered by started_at descending.
+func (s *Store) ListRecentRuns(ctx context.Context, limit int) ([]state.Run, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("sqlite: nil store")
+	}
+	limit = clampRunListLimit(limit)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd
+FROM runs
+ORDER BY started_at DESC
+LIMIT ?
+`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []state.Run
+	for rows.Next() {
+		r, err := scanRunRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
+// ListRunsByWorkflow returns runs for workflow_name ordered by started_at descending.
+func (s *Store) ListRunsByWorkflow(ctx context.Context, workflowName string, limit int) ([]state.Run, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("sqlite: nil store")
+	}
+	limit = clampRunListLimit(limit)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd
+FROM runs
+WHERE workflow_name = ?
+ORDER BY started_at DESC
+LIMIT ?
+`, workflowName, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []state.Run
+	for rows.Next() {
+		r, err := scanRunRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
 }
 
 // ListTraceEventsByRunID returns trace rows for run_id ordered by seq ascending.
