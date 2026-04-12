@@ -12,6 +12,8 @@
 // The state command (section 10.2, §14.1) lists or shows rows from the SQLite deployment store
 // (applied_resources, applied_projects) read-only via [state.DeploymentStore].
 //
+// The test command (section 10.2, §17.4) runs YAML workflow fixtures from <project>/tests/ via [testkit].
+//
 // The plan command compares that prepared graph to the SQLite deployment store (default
 // .agentic/state.db, or project.spec.state.dsn / --state) and prints a diff plus risk delta
 // via [plan.ComputePlan] and [plan.FormatPlan].

@@ -22,7 +22,7 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "agentctl",
 		Short:         "Declarative control plane for agent systems",
-		Long:          "agentctl validates, inspects, plans, diffs, applies, runs, and reads deployment state for declarative agent systems defined as YAML.",
+		Long:          "agentctl validates, inspects, plans, diffs, applies, runs, tests, and reads deployment state for declarative agent systems defined as YAML.",
 		SilenceErrors: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			_ = cmd.Help()
@@ -41,6 +41,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newApplyCmd())
 	root.AddCommand(newStateCmd())
 	root.AddCommand(newRunCmd())
+	root.AddCommand(newTestCmd())
 	root.AddCommand(newLogsCmd())
 	return root
 }

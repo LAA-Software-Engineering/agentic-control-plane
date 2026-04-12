@@ -1,6 +1,6 @@
 # Examples
 
-Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML spec, CLI behaviour, and field semantics, see [**`DESIGN_DOC.md`**](DESIGN_DOC.md).
+Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML spec, CLI behaviour, and field semantics, see [**`DESIGN_DOC.md`**](DESIGN_DOC.md). For **`agentctl test`** fixture format, see [**`TESTING.md`**](TESTING.md).
 
 A checked-in copy of the **OpenAI `support_snippet`** project from **section 4** lives under [**`examples/example1/`**](../examples/example1/). Its **`metadata.name`** is **`example1`**, matching that folder. From the repository root, pass **`--project examples/example1`** to **`agentctl`** (or **`cd` there** and use **`--project .`**).
 
