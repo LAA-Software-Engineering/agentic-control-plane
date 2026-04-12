@@ -10,4 +10,7 @@
 //
 // The apply command runs the same preparation and planning, then prompts on a TTY (unless
 // --auto-approve or AGENTCTL_AUTO_APPROVE) and persists via [apply.Applier.ApplyPlan].
+//
+// The run command executes a workflow by name (workflow/<name>), validates input, writes trace
+// rows to the same SQLite file as plan/apply, and maps policy denials to exit code 5.
 package cli
