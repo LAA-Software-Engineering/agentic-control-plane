@@ -22,7 +22,7 @@ Most agent stacks today bury prompts, tool wiring, and permissions in applicatio
 - Enforce **policies** (budgets, approvals, tool rules) at execution time  
 - Stay **local-first** while the architecture leaves room for a future remote control plane  
 
-The full product vision, YAML spec v0, and architecture are documented in [**`docs/design_doc.md`**](docs/design_doc.md).
+The full product vision, YAML spec v0, and architecture are documented in [**`docs/DESIGN_DOC.md`**](docs/DESIGN_DOC.md).
 
 ---
 
@@ -49,7 +49,7 @@ The full product vision, YAML spec v0, and architecture are documented in [**`do
 - **State** — single SQLite file (default `.agentic/state.db` under the project root; override with `--state`)  
 - **Tests** — unit/integration coverage, golden CLI output tests, end-to-end `init → … → logs` in `test/integration`  
 
-See **section 18 (MVP)** and **section 19 (End Goal)** in [`docs/design_doc.md`](docs/design_doc.md) for the full included/excluded list.
+See **section 18 (MVP)** and **section 19 (End Goal)** in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md) for the full included/excluded list.
 
 ---
 
@@ -74,13 +74,39 @@ Or: `make install` / `go install ./cmd/agentctl` (honours `GOBIN` / `GOPATH/bin`
 From the repo root (or anywhere):
 
 ```bash
-./bin/agentctl init my-agent-system
-./bin/agentctl validate --project my-agent-system
-./bin/agentctl plan   --project my-agent-system
-./bin/agentctl apply  --project my-agent-system --auto-approve
-./bin/agentctl run    workflow/hello --project my-agent-system
-./bin/agentctl logs   --project my-agent-system --workflow hello
+agentctl init my-agent-system
+agentctl validate --project my-agent-system
+agentctl plan   --project my-agent-system
+agentctl apply  --project my-agent-system --auto-approve
+agentctl run    workflow/hello --project my-agent-system
+agentctl logs   --project my-agent-system --workflow hello
 ```
+
+### Example `project.yaml`
+
+The project root is a **`Project`** resource: `apiVersion`, `kind`, `metadata.name`, and **`spec.imports`** listing other YAML files (policies, tools, workflows). After **`agentctl init my-agent-system`**, `my-agent-system/project.yaml` looks like this:
+
+```yaml
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: my-agent-system
+spec:
+  imports:
+    - ./policies/default.yaml
+    - ./tools/helper.yaml
+    - ./workflows/hello.yaml
+  defaults:
+    policy: default
+    model: openai/gpt-4o-mini
+  providers:
+    models:
+      openai:
+        type: openai
+        apiKeyFrom: env:OPENAI_API_KEY
+```
+
+Field-by-field rules, extra kinds, and env overlays are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md).
 
 Notes:
 
@@ -99,7 +125,7 @@ Notes:
 | `-o` / `--output` | `table`, `json`, or `yaml` |
 | `--no-color` | ASCII-friendly validate output |
 
-Exit codes are summarized in **section 11.2** of [`docs/design_doc.md`](docs/design_doc.md) (`0` success, `2` validation, `4` execution, `5` policy denial, …).
+Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md) (`0` success, `2` validation, `4` execution, `5` policy denial, …).
 
 ---
 
@@ -117,7 +143,7 @@ Exit codes are summarized in **section 11.2** of [`docs/design_doc.md`](docs/des
 | `internal/policy` | Policy evaluation |
 | `internal/state/sqlite` | SQLite deployment + runtime/trace tables |
 | `test/integration` | End-to-end CLI flow tests |
-| `docs/design_doc.md` | Spec, CLI UX, architecture, roadmap |
+| `docs/DESIGN_DOC.md` | Spec, CLI UX, architecture, roadmap |
 
 ---
 
@@ -157,7 +183,7 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 ### Near term (MVP hardening)
 
 - More **`diff` / drift** UX where the design doc calls for it  
-- **`inspect`** and richer **`logs`** filters (see sections **10.2** and **17.3** in `docs/design_doc.md`)  
+- **`inspect`** and richer **`logs`** filters (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`)  
 - **`agentctl test`**-style workflow fixtures (**stretch** per design doc)  
 
 ### Post-MVP (from design doc section 19)
@@ -167,13 +193,13 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 - Stronger drift semantics and multi-runtime targets  
 - Deeper approval workflows and multi-tenant controls  
 
-The **recommended implementation phases** are outlined in **section 20** of [`docs/design_doc.md`](docs/design_doc.md).
+The **recommended implementation phases** are outlined in **section 20** of [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md).
 
 ---
 
 ## Documentation
 
-- **[`docs/design_doc.md`](docs/design_doc.md)** — design document v0 (problem statement, spec, CLI, engine, state model, testing strategy, MVP vs end state, section 23 recommendation).  
+- **[`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md)** — design document v0 (problem statement, spec, CLI, engine, state model, testing strategy, MVP vs end state, section 23 recommendation).  
 - **License:** [MIT](LICENSE)  
 
 ---
@@ -185,4 +211,4 @@ Issues and pull requests are welcome. Please run **`make fmt`**, **`make vet`**,
 ---
 
 > **Local declarative agent systems with validate, plan, apply, run, and logs.**  
-> *(Closing recommendation in [`docs/design_doc.md`](docs/design_doc.md), section 23.)*
+> *(Closing recommendation in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md), section 23.)*
