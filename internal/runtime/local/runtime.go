@@ -29,7 +29,9 @@ func (r *Runtime) now() time.Time {
 	return time.Now().UTC()
 }
 
-// ApplyEnvironment returns a shallow copy of g with Environment overrides applied (design doc section 7.6 MVP).
+// ApplyEnvironment returns a shallow copy of g with Environment overrides applied (design doc §7.6 MVP).
+// Call after spec.NormalizeProjectGraph so Project.spec.defaults are merged first; agentctl and
+// [Runtime.ExecuteWorkflow] use that order before spec.ValidateProjectGraph.
 func ApplyEnvironment(g *spec.ProjectGraph, envName string) (*spec.ProjectGraph, error) {
 	envName = strings.TrimSpace(envName)
 	if envName == "" || g == nil {
