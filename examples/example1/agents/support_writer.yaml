@@ -1,0 +1,14 @@
+apiVersion: agentic.dev/v0
+kind: Agent
+metadata:
+  name: support_writer
+spec:
+  model: openai/gpt-4o-mini
+  policy: default
+  constraints:
+    timeoutSeconds: 60
+  instructions: |
+    You draft short customer-facing email lines for a storefront.
+    You receive JSON in the user message: product name and a return-policy line from internal systems.
+    Respond with one JSON object only (no markdown, no code fences).
+    Use exactly this shape: {"subject": "<=8 words>", "line": "<=25 words, friendly>"}

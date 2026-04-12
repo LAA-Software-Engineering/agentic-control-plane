@@ -2,6 +2,8 @@
 
 Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML spec, CLI behaviour, and field semantics, see [**`DESIGN_DOC.md`**](DESIGN_DOC.md).
 
+A checked-in copy of the **OpenAI `support_snippet`** project from **section 4** lives under [**`examples/example1/`**](../examples/example1/). Its **`metadata.name`** is **`example1`**, matching that folder. From the repository root, pass **`--project examples/example1`** to **`agentctl`** (or **`cd` there** and use **`--project .`**).
+
 ---
 
 ## 1. Scaffold with `agentctl init`
@@ -106,6 +108,8 @@ agentctl run    workflow/hello --project my-agent-system
 
 This is a small but **end-to-end** project: a **native echo** step supplies fixed “policy” text, then **`gpt-4o-mini`** drafts a one-line customer reply. You need a valid **[OpenAI API key](https://platform.openai.com/api-keys)** and outbound **HTTPS** to `api.openai.com`.
 
+**Repo copy:** [**`examples/example1/`**](../examples/example1/) — **`agentctl validate --project examples/example1`** from the repo root, or **`agentctl validate --project .`** after **`cd examples/example1`**.
+
 The runtime calls OpenAI’s **`/v1/chat/completions`** endpoint. The agent **must** answer with a **single JSON object** (no markdown fences); the engine parses that object and exposes its fields to **`spec.output`**.
 
 **`totalCostUsd` on runs** is accumulated from each step’s reported cost. Native tools report **0**. For **OpenAI**, the client estimates USD from the API **`usage`** token counts × approximate per-million rates for known models (**`gpt-4o-mini`**, **`gpt-4o`**, and dated variants such as **`gpt-4o-mini-…`**). Other model ids stay at **0** until their rates are added in code; see **`internal/models/openai_cost.go`** and verify against [OpenAI pricing](https://openai.com/api/pricing/).
@@ -113,7 +117,7 @@ The runtime calls OpenAI’s **`/v1/chat/completions`** endpoint. The agent **mu
 ### Layout
 
 ```text
-support-demo/
+example1/
   project.yaml
   policies/default.yaml
   tools/helper.yaml
@@ -129,7 +133,7 @@ Reuse **`policies/default.yaml`** and **`tools/helper.yaml`** from **section 3**
 apiVersion: agentic.dev/v0
 kind: Project
 metadata:
-  name: support-demo
+  name: example1
 spec:
   imports:
     - ./policies/default.yaml
@@ -200,7 +204,7 @@ spec:
       line: ${steps.compose.output.line}
 ```
 
-**Zero-argument demo.** To run **`agentctl run workflow/support_snippet`** with no **`--input`**, put a literal product on the first step and thread it through **`steps.context.output.echo`** (same pattern as in the **`test1/`** sample in this repo):
+**Zero-argument demo.** To run **`agentctl run workflow/support_snippet`** with no **`--input`**, put a literal product on the first step and thread it through **`steps.context.output.echo`** (the checked-in [**`examples/example1/`**](../examples/example1/) tree uses **`${input.product}`** instead, so it **requires** **`--input product=...`** unless you edit the YAML):
 
 ```yaml
     - id: context
@@ -222,24 +226,25 @@ spec:
 
 ### Commands
 
+If you copied the files to another folder, point **`--project`** at that path instead. For the [**in-repo example**](../examples/example1/), from the **repository root** use **`examples/example1`** (the directory path), not only the project name **`example1`**.
+
 ```bash
 export OPENAI_API_KEY="sk-..."   # required for any step that calls the model
 
-agentctl validate --project support-demo
-agentctl plan   --project support-demo
-agentctl apply  --project support-demo --auto-approve
+agentctl validate --project examples/example1
+agentctl plan   --project examples/example1
+agentctl apply  --project examples/example1 --auto-approve
 
-# If the workflow uses ${input.product}:
-agentctl run workflow/support_snippet --project support-demo --input product="ACME USB-C hub"
+# Checked-in example1 workflow uses ${input.product} on the context step:
+agentctl run workflow/support_snippet --project examples/example1 --input product="ACME USB-C hub"
 
-# If the workflow uses a literal + steps.context... (no --input):
-agentctl run workflow/support_snippet --project support-demo
+# After switching the workflow to a literal product + steps.context... (see above), you can omit --input.
 ```
 
 Default **`run`** output is still **Run ID + status**. To see the workflow **`spec.output`** object ( **`product`**, **`subject`**, **`line`**, etc.):
 
 ```bash
-agentctl logs --run <run-id> --project support-demo
+agentctl logs --run <run-id> --project examples/example1
 ```
 
 After the trace table, the CLI prints **Workflow output (from spec.output)** as indented JSON when the run succeeded and **`output_json`** is non-empty.
@@ -247,7 +252,7 @@ After the trace table, the CLI prints **Workflow output (from spec.output)** as 
 Or list recent runs as JSON (includes **`output`** on each run):
 
 ```bash
-agentctl logs -o json --project support-demo
+agentctl logs -o json --project examples/example1
 ```
 
 **`agentctl logs --run <id> -o json`** also includes top-level **`input`**, **`output`**, and **`workflowName`** alongside **`events`**.

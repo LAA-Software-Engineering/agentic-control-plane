@@ -1,0 +1,20 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: example1
+spec:
+  imports:
+    - ./policies/default.yaml
+    - ./tools/helper.yaml
+    - ./agents/support_writer.yaml
+    - ./workflows/support_snippet.yaml
+  defaults:
+    policy: default
+    model: openai/gpt-4o-mini
+  providers:
+    models:
+      mock:
+        type: mock
+      openai:
+        type: openai
+        apiKeyFrom: env:OPENAI_API_KEY
