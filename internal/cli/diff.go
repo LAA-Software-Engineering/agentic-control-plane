@@ -37,44 +37,6 @@ Exit codes (§11.2):
 	}
 }
 
-func parseDiffResourceRef(s string) (spec.ResourceID, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return spec.ResourceID{}, fmt.Errorf("empty Kind/name")
-	}
-	i := strings.IndexByte(s, '/')
-	if i <= 0 || i == len(s)-1 {
-		return spec.ResourceID{}, fmt.Errorf("resource must be Kind/name (e.g. Policy/default), got %q", s)
-	}
-	kindIn, name := s[:i], s[i+1:]
-	kind, err := normalizeKindName(kindIn)
-	if err != nil {
-		return spec.ResourceID{}, err
-	}
-	if strings.TrimSpace(name) == "" {
-		return spec.ResourceID{}, fmt.Errorf("resource name is empty in %q", s)
-	}
-	return spec.ResourceID{Kind: kind, Name: name}, nil
-}
-
-func normalizeKindName(s string) (string, error) {
-	s = strings.TrimSpace(s)
-	known := []string{
-		spec.KindProject,
-		spec.KindAgent,
-		spec.KindTool,
-		spec.KindWorkflow,
-		spec.KindPolicy,
-		spec.KindEnvironment,
-	}
-	for _, k := range known {
-		if strings.EqualFold(s, k) {
-			return k, nil
-		}
-	}
-	return "", fmt.Errorf("unknown resource kind %q (want Project, Agent, Tool, Workflow, Policy, or Environment)", s)
-}
-
 func desiredContainsID(ids []spec.ResourceID, id spec.ResourceID) bool {
 	for _, x := range ids {
 		if x.Kind == id.Kind && x.Name == id.Name {
@@ -171,7 +133,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	appliedByKey := appliedIndex(appliedList)
 
 	if len(args) == 1 {
-		id, err := parseDiffResourceRef(args[0])
+		id, err := ParseResourceRef(args[0])
 		if err != nil {
 			return NewExitError(ExitValidationError, fmt.Errorf("diff: %w", err))
 		}
