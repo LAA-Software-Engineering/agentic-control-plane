@@ -90,7 +90,7 @@ func writePlanOutput(cmd *cobra.Command, env, dsn string, p *plan.Plan, g *Globa
 		if _, err := fmt.Fprintf(out, "Environment: %s\nState: %s\n\n", env, dsn); err != nil {
 			return err
 		}
-		_, err := fmt.Fprint(out, plan.FormatPlan(p))
+		_, err := fmt.Fprintf(out, "%s\n", plan.FormatPlan(p))
 		return err
 	}
 }

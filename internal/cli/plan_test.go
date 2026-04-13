@@ -53,6 +53,9 @@ func TestPlan_firstPlan_allCreates(t *testing.T) {
 	if !strings.Contains(s, "Plan: 3 to add, 0 to change, 0 to delete") {
 		t.Fatalf("summary missing in:\n%s", s)
 	}
+	if !strings.HasSuffix(s, "\n") {
+		t.Fatalf("expected trailing newline in:\n%s", s)
+	}
 	for _, line := range []string{"+ create Project/plan-fixture", "+ create Policy/default", "+ create Tool/helper"} {
 		if !strings.Contains(s, line) {
 			t.Fatalf("missing %q in:\n%s", line, s)
