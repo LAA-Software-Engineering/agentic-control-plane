@@ -40,6 +40,8 @@ spec:
         body: |
           ## Automated review
 
+          ### Summary
+
           ${steps.review_diff.output.summary}
 
           ${steps.review_diff.output.findings_markdown}
