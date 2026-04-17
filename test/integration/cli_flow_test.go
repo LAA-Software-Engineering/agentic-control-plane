@@ -327,3 +327,64 @@ func TestCLI_PrReviewGithubExample(t *testing.T) {
 		t.Fatalf("logs missing %q:\n%s", trace.EventPolicyDenied, out)
 	}
 }
+
+// TestCLI_PrReviewGithubApprovedLiveComment runs the GitHub example with policy approval so
+// pull_request.post_comment hits the stub REST API (Phase C live write path).
+func TestCLI_PrReviewGithubApprovedLiveComment(t *testing.T) {
+	root := repoRoot(t)
+	ex := filepath.Join(root, "examples", "pr-review-github")
+	input := filepath.Join(ex, "fixtures", "sample-input.json")
+	db := filepath.Join(t.TempDir(), "pr-review-github-approved.db")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/testorg/testrepo/pulls/7":
+			if strings.Contains(r.Header.Get("Accept"), "application/vnd.github.diff") {
+				_, _ = w.Write([]byte("diff --git a/x b/x\n"))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"number":7,"title":"Stub PR","head":{"sha":"abc123"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/testorg/testrepo/issues/7/comments":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":1001,"html_url":"https://api.github.test/comments/1001"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("GITHUB_API_URL", srv.URL)
+	t.Setenv("GITHUB_TOKEN", "integration-test-token")
+
+	out, err := runCLI(t, "validate", "--project", ex, "--no-color")
+	if err != nil {
+		t.Fatalf("validate: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Validation successful") {
+		t.Fatalf("validate:\n%s", out)
+	}
+
+	_, err = runCLI(t, "plan", "--project", ex, "--state", db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runCLI(t, "apply", "--project", ex, "--state", db, "--auto-approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err = runCLI(t,
+		"run", "workflow/pr-review-github",
+		"--project", ex,
+		"--state", db,
+		"--input-file", input,
+		"--approve", "tool.github.pull_request.post_comment",
+	)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Status: succeeded") {
+		t.Fatalf("run output:\n%s", out)
+	}
+}

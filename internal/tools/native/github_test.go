@@ -2,6 +2,7 @@ package native
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -107,6 +108,67 @@ func TestGithubPullRequestGet_missingToken(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "GITHUB_TOKEN") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestGithubPostComment_liveRequiresToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	reg := NewRegistry()
+	_, _, err := reg.Dispatch(context.Background(), "pull_request.post_comment", map[string]any{
+		"owner": "o", "repo": "r", "number": "1", "body": "x",
+	})
+	if err == nil || !strings.Contains(err.Error(), "GITHUB_TOKEN") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestGithubPostComment_simulatedWhenRepoContextMissing(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "should-be-ignored")
+	reg := NewRegistry()
+	out, _, err := reg.Dispatch(context.Background(), "pull_request.post_comment", map[string]any{
+		"body": "hello world comment",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["simulated"] != true {
+		t.Fatalf("want simulated, got %#v", out)
+	}
+}
+
+func TestGithubPostComment_liveCreatesIssueComment(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "tok")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/o/r/issues/3/comments" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "hi") {
+			t.Fatalf("body json: %s", string(b))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":42,"html_url":"https://github.com/o/r/issues/3#issuecomment-42"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("GITHUB_API_URL", srv.URL)
+
+	reg := NewRegistry()
+	out, _, err := reg.Dispatch(context.Background(), "pull_request.post_comment", map[string]any{
+		"owner": "o", "repo": "r", "number": "3", "body": "hi",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["simulated"] != false {
+		t.Fatalf("simulated %#v", out["simulated"])
+	}
+	if out["id"].(float64) != 42 {
+		t.Fatalf("id %#v", out["id"])
 	}
 }
 
