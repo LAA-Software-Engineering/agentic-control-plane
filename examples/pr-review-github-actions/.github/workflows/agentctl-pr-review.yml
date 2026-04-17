@@ -1,0 +1,174 @@
+# Copy this file to your repository: .github/workflows/agentctl-pr-review.yml
+#
+# Default AGENTIC_PROJECT targets this monorepo's example. In your own repo, set AGENTIC_PROJECT
+# to the directory that contains project.yaml (e.g. agent-plane/).
+#
+# See docs/GITHUB_ACTIONS.md and examples/pr-review-github-actions/README.md
+
+name: Agentic PR review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      owner:
+        description: Repository owner (org or user)
+        required: true
+        type: string
+      repo:
+        description: Repository name
+        required: true
+        type: string
+      number:
+        description: Pull request number
+        required: true
+        type: string
+
+concurrency:
+  group: agentctl-pr-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Pin intentionally; bump when you pick up new agentctl features.
+  AGENTCTL_VERSION: v0.1.9
+  # Monorepo default; in your downstream repo, use e.g. agent-plane
+  AGENTIC_PROJECT: examples/pr-review-github
+  AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-review.db
+
+jobs:
+  # Review + trace; comment step is policy-blocked unless you treat exit 5 as success (below).
+  review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install agentctl
+        run: |
+          set -euo pipefail
+          version="${AGENTCTL_VERSION}"
+          asset="agentctl-${version}-linux-amd64.tar.gz"
+          url="https://github.com/LAA-Software-Engineering/agentic-control-plane/releases/download/${version}/${asset}"
+          curl -fsSL "$url" -o /tmp/agentctl.tgz
+          tar -xzf /tmp/agentctl.tgz -C /tmp
+          sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
+          agentctl version
+
+      - name: Build workflow input (target repository)
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          number="${{ github.event.pull_request.number }}"
+          jq -n \
+            --arg owner "$owner" \
+            --arg repo "$repo" \
+            --argjson number "$number" \
+            '{owner: $owner, repo: $repo, number: $number}' > /tmp/pr-input.json
+          test -s /tmp/pr-input.json
+
+      - name: Validate project
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: agentctl validate --project "$AGENTIC_PROJECT" --no-color
+
+      - name: Plan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: agentctl plan --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
+
+      - name: Apply
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENTCTL_AUTO_APPROVE: "1"
+        run: agentctl apply --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
+
+      - name: Run PR review (policy-blocked comment is exit 5 — OK here)
+        id: run_review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +e
+          agentctl run workflow/pr-review-github \
+            --project "$AGENTIC_PROJECT" \
+            --state "$AGENTIC_STATE" \
+            --input-file /tmp/pr-input.json
+          ec=$?
+          set -e
+          echo "exit_code=$ec" >> "$GITHUB_OUTPUT"
+          if [[ "$ec" -eq 0 || "$ec" -eq 5 ]]; then
+            exit 0
+          fi
+          exit "$ec"
+
+      - name: Logs (recent workflow runs)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --workflow pr-review-github || true
+
+  # Optional: run manually to post a real PR comment (--approve). Requires pull-requests: write.
+  publish-comment:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-publish.db
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install agentctl
+        run: |
+          set -euo pipefail
+          version="${AGENTCTL_VERSION}"
+          asset="agentctl-${version}-linux-amd64.tar.gz"
+          url="https://github.com/LAA-Software-Engineering/agentic-control-plane/releases/download/${version}/${asset}"
+          curl -fsSL "$url" -o /tmp/agentctl.tgz
+          tar -xzf /tmp/agentctl.tgz -C /tmp
+          sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
+          agentctl version
+
+      - name: Build workflow input
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg owner "${{ inputs.owner }}" \
+            --arg repo "${{ inputs.repo }}" \
+            --arg num "${{ inputs.number }}" \
+            '{owner: $owner, repo: $repo, number: ($num | tonumber)}' > /tmp/pr-input.json
+
+      - name: Validate / plan / apply
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENTCTL_AUTO_APPROVE: "1"
+        run: |
+          set -euo pipefail
+          agentctl validate --project "$AGENTIC_PROJECT" --no-color
+          agentctl plan --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
+          agentctl apply --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
+
+      - name: Run with approved comment post
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          agentctl run workflow/pr-review-github \
+            --project "$AGENTIC_PROJECT" \
+            --state "$AGENTIC_STATE" \
+            --input-file /tmp/pr-input.json \
+            --approve tool.github.pull_request.post_comment
