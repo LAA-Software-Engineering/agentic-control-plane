@@ -356,4 +356,6 @@ The segment before **`/`** must match a key under **`spec.providers.models`**. U
 To run **`agentctl`** on **`pull_request`** (install binary, **`validate` / `plan` / `apply` / `run`**,
 and treating policy denial exit **5** as success when comments are intentionally gated), see
 [**`GITHUB_ACTIONS.md`**](GITHUB_ACTIONS.md) and the template under
-[**`examples/pr-review-github-actions/`**](../examples/pr-review-github-actions/README.md).
+[**`examples/pr-review-github-actions/`**](../examples/pr-review-github-actions/README.md). The
+template also appends a **job summary** (`GITHUB_STEP_SUMMARY`), optional **Actions cache** for the
+SQLite file, and an optional **`gh pr comment`** pointer job (disabled by default).

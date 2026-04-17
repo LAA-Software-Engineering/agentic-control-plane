@@ -17,6 +17,7 @@ job.
 3. Set **`AGENTIC_PROJECT`** in the workflow to your project directory (default in the template is **`examples/pr-review-github`** for use **inside this monorepo**).
 4. Pin **`AGENTCTL_VERSION`** to a [release](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases) tag.
 5. Adjust **`permissions`** to the minimum your jobs need (see [`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)).
+6. **(Phase E)** Optionally set **`AGENTIC_CACHE_STATE: "true"`** and align the **`hashFiles()`** patterns with your project path; set **`AGENTIC_GH_PR_COMMENT: "true"`** only if you want the extra **`gh pr comment`** pointer job (requires **`pull-requests: write`** on that job).
 
 ## Related docs
 

@@ -173,7 +173,7 @@ Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DES
 | `test/integration` | End-to-end CLI flow tests |
 | `docs/DESIGN_DOC.md` | Spec, CLI UX, architecture, roadmap |
 | `docs/GITHUB_ACTIONS.md` | Running **`agentctl`** from GitHub Actions (tokens, exit code **5**, template path) |
-| `examples/pr-review-github-actions/` | Copy-paste **`.github/workflows/agentctl-pr-review.yml`** for CI |
+| `examples/pr-review-github-actions/` | Copy-paste **`.github/workflows/agentctl-pr-review.yml`** for CI (job summary, optional cache / **`gh`** comment) |
 
 ---
 

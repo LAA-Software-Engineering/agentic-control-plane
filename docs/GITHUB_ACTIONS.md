@@ -1,7 +1,8 @@
 # GitHub Actions integration
 
-This document is **Phase D**: how to run **`agentctl`** from GitHub Actions against a declarative
-project (for example the live PR review workflow under **`examples/pr-review-github/`**).
+This document is **Phase D + E**: how to run **`agentctl`** from GitHub Actions against a declarative
+project (for example the live PR review workflow under **`examples/pr-review-github/`**), including
+optional polish (job summary, cache, **`gh`** pointer comments).
 
 For the YAML resources and workflow semantics, see **`DESIGN_DOC.md`** and **`examples/pr-review-github/README.md`**.
 
@@ -26,8 +27,10 @@ in your repo set it to **`agent-plane`** or your path).
   you need:
   - **`contents: read`** — checkout.
   - **`pull-requests: read`** — enough for `pull_request.get` / `diff` on **same-repo** PRs.
-  - **`pull-requests: write`** — required only if a job runs **`post_comment`** for real (e.g. a
-    separate publish job with **`--approve`**).
+  - **`pull-requests: write`** — required if a job runs **`post_comment`** for real (e.g. the
+    **`workflow_dispatch`** publish job with **`--approve`**) or if you enable the optional
+    **`post-pointer`** job (**`gh pr comment`**) via **`AGENTIC_GH_PR_COMMENT: "true"`** (that job
+    is separate so the main review job can stay read-only).
 
 **Fork PRs:** the default `GITHUB_TOKEN` for workflows triggered from forks is **restricted**; many
 write APIs are unavailable. Treat PR-from-fork flows as **read-only review** unless you use a
@@ -54,6 +57,21 @@ The template workflow treats **`0` or `5`** as success for the review job. Hard 
 The template downloads a release archive from this repository’s **Releases** page. Set
 **`AGENTCTL_VERSION`** (e.g. **`v0.1.9`**) to a tag that exists; asset names look like
 **`agentctl-<tag>-linux-amd64.tar.gz`**.
+
+---
+
+## Phase E polish (template defaults)
+
+The workflow template sets these **workflow-level** env vars (tune after copying):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| **`AGENTIC_CACHE_STATE`** | `false` | When `true`, restores/saves the SQLite state file between runs (update **`hashFiles()`** globs if **`AGENTIC_PROJECT`** is not **`examples/pr-review-github`**). |
+| **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, runs a small follow-up job that posts a short **`gh pr comment`** linking to the Actions run (needs **`pull-requests: write`** on that job). |
+
+**`GITHUB_STEP_SUMMARY`:** the review and publish jobs append a markdown table plus a **truncated**
+**`agentctl logs --run …`** excerpt so reviewers see traces in the job summary without opening raw
+logs. **`agentctl run -o json`** captures **`runId`** for that step.
 
 ---
 

@@ -39,6 +39,10 @@ env:
   # Monorepo default; in your downstream repo, use e.g. agent-plane
   AGENTIC_PROJECT: examples/pr-review-github
   AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-review.db
+  # Phase E: set "true" to restore/save SQLite between runs (align hashFiles globs with AGENTIC_PROJECT).
+  AGENTIC_CACHE_STATE: "false"
+  # Phase E: set "true" to post a short pointer comment via gh (requires job post-pointer).
+  AGENTIC_GH_PR_COMMENT: "false"
 
 jobs:
   # Review + trace; comment step is policy-blocked unless you treat exit 5 as success (below).
@@ -48,10 +52,21 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    outputs:
+      run_id: ${{ steps.run_review.outputs.run_id }}
+      exit_code: ${{ steps.run_review.outputs.exit_code }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # When enabling cache, update hashFiles() globs if AGENTIC_PROJECT is not examples/pr-review-github.
+      - name: Cache SQLite state (optional)
+        if: env.AGENTIC_CACHE_STATE == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .agentic/ci-pr-review.db
+          key: ${{ runner.os }}-agentic-pr-review-${{ hashFiles('examples/pr-review-github/**/*.yaml', 'examples/pr-review-github/project.yaml') }}
 
       - name: Install agentctl
         run: |
@@ -103,20 +118,79 @@ jobs:
           agentctl run workflow/pr-review-github \
             --project "$AGENTIC_PROJECT" \
             --state "$AGENTIC_STATE" \
-            --input-file /tmp/pr-input.json
+            --input-file /tmp/pr-input.json \
+            -o json > /tmp/run-meta.json
           ec=$?
           set -e
           echo "exit_code=$ec" >> "$GITHUB_OUTPUT"
+          rid="$(jq -r '.runId // empty' /tmp/run-meta.json)"
+          echo "run_id=$rid" >> "$GITHUB_OUTPUT"
           if [[ "$ec" -eq 0 || "$ec" -eq 5 ]]; then
             exit 0
           fi
           exit "$ec"
 
-      - name: Logs (recent workflow runs)
+      - name: Job summary (trace excerpt)
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --workflow pr-review-github || true
+        run: |
+          set -euo pipefail
+          ec="${{ steps.run_review.outputs.exit_code }}"
+          mapped="no"
+          if [[ "$ec" == "0" || "$ec" == "5" ]]; then mapped="yes"; fi
+          {
+            echo "## Agentic PR review"
+            echo ""
+            echo "| Field | Value |"
+            echo "|------|--------|"
+            echo "| Raw \`agentctl run\` exit | \`$ec\` |"
+            echo "| Run ID | \`${{ steps.run_review.outputs.run_id }}\` |"
+            echo "| Treat as success (0 or 5) | $mapped |"
+            echo ""
+            echo "See **section 11.2** in DESIGN_DOC (\`5\` = policy denial)."
+            echo ""
+            rid="${{ steps.run_review.outputs.run_id }}"
+            if [[ -n "$rid" ]]; then
+              echo "### Trace (latest run, truncated)"
+              echo ""
+              echo '```text'
+              agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --run "$rid" 2>/dev/null | head -n 200 || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Console trace tail
+        if: always() && steps.run_review.outputs.run_id != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --run "${{ steps.run_review.outputs.run_id }}" 2>/dev/null | head -n 120 || true
+
+  # Phase E: optional short PR comment pointing to this workflow run (requires pull-requests: write).
+  post-pointer:
+    needs: review
+    if: >
+      always() &&
+      github.event_name == 'pull_request' &&
+      env.AGENTIC_GH_PR_COMMENT == 'true' &&
+      needs.review.outputs.run_id != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Post pointer comment (gh)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s\n\n%s\n%s\n' \
+            "**agentctl** finished — [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})." \
+            "- Raw exit: \`${{ needs.review.outputs.exit_code }}\` (0 = success, 5 = policy blocked comment)" \
+            "- Run ID: \`${{ needs.review.outputs.run_id }}\`" > /tmp/agentic-gh.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/agentic-gh.md
 
   # Optional: run manually to post a real PR comment (--approve). Requires pull-requests: write.
   publish-comment:
@@ -131,6 +205,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Cache SQLite state (optional)
+        if: env.AGENTIC_CACHE_STATE == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .agentic/ci-pr-publish.db
+          key: ${{ runner.os }}-agentic-pr-publish-${{ hashFiles('examples/pr-review-github/**/*.yaml', 'examples/pr-review-github/project.yaml') }}
 
       - name: Install agentctl
         run: |
@@ -163,12 +244,45 @@ jobs:
           agentctl apply --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
 
       - name: Run with approved comment post
+        id: publish_run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          set +e
           agentctl run workflow/pr-review-github \
             --project "$AGENTIC_PROJECT" \
             --state "$AGENTIC_STATE" \
             --input-file /tmp/pr-input.json \
-            --approve tool.github.pull_request.post_comment
+            --approve tool.github.pull_request.post_comment \
+            -o json > /tmp/publish-run-meta.json
+          ec=$?
+          set -e
+          exit "$ec"
+
+      - name: Job summary (publish run)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          rid=""
+          if [[ -f /tmp/publish-run-meta.json ]]; then
+            rid="$(jq -r '.runId // empty' /tmp/publish-run-meta.json)"
+          fi
+          {
+            echo "## Agentic PR review (publish)"
+            echo ""
+            echo "| Field | Value |"
+            echo "|------|--------|"
+            echo "| Step outcome | \`${{ steps.publish_run.outcome }}\` |"
+            echo "| Run ID | \`$rid\` |"
+            echo ""
+            if [[ -n "$rid" ]]; then
+              echo "### Trace (truncated)"
+              echo ""
+              echo '```text'
+              agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --run "$rid" 2>/dev/null | head -n 200 || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
