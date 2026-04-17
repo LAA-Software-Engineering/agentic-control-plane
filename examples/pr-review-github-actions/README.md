@@ -13,7 +13,7 @@ For the **mock-only** live GitHub path (no OpenAI key, good for CI and integrati
 |------|---------|
 | `project.yaml` | Imports policies, tools, agent, workflow; **`defaults.model: openai/gpt-4o-mini`**; **`OPENAI_API_KEY`** via `apiKeyFrom` |
 | `agents/reviewer.yaml` | **`spec.model: openai/gpt-4o-mini`**, structured JSON output |
-| `workflows/pr-review-github.yaml` | GitHub REST read → reviewer → gated `post_comment` |
+| `workflows/pr-review-github.yaml` | GitHub REST read → reviewer → `post_comment` (CI passes `--approve`) |
 | [`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml) | Runs on PRs; **`AGENTIC_PROJECT`** = **`examples/pr-review-github-actions`** |
 | [`.github/workflows/agentctl-pr-review-publish.yml`](../../.github/workflows/agentctl-pr-review-publish.yml) | Optional manual **`workflow_dispatch`** to post an approved PR comment |
 

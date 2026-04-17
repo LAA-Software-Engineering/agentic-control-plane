@@ -49,11 +49,11 @@ Configure repository secret **`OPENAI_API_KEY`** — the example project’s rev
 - Actions sets **`GITHUB_TOKEN`** automatically. For **`pull_request`** workflows, grant only what
   you need:
   - **`contents: read`** — checkout.
-  - **`pull-requests: read`** — enough for `pull_request.get` / `diff` on **same-repo** PRs.
-  - **`pull-requests: write`** — required if a job runs **`post_comment`** for real (e.g. the
-    **`workflow_dispatch`** publish job with **`--approve`**) or if you enable the optional
-    **`post-pointer`** job (**`gh pr comment`**) via **`AGENTIC_GH_PR_COMMENT: "true"`** (that job
-    is separate so the main review job can stay read-only).
+  - **`pull-requests: write`** — required for the bundled **`review`** job: it runs
+    **`agentctl run … --approve tool.github.pull_request.post_comment`**, which posts a real issue
+    comment on the PR after the model review.
+  - The optional **`post-pointer`** job (**`gh pr comment`**) also needs **`pull-requests: write`**
+    when **`AGENTIC_GH_PR_COMMENT: "true"`** (short pointer to the Actions run).
 
 **Fork PRs:** the default `GITHUB_TOKEN` for workflows triggered from forks is **restricted**; many
 write APIs are unavailable. Treat PR-from-fork flows as **read-only review** unless you use a
@@ -75,10 +75,12 @@ path that supplies credentials safely.
 `agentctl run` returns **exit code 5** when policy blocks a gated tool (for example
 **`tool.github.pull_request.post_comment`** without **`--approve`**).
 
-For a **“review only, no comment”** job, that is often **expected success**: the review and trace
-rows completed; only the publish step was blocked by design.
+The default **`review`** job passes **`--approve tool.github.pull_request.post_comment`**, so a
+successful run should end with exit **`0`** and a real PR comment. The workflow still treats **`5`**
+as success so a forked copy that removes **`--approve`** can keep a **“review only, no comment”**
+job without failing CI.
 
-The template workflow treats **`0` or `5`** as success for the review job. Hard failures use **1**,
+Hard failures use **1**,
 **2**, **3**, **4** (see **section 11.2** in **`DESIGN_DOC.md`**).
 
 ---
@@ -106,7 +108,7 @@ The workflow template sets these **workflow-level** env vars (tune after copying
 |----------|---------|---------|
 | **`AGENTCTL_INSTALL`** | `go-build` in-repo | **`go-build`** compiles **`./cmd/agentctl`** after checkout. Downstream copies should use **`release`** and **`AGENTCTL_VERSION`**. |
 | **`AGENTIC_CACHE_STATE`** | `false` | When `true`, restores/saves the SQLite state file between runs (update **`hashFiles()`** globs if **`AGENTIC_PROJECT`** is not **`examples/pr-review-github-actions`**). |
-| **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, the **`review`** job exports this flag so the follow-up **`post-pointer`** job can run (**`gh pr comment`** needs **`pull-requests: write`** there). Job-level **`if:`** cannot read workflow **`env`**, so the template uses a step output instead. |
+| **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, the **`review`** job exports this flag so the follow-up **`post-pointer`** job can run (**`gh pr comment`** pointer to the Actions run). Job-level **`if:`** cannot read workflow **`env`**, so the template uses a step output instead. |
 
 **`GITHUB_STEP_SUMMARY`:** the review job (and the optional publish workflow) append a markdown table
 plus a **truncated** **`agentctl logs --run …`** excerpt so reviewers see traces in the job summary

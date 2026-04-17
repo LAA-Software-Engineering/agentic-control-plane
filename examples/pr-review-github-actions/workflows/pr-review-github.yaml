@@ -7,7 +7,8 @@ spec:
     Live GitHub path: fetch PR JSON and unified diff via the GitHub REST API, run a structured review
     with the default project model (OpenAI gpt-4o-mini), then post an issue comment on the PR (real
     POST when owner/repo/number/body are set and GITHUB_TOKEN is present; otherwise simulated).
-    The comment step is policy-gated unless you pass --approve for tool.github.pull_request.post_comment.
+    The comment step is policy-gated unless you pass --approve for tool.github.pull_request.post_comment
+    (the bundled Actions PR job passes --approve so a real comment is posted).
     Requires GITHUB_TOKEN, OPENAI_API_KEY (for the reviewer agent), and network access to GitHub/OpenAI.
   policy: guarded-writes
   input:

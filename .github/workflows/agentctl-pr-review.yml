@@ -1,7 +1,8 @@
 # Runs on pull requests in this repository (declarative PR review with OpenAI gpt-4o-mini).
+# Posts an issue comment on the PR (--approve satisfies policy on pull_request.post_comment).
 # Requires repository secret OPENAI_API_KEY. Same-repo PRs only (fork PRs are skipped — no secrets).
 # Optional post-pointer job is skipped unless AGENTIC_GH_PR_COMMENT=true (expected default).
-# Manual publish with --approve lives in agentctl-pr-review-publish.yml (not listed on PR runs).
+# Manual publish for arbitrary owner/repo/number: agentctl-pr-review-publish.yml.
 # See docs/GITHUB_ACTIONS.md and examples/pr-review-github-actions/README.md
 #
 # Downstream repos: copy to .github/workflows/, set AGENTIC_PROJECT, AGENTCTL_INSTALL=release, AGENTCTL_VERSION.
@@ -48,7 +49,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
     outputs:
       run_id: ${{ steps.run_review.outputs.run_id }}
       exit_code: ${{ steps.run_review.outputs.exit_code }}
@@ -132,7 +133,7 @@ jobs:
           AGENTCTL_AUTO_APPROVE: "1"
         run: agentctl apply --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
 
-      - name: Run PR review (policy-blocked comment is exit 5 — OK here)
+      - name: Run PR review (post comment; exit 5 = policy denial — OK)
         id: run_review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -143,6 +144,7 @@ jobs:
             --project "$AGENTIC_PROJECT" \
             --state "$AGENTIC_STATE" \
             --input-file /tmp/pr-input.json \
+            --approve tool.github.pull_request.post_comment \
             -o json > /tmp/run-meta.json
           ec=$?
           set -e
