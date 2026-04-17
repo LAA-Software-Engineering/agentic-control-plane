@@ -65,4 +65,4 @@ without touching GitHub, including an **approved** run that exercises the live c
 
 ## GitHub Actions
 
-See **[`examples/pr-review-github-actions/`](../pr-review-github-actions/README.md)** and the runnable workflow at **[`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml)** (repo root). **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** covers exit code **5**, permissions, and fork PR notes.
+See **[`examples/pr-review-github-actions/`](../pr-review-github-actions/README.md)** and the PR workflow **[`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml)** (optional manual publish: **[`agentctl-pr-review-publish.yml`](../../.github/workflows/agentctl-pr-review-publish.yml)**). **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** covers exit code **5**, permissions, and fork PR notes.

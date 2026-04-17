@@ -14,9 +14,11 @@ For the YAML resources and workflow semantics, see **`DESIGN_DOC.md`**, **`examp
 1. **Project directory** — copy **`examples/pr-review-github-actions/`** (OpenAI reviewer + same
    workflow shape) or your own project into your repo, e.g. **`agent-plane/`**, committed next to
    your application code.
-2. **Workflow file** — copy **`.github/workflows/agentctl-pr-review.yml`** from this repository’s
-   **root** into **your** **`.github/workflows/`** (GitHub Actions only loads workflows from the repo
-   root, not from under **`examples/`**).
+2. **Workflow files** — copy **`.github/workflows/agentctl-pr-review.yml`** (runs on **`pull_request`**)
+   from this repository’s **root** into **your** **`.github/workflows/`** (GitHub Actions only loads
+   workflows from the repo root, not from under **`examples/`**). Optionally copy
+   **`.github/workflows/agentctl-pr-review-publish.yml`** if you want the manual **`workflow_dispatch`**
+   job that posts an approved PR comment (kept separate so PR runs do not show a skipped publish job).
 
 Then edit the workflow **`AGENTIC_PROJECT`** env (default in the template matches this monorepo;
 in your repo set it to **`agent-plane`** or your path).
@@ -25,7 +27,8 @@ in your repo set it to **`agent-plane`** or your path).
 
 GitHub only schedules **`on: pull_request`** workflows from the **default branch** (e.g. **`main`**)
 definition in many cases—especially for a **new** workflow file that does not yet exist on
-**`main`**. If your PR adds **`.github/workflows/agentctl-pr-review.yml`** for the first time, the
+**`main`**. If your PR adds **`.github/workflows/agentctl-pr-review.yml`** (or the publish workflow)
+for the first time, the
 **Agentic PR review** check may **not appear on that PR** until either:
 
 1. The workflow file is merged to **`main`** (then **future** PRs get the check), or  
@@ -105,17 +108,18 @@ The workflow template sets these **workflow-level** env vars (tune after copying
 | **`AGENTIC_CACHE_STATE`** | `false` | When `true`, restores/saves the SQLite state file between runs (update **`hashFiles()`** globs if **`AGENTIC_PROJECT`** is not **`examples/pr-review-github-actions`**). |
 | **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, the **`review`** job exports this flag so the follow-up **`post-pointer`** job can run (**`gh pr comment`** needs **`pull-requests: write`** there). Job-level **`if:`** cannot read workflow **`env`**, so the template uses a step output instead. |
 
-**`GITHUB_STEP_SUMMARY`:** the review and publish jobs append a markdown table plus a **truncated**
-**`agentctl logs --run …`** excerpt so reviewers see traces in the job summary without opening raw
-logs. **`agentctl run -o json`** captures **`runId`** for that step.
+**`GITHUB_STEP_SUMMARY`:** the review job (and the optional publish workflow) append a markdown table
+plus a **truncated** **`agentctl logs --run …`** excerpt so reviewers see traces in the job summary
+without opening raw logs. **`agentctl run -o json`** captures **`runId`** for that step.
 
 ---
 
-## Optional: publish job (`workflow_dispatch`)
+## Optional: publish workflow (`workflow_dispatch`)
 
-The same template file includes a second job that runs **`agentctl run … --approve …`** after a
-**manual** **`workflow_dispatch`**, with **`owner` / `repo` / `number`** inputs. Use this only from
-protected branches or environments after you are comfortable with real PR comments.
+**`.github/workflows/agentctl-pr-review-publish.yml`** runs **`agentctl run … --approve …`** after a
+**manual** **`workflow_dispatch`**, with **`owner` / `repo` / `number`** inputs. It is **not** part of
+the PR workflow file so **`pull_request`** checks do not list a permanently skipped publish job. Use
+it only from protected branches or environments after you are comfortable with real PR comments.
 
 ---
 

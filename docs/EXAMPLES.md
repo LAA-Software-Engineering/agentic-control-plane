@@ -359,5 +359,7 @@ and treating policy denial exit **5** as success when comments are intentionally
 [**`examples/pr-review-github-actions/`**](../examples/pr-review-github-actions/README.md) (includes
 **`project.yaml`** with **OpenAI `gpt-4o-mini`** and the Actions template). The
 template also appends a **job summary** (`GITHUB_STEP_SUMMARY`), optional **Actions cache** for the
-SQLite file, and an optional **`gh pr comment`** pointer job (disabled by default). In this repo the
-runnable workflow file is **`.github/workflows/agentctl-pr-review.yml`** at the repository root.
+SQLite file, and an optional **`gh pr comment`** pointer job (skipped by default when disabled). In
+this repo the PR workflow is **`.github/workflows/agentctl-pr-review.yml`**; manual publish with
+**`--approve`** is **`.github/workflows/agentctl-pr-review-publish.yml`** so PR runs do not list a
+skipped publish job.

@@ -14,7 +14,8 @@ For the **mock-only** live GitHub path (no OpenAI key, good for CI and integrati
 | `project.yaml` | Imports policies, tools, agent, workflow; **`defaults.model: openai/gpt-4o-mini`**; **`OPENAI_API_KEY`** via `apiKeyFrom` |
 | `agents/reviewer.yaml` | **`spec.model: openai/gpt-4o-mini`**, structured JSON output |
 | `workflows/pr-review-github.yaml` | GitHub REST read → reviewer → gated `post_comment` |
-| [`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml) | Runs on PRs in this repo; **`AGENTIC_PROJECT`** = **`examples/pr-review-github-actions`** |
+| [`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml) | Runs on PRs; **`AGENTIC_PROJECT`** = **`examples/pr-review-github-actions`** |
+| [`.github/workflows/agentctl-pr-review-publish.yml`](../../.github/workflows/agentctl-pr-review-publish.yml) | Optional manual **`workflow_dispatch`** to post an approved PR comment |
 
 ## Secrets (GitHub Actions)
 
@@ -42,7 +43,7 @@ agentctl run workflow/pr-review-github \
 ## Checklist (downstream repo)
 
 1. Copy **this entire directory** (the YAML project) into your repo, e.g. **`agent-plane/`**.
-2. Copy **[`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml)** from this repository’s root into **`.github/workflows/`** (or maintain your own workflow).
+2. Copy **[`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml)** from this repository’s root into **`.github/workflows/`** (and optionally **`agentctl-pr-review-publish.yml`** for manual publish). **`post-pointer`** is skipped unless you set **`AGENTIC_GH_PR_COMMENT: "true"`** — that is expected.
 3. Set **`AGENTIC_PROJECT`** in the workflow to that directory (the template default is **`examples/pr-review-github-actions`** for use **inside this monorepo**).
 4. Configure **`OPENAI_API_KEY`**, set **`AGENTCTL_INSTALL: release`** in the workflow (this monorepo defaults to **`go-build`**), and pin **`AGENTCTL_VERSION`** to a release that includes the GitHub native tools you need (see [releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases)).
 5. Adjust **`permissions`** and optional Phase E flags (**`AGENTIC_CACHE_STATE`**, **`AGENTIC_GH_PR_COMMENT`**) per [`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md).

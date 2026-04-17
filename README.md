@@ -25,7 +25,7 @@ Most agent stacks today bury prompts, tool wiring, and permissions in applicatio
 
 The full product vision, YAML spec v0, and architecture are documented in [**`docs/DESIGN_DOC.md`**](docs/DESIGN_DOC.md).
 
-**Featured walkthrough:** declarative PR review with a **policy-blocked** (simulated) GitHub comment — no API keys required — in [**`examples/pr-review-demo/README.md`**](examples/pr-review-demo/README.md). For the **live GitHub read/write path** with a **mock** reviewer (CI-friendly, no API keys), see [**`examples/pr-review-github/README.md`**](examples/pr-review-github/README.md). For the **same flow with OpenAI `gpt-4o-mini`** plus **GitHub Actions**, see [**`examples/pr-review-github-actions/README.md`**](examples/pr-review-github-actions/README.md) (workflow: **[`.github/workflows/agentctl-pr-review.yml`](.github/workflows/agentctl-pr-review.yml)**).
+**Featured walkthrough:** declarative PR review with a **policy-blocked** (simulated) GitHub comment — no API keys required — in [**`examples/pr-review-demo/README.md`**](examples/pr-review-demo/README.md). For the **live GitHub read/write path** with a **mock** reviewer (CI-friendly, no API keys), see [**`examples/pr-review-github/README.md`**](examples/pr-review-github/README.md). For the **same flow with OpenAI `gpt-4o-mini`** plus **GitHub Actions**, see [**`examples/pr-review-github-actions/README.md`**](examples/pr-review-github-actions/README.md) (PR workflow: **[`.github/workflows/agentctl-pr-review.yml`](.github/workflows/agentctl-pr-review.yml)**; optional manual publish: **[`.github/workflows/agentctl-pr-review-publish.yml`](.github/workflows/agentctl-pr-review-publish.yml)**).
 
 ---
 
@@ -173,7 +173,7 @@ Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DES
 | `test/integration` | End-to-end CLI flow tests |
 | `docs/DESIGN_DOC.md` | Spec, CLI UX, architecture, roadmap |
 | `docs/GITHUB_ACTIONS.md` | Running **`agentctl`** from GitHub Actions (tokens, exit code **5**, template path) |
-| `examples/pr-review-github-actions/` | Full **`gpt-4o-mini`** project; PR workflow lives at **`.github/workflows/agentctl-pr-review.yml`** |
+| `examples/pr-review-github-actions/` | Full **`gpt-4o-mini`** project; PR workflow **`.github/workflows/agentctl-pr-review.yml`**; optional publish **`.github/workflows/agentctl-pr-review-publish.yml`** |
 
 ---
 
