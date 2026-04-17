@@ -63,7 +63,6 @@ agentctl run workflow/pr-review-github \
 `go test ./test/integration/...` starts an HTTP stub and sets `GITHUB_API_URL` so the workflow runs
 without touching GitHub, including an **approved** run that exercises the live comment `POST` path.
 
-## GitHub Actions (copy-paste template)
+## GitHub Actions
 
-See **[`examples/pr-review-github-actions/`](../pr-review-github-actions/README.md)** for a workflow
-you can copy into **`.github/workflows/`**, and **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** for exit code **5**, permissions, and fork PR notes.
+See **[`examples/pr-review-github-actions/`](../pr-review-github-actions/README.md)** and the runnable workflow at **[`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml)** (repo root). **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** covers exit code **5**, permissions, and fork PR notes.
