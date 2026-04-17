@@ -28,7 +28,6 @@ func NewRegistry() *Registry {
 
 // Dispatch runs a single operation for a native-typed tool. with is the workflow step input map.
 func (r *Registry) Dispatch(ctx context.Context, operation string, with map[string]any) (map[string]any, ExecMeta, error) {
-	_ = ctx
 	start := time.Now()
 	meta := ExecMeta{CostUSD: 0}
 	switch operation {
@@ -53,13 +52,43 @@ func (r *Registry) Dispatch(ctx context.Context, operation string, with map[stri
 		}
 		return map[string]any{"pull_request": obj}, meta, nil
 	case "pull_request.post_comment":
-		// Simulated GitHub comment post (no network). Used in demos; policy can gate this uses string.
+		// Offline: body only (e.g. examples/pr-review-demo). Live: owner, repo, number, body + GITHUB_TOKEN
+		// creates an issue comment on the PR (same uses string; policy can still gate).
 		meta.DurationMs = time.Since(start).Milliseconds()
-		body, _ := with["body"].(string)
-		return map[string]any{
-			"simulated":    true,
-			"body_preview": truncateRunes(body, 240),
-		}, meta, nil
+		owner, repo, num, bodyText, wantLive := githubLivePostCommentContext(with)
+		if !wantLive {
+			body, _ := with["body"].(string)
+			return map[string]any{
+				"simulated":    true,
+				"body_preview": truncateRunes(body, 240),
+			}, meta, nil
+		}
+		out, err := githubPullRequestPostComment(ctx, owner, repo, num, bodyText)
+		if err != nil {
+			return nil, meta, err
+		}
+		return out, meta, nil
+	case "pull_request.get":
+		out, err := githubPullRequestGet(ctx, with)
+		meta.DurationMs = time.Since(start).Milliseconds()
+		if err != nil {
+			return nil, meta, err
+		}
+		return out, meta, nil
+	case "pull_request.diff":
+		out, err := githubPullRequestDiff(ctx, with)
+		meta.DurationMs = time.Since(start).Milliseconds()
+		if err != nil {
+			return nil, meta, err
+		}
+		return out, meta, nil
+	case "check_runs.list":
+		out, err := githubCheckRunsList(ctx, with)
+		meta.DurationMs = time.Since(start).Milliseconds()
+		if err != nil {
+			return nil, meta, err
+		}
+		return out, meta, nil
 	default:
 		return nil, ExecMeta{}, fmt.Errorf("%w: %q", ErrUnknownOperation, operation)
 	}

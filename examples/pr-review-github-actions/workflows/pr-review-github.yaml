@@ -1,0 +1,53 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: pr-review-github
+spec:
+  description: |
+    Live GitHub path: fetch PR JSON and unified diff via the GitHub REST API, run a structured review
+    with the default project model (OpenAI gpt-4o-mini), then post an issue comment on the PR (real
+    POST when owner/repo/number/body are set and GITHUB_TOKEN is present; otherwise simulated).
+    The comment step is policy-gated unless you pass --approve for tool.github.pull_request.post_comment
+    (the bundled Actions PR job passes --approve so a real comment is posted).
+    Requires GITHUB_TOKEN, OPENAI_API_KEY (for the reviewer agent), and network access to GitHub/OpenAI.
+  policy: guarded-writes
+  input:
+    schema: ./schemas/pr-review-github-input.json
+  steps:
+    - id: fetch_pr
+      uses: tool.github.pull_request.get
+      with:
+        owner: ${input.owner}
+        repo: ${input.repo}
+        number: ${input.number}
+    - id: fetch_diff
+      uses: tool.github.pull_request.diff
+      with:
+        owner: ${input.owner}
+        repo: ${input.repo}
+        number: ${input.number}
+    - id: review_diff
+      agent: reviewer
+      with:
+        pull_request: ${steps.fetch_pr.output.pull_request}
+        diff: ${steps.fetch_diff.output.diff}
+    - id: post_comment
+      uses: tool.github.pull_request.post_comment
+      with:
+        owner: ${input.owner}
+        repo: ${input.repo}
+        number: ${input.number}
+        body: |
+          ## Automated review
+
+          ### Summary
+
+          ${steps.review_diff.output.summary}
+
+          ${steps.review_diff.output.findings_markdown}
+  output:
+    value:
+      pull_request: ${steps.fetch_pr.output.pull_request}
+      diff: ${steps.fetch_diff.output.diff}
+      review: ${steps.review_diff.output}
+      comment: ${steps.post_comment.output}

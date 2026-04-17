@@ -348,3 +348,17 @@ agentctl validate --project my-agent-system -e staging
 | `openai/gpt-4o-mini` | OpenAI API model id `gpt-4o-mini` via `providers.models.openai` |
 
 The segment before **`/`** must match a key under **`spec.providers.models`**. Unsupported provider types fail at runtime with an error from the model registry.
+
+---
+
+## 7. GitHub Actions
+
+To run **`agentctl`** on **`pull_request`** (install binary, **`validate` / `plan` / `apply` / `run`**,
+with **`--approve tool.github.pull_request.post_comment`** so a real review comment is posted), see
+[**`GITHUB_ACTIONS.md`**](GITHUB_ACTIONS.md) and the template under
+[**`examples/pr-review-github-actions/`**](../examples/pr-review-github-actions/README.md) (includes
+**`project.yaml`** with **OpenAI `gpt-4o-mini`** and the Actions template). The
+template also appends a **job summary** (`GITHUB_STEP_SUMMARY`), optional **Actions cache** for the
+SQLite file, and an optional **`gh pr comment`** pointer job (skipped by default when disabled). In
+this repo the PR workflow is **`.github/workflows/agentctl-pr-review.yml`**; manual publish for an
+arbitrary **`owner` / `repo` / `number`** is **`.github/workflows/agentctl-pr-review-publish.yml`**.

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["summary", "findings", "findings_markdown"],
+  "properties": {
+    "summary": { "type": "string" },
+    "findings_markdown": {
+      "type": "string",
+      "description": "Human-readable Markdown list of findings for PR comments (interpolation JSON-encodes arrays)."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "file", "title", "evidence"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["high", "medium", "low", "info"]
+          },
+          "file": { "type": "string" },
+          "title": { "type": "string" },
+          "evidence": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

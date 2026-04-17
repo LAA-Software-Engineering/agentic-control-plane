@@ -1,0 +1,11 @@
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: guarded-writes
+spec:
+  execution:
+    maxWallClockSeconds: 300
+    maxTotalCostUsd: 5
+  approvals:
+    requiredFor:
+      - tool.github.pull_request.post_comment

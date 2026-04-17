@@ -1,0 +1,219 @@
+# Runs on pull requests in this repository (declarative PR review with OpenAI gpt-4o-mini).
+# Posts an issue comment on the PR (--approve satisfies policy on pull_request.post_comment).
+# Requires repository secret OPENAI_API_KEY. Same-repo PRs only (fork PRs are skipped — no secrets).
+# Optional post-pointer job is skipped unless AGENTIC_GH_PR_COMMENT=true (expected default).
+# Manual publish for arbitrary owner/repo/number: agentctl-pr-review-publish.yml.
+# See docs/GITHUB_ACTIONS.md and examples/pr-review-github-actions/README.md
+#
+# Downstream repos: copy to .github/workflows/, set AGENTIC_PROJECT, AGENTCTL_INSTALL=release, AGENTCTL_VERSION.
+
+name: Agentic PR review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
+
+# Must not reference github.event.pull_request.* unless pull_request is the active event — GitHub
+# validates workflow files on push; a bare pull_request.number breaks that pass and can block PR runs.
+concurrency:
+  group: >-
+    agentctl-pr-${{ github.repository }}-${{
+      github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id
+    }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Inside this monorepo, build agentctl from the checkout so PRs always match native tools.
+  # In a downstream repo, set AGENTCTL_INSTALL to "release" and pin AGENTCTL_VERSION to a published tag.
+  AGENTCTL_INSTALL: go-build
+  AGENTCTL_VERSION: v0.1.9
+  AGENTIC_PROJECT: examples/pr-review-github-actions
+  AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-review.db
+  AGENTIC_CACHE_STATE: "false"
+  AGENTIC_GH_PR_COMMENT: "false"
+
+jobs:
+  review:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      run_id: ${{ steps.run_review.outputs.run_id }}
+      exit_code: ${{ steps.run_review.outputs.exit_code }}
+      gh_pr_comment: ${{ steps.export_flags.outputs.gh_pr_comment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Export workflow flags for downstream jobs
+        id: export_flags
+        run: |
+          set -euo pipefail
+          echo "gh_pr_comment=${AGENTIC_GH_PR_COMMENT:-false}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache SQLite state (optional)
+        if: env.AGENTIC_CACHE_STATE == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .agentic/ci-pr-review.db
+          key: ${{ runner.os }}-agentic-pr-review-${{ hashFiles('examples/pr-review-github-actions/**/*.yaml', 'examples/pr-review-github-actions/project.yaml') }}
+
+      - name: Set up Go (build agentctl from checkout)
+        if: env.AGENTCTL_INSTALL == 'go-build'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install agentctl (go build from checkout)
+        if: env.AGENTCTL_INSTALL == 'go-build'
+        run: |
+          set -euo pipefail
+          go build -o /tmp/agentctl ./cmd/agentctl
+          sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
+          agentctl version
+
+      - name: Install agentctl (release tarball)
+        if: env.AGENTCTL_INSTALL != 'go-build'
+        run: |
+          set -euo pipefail
+          version="${AGENTCTL_VERSION}"
+          asset="agentctl-${version}-linux-amd64.tar.gz"
+          url="https://github.com/LAA-Software-Engineering/agentic-control-plane/releases/download/${version}/${asset}"
+          curl -fsSL "$url" -o /tmp/agentctl.tgz
+          tar -xzf /tmp/agentctl.tgz -C /tmp
+          if [[ ! -x /tmp/agentctl ]]; then
+            echo "Release tarball did not extract ./agentctl to /tmp (layout may have changed). Contents:" >&2
+            tar -tzf /tmp/agentctl.tgz | head -n 50 >&2 || true
+            exit 1
+          fi
+          sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
+          agentctl version
+
+      - name: Build workflow input (target repository)
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          number="${{ github.event.pull_request.number }}"
+          jq -n \
+            --arg owner "$owner" \
+            --arg repo "$repo" \
+            --argjson number "$number" \
+            '{owner: $owner, repo: $repo, number: $number}' > /tmp/pr-input.json
+          test -s /tmp/pr-input.json
+
+      - name: Validate project
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: agentctl validate --project "$AGENTIC_PROJECT" --no-color
+
+      - name: Plan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: agentctl plan --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
+
+      - name: Apply
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENTCTL_AUTO_APPROVE: "1"
+        run: agentctl apply --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
+
+      - name: Run PR review (post comment; exit 5 = policy denial — OK)
+        id: run_review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +e
+          agentctl run workflow/pr-review-github \
+            --project "$AGENTIC_PROJECT" \
+            --state "$AGENTIC_STATE" \
+            --input-file /tmp/pr-input.json \
+            --approve tool.github.pull_request.post_comment \
+            -o json > /tmp/run-meta.json
+          ec=$?
+          set -e
+          echo "exit_code=$ec" >> "$GITHUB_OUTPUT"
+          rid="$(jq -r '.runId // empty' /tmp/run-meta.json)"
+          echo "run_id=$rid" >> "$GITHUB_OUTPUT"
+          if [[ "$ec" -eq 0 || "$ec" -eq 5 ]]; then
+            exit 0
+          fi
+          exit "$ec"
+
+      - name: Job summary (trace excerpt)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ec="${{ steps.run_review.outputs.exit_code }}"
+          mapped="no"
+          if [[ "$ec" == "0" || "$ec" == "5" ]]; then mapped="yes"; fi
+          {
+            echo "## Agentic PR review"
+            echo ""
+            echo "| Field | Value |"
+            echo "|------|--------|"
+            echo "| Raw \`agentctl run\` exit | \`$ec\` |"
+            echo "| Run ID | \`${{ steps.run_review.outputs.run_id }}\` |"
+            echo "| Treat as success (0 or 5) | $mapped |"
+            echo ""
+            echo "See **section 11.2** in DESIGN_DOC (\`5\` = policy denial)."
+            echo ""
+            rid="${{ steps.run_review.outputs.run_id }}"
+            if [[ -n "$rid" ]]; then
+              echo "### Trace (latest run, truncated)"
+              echo ""
+              echo '```text'
+              agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --run "$rid" 2>/dev/null | head -n 200 || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Console trace tail
+        if: always() && steps.run_review.outputs.run_id != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --run "${{ steps.run_review.outputs.run_id }}" 2>/dev/null | head -n 120 || true
+
+  # Optional: set workflow env AGENTIC_GH_PR_COMMENT to "true" to post a short gh pr comment (needs write).
+  post-pointer:
+    needs: review
+    if: >
+      always() &&
+      github.event_name == 'pull_request' &&
+      needs.review.outputs.gh_pr_comment == 'true' &&
+      needs.review.outputs.run_id != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Post pointer comment (gh)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s\n\n%s\n%s\n' \
+            "**agentctl** finished — [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})." \
+            "- Raw exit: \`${{ needs.review.outputs.exit_code }}\` (0 = success, 5 = policy blocked comment)" \
+            "- Run ID: \`${{ needs.review.outputs.run_id }}\`" > /tmp/agentic-gh.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/agentic-gh.md
