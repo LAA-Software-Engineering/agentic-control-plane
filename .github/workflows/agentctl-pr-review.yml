@@ -1,8 +1,8 @@
 # Runs on pull requests in this repository (declarative PR review with OpenAI gpt-4o-mini).
-# Requires repository secret OPENAI_API_KEY. See docs/GITHUB_ACTIONS.md and
-# examples/pr-review-github-actions/README.md
+# Requires repository secret OPENAI_API_KEY. Same-repo PRs only (fork PRs are skipped — no secrets).
+# See docs/GITHUB_ACTIONS.md and examples/pr-review-github-actions/README.md
 #
-# Downstream repos: copy this file to .github/workflows/ and set AGENTIC_PROJECT to your project path.
+# Downstream repos: copy to .github/workflows/, set AGENTIC_PROJECT, AGENTCTL_INSTALL=release, AGENTCTL_VERSION.
 
 name: Agentic PR review
 
@@ -41,6 +41,9 @@ defaults:
     shell: bash
 
 env:
+  # Inside this monorepo, build agentctl from the checkout so PRs always match native tools.
+  # In a downstream repo, set AGENTCTL_INSTALL to "release" and pin AGENTCTL_VERSION to a published tag.
+  AGENTCTL_INSTALL: go-build
   AGENTCTL_VERSION: v0.1.9
   AGENTIC_PROJECT: examples/pr-review-github-actions
   AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-review.db
@@ -49,7 +52,9 @@ env:
 
 jobs:
   review:
-    if: github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -59,10 +64,17 @@ jobs:
     outputs:
       run_id: ${{ steps.run_review.outputs.run_id }}
       exit_code: ${{ steps.run_review.outputs.exit_code }}
+      gh_pr_comment: ${{ steps.export_flags.outputs.gh_pr_comment }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Export workflow flags for downstream jobs
+        id: export_flags
+        run: |
+          set -euo pipefail
+          echo "gh_pr_comment=${AGENTIC_GH_PR_COMMENT:-false}" >> "$GITHUB_OUTPUT"
 
       - name: Cache SQLite state (optional)
         if: env.AGENTIC_CACHE_STATE == 'true'
@@ -71,7 +83,23 @@ jobs:
           path: .agentic/ci-pr-review.db
           key: ${{ runner.os }}-agentic-pr-review-${{ hashFiles('examples/pr-review-github-actions/**/*.yaml', 'examples/pr-review-github-actions/project.yaml') }}
 
-      - name: Install agentctl
+      - name: Set up Go (build agentctl from checkout)
+        if: env.AGENTCTL_INSTALL == 'go-build'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install agentctl (go build from checkout)
+        if: env.AGENTCTL_INSTALL == 'go-build'
+        run: |
+          set -euo pipefail
+          go build -o /tmp/agentctl ./cmd/agentctl
+          sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
+          agentctl version
+
+      - name: Install agentctl (release tarball)
+        if: env.AGENTCTL_INSTALL != 'go-build'
         run: |
           set -euo pipefail
           version="${AGENTCTL_VERSION}"
@@ -79,6 +107,11 @@ jobs:
           url="https://github.com/LAA-Software-Engineering/agentic-control-plane/releases/download/${version}/${asset}"
           curl -fsSL "$url" -o /tmp/agentctl.tgz
           tar -xzf /tmp/agentctl.tgz -C /tmp
+          if [[ ! -x /tmp/agentctl ]]; then
+            echo "Release tarball did not extract ./agentctl to /tmp (layout may have changed). Contents:" >&2
+            tar -tzf /tmp/agentctl.tgz | head -n 50 >&2 || true
+            exit 1
+          fi
           sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
           agentctl version
 
@@ -176,7 +209,7 @@ jobs:
     if: >
       always() &&
       github.event_name == 'pull_request' &&
-      env.AGENTIC_GH_PR_COMMENT == 'true' &&
+      needs.review.outputs.gh_pr_comment == 'true' &&
       needs.review.outputs.run_id != ''
     runs-on: ubuntu-latest
     permissions:
@@ -215,7 +248,23 @@ jobs:
           path: .agentic/ci-pr-publish.db
           key: ${{ runner.os }}-agentic-pr-publish-${{ hashFiles('examples/pr-review-github-actions/**/*.yaml', 'examples/pr-review-github-actions/project.yaml') }}
 
-      - name: Install agentctl
+      - name: Set up Go (build agentctl from checkout)
+        if: env.AGENTCTL_INSTALL == 'go-build'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install agentctl (go build from checkout)
+        if: env.AGENTCTL_INSTALL == 'go-build'
+        run: |
+          set -euo pipefail
+          go build -o /tmp/agentctl ./cmd/agentctl
+          sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
+          agentctl version
+
+      - name: Install agentctl (release tarball)
+        if: env.AGENTCTL_INSTALL != 'go-build'
         run: |
           set -euo pipefail
           version="${AGENTCTL_VERSION}"
@@ -223,6 +272,11 @@ jobs:
           url="https://github.com/LAA-Software-Engineering/agentic-control-plane/releases/download/${version}/${asset}"
           curl -fsSL "$url" -o /tmp/agentctl.tgz
           tar -xzf /tmp/agentctl.tgz -C /tmp
+          if [[ ! -x /tmp/agentctl ]]; then
+            echo "Release tarball did not extract ./agentctl to /tmp (layout may have changed). Contents:" >&2
+            tar -tzf /tmp/agentctl.tgz | head -n 50 >&2 || true
+            exit 1
+          fi
           sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
           agentctl version
 

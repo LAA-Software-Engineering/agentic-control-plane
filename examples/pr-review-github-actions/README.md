@@ -44,7 +44,7 @@ agentctl run workflow/pr-review-github \
 1. Copy **this entire directory** (the YAML project) into your repo, e.g. **`agent-plane/`**.
 2. Copy **[`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml)** from this repository’s root into **`.github/workflows/`** (or maintain your own workflow).
 3. Set **`AGENTIC_PROJECT`** in the workflow to that directory (the template default is **`examples/pr-review-github-actions`** for use **inside this monorepo**).
-4. Configure **`OPENAI_API_KEY`** and pin **`AGENTCTL_VERSION`** (see [releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases)).
+4. Configure **`OPENAI_API_KEY`**, set **`AGENTCTL_INSTALL: release`** in the workflow (this monorepo defaults to **`go-build`**), and pin **`AGENTCTL_VERSION`** to a release that includes the GitHub native tools you need (see [releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases)).
 5. Adjust **`permissions`** and optional Phase E flags (**`AGENTIC_CACHE_STATE`**, **`AGENTIC_GH_PR_COMMENT`**) per [`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md).
 
 ## Troubleshooting: workflow not listed on the PR

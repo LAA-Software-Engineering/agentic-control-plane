@@ -57,6 +57,14 @@ write APIs are unavailable. Treat PR-from-fork flows as **read-only review** unl
 separate token (PAT/GitHub App) with explicit policy. See GitHub’s documentation on
 [permissions for the `GITHUB_TOKEN`](https://docs.github.com/en/actions/security-guides/automatic-token-authentication#permissions-for-the-github_token).
 
+**Fork PRs and secrets:** `pull_request` workflows triggered from a **fork** do not receive your
+repository **Actions secrets** (including **`OPENAI_API_KEY`**), except what GitHub documents for
+that event class. The bundled template therefore **skips** the **`review`** job when
+**`github.event.pull_request.head.repo.full_name != github.repository`**, so outside contributors
+do not get a failing check from an empty API key. To run automated review on fork PRs you would need
+a different trigger (for example **`pull_request_target`**, with its own security trade-offs) or a
+path that supplies credentials safely.
+
 ---
 
 ## Exit code **5** (policy denial) in CI
@@ -72,11 +80,18 @@ The template workflow treats **`0` or `5`** as success for the review job. Hard 
 
 ---
 
-## Pinning `agentctl`
+## Installing `agentctl` in Actions
 
-The template downloads a release archive from this repository’s **Releases** page. Set
-**`AGENTCTL_VERSION`** (e.g. **`v0.1.9`**) to a tag that exists; asset names look like
-**`agentctl-<tag>-linux-amd64.tar.gz`**.
+The template supports two modes via **`AGENTCTL_INSTALL`**:
+
+| Value | When to use |
+|-------|-------------|
+| **`go-build`** (default in this monorepo) | The workflow checks out this repository and runs **`go build ./cmd/agentctl`**. Use this while developing here so CI always matches the native tools on the branch (no waiting on a release asset). |
+| **`release`** | Set **`AGENTCTL_INSTALL`** to **`release`** (any value other than **`go-build`**) in a **downstream** repo that only copies the YAML project, not the Go source. Then set **`AGENTCTL_VERSION`** (e.g. **`v0.1.9`**) to a tag whose asset **`agentctl-<tag>-linux-amd64.tar.gz`** exists on **Releases**. |
+
+Native GitHub REST tools (**`pull_request.get`**, **`pull_request.diff`**, etc.) require an
+**`agentctl`** binary built from a release that includes them; if **`release`** mode fails with
+unknown tool **`uses`**, bump **`AGENTCTL_VERSION`** after a newer release is published.
 
 ---
 
@@ -86,8 +101,9 @@ The workflow template sets these **workflow-level** env vars (tune after copying
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| **`AGENTCTL_INSTALL`** | `go-build` in-repo | **`go-build`** compiles **`./cmd/agentctl`** after checkout. Downstream copies should use **`release`** and **`AGENTCTL_VERSION`**. |
 | **`AGENTIC_CACHE_STATE`** | `false` | When `true`, restores/saves the SQLite state file between runs (update **`hashFiles()`** globs if **`AGENTIC_PROJECT`** is not **`examples/pr-review-github-actions`**). |
-| **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, runs a small follow-up job that posts a short **`gh pr comment`** linking to the Actions run (needs **`pull-requests: write`** on that job). |
+| **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, the **`review`** job exports this flag so the follow-up **`post-pointer`** job can run (**`gh pr comment`** needs **`pull-requests: write`** there). Job-level **`if:`** cannot read workflow **`env`**, so the template uses a step output instead. |
 
 **`GITHUB_STEP_SUMMARY`:** the review and publish jobs append a markdown table plus a **truncated**
 **`agentctl logs --run …`** excerpt so reviewers see traces in the job summary without opening raw

@@ -41,7 +41,7 @@ spec:
 
           ${steps.review_diff.output.summary}
 
-          ${steps.review_diff.output.findings}
+          ${steps.review_diff.output.findings_markdown}
   output:
     value:
       pull_request: ${steps.fetch_pr.output.pull_request}

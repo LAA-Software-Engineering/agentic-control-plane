@@ -24,8 +24,10 @@ spec:
           "title": "<short issue title>",
           "evidence": "<what in the PR suggests this>"
         }
-      ]
+      ],
+      "findings_markdown": "<Markdown body for humans: use '### Findings' then a bullet per finding; each bullet starts with **severity** · `file` — **title**, then a short line for evidence. Use '-' bullets only. If findings is empty, use a single line like 'No issues found.'>"
     }
-    If there are no issues, return an empty "findings" array and a positive summary.
+    The "findings" array is the structured source of truth; "findings_markdown" must describe the same items in readable form for GitHub comments.
+    If there are no issues, return an empty "findings" array, a positive summary, and findings_markdown like "No issues found."
   output:
     schema: ./schemas/review-output.json
