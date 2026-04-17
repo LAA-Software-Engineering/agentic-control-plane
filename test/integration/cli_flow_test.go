@@ -249,6 +249,22 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 	})
 }
 
+// TestCLI_ValidatePrReviewGithubActionsProject ensures the OpenAI (gpt-4o-mini) + Actions example graph loads.
+func TestCLI_ValidatePrReviewGithubActionsProject(t *testing.T) {
+	root := repoRoot(t)
+	ex := filepath.Join(root, "examples", "pr-review-github-actions")
+	if _, err := os.Stat(filepath.Join(ex, "project.yaml")); err != nil {
+		t.Fatalf("example project: %v", err)
+	}
+	out, err := runCLI(t, "validate", "--project", ex, "--no-color")
+	if err != nil {
+		t.Fatalf("validate: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Validation successful") {
+		t.Fatalf("validate:\n%s", out)
+	}
+}
+
 // TestCLI_PrReviewGithubExample exercises examples/pr-review-github against a stub GitHub API
 // (GITHUB_API_URL) so CI needs no real token or network to github.com.
 func TestCLI_PrReviewGithubExample(t *testing.T) {

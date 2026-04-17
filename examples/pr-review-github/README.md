@@ -1,9 +1,11 @@
 # PR review (live GitHub read + optional real comment)
 
+> **OpenAI reviewer + Actions bundle:** for **`gpt-4o-mini`** and the copy-paste workflow in the same tree, use **[`examples/pr-review-github-actions/`](../pr-review-github-actions/README.md)**. This directory keeps a **mock** default model for deterministic CI and integration tests.
+
 This example wires **Phase B + C** of the GitHub integration:
 
 - **Read:** `pull_request.get` and `pull_request.diff` against the GitHub REST API.
-- **Review:** structured mock (or real) model output validated by JSON Schema.
+- **Review:** structured **mock** model output validated by JSON Schema.
 - **Write:** `pull_request.post_comment` performs a **real** `POST …/issues/{n}/comments` when
   `owner`, `repo`, `number`, and `body` are set and **`GITHUB_TOKEN` is present**; otherwise it stays
   **simulated** (as in `examples/pr-review-demo`). The comment step remains **policy-gated** unless

@@ -1,7 +1,7 @@
 # Copy this file to your repository: .github/workflows/agentctl-pr-review.yml
 #
-# Default AGENTIC_PROJECT targets this monorepo's example. In your own repo, set AGENTIC_PROJECT
-# to the directory that contains project.yaml (e.g. agent-plane/).
+# Default AGENTIC_PROJECT is examples/pr-review-github-actions (OpenAI gpt-4o-mini reviewer).
+# In your own repo, set AGENTIC_PROJECT to the directory that contains project.yaml (e.g. agent-plane/).
 #
 # See docs/GITHUB_ACTIONS.md and examples/pr-review-github-actions/README.md
 
@@ -36,8 +36,8 @@ defaults:
 env:
   # Pin intentionally; bump when you pick up new agentctl features.
   AGENTCTL_VERSION: v0.1.9
-  # Monorepo default; in your downstream repo, use e.g. agent-plane
-  AGENTIC_PROJECT: examples/pr-review-github
+  # Monorepo default (OpenAI project in this folder); in your downstream repo, use e.g. agent-plane
+  AGENTIC_PROJECT: examples/pr-review-github-actions
   AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-review.db
   # Phase E: set "true" to restore/save SQLite between runs (align hashFiles globs with AGENTIC_PROJECT).
   AGENTIC_CACHE_STATE: "false"
@@ -49,6 +49,8 @@ jobs:
   review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     permissions:
       contents: read
       pull-requests: read
@@ -60,13 +62,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # When enabling cache, update hashFiles() globs if AGENTIC_PROJECT is not examples/pr-review-github.
+      # When enabling cache, update hashFiles() globs if AGENTIC_PROJECT is not examples/pr-review-github-actions.
       - name: Cache SQLite state (optional)
         if: env.AGENTIC_CACHE_STATE == 'true'
         uses: actions/cache@v4
         with:
           path: .agentic/ci-pr-review.db
-          key: ${{ runner.os }}-agentic-pr-review-${{ hashFiles('examples/pr-review-github/**/*.yaml', 'examples/pr-review-github/project.yaml') }}
+          key: ${{ runner.os }}-agentic-pr-review-${{ hashFiles('examples/pr-review-github-actions/**/*.yaml', 'examples/pr-review-github-actions/project.yaml') }}
 
       - name: Install agentctl
         run: |
@@ -198,6 +200,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-publish.db
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     permissions:
       contents: read
       pull-requests: write
@@ -211,7 +214,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .agentic/ci-pr-publish.db
-          key: ${{ runner.os }}-agentic-pr-publish-${{ hashFiles('examples/pr-review-github/**/*.yaml', 'examples/pr-review-github/project.yaml') }}
+          key: ${{ runner.os }}-agentic-pr-publish-${{ hashFiles('examples/pr-review-github-actions/**/*.yaml', 'examples/pr-review-github-actions/project.yaml') }}
 
       - name: Install agentctl
         run: |

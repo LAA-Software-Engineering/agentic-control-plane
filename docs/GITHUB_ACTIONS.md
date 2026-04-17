@@ -1,23 +1,28 @@
 # GitHub Actions integration
 
 This document is **Phase D + E**: how to run **`agentctl`** from GitHub Actions against a declarative
-project (for example the live PR review workflow under **`examples/pr-review-github/`**), including
+project (the bundled example is **`examples/pr-review-github-actions/`**, which uses **OpenAI
+`gpt-4o-mini`** for the reviewer agent), including
 optional polish (job summary, cache, **`gh`** pointer comments).
 
-For the YAML resources and workflow semantics, see **`DESIGN_DOC.md`** and **`examples/pr-review-github/README.md`**.
+For the YAML resources and workflow semantics, see **`DESIGN_DOC.md`**, **`examples/pr-review-github-actions/README.md`**, and (mock reviewer variant) **`examples/pr-review-github/README.md`**.
 
 ---
 
 ## What you copy into your repository
 
-1. **Project directory** — copy `examples/pr-review-github/` (or your own project) into your repo,
-   e.g. **`agent-plane/`**, committed next to your application code.
+1. **Project directory** — copy **`examples/pr-review-github-actions/`** (OpenAI reviewer + same
+   workflow shape) or your own project into your repo, e.g. **`agent-plane/`**, committed next to
+   your application code.
 2. **Workflow file** — copy
    **`examples/pr-review-github-actions/.github/workflows/agentctl-pr-review.yml`** into **your**
    **`.github/workflows/`** (same relative path under the repo root).
 
 Then edit the workflow **`AGENTIC_PROJECT`** env (default in the template matches this monorepo;
 in your repo set it to **`agent-plane`** or your path).
+
+Configure repository secret **`OPENAI_API_KEY`** — the example project’s reviewer agent calls OpenAI
+(**`gpt-4o-mini`**) during **`agentctl run`**.
 
 ---
 
@@ -66,7 +71,7 @@ The workflow template sets these **workflow-level** env vars (tune after copying
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| **`AGENTIC_CACHE_STATE`** | `false` | When `true`, restores/saves the SQLite state file between runs (update **`hashFiles()`** globs if **`AGENTIC_PROJECT`** is not **`examples/pr-review-github`**). |
+| **`AGENTIC_CACHE_STATE`** | `false` | When `true`, restores/saves the SQLite state file between runs (update **`hashFiles()`** globs if **`AGENTIC_PROJECT`** is not **`examples/pr-review-github-actions`**). |
 | **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, runs a small follow-up job that posts a short **`gh pr comment`** linking to the Actions run (needs **`pull-requests: write`** on that job). |
 
 **`GITHUB_STEP_SUMMARY`:** the review and publish jobs append a markdown table plus a **truncated**
@@ -86,7 +91,7 @@ protected branches or environments after you are comfortable with real PR commen
 ## In-repo reference layout
 
 When developing **inside** the **agentic-control-plane** monorepo, you can point
-**`AGENTIC_PROJECT`** at **`examples/pr-review-github`** so the checked-in workflow matches the
-copy-paste template without moving files.
+**`AGENTIC_PROJECT`** at **`examples/pr-review-github-actions`** so the checked-in workflow matches
+the copy-paste template without moving files.
 
 See also **`examples/pr-review-github-actions/README.md`** for a short checklist.

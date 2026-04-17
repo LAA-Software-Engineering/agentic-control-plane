@@ -1,25 +1,52 @@
-# GitHub Actions template (Phase D)
+# PR review with GitHub Actions + OpenAI (`gpt-4o-mini`)
 
-This directory holds a **ready-to-copy** GitHub Actions workflow for running **`agentctl`** on pull
-requests (validate → plan → apply → `workflow/pr-review-github`), plus an optional **manual publish**
-job.
+This directory is a **complete example** you can copy or run from the monorepo root:
 
-## Files
+1. **Declarative project** (`project.yaml`, policies, tools, **`workflow/pr-review-github`**, agent **`reviewer`**) that uses **OpenAI `gpt-4o-mini`** for the review step (not the mock model).
+2. **GitHub Actions template** under [`.github/workflows/agentctl-pr-review.yml`](.github/workflows/agentctl-pr-review.yml) — copy that file into **your** repository’s **`.github/workflows/`**.
+
+For the **mock-only** live GitHub path (no OpenAI key, good for CI and integration tests in this repo), see **[`examples/pr-review-github/`](../pr-review-github/README.md)**.
+
+## Layout
 
 | Path | Purpose |
 |------|---------|
-| [`.github/workflows/agentctl-pr-review.yml`](.github/workflows/agentctl-pr-review.yml) | Copy into **your** repo’s `.github/workflows/` |
+| `project.yaml` | Imports policies, tools, agent, workflow; **`defaults.model: openai/gpt-4o-mini`**; **`OPENAI_API_KEY`** via `apiKeyFrom` |
+| `agents/reviewer.yaml` | **`spec.model: openai/gpt-4o-mini`**, structured JSON output |
+| `workflows/pr-review-github.yaml` | GitHub REST read → reviewer → gated `post_comment` |
+| [`.github/workflows/agentctl-pr-review.yml`](.github/workflows/agentctl-pr-review.yml) | CI template (defaults **`AGENTIC_PROJECT`** to this folder) |
 
-## Checklist
+## Secrets (GitHub Actions)
 
-1. Copy **`examples/pr-review-github/`** into your repository (e.g. **`agent-plane/`**), or maintain your own project with the same workflow name **`pr-review-github`**.
-2. Copy the workflow YAML into **`.github/workflows/`**.
-3. Set **`AGENTIC_PROJECT`** in the workflow to your project directory (default in the template is **`examples/pr-review-github`** for use **inside this monorepo**).
-4. Pin **`AGENTCTL_VERSION`** to a [release](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases) tag.
-5. Adjust **`permissions`** to the minimum your jobs need (see [`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)).
-6. **(Phase E)** Optionally set **`AGENTIC_CACHE_STATE: "true"`** and align the **`hashFiles()`** patterns with your project path; set **`AGENTIC_GH_PR_COMMENT: "true"`** only if you want the extra **`gh pr comment`** pointer job (requires **`pull-requests: write`** on that job).
+| Secret | Required for |
+|--------|----------------|
+| **`OPENAI_API_KEY`** | **`agentctl run`** (the **`review_diff`** agent step calls OpenAI) |
+| **`GITHUB_TOKEN`** | Provided by Actions; used for GitHub REST tools |
+
+Add **`OPENAI_API_KEY`** in the repository **Settings → Secrets and variables → Actions**.
+
+## Local run (real GitHub + OpenAI)
+
+```bash
+export OPENAI_API_KEY=sk-...
+export GITHUB_TOKEN=ghp_...
+agentctl validate --project examples/pr-review-github-actions
+agentctl plan   --project examples/pr-review-github-actions --state /tmp/pr-actions.db
+agentctl apply  --project examples/pr-review-github-actions --state /tmp/pr-actions.db --auto-approve
+agentctl run workflow/pr-review-github \
+  --project examples/pr-review-github-actions \
+  --state /tmp/pr-actions.db \
+  --input '{"owner":"ORG","repo":"REPO","number":123}'
+```
+
+## Checklist (downstream repo)
+
+1. Copy **this entire directory** (or only the YAML tree without `.github/`) into your repo, e.g. **`agent-plane/`**.
+2. Copy **`.github/workflows/agentctl-pr-review.yml`** into **`.github/workflows/`**.
+3. Set **`AGENTIC_PROJECT`** in the workflow to that directory (the template default is **`examples/pr-review-github-actions`** for use **inside this monorepo**).
+4. Configure **`OPENAI_API_KEY`** and pin **`AGENTCTL_VERSION`** (see [releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases)).
+5. Adjust **`permissions`** and optional Phase E flags (**`AGENTIC_CACHE_STATE`**, **`AGENTIC_GH_PR_COMMENT`**) per [`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md).
 
 ## Related docs
 
-- **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** — exit code **5**, tokens, fork PR caveats.
-- **[`examples/pr-review-github/README.md`](../pr-review-github/README.md)** — what the workflow runs.
+- **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** — exit code **5**, tokens, fork PR caveats, job summary / cache / **`gh`**.

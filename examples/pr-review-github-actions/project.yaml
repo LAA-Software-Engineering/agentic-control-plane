@@ -1,0 +1,21 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: pr-review-github-actions
+spec:
+  imports:
+    - ./policies/guarded-writes.yaml
+    - ./tools/github.yaml
+    - ./agents/reviewer.yaml
+    - ./workflows/pr-review-github.yaml
+  defaults:
+    policy: guarded-writes
+    model: openai/gpt-4o-mini
+    runtime: local
+  providers:
+    models:
+      mock:
+        type: mock
+      openai:
+        type: openai
+        apiKeyFrom: env:OPENAI_API_KEY
