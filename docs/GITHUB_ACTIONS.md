@@ -21,6 +21,21 @@ For the YAML resources and workflow semantics, see **`DESIGN_DOC.md`**, **`examp
 Then edit the workflow **`AGENTIC_PROJECT`** env (default in the template matches this monorepo;
 in your repo set it to **`agent-plane`** or your path).
 
+### First-time introduction on a pull request
+
+GitHub only schedules **`on: pull_request`** workflows from the **default branch** (e.g. **`main`**)
+definition in many cases—especially for a **new** workflow file that does not yet exist on
+**`main`**. If your PR adds **`.github/workflows/agentctl-pr-review.yml`** for the first time, the
+**Agentic PR review** check may **not appear on that PR** until either:
+
+1. The workflow file is merged to **`main`** (then **future** PRs get the check), or  
+2. You split the change: merge a minimal version of the workflow to **`main`** first, then iterate on a follow-up PR.
+
+Avoid **`concurrency`** / job expressions that read **`github.event.pull_request.*`** without guarding
+on **`github.event_name == 'pull_request'`** — GitHub still **validates** workflow YAML on **push**
+to **`.github/workflows/`**, and missing `pull_request` context can surface as a failed “workflow
+file” run.
+
 Configure repository secret **`OPENAI_API_KEY`** — the example project’s reviewer agent calls OpenAI
 (**`gpt-4o-mini`**) during **`agentctl run`**.
 

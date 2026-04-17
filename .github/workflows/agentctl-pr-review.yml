@@ -27,8 +27,13 @@ on:
         required: true
         type: string
 
+# Must not reference github.event.pull_request.* unless pull_request is the active event — GitHub
+# validates workflow files on push; a bare pull_request.number breaks that pass and can block PR runs.
 concurrency:
-  group: agentctl-pr-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+  group: >-
+    agentctl-pr-${{ github.repository }}-${{
+      github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id
+    }}
   cancel-in-progress: true
 
 defaults:

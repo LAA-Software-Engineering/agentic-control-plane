@@ -47,6 +47,10 @@ agentctl run workflow/pr-review-github \
 4. Configure **`OPENAI_API_KEY`** and pin **`AGENTCTL_VERSION`** (see [releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases)).
 5. Adjust **`permissions`** and optional Phase E flags (**`AGENTIC_CACHE_STATE`**, **`AGENTIC_GH_PR_COMMENT`**) per [`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md).
 
+## Troubleshooting: workflow not listed on the PR
+
+If **`Agentic PR review`** does not run on the **first** PR that adds the workflow, see **“First-time introduction on a pull request”** in **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** (workflow must exist on **`main`**, and **`concurrency`** must not read **`pull_request`** on non-PR events).
+
 ## Related docs
 
 - **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** — exit code **5**, tokens, fork PR caveats, job summary / cache / **`gh`**.
