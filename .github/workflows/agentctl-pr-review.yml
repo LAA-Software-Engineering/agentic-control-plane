@@ -1,15 +1,17 @@
-# Copy this file to your repository: .github/workflows/agentctl-pr-review.yml
+# Runs on pull requests in this repository (declarative PR review with OpenAI gpt-4o-mini).
+# Requires repository secret OPENAI_API_KEY. See docs/GITHUB_ACTIONS.md and
+# examples/pr-review-github-actions/README.md
 #
-# Default AGENTIC_PROJECT is examples/pr-review-github-actions (OpenAI gpt-4o-mini reviewer).
-# In your own repo, set AGENTIC_PROJECT to the directory that contains project.yaml (e.g. agent-plane/).
-#
-# See docs/GITHUB_ACTIONS.md and examples/pr-review-github-actions/README.md
+# Downstream repos: copy this file to .github/workflows/ and set AGENTIC_PROJECT to your project path.
 
 name: Agentic PR review
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
   workflow_dispatch:
     inputs:
       owner:
@@ -34,18 +36,13 @@ defaults:
     shell: bash
 
 env:
-  # Pin intentionally; bump when you pick up new agentctl features.
   AGENTCTL_VERSION: v0.1.9
-  # Monorepo default (OpenAI project in this folder); in your downstream repo, use e.g. agent-plane
   AGENTIC_PROJECT: examples/pr-review-github-actions
   AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-review.db
-  # Phase E: set "true" to restore/save SQLite between runs (align hashFiles globs with AGENTIC_PROJECT).
   AGENTIC_CACHE_STATE: "false"
-  # Phase E: set "true" to post a short pointer comment via gh (requires job post-pointer).
   AGENTIC_GH_PR_COMMENT: "false"
 
 jobs:
-  # Review + trace; comment step is policy-blocked unless you treat exit 5 as success (below).
   review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -62,7 +59,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # When enabling cache, update hashFiles() globs if AGENTIC_PROJECT is not examples/pr-review-github-actions.
       - name: Cache SQLite state (optional)
         if: env.AGENTIC_CACHE_STATE == 'true'
         uses: actions/cache@v4
@@ -170,7 +166,6 @@ jobs:
           set -euo pipefail
           agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --run "${{ steps.run_review.outputs.run_id }}" 2>/dev/null | head -n 120 || true
 
-  # Phase E: optional short PR comment pointing to this workflow run (requires pull-requests: write).
   post-pointer:
     needs: review
     if: >
@@ -194,7 +189,6 @@ jobs:
             "- Run ID: \`${{ needs.review.outputs.run_id }}\`" > /tmp/agentic-gh.md
           gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/agentic-gh.md
 
-  # Optional: run manually to post a real PR comment (--approve). Requires pull-requests: write.
   publish-comment:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

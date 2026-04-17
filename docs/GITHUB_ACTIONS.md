@@ -14,9 +14,9 @@ For the YAML resources and workflow semantics, see **`DESIGN_DOC.md`**, **`examp
 1. **Project directory** — copy **`examples/pr-review-github-actions/`** (OpenAI reviewer + same
    workflow shape) or your own project into your repo, e.g. **`agent-plane/`**, committed next to
    your application code.
-2. **Workflow file** — copy
-   **`examples/pr-review-github-actions/.github/workflows/agentctl-pr-review.yml`** into **your**
-   **`.github/workflows/`** (same relative path under the repo root).
+2. **Workflow file** — copy **`.github/workflows/agentctl-pr-review.yml`** from this repository’s
+   **root** into **your** **`.github/workflows/`** (GitHub Actions only loads workflows from the repo
+   root, not from under **`examples/`**).
 
 Then edit the workflow **`AGENTIC_PROJECT`** env (default in the template matches this monorepo;
 in your repo set it to **`agent-plane`** or your path).
