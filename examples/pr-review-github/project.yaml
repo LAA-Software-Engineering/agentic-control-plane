@@ -1,0 +1,18 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: pr-review-github
+spec:
+  imports:
+    - ./policies/guarded-writes.yaml
+    - ./tools/github.yaml
+    - ./agents/reviewer.yaml
+    - ./workflows/pr-review-github.yaml
+  defaults:
+    policy: guarded-writes
+    model: mock/gpt-4
+    runtime: local
+  providers:
+    models:
+      mock:
+        type: mock

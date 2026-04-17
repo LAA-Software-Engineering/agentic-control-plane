@@ -3,6 +3,8 @@ package integration_test
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -245,4 +247,83 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("run output:\n%s", out)
 		}
 	})
+}
+
+// TestCLI_PrReviewGithubExample exercises examples/pr-review-github against a stub GitHub API
+// (GITHUB_API_URL) so CI needs no real token or network to github.com.
+func TestCLI_PrReviewGithubExample(t *testing.T) {
+	root := repoRoot(t)
+	ex := filepath.Join(root, "examples", "pr-review-github")
+	input := filepath.Join(ex, "fixtures", "sample-input.json")
+	if _, err := os.Stat(filepath.Join(ex, "project.yaml")); err != nil {
+		t.Fatalf("example project: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/testorg/testrepo/pulls/7" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		acc := r.Header.Get("Accept")
+		if strings.Contains(acc, "application/vnd.github.diff") {
+			_, _ = w.Write([]byte("diff --git a/README.md b/README.md\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"number":7,"title":"Stub PR","head":{"sha":"abc123"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("GITHUB_API_URL", srv.URL)
+	t.Setenv("GITHUB_TOKEN", "integration-test-token")
+
+	db := filepath.Join(t.TempDir(), "pr-review-github.db")
+
+	out, err := runCLI(t, "validate", "--project", ex, "--no-color")
+	if err != nil {
+		t.Fatalf("validate: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Validation successful") {
+		t.Fatalf("validate:\n%s", out)
+	}
+
+	out, err = runCLI(t, "plan", "--project", ex, "--state", db)
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, out)
+	}
+	out, err = runCLI(t, "apply", "--project", ex, "--state", db, "--auto-approve")
+	if err != nil {
+		t.Fatalf("apply: %v\n%s", err, out)
+	}
+
+	out, err = runCLI(t,
+		"run", "workflow/pr-review-github",
+		"--project", ex,
+		"--state", db,
+		"--input-file", input,
+	)
+	if err == nil {
+		t.Fatalf("expected policy denial, output:\n%s", out)
+	}
+	if cli.ExitCodeOf(err) != cli.ExitPolicyDenied {
+		t.Fatalf("exit=%d want %d err=%v\n%s", cli.ExitCodeOf(err), cli.ExitPolicyDenied, err, out)
+	}
+	if !strings.Contains(out, "tool.github.pull_request.post_comment") {
+		t.Fatalf("expected gated uses in output:\n%s", out)
+	}
+	runID := extractRunID(out)
+	if runID == "" {
+		t.Fatalf("no run id in:\n%s", out)
+	}
+
+	out, err = runCLI(t, "logs", "--project", ex, "--state", db, "--run", runID)
+	if err != nil {
+		t.Fatalf("logs: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, trace.EventPolicyDenied) {
+		t.Fatalf("logs missing %q:\n%s", trace.EventPolicyDenied, out)
+	}
 }

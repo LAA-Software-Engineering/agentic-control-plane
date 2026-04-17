@@ -25,7 +25,7 @@ Most agent stacks today bury prompts, tool wiring, and permissions in applicatio
 
 The full product vision, YAML spec v0, and architecture are documented in [**`docs/DESIGN_DOC.md`**](docs/DESIGN_DOC.md).
 
-**Featured walkthrough:** declarative PR review with a **policy-blocked** (simulated) GitHub comment — no API keys required — in [**`examples/pr-review-demo/README.md`**](examples/pr-review-demo/README.md).
+**Featured walkthrough:** declarative PR review with a **policy-blocked** (simulated) GitHub comment — no API keys required — in [**`examples/pr-review-demo/README.md`**](examples/pr-review-demo/README.md). For the **live GitHub read path** (REST `pull_request.get` / `pull_request.diff` + the same review flow), see [**`examples/pr-review-github/README.md`**](examples/pr-review-github/README.md).
 
 ---
 
