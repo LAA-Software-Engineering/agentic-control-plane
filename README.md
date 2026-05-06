@@ -6,6 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/agentic-control-plane.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/agentic-control-plane)
 
+<img width="1082" height="625" alt="image" src="https://github.com/user-attachments/assets/bbcc8d7f-6031-4f65-b5c9-1d5cd6424e91" />
+
+
 **Declarative YAML for agents, tools, workflows, and policies — with a Terraform-style plan/apply loop, local SQLite state, and execution traces.**
 
 This is **not** another opaque agent framework. It is a **control plane**: you describe the *desired shape* of your agent system in versioned resources, then **validate**, **plan**, **apply**, **run**, and **inspect logs** the same way you would operate real infrastructure.
