@@ -3,7 +3,7 @@
 [![CI](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/ci.yml)
 [![Release](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev/dl/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/agentic-control-plane.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/agentic-control-plane)
 
 <img width="1082" height="625" alt="image" src="https://github.com/user-attachments/assets/bbcc8d7f-6031-4f65-b5c9-1d5cd6424e91" />
