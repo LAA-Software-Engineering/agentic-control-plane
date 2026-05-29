@@ -104,6 +104,28 @@ The template supports two modes via **`AGENTCTL_INSTALL`**:
 | **`go-build`** (default in this monorepo) | The workflow checks out this repository and runs **`go build ./cmd/agentctl`**. Use this while developing here so CI always matches the native tools on the branch (no waiting on a release asset). |
 | **`release`** | Set **`AGENTCTL_INSTALL`** to **`release`** (any value other than **`go-build`**) in a **downstream** repo that only copies the YAML project, not the Go source. Then set **`AGENTCTL_VERSION`** (e.g. **`v0.1.9`**) to a tag whose asset **`agentctl-<tag>-linux-amd64.tar.gz`** exists on **Releases**. |
 
+### arm64 and other non-amd64 runners
+
+The bundled **`Install agentctl (release tarball)`** step in
+**`.github/workflows/agentctl-pr-review.yml`** (and the publish workflow) downloads only
+**`agentctl-<tag>-linux-amd64.tar.gz`**. That matches GitHub-hosted **`ubuntu-latest`**
+(x86_64). The template does **not** select an asset from the runner OS or CPU architecture.
+
+On **self-hosted ARM64** Linux runners (or other non-amd64 hosts), that tarball is the wrong
+binary: the install step may fail when **`/tmp/agentctl`** is missing after extract, or
+**`agentctl`** may fail at runtime with an exec-format error. The workflow fails loudly in those
+cases rather than silently continuing.
+
+**Workarounds:**
+
+- **`AGENTCTL_INSTALL: go-build`** — check out a repository that contains this Go module and
+  compile **`./cmd/agentctl`** on the runner (requires **Go** on the runner). This is the
+  default in this monorepo and works on any architecture the toolchain supports.
+- **Custom install step** — replace or extend the release install step to download the asset that
+  matches your runner (for example **`agentctl-<tag>-linux-arm64.tar.gz`** when published on
+  [Releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases)), or an
+  internal artifact URL you maintain.
+
 Native GitHub REST tools (**`pull_request.get`**, **`pull_request.diff`**, etc.) require an
 **`agentctl`** binary built from a release that includes them; if **`release`** mode fails with
 unknown tool **`uses`**, bump **`AGENTCTL_VERSION`** after a newer release is published.
