@@ -6,10 +6,11 @@ This example wires **Phase B + C** of the GitHub integration:
 
 - **Read:** `pull_request.get` and `pull_request.diff` against the GitHub REST API.
 - **Review:** structured **mock** model output validated by JSON Schema.
-- **Write:** `pull_request.post_comment` performs a **real** `POST …/issues/{n}/comments` when
-  `owner`, `repo`, `number`, and `body` are set and **`GITHUB_TOKEN` is present**; otherwise it stays
-  **simulated** (as in `examples/pr-review-demo`). The comment step remains **policy-gated** unless
-  you pass `--approve tool.github.pull_request.post_comment`.
+- **Write:** `pull_request.post_comment` creates or updates an issue comment when `owner`, `repo`,
+  `number`, and `body` are set and **`GITHUB_TOKEN` is present** (default **`comment_strategy: replace`**
+  patches a comment containing **`<!-- agentic-review -->`**; use **`append`** for a new comment each run).
+  Without repo context it stays **simulated** (as in `examples/pr-review-demo`). The step is **policy-gated**
+  unless you pass `--approve tool.github.pull_request.post_comment`.
 
 ## Prerequisites
 
@@ -61,7 +62,7 @@ agentctl run workflow/pr-review-github \
 ## CI / tests
 
 `go test ./test/integration/...` starts an HTTP stub and sets `GITHUB_API_URL` so the workflow runs
-without touching GitHub, including an **approved** run that exercises the live comment `POST` path.
+without touching GitHub, including an **approved** run that exercises the live comment list + `POST` path.
 
 ## GitHub Actions
 

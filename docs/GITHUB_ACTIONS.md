@@ -50,8 +50,9 @@ Configure repository secret **`OPENAI_API_KEY`** — the example project’s rev
   you need:
   - **`contents: read`** — checkout.
   - **`pull-requests: write`** — required for the bundled **`review`** job: it runs
-    **`agentctl run … --approve tool.github.pull_request.post_comment`**, which posts a real issue
-    comment on the PR after the model review.
+    **`agentctl run … --approve tool.github.pull_request.post_comment`**, which creates or updates a
+    single issue comment on the PR after the model review (default **`comment_strategy: replace`**
+    updates a comment containing **`<!-- agentic-review -->`** instead of posting anew on every push).
   - The optional **`post-pointer`** job (**`gh pr comment`**) also needs **`pull-requests: write`**
     when **`AGENTIC_GH_PR_COMMENT: "true"`** (short pointer to the Actions run).
 
@@ -82,6 +83,15 @@ job without failing CI.
 
 Hard failures use **1**,
 **2**, **3**, **4** (see **section 11.2** in **`DESIGN_DOC.md`**).
+
+### Sticky review comment (`synchronize` / re-runs)
+
+The example workflow sets **`comment_strategy: replace`** on **`pull_request.post_comment`**. On each
+approved run the native tool lists issue comments on the PR, finds one whose body contains the HTML
+marker **`<!-- agentic-review -->`**, and **`PATCH`**es it; if none exists it **`POST`**s once and
+embeds the marker. That avoids a new full review comment on every push. Use **`comment_strategy: append`**
+in your workflow YAML if you prefer a new comment per run, or **`comment_id`** to update a specific
+comment. **`upsert: true`** is an alias for **`replace`**.
 
 ---
 

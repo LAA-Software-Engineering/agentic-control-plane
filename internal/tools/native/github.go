@@ -1,7 +1,6 @@
 package native
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,24 +69,6 @@ func githubPullRequestDiff(ctx context.Context, with map[string]any) (map[string
 	return map[string]any{"diff": text}, nil
 }
 
-func githubPullRequestPostComment(ctx context.Context, owner, repo, number, body string) (map[string]any, error) {
-	path := fmt.Sprintf("/repos/%s/%s/issues/%s/comments", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(number))
-	payload := map[string]string{"body": body}
-	b, err := githubPOSTJSON(ctx, path, payload, maxGitHubJSONBody)
-	if err != nil {
-		return nil, err
-	}
-	var out map[string]any
-	if err := json.Unmarshal(b, &out); err != nil {
-		return nil, fmt.Errorf("native: pull_request.post_comment decode: %w", err)
-	}
-	if out == nil {
-		out = map[string]any{}
-	}
-	out["simulated"] = false
-	return out, nil
-}
-
 // githubLivePostCommentContext reports whether step inputs request a real GitHub issue comment:
 // non-empty owner, repo, number (or pull_number), and body. When true, post_comment uses the REST
 // API if GITHUB_TOKEN is set; otherwise the demo stays fully offline (simulated).
@@ -118,32 +99,14 @@ func tryStringFromWith(with map[string]any, keys ...string) (string, bool) {
 }
 
 func githubPOSTJSON(ctx context.Context, path string, payload any, maxResp int64) ([]byte, error) {
-	token, err := githubToken()
-	if err != nil {
-		return nil, err
-	}
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("native: github encode body: %w", err)
-	}
-	fullURL := strings.TrimSuffix(githubAPIBase(), "/") + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", githubUserAgent)
-	req.Header.Set("Accept", githubAcceptJSON)
-	req.Header.Set("Content-Type", githubAcceptJSON)
-	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
+	return githubJSONRequest(ctx, http.MethodPost, path, payload, maxResp)
+}
 
-	cli := &http.Client{Timeout: 60 * time.Second}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("native: github request: %w", err)
-	}
-	defer resp.Body.Close()
+func defaultGitHubHTTPClient() *http.Client {
+	return &http.Client{Timeout: 60 * time.Second}
+}
 
+func readGitHubResponseBody(resp *http.Response, maxResp int64) ([]byte, error) {
 	limited := io.LimitReader(resp.Body, maxResp+1)
 	b, err := io.ReadAll(limited)
 	if err != nil {
@@ -151,9 +114,6 @@ func githubPOSTJSON(ctx context.Context, path string, payload any, maxResp int64
 	}
 	if int64(len(b)) > maxResp {
 		return nil, fmt.Errorf("native: github response body exceeds limit (%d bytes)", maxResp)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("native: github HTTP %s: %s", resp.Status, truncateRunes(string(b), 512))
 	}
 	return b, nil
 }
@@ -269,20 +229,16 @@ func githubRequestBody(ctx context.Context, method, path, accept string, maxBody
 		req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
 	}
 
-	cli := &http.Client{Timeout: 60 * time.Second}
+	cli := defaultGitHubHTTPClient()
 	resp, err := cli.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("native: github request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	limited := io.LimitReader(resp.Body, maxBody+1)
-	b, err := io.ReadAll(limited)
+	b, err := readGitHubResponseBody(resp, maxBody)
 	if err != nil {
-		return nil, fmt.Errorf("native: github read body: %w", err)
-	}
-	if int64(len(b)) > maxBody {
-		return nil, fmt.Errorf("native: github response body exceeds limit (%d bytes)", maxBody)
+		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("native: github HTTP %s: %s", resp.Status, truncateRunes(string(b), 512))
