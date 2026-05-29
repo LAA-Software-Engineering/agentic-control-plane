@@ -1,0 +1,22 @@
+name: ReviewGate
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited, reopened]
+
+jobs:
+  reviewgate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # `read` is enough if you set post-comment: false
+    steps:
+      - uses: actions/checkout@v4
+      # Pre-release docs use @main until the first public tag is cut.
+      # After v0.1.0, pin a release tag instead.
+      - uses: leo-aa88/reviewgate@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fail-on: FAIL          # never | PASS | WARN | FAIL
+          post-comment: true     # honoured only when §14.1 coexistence allows
+          mode: action           # action owns comments + fail-on for this tutorial
