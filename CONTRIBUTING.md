@@ -74,6 +74,28 @@ High-level map (details in [`README.md`](README.md) and [`docs/DESIGN_DOC.md`](d
 - Link related **issues** when applicable.
 - Ensure **CI would pass** (formatting, vet, tests, build). Note: pushes that **only** change `Makefile` or `**/*.md` do not trigger CI via `paths-ignore`; for doc-only edits, run `make ci` locally if you also changed Go code elsewhere in the same branch.
 
+### Agentic PR review (fork and first-time contributors)
+
+This repository runs an automated **Agentic PR review** workflow
+([`.github/workflows/agentctl-pr-review.yml`](.github/workflows/agentctl-pr-review.yml)) on pull
+requests. You may **not** see that check on your PR in these common cases:
+
+- **Fork-originated PRs** — the `review` job runs only when the PR head branch lives in the
+  **canonical** repository (`github.event.pull_request.head.repo.full_name == github.repository`).
+  Fork PRs intentionally skip the job so CI does not fail from missing repository secrets (for
+  example **`OPENAI_API_KEY`**), which GitHub does not expose to workflows triggered from forks.
+- **First PR that adds the workflow** — GitHub often schedules `pull_request` workflows from the
+  default branch definition; a brand-new workflow file may not run on the PR that introduces it
+  until it is merged to **`main`** (later PRs then get the check).
+
+That is expected. Maintainers can still validate your change: push the same commits to a branch on
+the canonical repo (for example after opening the fork PR) or re-run review from an in-repo branch
+when appropriate.
+
+For permissions, secrets, exit code **5**, and other Actions details, see
+**[`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md)** (sections on fork PRs and first-time workflow
+introduction).
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the same terms as the project: **[MIT](LICENSE)**.
