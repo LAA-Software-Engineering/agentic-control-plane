@@ -5,9 +5,8 @@ metadata:
 spec:
   description: |
     Live GitHub path: fetch PR JSON and unified diff via the GitHub REST API, run a structured review,
-    then post an issue comment on the PR (real POST when owner/repo/number/body are set and
-    GITHUB_TOKEN is present; otherwise simulated). The comment step is policy-gated unless you pass
-    --approve for tool.github.pull_request.post_comment.
+    then post or update one issue comment (comment_strategy replace: PATCH <!-- agentic-review --> or POST once).
+    Policy-gated unless you pass --approve for tool.github.pull_request.post_comment.
     Requires GITHUB_TOKEN and network access to GITHUB_API_URL (default https://api.github.com).
   policy: guarded-writes
   input:
@@ -36,6 +35,7 @@ spec:
         owner: ${input.owner}
         repo: ${input.repo}
         number: ${input.number}
+        comment_strategy: replace
         body: |
           ## Automated review
 

@@ -361,6 +361,9 @@ func TestCLI_PrReviewGithubApprovedLiveComment(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"number":7,"title":"Stub PR","head":{"sha":"abc123"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/testorg/testrepo/issues/7/comments":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/repos/testorg/testrepo/issues/7/comments":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)

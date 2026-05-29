@@ -53,7 +53,7 @@ func (r *Registry) Dispatch(ctx context.Context, operation string, with map[stri
 		return map[string]any{"pull_request": obj}, meta, nil
 	case "pull_request.post_comment":
 		// Offline: body only (e.g. examples/pr-review-demo). Live: owner, repo, number, body + GITHUB_TOKEN
-		// creates an issue comment on the PR (same uses string; policy can still gate).
+		// creates or updates an issue comment on the PR (comment_strategy replace by default).
 		meta.DurationMs = time.Since(start).Milliseconds()
 		owner, repo, num, bodyText, wantLive := githubLivePostCommentContext(with)
 		if !wantLive {
@@ -63,7 +63,19 @@ func (r *Registry) Dispatch(ctx context.Context, operation string, with map[stri
 				"body_preview": truncateRunes(body, 240),
 			}, meta, nil
 		}
-		out, err := githubPullRequestPostComment(ctx, owner, repo, num, bodyText)
+		strategy, err := githubCommentStrategy(with)
+		if err != nil {
+			return nil, meta, err
+		}
+		var out map[string]any
+		if commentID, ok := commentIDFromWith(with); ok {
+			if err := parseCommentID(commentID); err != nil {
+				return nil, meta, err
+			}
+			out, err = githubPullRequestReplaceCommentByID(ctx, owner, repo, commentID, bodyText)
+		} else {
+			out, err = githubPullRequestPostComment(ctx, owner, repo, num, bodyText, strategy)
+		}
 		if err != nil {
 			return nil, meta, err
 		}
