@@ -50,6 +50,7 @@ func TestCheckToolCall_forbidUnknownTools_unknownToolDenied(t *testing.T) {
 
 func TestCheckToolCall_forbidUnknownTools_knownToolOK(t *testing.T) {
 	g := testGraphWithTools("slack")
+	g.Tools["slack"].Spec.Safety = &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}
 	pol := &spec.PolicySpec{
 		Tools: &spec.PolicyTools{ForbidUnknownTools: true},
 	}

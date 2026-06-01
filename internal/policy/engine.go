@@ -17,7 +17,8 @@ func NewEngine(g *spec.ProjectGraph) *Engine {
 }
 
 // Evaluator returns a [PolicyEvaluator] for the named Policy resource in the graph.
-// If the policy is missing, returns a no-op evaluator (nil spec).
+// If the policy name is missing or unknown, pol is nil: run/step budget checks are skipped, but
+// tool calls still use safety-metadata fallback from the graph.
 func (e *Engine) Evaluator(policyName string) PolicyEvaluator {
 	if e == nil {
 		return NewEvaluator(nil, nil)

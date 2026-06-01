@@ -307,6 +307,25 @@ func TestValidateProjectGraph_mcpHTTPMissingURL(t *testing.T) {
 	}
 }
 
+func TestValidateProjectGraph_toolSafetyEmptyBlock(t *testing.T) {
+	g := &ProjectGraph{
+		Tools: map[string]*ToolResource{
+			"h": {
+				Kind:     KindTool,
+				Metadata: Metadata{Name: "h"},
+				Spec: ToolSpec{
+					Type:   "native",
+					Safety: &ToolSafety{},
+				},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "at least one of trusted") {
+		t.Fatalf("expected empty safety error, got %v", err)
+	}
+}
+
 func TestValidateProjectGraph_runtimeLocalAccepted(t *testing.T) {
 	g := &ProjectGraph{
 		Spec: ProjectSpec{

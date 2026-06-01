@@ -47,7 +47,10 @@ func TestRun_sequentialToolAndAgent_mockModel(t *testing.T) {
 				APIVersion: spec.APIVersionV0,
 				Kind:       spec.KindTool,
 				Metadata:   spec.Metadata{Name: "helper"},
-				Spec:       spec.ToolSpec{Type: "native"},
+				Spec: spec.ToolSpec{
+					Type:   "native",
+					Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(false)},
+				},
 			},
 		},
 		Agents: map[string]*spec.AgentResource{

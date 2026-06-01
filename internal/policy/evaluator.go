@@ -19,7 +19,9 @@ type evaluator struct {
 }
 
 // NewEvaluator returns a [PolicyEvaluator] for the given merged policy spec and project graph.
-// A nil policy spec applies no limits (all checks no-op).
+//
+// When pol is nil, [PolicyEvaluator.CheckRun] and [PolicyEvaluator.CheckStep] are no-ops, but
+// [PolicyEvaluator.CheckToolCall] still enforces fail-closed [spec.ToolSafety] from graph (issue #103).
 func NewEvaluator(graph *spec.ProjectGraph, pol *spec.PolicySpec) PolicyEvaluator {
 	return &evaluator{graph: graph, policy: pol}
 }
@@ -52,11 +54,13 @@ func (e *evaluator) CheckStep(ctx context.Context, step StepContext) error {
 func (e *evaluator) CheckToolCall(ctx context.Context, call ToolCallContext) error {
 	_ = ctx
 	p := e.spec()
-	if p == nil {
-		return nil
+	if p != nil {
+		if err := checkKnownTool(e.graph, call.Uses, p.Tools); err != nil {
+			return err
+		}
+		if approvalRequired(call.Uses, p.Approvals) {
+			return checkApprovalGranted(call.Uses, p.Approvals, call.Run.ApprovedActions)
+		}
 	}
-	if err := checkKnownTool(e.graph, call.Uses, p.Tools); err != nil {
-		return err
-	}
-	return checkApprovalGranted(call.Uses, p.Approvals, call.Run.ApprovedActions)
+	return checkSafetyDerived(e.graph, call)
 }

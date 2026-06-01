@@ -1,0 +1,15 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: echo
+spec:
+  input:
+    schema: ./schemas/in.json
+  steps:
+    - id: s1
+      uses: tool.helper.echo
+      with:
+        topic: "${input.topic}"
+  output:
+    value:
+      out: "${steps.s1.output.echo}"

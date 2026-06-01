@@ -29,6 +29,16 @@ func runPolicyRoot(t *testing.T) string {
 	return abs
 }
 
+func runSafetyRoot(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join("testdata", "run_safety")
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}
+
 func TestRun_demo_integration_succeeds(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "run-cli.db")
 	root := runProjRoot(t)
@@ -51,6 +61,53 @@ func TestRun_demo_integration_succeeds(t *testing.T) {
 	s := out.String()
 	if !strings.Contains(s, "Run ID:") || !strings.Contains(s, "Status: succeeded") {
 		t.Fatalf("unexpected output:\n%s", s)
+	}
+}
+
+func TestRun_safetyOnlyDenial_exit5(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "run-safety.db")
+	root := runSafetyRoot(t)
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{
+		"run", "workflow/echo",
+		"--project", root,
+		"--state", db,
+		"--input", "topic=x",
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected safety-derived policy denial")
+	}
+	if ExitCodeOf(err) != ExitPolicyDenied {
+		t.Fatalf("exit=%d want %d err=%v", ExitCodeOf(err), ExitPolicyDenied, err)
+	}
+}
+
+func TestRun_safetyOnly_withApprove_succeeds(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "run-safety-ok.db")
+	root := runSafetyRoot(t)
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "workflow/echo",
+		"--project", root,
+		"--state", db,
+		"--input", "topic=x",
+		"--approve", "tool.helper.echo",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Status: succeeded") {
+		t.Fatalf("output:\n%s", out.String())
 	}
 }
 

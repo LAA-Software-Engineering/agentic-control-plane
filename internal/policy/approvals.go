@@ -23,11 +23,8 @@ func checkApprovalGranted(uses string, approvals *spec.PolicyApprovals, approved
 	if !approvalRequired(uses, approvals) {
 		return nil
 	}
-	u := strings.TrimSpace(uses)
-	for _, a := range approved {
-		if strings.TrimSpace(a) == u {
-			return nil
-		}
+	if actionApproved(uses, approved) {
+		return nil
 	}
 	return denied(
 		ReasonApprovalRequired,

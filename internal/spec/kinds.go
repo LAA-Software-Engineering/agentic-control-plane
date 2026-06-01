@@ -83,6 +83,23 @@ type ToolSpec struct {
 	HTTP        *ToolHTTP        `yaml:"http,omitempty" json:"http,omitempty"`
 	Permissions *ToolPermissions `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 	Retry       *ToolRetry       `yaml:"retry,omitempty" json:"retry,omitempty"`
+	// Safety carries blast-radius metadata for fail-closed policy derivation (issue #103).
+	Safety *ToolSafety `yaml:"safety,omitempty" json:"safety,omitempty"`
+}
+
+// ToolSafety describes trust and side effects for policy fallback when no explicit Policy rule matches.
+// Omitted fields resolve to fail-closed defaults via [ResolveToolSafety].
+type ToolSafety struct {
+	Trusted          *bool `yaml:"trusted,omitempty" json:"trusted,omitempty"`
+	SideEffects      *bool `yaml:"sideEffects,omitempty" json:"sideEffects,omitempty"`
+	RequiresApproval *bool `yaml:"requiresApproval,omitempty" json:"requiresApproval,omitempty"`
+}
+
+// ResolvedToolSafety holds fully resolved safety flags after defaults and derivation.
+type ResolvedToolSafety struct {
+	Trusted          bool
+	SideEffects      bool
+	RequiresApproval bool
 }
 
 type ToolMCP struct {

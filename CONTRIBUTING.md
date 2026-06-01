@@ -22,6 +22,8 @@ Run **`make`** or **`make help`** for a full list of targets.
 
 ## Before you open a pull request
 
+User-visible behavior changes should include an entry under **[Unreleased]** in [`CHANGELOG.md`](CHANGELOG.md) (especially breaking changes and migrations).
+
 1. **Format** — `make fmt` or ensure `gofmt -l .` prints nothing (same check as CI).
 2. **Static analysis** — `make vet` (or `go vet ./...`).
 3. **Tests** — `make test` (`go test ./... -race`).
