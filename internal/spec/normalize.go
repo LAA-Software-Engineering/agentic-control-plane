@@ -3,7 +3,8 @@ package spec
 import "strings"
 
 // NormalizeProjectGraph applies Project.spec.defaults to resources that omit matching
-// fields and performs trivial string canonicalization (trim surrounding ASCII space).
+// fields, materializes Tool safety defaults (issue #103), and performs trivial string
+// canonicalization (trim surrounding ASCII space).
 //
 // Default application (§7.1 → effective config):
 //   - Agent.spec.model    ← defaults.model when the agent omits model (empty / whitespace-only).
@@ -33,6 +34,12 @@ func NormalizeProjectGraph(g *ProjectGraph) {
 			continue
 		}
 		normalizeWorkflowSpec(&w.Spec, def.Policy, def.Runtime)
+	}
+	for _, tr := range g.Tools {
+		if tr == nil {
+			continue
+		}
+		NormalizeToolSafety(&tr.Spec)
 	}
 }
 
