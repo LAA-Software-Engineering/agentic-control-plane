@@ -48,6 +48,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate AGENTCTL_INSTALL
+        run: |
+          set -euo pipefail
+          case "${AGENTCTL_INSTALL:-go-build}" in
+            go-build|release) ;;
+            *) echo "AGENTCTL_INSTALL must be 'go-build' or 'release', got '${AGENTCTL_INSTALL}'" >&2; exit 1 ;;
+          esac
+
       - name: Cache SQLite state (optional)
         if: env.AGENTIC_CACHE_STATE == 'true'
         uses: actions/cache@v4
@@ -71,7 +79,7 @@ jobs:
           agentctl version
 
       - name: Install agentctl (release tarball)
-        if: env.AGENTCTL_INSTALL != 'go-build'
+        if: env.AGENTCTL_INSTALL == 'release'
         run: |
           set -euo pipefail
           version="${AGENTCTL_VERSION}"
