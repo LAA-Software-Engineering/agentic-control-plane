@@ -97,12 +97,12 @@ comment. **`upsert: true`** is an alias for **`replace`**.
 
 ## Installing `agentctl` in Actions
 
-The template supports two modes via **`AGENTCTL_INSTALL`**:
+The template supports exactly two values for **`AGENTCTL_INSTALL`**. Any other value fails the workflow early with a clear error.
 
 | Value | When to use |
 |-------|-------------|
 | **`go-build`** (default in this monorepo) | The workflow checks out this repository and runs **`go build ./cmd/agentctl`**. Use this while developing here so CI always matches the native tools on the branch (no waiting on a release asset). |
-| **`release`** | Set **`AGENTCTL_INSTALL`** to **`release`** (any value other than **`go-build`**) in a **downstream** repo that only copies the YAML project, not the Go source. Then set **`AGENTCTL_VERSION`** (e.g. **`v0.1.9`**) to a tag whose asset **`agentctl-<tag>-linux-amd64.tar.gz`** exists on **Releases**. |
+| **`release`** | Set **`AGENTCTL_INSTALL`** to **`release`** in a **downstream** repo that only copies the YAML project, not the Go source. Then set **`AGENTCTL_VERSION`** (e.g. **`v0.1.9`**) to a tag whose asset **`agentctl-<tag>-linux-amd64.tar.gz`** exists on **Releases**. |
 
 ### arm64 and other non-amd64 runners
 
@@ -138,7 +138,7 @@ The workflow template sets these **workflow-level** env vars (tune after copying
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| **`AGENTCTL_INSTALL`** | `go-build` in-repo | **`go-build`** compiles **`./cmd/agentctl`** after checkout. Downstream copies should use **`release`** and **`AGENTCTL_VERSION`**. |
+| **`AGENTCTL_INSTALL`** | `go-build` in-repo | **`go-build`** or **`release`** only (invalid values fail fast). **`go-build`** compiles **`./cmd/agentctl`** after checkout. Downstream copies should use **`release`** and **`AGENTCTL_VERSION`**. |
 | **`AGENTIC_CACHE_STATE`** | `false` | When `true`, restores/saves the SQLite state file between runs (update **`hashFiles()`** globs if **`AGENTIC_PROJECT`** is not **`examples/pr-review-github-actions`**). |
 | **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, the **`review`** job exports this flag so the follow-up **`post-pointer`** job can run (**`gh pr comment`** pointer to the Actions run). Job-level **`if:`** cannot read workflow **`env`**, so the template uses a step output instead. |
 
