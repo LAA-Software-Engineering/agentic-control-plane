@@ -14,12 +14,16 @@ import (
 
 func testGraphWithTools(names ...string) *spec.ProjectGraph {
 	tools := make(map[string]*spec.ToolResource)
+	trusted := true
 	for _, n := range names {
 		tools[n] = &spec.ToolResource{
 			APIVersion: spec.APIVersionV0,
 			Kind:       spec.KindTool,
 			Metadata:   spec.Metadata{Name: n},
-			Spec:       spec.ToolSpec{Type: "mock"},
+			Spec: spec.ToolSpec{
+				Type:   "mock",
+				Safety: &spec.ToolSafety{Trusted: &trusted},
+			},
 		}
 	}
 	return &spec.ProjectGraph{Tools: tools}

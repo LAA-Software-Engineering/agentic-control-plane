@@ -52,11 +52,13 @@ func (e *evaluator) CheckStep(ctx context.Context, step StepContext) error {
 func (e *evaluator) CheckToolCall(ctx context.Context, call ToolCallContext) error {
 	_ = ctx
 	p := e.spec()
-	if p == nil {
-		return nil
+	if p != nil {
+		if err := checkKnownTool(e.graph, call.Uses, p.Tools); err != nil {
+			return err
+		}
+		if approvalRequired(call.Uses, p.Approvals) {
+			return checkApprovalGranted(call.Uses, p.Approvals, call.Run.ApprovedActions)
+		}
 	}
-	if err := checkKnownTool(e.graph, call.Uses, p.Tools); err != nil {
-		return err
-	}
-	return checkApprovalGranted(call.Uses, p.Approvals, call.Run.ApprovedActions)
+	return checkSafetyDerived(e.graph, call)
 }

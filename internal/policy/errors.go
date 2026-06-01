@@ -13,6 +13,7 @@ const (
 	ReasonUnknownTool      = "unknown_tool"
 	ReasonApprovalRequired = "approval_required"
 	ReasonInvalidUses      = "invalid_uses"
+	ReasonDenied           = "denied"
 )
 
 // DeniedError is returned when a policy check fails (design doc section 12.2 H).
