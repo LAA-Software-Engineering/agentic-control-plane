@@ -260,6 +260,7 @@ func addToolSafetyRisk(add func(string), toolName string, cur policy.ToolDecisio
 	if prev != nil && prev.Decision == policy.DecisionRequireApproval {
 		return
 	}
+	// Plan uses prefix match on tool.<name>. for explicit requiredFor (conservative); runtime matches exact uses.
 	add(fmt.Sprintf(
 		"Tool/%s will require approval at run (decision=%s, source=%s).",
 		toolName, cur.Decision, cur.Source,

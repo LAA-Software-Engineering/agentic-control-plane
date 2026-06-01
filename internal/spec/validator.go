@@ -176,6 +176,19 @@ func validateToolSpecs(g *ProjectGraph) []error {
 		if tr.Spec.Retry != nil && tr.Spec.Retry.MaxAttempts < 0 {
 			errs = append(errs, fmt.Errorf("Tool/%s: retry.maxAttempts must be non-negative", name))
 		}
+		errs = append(errs, validateToolSafety(name, tr.Spec.Safety)...)
+	}
+	return errs
+}
+
+func validateToolSafety(toolName string, s *ToolSafety) []error {
+	if s == nil {
+		return nil
+	}
+	var errs []error
+	prefix := fmt.Sprintf("Tool/%s: spec.safety", toolName)
+	if s.Trusted == nil && s.SideEffects == nil && s.RequiresApproval == nil {
+		errs = append(errs, fmt.Errorf("%s: at least one of trusted, sideEffects, requiresApproval must be set (or omit safety to use fail-closed defaults via normalize)", prefix))
 	}
 	return errs
 }

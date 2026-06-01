@@ -7,8 +7,6 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
-func boolPtr(b bool) *bool { v := b; return &v }
-
 func TestDerive_truthTable(t *testing.T) {
 	tests := []struct {
 		name string
@@ -31,7 +29,7 @@ func TestDerive_truthTable(t *testing.T) {
 
 func TestCheckToolCall_safetyFallback_requiresApprovalWithoutApprove(t *testing.T) {
 	g := testGraphWithTools("slack")
-	g.Tools["slack"].Spec.Safety = &spec.ToolSafety{Trusted: boolPtr(false), SideEffects: boolPtr(true)}
+	g.Tools["slack"].Spec.Safety = &spec.ToolSafety{Trusted: spec.BoolPtr(false), SideEffects: spec.BoolPtr(true)}
 	ev := NewEvaluator(g, nil)
 	err := ev.CheckToolCall(context.Background(), ToolCallContext{
 		Run:  RunContext{},
@@ -48,7 +46,7 @@ func TestCheckToolCall_safetyFallback_requiresApprovalWithoutApprove(t *testing.
 
 func TestCheckToolCall_safetyFallback_trustedAllows(t *testing.T) {
 	g := testGraphWithTools("slack")
-	g.Tools["slack"].Spec.Safety = &spec.ToolSafety{Trusted: boolPtr(true)}
+	g.Tools["slack"].Spec.Safety = &spec.ToolSafety{Trusted: spec.BoolPtr(true)}
 	ev := NewEvaluator(g, nil)
 	err := ev.CheckToolCall(context.Background(), ToolCallContext{
 		Run:  RunContext{},
@@ -73,7 +71,7 @@ func TestCheckToolCall_safetyFallback_approveGrants(t *testing.T) {
 
 func TestCheckToolCall_explicitPolicyRuleBeforeSafety(t *testing.T) {
 	g := testGraphWithTools("github")
-	g.Tools["github"].Spec.Safety = &spec.ToolSafety{Trusted: boolPtr(true)}
+	g.Tools["github"].Spec.Safety = &spec.ToolSafety{Trusted: spec.BoolPtr(true)}
 	pol := &spec.PolicySpec{
 		Approvals: &spec.PolicyApprovals{
 			RequiredFor: []string{"tool.github.pull_request.merge"},
@@ -101,9 +99,36 @@ func TestCheckToolCall_explicitPolicyRuleBeforeSafety(t *testing.T) {
 	}
 }
 
+func TestApprovalRequired_exactUsesNotPrefix(t *testing.T) {
+	g := testGraphWithTools("github")
+	g.Tools["github"].Spec.Safety = &spec.ToolSafety{Trusted: spec.BoolPtr(true)}
+	pol := &spec.PolicySpec{
+		Approvals: &spec.PolicyApprovals{
+			RequiredFor: []string{"tool.github.pull_request.merge"},
+		},
+	}
+	ev := NewEvaluator(g, pol)
+	if approvalRequired("tool.github.pull_request.get", pol.Approvals) {
+		t.Fatal("approvalRequired must not match by prefix")
+	}
+	if !approvalRequired("tool.github.pull_request.merge", pol.Approvals) {
+		t.Fatal("exact uses should require approval")
+	}
+	td := EffectiveToolDecision(g, pol, "github")
+	if td.Source != SourceExplicitPolicyRule {
+		t.Fatalf("plan uses prefix conservatively: %+v", td)
+	}
+	err := ev.CheckToolCall(context.Background(), ToolCallContext{
+		Run: RunContext{}, Uses: "tool.github.pull_request.get",
+	})
+	if err != nil {
+		t.Fatalf("trusted + no exact requiredFor: %v", err)
+	}
+}
+
 func TestEffectiveToolDecision_explicitVsDerived(t *testing.T) {
 	g := testGraphWithTools("github")
-	g.Tools["github"].Spec.Safety = &spec.ToolSafety{Trusted: boolPtr(true)}
+	g.Tools["github"].Spec.Safety = &spec.ToolSafety{Trusted: spec.BoolPtr(true)}
 	pol := &spec.PolicySpec{
 		Approvals: &spec.PolicyApprovals{
 			RequiredFor: []string{"tool.github.pull_request.merge"},

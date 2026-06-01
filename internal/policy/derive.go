@@ -50,7 +50,7 @@ func EffectiveToolDecision(graph *spec.ProjectGraph, pol *spec.PolicySpec, toolN
 	toolName = strings.TrimSpace(toolName)
 	safety := resolvedSafetyForTool(graph, toolName)
 	if pol != nil && pol.Approvals != nil {
-		prefix := "tool." + toolName + "."
+		prefix := toolUsesPrefix(toolName)
 		for _, r := range pol.Approvals.RequiredFor {
 			r = strings.TrimSpace(r)
 			if r == prefix || strings.HasPrefix(r, prefix) {
@@ -109,13 +109,19 @@ func checkSafetyDerived(graph *spec.ProjectGraph, call ToolCallContext) error {
 			},
 		)
 	default:
+		// Derive never returns DecisionDeny; reserved for future explicit denylists.
 		return denied(
 			ReasonDenied,
-			"policy: tool denied by safety metadata",
+			fmt.Sprintf("policy: unexpected tool decision %q", td.Decision),
 			call.Uses,
 			map[string]any{"tool": toolName},
 		)
 	}
+}
+
+// toolUsesPrefix is the plan-risk prefix for tool.<name>. (conservative; runtime uses exact uses).
+func toolUsesPrefix(toolName string) string {
+	return "tool." + strings.TrimSpace(toolName) + "."
 }
 
 func actionApproved(uses string, approved []string) bool {

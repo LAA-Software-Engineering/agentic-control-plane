@@ -14,16 +14,12 @@ import (
 
 func testGraphWithTools(names ...string) *spec.ProjectGraph {
 	tools := make(map[string]*spec.ToolResource)
-	trusted := true
 	for _, n := range names {
 		tools[n] = &spec.ToolResource{
 			APIVersion: spec.APIVersionV0,
 			Kind:       spec.KindTool,
 			Metadata:   spec.Metadata{Name: n},
-			Spec: spec.ToolSpec{
-				Type:   "mock",
-				Safety: &spec.ToolSafety{Trusted: &trusted},
-			},
+			Spec:       spec.ToolSpec{Type: "mock"},
 		}
 	}
 	return &spec.ProjectGraph{Tools: tools}
@@ -54,6 +50,7 @@ func TestCheckToolCall_forbidUnknownTools_unknownToolDenied(t *testing.T) {
 
 func TestCheckToolCall_forbidUnknownTools_knownToolOK(t *testing.T) {
 	g := testGraphWithTools("slack")
+	g.Tools["slack"].Spec.Safety = &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}
 	pol := &spec.PolicySpec{
 		Tools: &spec.PolicyTools{ForbidUnknownTools: true},
 	}

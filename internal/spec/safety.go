@@ -1,5 +1,8 @@
 package spec
 
+// MCP descriptor meta key for tool safety flags (not wired at discovery yet; see CHANGELOG).
+const MCPMetaFlagsKey = "mcp_flags"
+
 // Fail-closed defaults for tool safety (issue #103, WayFind-aligned).
 const (
 	defaultToolTrusted     = false
@@ -51,18 +54,20 @@ func NormalizeToolSafety(spec *ToolSpec) {
 	}
 	resolved := ResolveToolSafety(spec.Safety)
 	spec.Safety = &ToolSafety{
-		Trusted:          boolPtr(resolved.Trusted),
-		SideEffects:      boolPtr(resolved.SideEffects),
-		RequiresApproval: boolPtr(resolved.RequiresApproval),
+		Trusted:          BoolPtr(resolved.Trusted),
+		SideEffects:      BoolPtr(resolved.SideEffects),
+		RequiresApproval: BoolPtr(resolved.RequiresApproval),
 	}
 }
 
-func boolPtr(b bool) *bool {
+// BoolPtr returns a pointer to b (for optional YAML bool fields).
+func BoolPtr(b bool) *bool {
 	v := b
 	return &v
 }
 
 // MergeToolSafety combines author-set safety with MCP-discovered flags.
+// Not called from MCP discovery yet; see CHANGELOG [Unreleased] / issue #103 follow-up.
 // Precedence: author (base) wins over MCP for each field that base sets explicitly.
 func MergeToolSafety(author, mcp *ToolSafety) *ToolSafety {
 	if author == nil && mcp == nil {
@@ -91,13 +96,14 @@ func MergeToolSafety(author, mcp *ToolSafety) *ToolSafety {
 	return out
 }
 
-// SafetyFromMCPMeta maps MCP tool descriptor meta.mcp_flags onto [ToolSafety].
+// SafetyFromMCPMeta maps MCP tool descriptor meta[MCPMetaFlagsKey] onto [ToolSafety].
+// Not called from MCP discovery yet; see CHANGELOG [Unreleased] / issue #103 follow-up.
 // Returns nil when meta is nil or carries no recognized flags.
 func SafetyFromMCPMeta(meta map[string]any) *ToolSafety {
 	if meta == nil {
 		return nil
 	}
-	raw, ok := meta["mcp_flags"]
+	raw, ok := meta[MCPMetaFlagsKey]
 	if !ok {
 		return nil
 	}

@@ -16,8 +16,6 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
-func boolPtr(b bool) *bool { v := b; return &v }
-
 func testProjectRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -51,7 +49,7 @@ func TestRun_sequentialToolAndAgent_mockModel(t *testing.T) {
 				Metadata:   spec.Metadata{Name: "helper"},
 				Spec: spec.ToolSpec{
 					Type:   "native",
-					Safety: &spec.ToolSafety{SideEffects: boolPtr(false)},
+					Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(false)},
 				},
 			},
 		},
