@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 )
@@ -47,6 +48,11 @@ type toolSpecRisk struct {
 	Permissions *struct {
 		Allow []string `json:"allow"`
 	} `json:"permissions"`
+	Safety *struct {
+		Trusted          *bool `json:"trusted"`
+		SideEffects      *bool `json:"sideEffects"`
+		RequiresApproval *bool `json:"requiresApproval"`
+	} `json:"safety"`
 }
 
 type jsonEnvelope struct {
@@ -54,6 +60,7 @@ type jsonEnvelope struct {
 }
 
 func summarizeRisks(
+	g *spec.ProjectGraph,
 	appliedByID map[string]state.AppliedResource,
 	desiredByID map[string]desiredRow,
 	ops []Operation,
@@ -88,7 +95,7 @@ func summarizeRisks(
 		case spec.KindAgent:
 			summarizeAgentRisk(add, op, oldJSON, des.json, hadPrev)
 		case spec.KindTool:
-			summarizeToolRisk(add, op, oldJSON, des.json, hadPrev)
+			summarizeToolRisk(add, g, op, oldJSON, des.json, hadPrev)
 		}
 	}
 
@@ -156,12 +163,13 @@ func summarizeAgentRisk(add func(string), op Operation, oldJSON, newJSON string,
 	}
 }
 
-func summarizeToolRisk(add func(string), op Operation, oldJSON, newJSON string, hadPrev bool) {
+func summarizeToolRisk(add func(string), g *spec.ProjectGraph, op Operation, oldJSON, newJSON string, hadPrev bool) {
 	newTool, ok := parseToolSpec(newJSON)
 	if !ok {
 		return
 	}
 	newAllows := toolAllows(newTool)
+	newDecision := toolPlanDecisionFromGraph(g, op.Target.Name)
 
 	if op.Action == ActionCreate || !hadPrev {
 		for _, a := range newAllows {
@@ -170,6 +178,7 @@ func summarizeToolRisk(add func(string), op Operation, oldJSON, newJSON string, 
 				break
 			}
 		}
+		addToolSafetyRisk(add, op.Target.Name, newDecision, nil)
 		return
 	}
 
@@ -195,6 +204,66 @@ func summarizeToolRisk(add func(string), op Operation, oldJSON, newJSON string, 
 			break
 		}
 	}
+	oldDecision := toolDecisionFromParsed(g, op.Target.Name, oldTool)
+	addToolSafetyRisk(add, op.Target.Name, newDecision, &oldDecision)
+}
+
+func toolPlanDecisionFromGraph(g *spec.ProjectGraph, toolName string) policy.ToolDecision {
+	if g != nil {
+		for _, pr := range g.Policies {
+			if pr == nil {
+				continue
+			}
+			td := policy.EffectiveToolDecision(g, &pr.Spec, toolName)
+			if td.Decision == policy.DecisionRequireApproval {
+				return td
+			}
+		}
+	}
+	return policy.EffectiveToolDecision(g, nil, toolName)
+}
+
+func toolDecisionFromParsed(g *spec.ProjectGraph, toolName string, parsed *toolSpecRisk) policy.ToolDecision {
+	if g != nil {
+		for _, pr := range g.Policies {
+			if pr == nil {
+				continue
+			}
+			td := policy.EffectiveToolDecision(g, &pr.Spec, toolName)
+			if td.Decision == policy.DecisionRequireApproval {
+				return td
+			}
+		}
+	}
+	var safety *spec.ToolSafety
+	src := policy.SourceFailClosedDefault
+	if parsed != nil && parsed.Safety != nil {
+		safety = &spec.ToolSafety{
+			Trusted:          parsed.Safety.Trusted,
+			SideEffects:      parsed.Safety.SideEffects,
+			RequiresApproval: parsed.Safety.RequiresApproval,
+		}
+		src = policy.SourceSafetyMetadata
+	}
+	resolved := spec.ResolveToolSafety(safety)
+	return policy.ToolDecision{
+		Decision: policy.Derive(resolved),
+		Source:   src,
+		Safety:   resolved,
+	}
+}
+
+func addToolSafetyRisk(add func(string), toolName string, cur policy.ToolDecision, prev *policy.ToolDecision) {
+	if cur.Decision != policy.DecisionRequireApproval {
+		return
+	}
+	if prev != nil && prev.Decision == policy.DecisionRequireApproval {
+		return
+	}
+	add(fmt.Sprintf(
+		"Tool/%s will require approval at run (decision=%s, source=%s).",
+		toolName, cur.Decision, cur.Source,
+	))
 }
 
 func parsePolicySpec(resourceJSON string) (*policySpecRisk, bool) {

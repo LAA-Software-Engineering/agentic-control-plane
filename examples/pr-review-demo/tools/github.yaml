@@ -4,3 +4,5 @@ metadata:
   name: github
 spec:
   type: native
+  safety:
+    trusted: true

@@ -4,3 +4,5 @@ metadata:
   name: helper
 spec:
   type: native
+  safety:
+    sideEffects: false

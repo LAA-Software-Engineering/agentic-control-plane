@@ -4,6 +4,8 @@ metadata:
   name: github
 spec:
   type: mcp
+  safety:
+    trusted: true
   mcp:
     transport: stdio
     command: npx
