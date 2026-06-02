@@ -44,9 +44,16 @@ func parseAgentJSONObject(content string) (map[string]any, error) {
 	return m, nil
 }
 
-func (e *Executor) runToolStep(ctx context.Context, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext) (map[string]any, tools.ToolCallMeta, error) {
-	uses := strings.TrimSpace(step.Uses)
-	if err := pol.CheckToolCall(ctx, policy.ToolCallContext{Run: pctx, StepID: step.ID, Uses: uses, With: with}); err != nil {
+func (e *Executor) runToolStep(ctx context.Context, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, usesOverride string, withOverride map[string]any) (map[string]any, tools.ToolCallMeta, error) {
+	uses := strings.TrimSpace(usesOverride)
+	if uses == "" {
+		uses = strings.TrimSpace(step.Uses)
+	}
+	withArgs := with
+	if withOverride != nil {
+		withArgs = withOverride
+	}
+	if err := pol.CheckToolCall(ctx, policy.ToolCallContext{Run: pctx, StepID: step.ID, Uses: uses, With: withArgs}); err != nil {
 		if e.Trace != nil {
 			if d, ok := policy.AsDenied(err); ok {
 				_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventPolicyDenied, d.TraceData())
@@ -60,7 +67,7 @@ func (e *Executor) runToolStep(ctx context.Context, pol policy.PolicyEvaluator, 
 	if e.Tools == nil {
 		return nil, tools.ToolCallMeta{}, fmt.Errorf("engine: nil tool executor")
 	}
-	resp, err := e.Tools.Call(ctx, tools.ToolCallRequest{Uses: uses, With: with})
+	resp, err := e.Tools.Call(ctx, tools.ToolCallRequest{Uses: uses, With: withArgs})
 	if err != nil {
 		return nil, tools.ToolCallMeta{}, err
 	}

@@ -167,7 +167,9 @@ type PolicySpec struct {
 	Execution      *PolicyExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
 	Tools          *PolicyTools     `yaml:"tools,omitempty" json:"tools,omitempty"`
 	Approvals      *PolicyApprovals `yaml:"approvals,omitempty" json:"approvals,omitempty"`
-	Security       *PolicySecurity  `yaml:"security,omitempty" json:"security,omitempty"`
+	// Hitl configures human-in-the-loop approval gates for gated tool calls (issue #106).
+	Hitl     *HitlPolicy     `yaml:"hitl,omitempty" json:"hitl,omitempty"`
+	Security *PolicySecurity `yaml:"security,omitempty" json:"security,omitempty"`
 }
 
 type PolicyExecution struct {

@@ -14,8 +14,10 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +25,10 @@ func newRunCmd() *cobra.Command {
 	var inputFile string
 	var inputPairs []string
 	var approves []string
+	var autoApprove bool
+	var decision string
+	var decisionEditJSON string
+	var decisionSwitchTarget string
 	var resumeRunID string
 
 	cmd := &cobra.Command{
@@ -37,6 +43,8 @@ Workflow input is built from optional --input-file (JSON object) plus repeated -
 --approve using the full uses string (e.g. tool.helper.echo).
 
 Resume an interrupted or incomplete run with --resume <run-id> (no workflow argument).
+When a run pauses for human approval, resume with --decision and related flags, or use
+--auto-approve / AGENTCTL_AUTO_APPROVE=1 for non-interactive approval.
 
 Examples:
   agentctl run workflow/demo --input topic=hello
@@ -71,12 +79,16 @@ Exit codes (section 11.2):
 					return NewExitError(ExitValidationError, err)
 				}
 			}
-			return runRun(cmd, wfName, resumeRunID, inputFile, inputPairs, approves)
+			return runRun(cmd, wfName, resumeRunID, inputFile, inputPairs, approves, autoApprove, decision, decisionEditJSON, decisionSwitchTarget)
 		},
 	}
 	cmd.Flags().StringVar(&inputFile, "input-file", "", "path to JSON file with workflow input object")
 	cmd.Flags().StringArrayVar(&inputPairs, "input", nil, "workflow input as key=value (repeatable; values are strings)")
 	cmd.Flags().StringArrayVar(&approves, "approve", nil, "approve a policy-gated tool uses string (repeatable)")
+	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "auto-approve human-in-the-loop gates (or set AGENTCTL_AUTO_APPROVE=1)")
+	cmd.Flags().StringVar(&decision, "decision", "", "HITL decision when resuming: approve, reject, edit, or switch")
+	cmd.Flags().StringVar(&decisionEditJSON, "decision-edit-json", "", "JSON object of edited tool args when --decision edit")
+	cmd.Flags().StringVar(&decisionSwitchTarget, "decision-switch-target", "", "target operation when --decision switch")
 	cmd.Flags().StringVar(&resumeRunID, "resume", "", "resume an interrupted or incomplete run by id")
 	return cmd
 }
@@ -165,7 +177,7 @@ func classifyRunError(err error) int {
 	}
 }
 
-func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPairs, approves []string) error {
+func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPairs, approves []string, autoApprove bool, decision, decisionEditJSON, decisionSwitchTarget string) error {
 	ctx := context.Background()
 	g := Globals()
 
@@ -203,33 +215,71 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 	defer func() { _ = st.Close() }()
 
 	rt := local.NewRuntime(root, st)
-	opts := runtime.WorkflowRunOptions{
-		EnvironmentName: strings.TrimSpace(g.Env),
-		Env:             env,
-		InputJSON:       inputJSON,
-		ApprovedActions: approves,
-		Resume:          resumeID != "",
-		RunID:           resumeID,
-	}
-	if !opts.Resume {
-		opts.WorkflowName = wfName
-	}
-	runID, runErr := rt.ExecuteWorkflow(ctx, opts)
 
-	outWfName := wfName
-	if opts.Resume && runID != "" {
-		if r, gerr := st.GetRun(ctx, runID); gerr == nil && r != nil {
-			outWfName = r.WorkflowName
+	for {
+		opts := runtime.WorkflowRunOptions{
+			EnvironmentName: strings.TrimSpace(g.Env),
+			Env:             env,
+			InputJSON:       inputJSON,
+			ApprovedActions: approves,
+			Resume:          resumeID != "",
+			RunID:           resumeID,
 		}
-	}
+		if err := applyHitlRunOptions(&opts, resumeID != "", autoApprove, decision, decisionEditJSON, decisionSwitchTarget); err != nil {
+			return NewExitError(ExitValidationError, err)
+		}
+		if !opts.Resume {
+			opts.WorkflowName = wfName
+		}
+		runID, runErr := rt.ExecuteWorkflow(ctx, opts)
 
-	if werr := writeRunOutput(cmd, ctx, st, env, dsn, outWfName, runID, runErr, g); werr != nil {
-		return werr
+		outWfName := wfName
+		if opts.Resume && runID != "" {
+			if r, gerr := st.GetRun(ctx, runID); gerr == nil && r != nil {
+				outWfName = r.WorkflowName
+			}
+		}
+
+		if runErr == nil && runID != "" {
+			if r, gerr := st.GetRun(ctx, runID); gerr == nil && r != nil && r.Status == state.RunStatusInterrupted {
+				if opts.AutoApprove || strings.TrimSpace(decision) != "" {
+					if _, gerr := requirePendingHitlGate(ctx, st, runID); gerr != nil {
+						return gerr
+					}
+					resumeID = runID
+					continue
+				}
+				gate, gerr := requirePendingHitlGate(ctx, st, runID)
+				if gerr != nil {
+					return gerr
+				}
+				if isatty.IsTerminal(os.Stdin.Fd()) {
+					dec, perr := maybePromptHitlDecision(cmd.InOrStdin(), cmd.OutOrStdout(), *gate)
+					if perr != nil {
+						return perr
+					}
+					if dec != nil {
+						resumeID = runID
+						decision = string(dec.Kind)
+						if dec.Kind == spec.HitlDecisionEdit {
+							b, _ := json.Marshal(dec.EditedWith)
+							decisionEditJSON = string(b)
+						}
+						decisionSwitchTarget = dec.SwitchTarget
+						continue
+					}
+				}
+			}
+		}
+
+		if werr := writeRunOutput(cmd, ctx, st, env, dsn, outWfName, runID, runErr, g); werr != nil {
+			return werr
+		}
+		if runErr != nil {
+			return NewExitError(classifyRunError(runErr), fmt.Errorf("run: %w", runErr))
+		}
+		return nil
 	}
-	if runErr != nil {
-		return NewExitError(classifyRunError(runErr), fmt.Errorf("run: %w", runErr))
-	}
-	return nil
 }
 
 func writeRunOutput(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, env, dsn, wfName, runID string, runErr error, g *Global) error {
@@ -286,6 +336,9 @@ func writeRunOutput(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, e
 			fmt.Fprintf(&b, "\nRun ID: %s\n", runID)
 			if got != nil {
 				fmt.Fprintf(&b, "Status: %s\n", got.Status)
+				if got.Status == state.RunStatusInterrupted {
+					fmt.Fprintf(&b, "Resume with: agentctl run --resume %s --decision approve|reject|edit|switch ...\n", runID)
+				}
 				if got.ErrorText != "" {
 					fmt.Fprintf(&b, "Error: %s\n", got.ErrorText)
 				}

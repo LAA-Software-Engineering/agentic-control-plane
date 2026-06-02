@@ -253,8 +253,116 @@ func validatePolicySpecs(g *ProjectGraph) []error {
 				seen[a] = struct{}{}
 			}
 		}
+		errs = append(errs, validateHitlPolicy(name, pr.Spec.Hitl, g)...)
 	}
 	return errs
+}
+
+func validateHitlPolicy(policyName string, hitl *HitlPolicy, g *ProjectGraph) []error {
+	if hitl == nil {
+		return nil
+	}
+	var errs []error
+	prefix := fmt.Sprintf("Policy/%s: hitl", policyName)
+	for toolName, iv := range hitl.InterruptOn {
+		tn := strings.TrimSpace(toolName)
+		if tn == "" {
+			errs = append(errs, fmt.Errorf("%s.interruptOn contains empty tool name", prefix))
+			continue
+		}
+		if g != nil && g.Tools != nil {
+			if _, ok := g.Tools[tn]; !ok {
+				errs = append(errs, fmt.Errorf("%s.interruptOn[%q]: no Tool/%s in project (interruptOn keys must match Tool metadata.name)", prefix, toolName, tn))
+			}
+		}
+		if !iv.Enabled {
+			errs = append(errs, fmt.Errorf("%s.interruptOn[%q] must be true or a config object", prefix, toolName))
+			continue
+		}
+		if iv.Config != nil {
+			errs = append(errs, validateHitlInterruptConfig(prefix+".interruptOn["+toolName+"]", iv.Config, g)...)
+		}
+	}
+	if hitl.ToolSwitchMap != nil {
+		for from, targets := range hitl.ToolSwitchMap {
+			if strings.TrimSpace(from) == "" {
+				errs = append(errs, fmt.Errorf("%s.toolSwitchMap contains empty source key", prefix))
+			}
+			for i, tgt := range targets {
+				if strings.TrimSpace(tgt) == "" {
+					errs = append(errs, fmt.Errorf("%s.toolSwitchMap[%q][%d] must be non-empty", prefix, from, i))
+				}
+			}
+		}
+	}
+	return errs
+}
+
+func validateHitlInterruptConfig(prefix string, cfg *HitlInterruptConfig, g *ProjectGraph) []error {
+	if cfg == nil {
+		return nil
+	}
+	var errs []error
+	seenDecisions := make(map[HitlDecisionKind]struct{})
+	for i, d := range cfg.AllowedDecisions {
+		if !IsValidHitlDecisionKind(d) {
+			errs = append(errs, fmt.Errorf("%s.allowedDecisions[%d]: unknown decision %q", prefix, i, d))
+			continue
+		}
+		if _, dup := seenDecisions[d]; dup {
+			errs = append(errs, fmt.Errorf("%s.allowedDecisions: duplicate %q", prefix, d))
+		}
+		seenDecisions[d] = struct{}{}
+	}
+	for i, tn := range cfg.AllowedEditTools {
+		tn = strings.TrimSpace(tn)
+		if tn == "" {
+			errs = append(errs, fmt.Errorf("%s.allowedEditTools[%d] must be non-empty", prefix, i))
+			continue
+		}
+		if g != nil && g.Tools != nil {
+			if _, ok := g.Tools[tn]; !ok {
+				errs = append(errs, fmt.Errorf("%s.allowedEditTools[%q]: no Tool/%s in project", prefix, tn, tn))
+			}
+		}
+	}
+	if overlap := intersectStringSets(cfg.AllowedEditArgs, cfg.DeniedEditArgs); len(overlap) > 0 {
+		errs = append(errs, fmt.Errorf("%s: allowedEditArgs and deniedEditArgs overlap: %v", prefix, overlap))
+	}
+	if overlap := intersectStringSets(cfg.AllowedEditPaths, cfg.DeniedEditPaths); len(overlap) > 0 {
+		errs = append(errs, fmt.Errorf("%s: allowedEditPaths and deniedEditPaths overlap: %v", prefix, overlap))
+	}
+	if cfg.SwitchMap != nil {
+		for from, targets := range cfg.SwitchMap {
+			if strings.TrimSpace(from) == "" {
+				errs = append(errs, fmt.Errorf("%s.switchMap contains empty source key", prefix))
+			}
+			for i, tgt := range targets {
+				if strings.TrimSpace(tgt) == "" {
+					errs = append(errs, fmt.Errorf("%s.switchMap[%q][%d] must be non-empty", prefix, from, i))
+				}
+			}
+		}
+	}
+	return errs
+}
+
+func intersectStringSets(a, b []string) []string {
+	if len(a) == 0 || len(b) == 0 {
+		return nil
+	}
+	setB := make(map[string]struct{}, len(b))
+	for _, s := range b {
+		setB[strings.TrimSpace(s)] = struct{}{}
+	}
+	var out []string
+	for _, s := range a {
+		s = strings.TrimSpace(s)
+		if _, ok := setB[s]; ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func validatePolicyPresets(g *ProjectGraph) []error {

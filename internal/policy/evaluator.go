@@ -33,6 +33,11 @@ func (e *evaluator) spec() *spec.PolicySpec {
 	return e.policy
 }
 
+// PolicySpec exposes the merged policy spec for HITL review resolution.
+func (e *evaluator) PolicySpec() *spec.PolicySpec {
+	return e.spec()
+}
+
 func (e *evaluator) CheckRun(ctx context.Context, run RunContext) error {
 	_ = ctx
 	p := e.spec()

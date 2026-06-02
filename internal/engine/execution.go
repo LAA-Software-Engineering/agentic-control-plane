@@ -38,6 +38,8 @@ type RunInput struct {
 	ApprovedActions []string
 	// Resume loads the latest checkpoint and continues from the next step (issue #105).
 	Resume bool
+	// Hitl carries operator decisions for approval gates (issue #106).
+	Hitl HitlRunOptions
 	// InterruptAfterStepIndex, when non-nil, checkpoints and returns [ErrInterrupted] after
 	// completing the step at this index. Used to simulate approval gates until HITL lands.
 	InterruptAfterStepIndex *int
@@ -146,9 +148,40 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 		var out map[string]any
 		var stepCost float64
 		if uses != "" {
-			var meta tools.ToolCallMeta
-			out, meta, err = e.runToolStep(ctx, wfPol, in.RunID, step, with, pctx)
-			stepCost = meta.CostUSD
+			toolUses := uses
+			toolWith := with
+			pending := ictx.PendingHitl
+			if pending == nil {
+				interrupted, ierr := e.maybeInterruptForHitl(ctx, in, i, step, with, wfPol, pctx, ictx, totalCost)
+				if interrupted {
+					return ierr
+				}
+				if in.Hitl.AutoApprove {
+					gate, gerr := policy.BuildHitlGate(e.Graph, policySpecFromEvaluator(wfPol), policy.ToolCallContext{
+						Run: pctx, StepID: step.ID, Uses: uses, With: with,
+					})
+					if gerr != nil {
+						err = gerr
+					} else if gate != nil {
+						e.recordAutoApproveHitl(ctx, in.RunID, step, i, *gate, in.Hitl.Actor)
+						pctx.ApprovedActions = append(append([]string(nil), pctx.ApprovedActions...), uses)
+					}
+				}
+			} else {
+				var rerr error
+				toolUses, toolWith, rerr = e.resolvePendingHitl(ctx, in, step, wfPol, pctx, pending)
+				if rerr != nil {
+					err = rerr
+				} else {
+					ictx.PendingHitl = nil
+					pctx.ApprovedActions = append(append([]string(nil), pctx.ApprovedActions...), toolUses)
+				}
+			}
+			if err == nil {
+				var meta tools.ToolCallMeta
+				out, meta, err = e.runToolStep(ctx, wfPol, in.RunID, step, with, pctx, toolUses, toolWith)
+				stepCost = meta.CostUSD
+			}
 		} else {
 			ar, ok := e.Graph.Agents[agentName]
 			if !ok || ar == nil {

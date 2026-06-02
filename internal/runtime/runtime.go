@@ -1,6 +1,10 @@
 package runtime
 
-import "context"
+import (
+	"context"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+)
 
 // WorkflowRunOptions configures a single workflow execution for [WorkflowRunner].
 type WorkflowRunOptions struct {
@@ -19,6 +23,19 @@ type WorkflowRunOptions struct {
 	// Resume continues an existing run from its latest checkpoint (issue #105).
 	// RunID must be set; InputJSON and WorkflowName are loaded from the persisted run.
 	Resume bool
+	// AutoApprove skips interactive HITL prompts and approves gated tool calls (issue #106).
+	AutoApprove bool
+	// HitlActor attributes approval decisions in trace events (default: operator or $USER).
+	HitlActor string
+	// HitlDecision supplies an explicit decision when resuming an interrupted run (issue #106).
+	HitlDecision *HitlDecisionOptions
+}
+
+// HitlDecisionOptions configures a non-interactive HITL resolution on resume.
+type HitlDecisionOptions struct {
+	Kind         spec.HitlDecisionKind
+	EditedWith   map[string]any
+	SwitchTarget string
 }
 
 // WorkflowRunner loads declarative state and executes a workflow locally (design doc section 16 MVP).

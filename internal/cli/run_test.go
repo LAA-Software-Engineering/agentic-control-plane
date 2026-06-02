@@ -79,26 +79,26 @@ func TestRun_demo_integration_succeeds(t *testing.T) {
 	}
 }
 
-func TestRun_safetyOnlyDenial_exit5(t *testing.T) {
+func TestRun_safetyOnly_interruptsAwaitingHitl(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "run-safety.db")
 	root := runSafetyRoot(t)
 
 	ResetGlobalsForTest()
+	var out bytes.Buffer
 	cmd := NewRootCmd()
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"run", "workflow/echo",
 		"--project", root,
 		"--state", db,
 		"--input", "topic=x",
 	})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected safety-derived policy denial")
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("run: %v", err)
 	}
-	if ExitCodeOf(err) != ExitPolicyDenied {
-		t.Fatalf("exit=%d want %d err=%v", ExitCodeOf(err), ExitPolicyDenied, err)
+	if !strings.Contains(out.String(), "Status: interrupted") {
+		t.Fatalf("expected interrupted:\n%s", out.String())
 	}
 }
 
@@ -126,10 +126,58 @@ func TestRun_safetyOnly_withApprove_succeeds(t *testing.T) {
 	}
 }
 
-func TestRun_policyDenial_exit5(t *testing.T) {
+func TestRun_policyGated_interruptThenResumeApprove(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "run-pol.db")
 	root := runPolicyRoot(t)
 
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "workflow/gated",
+		"--project", root,
+		"--state", db,
+		"--input", "topic=x",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("first run: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Status: interrupted") {
+		t.Fatalf("expected interrupted:\n%s", out.String())
+	}
+	runID := ""
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Run ID:") {
+			runID = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "Run ID:"))
+		}
+	}
+	if runID == "" {
+		t.Fatal("missing run id")
+	}
+
+	out.Reset()
+	cmd2 := NewRootCmd()
+	cmd2.SetOut(&out)
+	cmd2.SetErr(&out)
+	cmd2.SetArgs([]string{
+		"run", "--resume", runID,
+		"--project", root,
+		"--state", db,
+		"--decision", "approve",
+	})
+	if err := cmd2.Execute(); err != nil {
+		t.Fatalf("resume: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Status: succeeded") {
+		t.Fatalf("expected succeeded:\n%s", out.String())
+	}
+}
+
+func TestRun_decisionWithoutResume_exit2(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "run-decision.db")
+	root := runPolicyRoot(t)
 	ResetGlobalsForTest()
 	cmd := NewRootCmd()
 	cmd.SetOut(io.Discard)
@@ -139,14 +187,91 @@ func TestRun_policyDenial_exit5(t *testing.T) {
 		"--project", root,
 		"--state", db,
 		"--input", "topic=x",
+		"--decision", "approve",
 	})
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected policy denial")
+		t.Fatal("expected validation error")
 	}
-	if ExitCodeOf(err) != ExitPolicyDenied {
-		t.Fatalf("exit=%d want %d err=%v", ExitCodeOf(err), ExitPolicyDenied, err)
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d want %d err=%v", ExitCodeOf(err), ExitValidationError, err)
 	}
+}
+
+func TestRun_hitlRejectViaResume(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "run-reject.db")
+	root := runPolicyRoot(t)
+	runID := runPolicyInterrupted(t, root, db)
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "--resume", runID,
+		"--project", root,
+		"--state", db,
+		"--decision", "reject",
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected rejection error")
+	}
+	if ExitCodeOf(err) != ExitExecutionError {
+		t.Fatalf("exit=%d want %d err=%v", ExitCodeOf(err), ExitExecutionError, err)
+	}
+}
+
+func TestRun_hitlEditViaResume(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "run-edit.db")
+	root := runPolicyRoot(t)
+	runID := runPolicyInterrupted(t, root, db)
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "--resume", runID,
+		"--project", root,
+		"--state", db,
+		"--decision", "edit",
+		"--decision-edit-json", `{"topic":"edited"}`,
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("resume edit: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Status: succeeded") {
+		t.Fatalf("expected succeeded:\n%s", out.String())
+	}
+}
+
+func runPolicyInterrupted(t *testing.T, root, db string) string {
+	t.Helper()
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "workflow/gated",
+		"--project", root,
+		"--state", db,
+		"--input", "topic=x",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("interrupt run: %v\n%s", err, out.String())
+	}
+	for _, line := range strings.Split(out.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Run ID:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "Run ID:"))
+		}
+	}
+	t.Fatal("missing run id")
+	return ""
 }
 
 func TestRun_withApprove_succeeds(t *testing.T) {

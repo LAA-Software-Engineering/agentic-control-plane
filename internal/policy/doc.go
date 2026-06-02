@@ -27,4 +27,10 @@
 // [EffectiveToolDecision] uses prefix matching on tool.<name>. for plan risk (conservative:
 // any listed action under the tool flags the whole Tool). Runtime [approvalRequired] matches
 // the full uses string exactly.
+//
+// # Human-in-the-loop (issue #106)
+//
+// When a tool call would require approval, [BuildHitlGate] and [ResolveHitlReview] supply review
+// configuration from Policy.spec.hitl. Operators resolve gates with approve, reject, edit, or switch;
+// [ApplyHitlDecision] and [ValidateHitlEdit] enforce per-call edit and switch rules.
 package policy
