@@ -49,6 +49,16 @@ func Derive(safety spec.ResolvedToolSafety) Decision {
 func EffectiveToolDecision(graph *spec.ProjectGraph, pol *spec.PolicySpec, toolName string) ToolDecision {
 	toolName = strings.TrimSpace(toolName)
 	safety := resolvedSafetyForTool(graph, toolName)
+	if pol != nil && spec.ResolvedPresetName(pol) == spec.PresetShellSafe {
+		// shell_safe plan risk is tool-granular (conservative); runtime uses per-command classification.
+		if safety.RequiresApproval || safety.SideEffects {
+			return ToolDecision{
+				Decision: DecisionRequireApproval,
+				Source:   SourceExplicitPolicyRule,
+				Safety:   safety,
+			}
+		}
+	}
 	if pol != nil && pol.Approvals != nil {
 		if spec.ApprovalPermissive(pol.Approvals) {
 			return ToolDecision{
@@ -62,17 +72,6 @@ func EffectiveToolDecision(graph *spec.ProjectGraph, pol *spec.PolicySpec, toolN
 				Decision: DecisionRequireApproval,
 				Source:   SourceExplicitPolicyRule,
 				Safety:   safety,
-			}
-		}
-		// shell_safe plan risk is tool-granular (conservative): side-effecting tools flag approval;
-		// runtime applies per-command token classification via shellSafeRequiresApproval.
-		if spec.ResolvedPresetName(pol) == spec.PresetShellSafe {
-			if safety.RequiresApproval || safety.SideEffects {
-				return ToolDecision{
-					Decision: DecisionRequireApproval,
-					Source:   SourceExplicitPolicyRule,
-					Safety:   safety,
-				}
 			}
 		}
 	}

@@ -64,7 +64,8 @@ func (e *evaluator) CheckToolCall(ctx context.Context, call ToolCallContext) err
 	}
 	switch {
 	case p != nil && spec.ResolvedPresetName(p) == spec.PresetShellSafe:
-		if shellSafeRequiresApproval(e.graph, call) {
+		needApproval := shellSafeRequiresApproval(e.graph, call) || approvalRequired(call.Uses, p.Approvals)
+		if needApproval {
 			if actionApproved(call.Uses, call.Run.ApprovedActions) {
 				return nil
 			}
@@ -84,19 +85,10 @@ func (e *evaluator) CheckToolCall(ctx context.Context, call ToolCallContext) err
 }
 
 func requiresToolCallApproval(graph *spec.ProjectGraph, pol *spec.PolicySpec, call ToolCallContext) bool {
-	if pol == nil {
+	if pol == nil || pol.Approvals == nil {
 		return false
 	}
-	if spec.ResolvedPresetName(pol) == spec.PresetShellSafe {
-		return shellSafeRequiresApproval(graph, call)
-	}
-	if pol.Approvals == nil {
-		return false
-	}
-	if spec.ApprovalRequireAllTools(pol.Approvals) {
-		return true
-	}
-	return false
+	return spec.ApprovalRequireAllTools(pol.Approvals)
 }
 
 func toolCallApprovalDenied(call ToolCallContext, pol *spec.PolicySpec) error {

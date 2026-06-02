@@ -57,6 +57,27 @@ func TestCheckToolCall_shellSafe_gatesRm(t *testing.T) {
 	}
 }
 
+func TestCheckToolCall_shellSafe_requiredForLayering(t *testing.T) {
+	g := testGraphWithTools("helper")
+	g.Tools["helper"].Spec.Safety = &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}
+	base, err := spec.BuildPreset(spec.PresetShellSafe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := spec.MergePolicySpec(base, spec.PolicySpec{
+		Approvals: &spec.PolicyApprovals{
+			RequiredFor: []string{"tool.helper.echo"},
+		},
+	})
+	ev := NewEvaluator(g, &pol)
+	err = ev.CheckToolCall(context.Background(), ToolCallContext{
+		Uses: "tool.helper.echo",
+	})
+	if err == nil {
+		t.Fatal("shell_safe with local requiredFor should gate exact uses")
+	}
+}
+
 func TestCheckToolCall_shellSafe_gatesChainedCommand(t *testing.T) {
 	pol, err := spec.BuildPreset(spec.PresetShellSafe)
 	if err != nil {
@@ -204,6 +225,21 @@ func TestExpandPresetsInGraph_userPolicyOverridesBuiltin(t *testing.T) {
 	spec.ExpandPresetsInGraph(g)
 	if g.Policies[spec.PresetStrict].Spec.Execution.MaxWallClockSeconds != 99 {
 		t.Fatal("user policy should not be replaced by builtin")
+	}
+}
+
+func TestEffectiveToolDecision_shellSafe_builtinPresetNoApprovals(t *testing.T) {
+	g := shellSafeGraph()
+	pol, err := spec.BuildPreset(spec.PresetShellSafe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pol.Approvals != nil {
+		t.Fatal("builtin shell_safe should not set Approvals")
+	}
+	td := EffectiveToolDecision(g, &pol, "shell")
+	if td.Decision != DecisionRequireApproval {
+		t.Fatalf("plan should flag side-effecting shell tool via ResolvedPreset: %+v", td)
 	}
 }
 

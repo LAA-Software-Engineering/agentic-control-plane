@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
 func TestInit_thenValidateSucceeds(t *testing.T) {
@@ -58,8 +60,8 @@ func TestInit_defaultPolicyExpandsShellSafePreset(t *testing.T) {
 	if !ok || pr == nil {
 		t.Fatal("expected default policy")
 	}
-	if pr.Spec.ResolvedPreset != "shell_safe" {
-		t.Fatalf("default policy ResolvedPreset = %q want shell_safe", pr.Spec.ResolvedPreset)
+	if pr.Spec.ResolvedPreset != spec.PresetShellSafe {
+		t.Fatalf("default policy ResolvedPreset = %q want %s", pr.Spec.ResolvedPreset, spec.PresetShellSafe)
 	}
 }
 
