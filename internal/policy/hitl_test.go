@@ -194,7 +194,7 @@ func TestRedactHitlArgs_masksKeys(t *testing.T) {
 	if out["topic"] != "x" {
 		t.Fatalf("topic leaked change: %v", out)
 	}
-	if out["token"] != "••••••" {
+	if out["token"] != RedactedSecretPlaceholder {
 		t.Fatalf("token not redacted: %v", out["token"])
 	}
 }

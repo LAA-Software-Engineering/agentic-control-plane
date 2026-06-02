@@ -1,6 +1,10 @@
 package runtime
 
-import "context"
+import (
+	"context"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+)
 
 // WorkflowRunOptions configures a single workflow execution for [WorkflowRunner].
 type WorkflowRunOptions struct {
@@ -29,7 +33,7 @@ type WorkflowRunOptions struct {
 
 // HitlDecisionOptions configures a non-interactive HITL resolution on resume.
 type HitlDecisionOptions struct {
-	Kind         string
+	Kind         spec.HitlDecisionKind
 	EditedWith   map[string]any
 	SwitchTarget string
 }

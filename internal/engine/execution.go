@@ -163,6 +163,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 					if gerr != nil {
 						err = gerr
 					} else if gate != nil {
+						e.recordAutoApproveHitl(ctx, in.RunID, step, i, *gate, in.Hitl.Actor)
 						pctx.ApprovedActions = append(append([]string(nil), pctx.ApprovedActions...), uses)
 					}
 				}

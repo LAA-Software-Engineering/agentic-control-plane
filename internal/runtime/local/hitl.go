@@ -1,29 +1,30 @@
 package local
 
 import (
+	"fmt"
+
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
-func buildEngineHitlOptions(opts runtime.WorkflowRunOptions) engine.HitlRunOptions {
+func buildEngineHitlOptions(opts runtime.WorkflowRunOptions) (engine.HitlRunOptions, error) {
 	out := engine.HitlRunOptions{
 		AutoApprove: opts.AutoApprove,
 		Actor:       opts.HitlActor,
 	}
 	if opts.HitlDecision == nil {
-		return out
+		return out, nil
 	}
-	kind, err := spec.ParseHitlDecisionKind(opts.HitlDecision.Kind)
-	if err != nil {
-		return out
+	if !spec.IsValidHitlDecisionKind(opts.HitlDecision.Kind) {
+		return out, fmt.Errorf("local: invalid hitl decision kind %q", opts.HitlDecision.Kind)
 	}
 	out.Decision = &policy.HitlDecisionInput{
-		Kind:         kind,
+		Kind:         opts.HitlDecision.Kind,
 		Actor:        opts.HitlActor,
 		EditedWith:   opts.HitlDecision.EditedWith,
 		SwitchTarget: opts.HitlDecision.SwitchTarget,
 	}
-	return out
+	return out, nil
 }

@@ -74,7 +74,6 @@ func ResolveHitlReview(graph *spec.ProjectGraph, pol *spec.PolicySpec, uses stri
 	if cfg != nil && len(cfg.AllowedEditTools) > 0 {
 		review.SwitchTargets = uniqueStrings(append(review.SwitchTargets, cfg.AllowedEditTools...))
 	}
-	_ = graph // reserved for future lint: switch targets must exist in graph
 	return review, nil
 }
 

@@ -29,8 +29,13 @@ var AllHitlDecisionKinds = []HitlDecisionKind{
 const DefaultHitlDescriptionPrefix = "Tool execution requires approval"
 
 // HitlPolicy configures human-in-the-loop approval gates (issue #106).
+//
+// interruptOn keys are Tool metadata.name values. They do not independently gate tools;
+// they supply per-tool review configuration (allowed decisions, edit rules, switchMap)
+// when a call already requires approval via approvals.requiredFor or safety metadata.
 type HitlPolicy struct {
-	// InterruptOn maps tool metadata.name to true (defaults) or a per-tool review config.
+	// InterruptOn maps Tool metadata.name to true (defaults) or per-tool review config.
+	// Does not gate tools by itself; see [HitlPolicy] package comment.
 	InterruptOn map[string]HitlInterruptValue `yaml:"interruptOn,omitempty" json:"interruptOn,omitempty"`
 	// DescriptionPrefix prefixes every approval prompt (default [DefaultHitlDescriptionPrefix]).
 	DescriptionPrefix string `yaml:"descriptionPrefix,omitempty" json:"descriptionPrefix,omitempty"`

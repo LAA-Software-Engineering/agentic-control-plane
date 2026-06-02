@@ -253,12 +253,12 @@ func validatePolicySpecs(g *ProjectGraph) []error {
 				seen[a] = struct{}{}
 			}
 		}
-		errs = append(errs, validateHitlPolicy(name, pr.Spec.Hitl)...)
+		errs = append(errs, validateHitlPolicy(name, pr.Spec.Hitl, g)...)
 	}
 	return errs
 }
 
-func validateHitlPolicy(policyName string, hitl *HitlPolicy) []error {
+func validateHitlPolicy(policyName string, hitl *HitlPolicy, g *ProjectGraph) []error {
 	if hitl == nil {
 		return nil
 	}
@@ -270,12 +270,17 @@ func validateHitlPolicy(policyName string, hitl *HitlPolicy) []error {
 			errs = append(errs, fmt.Errorf("%s.interruptOn contains empty tool name", prefix))
 			continue
 		}
+		if g != nil && g.Tools != nil {
+			if _, ok := g.Tools[tn]; !ok {
+				errs = append(errs, fmt.Errorf("%s.interruptOn[%q]: no Tool/%s in project (interruptOn keys must match Tool metadata.name)", prefix, toolName, tn))
+			}
+		}
 		if !iv.Enabled {
 			errs = append(errs, fmt.Errorf("%s.interruptOn[%q] must be true or a config object", prefix, toolName))
 			continue
 		}
 		if iv.Config != nil {
-			errs = append(errs, validateHitlInterruptConfig(prefix+".interruptOn["+toolName+"]", iv.Config)...)
+			errs = append(errs, validateHitlInterruptConfig(prefix+".interruptOn["+toolName+"]", iv.Config, g)...)
 		}
 	}
 	if hitl.ToolSwitchMap != nil {
@@ -293,7 +298,7 @@ func validateHitlPolicy(policyName string, hitl *HitlPolicy) []error {
 	return errs
 }
 
-func validateHitlInterruptConfig(prefix string, cfg *HitlInterruptConfig) []error {
+func validateHitlInterruptConfig(prefix string, cfg *HitlInterruptConfig, g *ProjectGraph) []error {
 	if cfg == nil {
 		return nil
 	}
@@ -308,6 +313,18 @@ func validateHitlInterruptConfig(prefix string, cfg *HitlInterruptConfig) []erro
 			errs = append(errs, fmt.Errorf("%s.allowedDecisions: duplicate %q", prefix, d))
 		}
 		seenDecisions[d] = struct{}{}
+	}
+	for i, tn := range cfg.AllowedEditTools {
+		tn = strings.TrimSpace(tn)
+		if tn == "" {
+			errs = append(errs, fmt.Errorf("%s.allowedEditTools[%d] must be non-empty", prefix, i))
+			continue
+		}
+		if g != nil && g.Tools != nil {
+			if _, ok := g.Tools[tn]; !ok {
+				errs = append(errs, fmt.Errorf("%s.allowedEditTools[%q]: no Tool/%s in project", prefix, tn, tn))
+			}
+		}
 	}
 	if overlap := intersectStringSets(cfg.AllowedEditArgs, cfg.DeniedEditArgs); len(overlap) > 0 {
 		errs = append(errs, fmt.Errorf("%s: allowedEditArgs and deniedEditArgs overlap: %v", prefix, overlap))

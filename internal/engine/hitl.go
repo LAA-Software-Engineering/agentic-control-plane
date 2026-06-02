@@ -11,6 +11,8 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
+const traceInterruptReasonHITL = "hitl"
+
 // PendingHitlState is persisted in checkpoint context while awaiting operator input.
 type PendingHitlState struct {
 	StepID string                    `json:"stepId"`
@@ -76,7 +78,7 @@ func (e *Executor) maybeInterruptForHitl(
 			"stepIndex":        stepIndex,
 		})
 		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunInterrupted, map[string]any{
-			"stepIndex": stepIndex, "stepId": step.ID, "reason": "hitl",
+			"stepIndex": stepIndex, "stepId": step.ID, "reason": traceInterruptReasonHITL,
 		})
 	}
 	return true, ErrInterrupted
@@ -95,7 +97,7 @@ func (e *Executor) resolvePendingHitl(
 	}
 	actor := strings.TrimSpace(in.Hitl.Actor)
 	if actor == "" {
-		actor = "operator"
+		actor = policy.DefaultHitlActor
 	}
 	var decision policy.HitlDecisionInput
 	switch {
@@ -147,6 +149,32 @@ func (e *Executor) resolvePendingHitl(
 		return "", nil, err
 	}
 	return uses, with, nil
+}
+
+func (e *Executor) recordAutoApproveHitl(ctx context.Context, runID string, step spec.WorkflowStep, stepIndex int, gate policy.HitlGate, actor string) {
+	if e.Trace == nil {
+		return
+	}
+	if strings.TrimSpace(actor) == "" {
+		actor = policy.DefaultHitlActor
+	}
+	redacted := policy.RedactHitlArgs(gate.With, gate.Review.RedactKeys)
+	_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventApprovalRequested, map[string]any{
+		"uses":             gate.Uses,
+		"with":             redacted,
+		"description":      gate.Review.Description,
+		"allowedDecisions": gate.Review.AllowedDecisions,
+		"allowedSwitchTo":  gate.Review.SwitchTargets,
+		"stepIndex":        stepIndex,
+		"auto":             true,
+	})
+	_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventApprovalResolved, map[string]any{
+		"decision":     spec.HitlDecisionApprove,
+		"actor":        actor,
+		"uses":         gate.Uses,
+		"resolvedUses": gate.Uses,
+		"auto":         true,
+	})
 }
 
 func policySpecFromEvaluator(pol policy.PolicyEvaluator) *spec.PolicySpec {

@@ -203,6 +203,10 @@ func (r *Runtime) executeEngine(
 		Trace:       rec,
 		Now:         r.Now,
 	}
+	hitl, err := buildEngineHitlOptions(opts)
+	if err != nil {
+		return runID, err
+	}
 	runErr := ex.Run(ctx, engine.RunInput{
 		RunID:           runID,
 		WorkflowName:    wfName,
@@ -211,7 +215,7 @@ func (r *Runtime) executeEngine(
 		Input:           input,
 		ApprovedActions: opts.ApprovedActions,
 		Resume:          opts.Resume,
-		Hitl:            buildEngineHitlOptions(opts),
+		Hitl:            hitl,
 	})
 
 	finData := map[string]any{}

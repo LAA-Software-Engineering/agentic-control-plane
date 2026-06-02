@@ -225,7 +225,7 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 			Resume:          resumeID != "",
 			RunID:           resumeID,
 		}
-		if err := applyHitlRunOptions(&opts, autoApprove, decision, decisionEditJSON, decisionSwitchTarget); err != nil {
+		if err := applyHitlRunOptions(&opts, resumeID != "", autoApprove, decision, decisionEditJSON, decisionSwitchTarget); err != nil {
 			return NewExitError(ExitValidationError, err)
 		}
 		if !opts.Resume {
@@ -243,14 +243,17 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 		if runErr == nil && runID != "" {
 			if r, gerr := st.GetRun(ctx, runID); gerr == nil && r != nil && r.Status == state.RunStatusInterrupted {
 				if opts.AutoApprove || strings.TrimSpace(decision) != "" {
+					if _, gerr := requirePendingHitlGate(ctx, st, runID); gerr != nil {
+						return gerr
+					}
 					resumeID = runID
 					continue
 				}
-				gate, gerr := loadPendingHitlGate(ctx, st, runID)
+				gate, gerr := requirePendingHitlGate(ctx, st, runID)
 				if gerr != nil {
-					return fmt.Errorf("run: load hitl gate: %w", gerr)
+					return gerr
 				}
-				if gate != nil && isatty.IsTerminal(os.Stdin.Fd()) {
+				if isatty.IsTerminal(os.Stdin.Fd()) {
 					dec, perr := maybePromptHitlDecision(cmd.InOrStdin(), cmd.OutOrStdout(), *gate)
 					if perr != nil {
 						return perr
@@ -333,6 +336,9 @@ func writeRunOutput(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, e
 			fmt.Fprintf(&b, "\nRun ID: %s\n", runID)
 			if got != nil {
 				fmt.Fprintf(&b, "Status: %s\n", got.Status)
+				if got.Status == state.RunStatusInterrupted {
+					fmt.Fprintf(&b, "Resume with: agentctl run --resume %s --decision approve|reject|edit|switch ...\n", runID)
+				}
 				if got.ErrorText != "" {
 					fmt.Fprintf(&b, "Error: %s\n", got.ErrorText)
 				}

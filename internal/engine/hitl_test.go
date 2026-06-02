@@ -152,6 +152,33 @@ func TestHitl_autoApprove(t *testing.T) {
 	}
 }
 
+func TestHitl_autoApprove_emitsApprovalTrace(t *testing.T) {
+	ex, _, runID, started := setupHitlExecutor(t)
+	ctx := context.Background()
+	if err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "hitl", Env: "local", StartedAt: started, Input: map[string]any{},
+		Hitl: HitlRunOptions{AutoApprove: true, Actor: "ci-bot"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := trace.NewReader(ex.Store).ListByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requested, resolved bool
+	for _, ev := range events {
+		if ev.Type == trace.EventApprovalRequested {
+			requested = true
+		}
+		if ev.Type == trace.EventApprovalResolved {
+			resolved = true
+		}
+	}
+	if !requested || !resolved {
+		t.Fatalf("expected approval trace events, requested=%v resolved=%v", requested, resolved)
+	}
+}
+
 func TestHitl_rejectFailsStep(t *testing.T) {
 	ex, _, runID, started := setupHitlExecutor(t)
 	ctx := context.Background()

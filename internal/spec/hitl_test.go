@@ -75,6 +75,28 @@ func TestParseHitlDecisionKind(t *testing.T) {
 	}
 }
 
+func TestValidatePolicySpecs_hitlUnknownTool(t *testing.T) {
+	t.Helper()
+	g := &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{},
+		Policies: map[string]*spec.PolicyResource{
+			"bad": {
+				Spec: spec.PolicySpec{
+					Hitl: &spec.HitlPolicy{
+						InterruptOn: map[string]spec.HitlInterruptValue{
+							"missing": {Enabled: true},
+						},
+					},
+				},
+			},
+		},
+	}
+	err := spec.ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "no Tool/missing") {
+		t.Fatalf("expected unknown tool error, got %v", err)
+	}
+}
+
 func TestValidatePolicySpecs_hitlOverlap(t *testing.T) {
 	t.Helper()
 	g := &spec.ProjectGraph{

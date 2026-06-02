@@ -2,6 +2,7 @@ package policy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -9,6 +10,12 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 )
+
+// DefaultHitlActor is recorded on approval trace events when no actor is supplied.
+const DefaultHitlActor = "operator"
+
+// RedactedSecretPlaceholder masks sensitive values in HITL approval prompts.
+const RedactedSecretPlaceholder = "••••••"
 
 // HitlDecisionInput is an operator resolution submitted at resume or from an interactive prompt.
 type HitlDecisionInput struct {
@@ -20,7 +27,7 @@ type HitlDecisionInput struct {
 
 // ApplyHitlDecision resolves the effective uses/with for a gated call after operator input.
 func ApplyHitlDecision(gate HitlGate, in HitlDecisionInput) (uses string, with map[string]any, err error) {
-	if !decisionAllowed(in.Kind, gate.Review.AllowedDecisions) {
+	if !IsDecisionAllowed(in.Kind, gate.Review.AllowedDecisions) {
 		return "", nil, fmt.Errorf("policy: decision %q is not allowed (allowed: %v)", in.Kind, gate.Review.AllowedDecisions)
 	}
 	switch in.Kind {
@@ -75,35 +82,14 @@ func (e *HitlRejectedError) Unwrap() error { return ErrHitlRejected }
 // AsHitlRejected unwraps a [HitlRejectedError].
 func AsHitlRejected(err error) (*HitlRejectedError, bool) {
 	var r *HitlRejectedError
-	if err == nil {
-		return nil, false
-	}
-	if errorsAsHitlRejected(err, &r) {
+	if errors.As(err, &r) {
 		return r, true
 	}
 	return nil, false
 }
 
-func errorsAsHitlRejected(err error, target **HitlRejectedError) bool {
-	for err != nil {
-		if r, ok := err.(*HitlRejectedError); ok {
-			*target = r
-			return true
-		}
-		err = unwrapOnce(err)
-	}
-	return false
-}
-
-func unwrapOnce(err error) error {
-	type unwrapper interface{ Unwrap() error }
-	if u, ok := err.(unwrapper); ok {
-		return u.Unwrap()
-	}
-	return nil
-}
-
-func decisionAllowed(kind spec.HitlDecisionKind, allowed []spec.HitlDecisionKind) bool {
+// IsDecisionAllowed reports whether kind is permitted for a gated call.
+func IsDecisionAllowed(kind spec.HitlDecisionKind, allowed []spec.HitlDecisionKind) bool {
 	for _, a := range allowed {
 		if a == kind {
 			return true
@@ -297,7 +283,7 @@ func RedactHitlArgs(args map[string]any, redactKeys []string) map[string]any {
 	redacted := shallowCopyMap(args)
 	for path := range flat {
 		if pathDenied(path, nil, redactKeys) {
-			setNestedValue(redacted, path, "••••••")
+			setNestedValue(redacted, path, RedactedSecretPlaceholder)
 		}
 	}
 	return redacted

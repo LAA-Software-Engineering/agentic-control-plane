@@ -6,3 +6,10 @@ spec:
   approvals:
     requiredFor:
       - "tool.helper.echo"
+  hitl:
+    descriptionPrefix: "Echo tool requires operator approval"
+    interruptOn:
+      helper:
+        allowedDecisions: [approve, reject, edit]
+        allowedEditArgs: [topic]
+        description: "Review echo call (${uses})"
