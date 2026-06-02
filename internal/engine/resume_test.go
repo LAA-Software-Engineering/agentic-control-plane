@@ -121,7 +121,7 @@ func TestRun_interruptAndResume_completesWithoutReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Status != "interrupted" {
+	if run.Status != state.RunStatusInterrupted {
 		t.Fatalf("status = %q", run.Status)
 	}
 	cp, err := st.GetLatestCheckpoint(ctx, runID)
@@ -251,7 +251,7 @@ func TestRun_resume_rejectsCompletedCheckpoint(t *testing.T) {
 	}
 	if err := st.SaveCheckpoint(ctx, state.RunCheckpoint{
 		RunID: "done", StepIndex: 1, StepID: "last",
-		ContextJSON: `{"input":{},"steps":{},"totalCostUsd":0}`,
+		ContextJSON: `{"version":1,"input":{},"steps":{},"totalCostUsd":0}`,
 		Status:      state.CheckpointStatusCompleted, CreatedAt: started,
 	}); err != nil {
 		t.Fatal(err)

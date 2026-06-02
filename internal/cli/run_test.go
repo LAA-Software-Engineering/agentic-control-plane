@@ -2,11 +2,26 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
 func runProjRoot(t *testing.T) string {
@@ -259,7 +274,87 @@ func TestRun_resume_withWorkflowArg_exit2(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if ExitCodeOf(err) != ExitGenericFailure {
+	if ExitCodeOf(err) != ExitValidationError {
 		t.Fatalf("exit=%d err=%v", ExitCodeOf(err), err)
+	}
+}
+
+func TestRun_resume_happyPath(t *testing.T) {
+	ctx := context.Background()
+	db := filepath.Join(t.TempDir(), "resume-happy.db")
+	root := runProjRoot(t)
+
+	st, err := sqlite.Open(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	graph, err := project.LoadProject(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.NormalizeProjectGraph(graph)
+	graph, err = local.ApplyEnvironment(graph, "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wf := graph.Workflows["demo"]
+	wfHash, err := plan.WorkflowSpecHash(wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runID := "cli-resume-1"
+	started := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: runID, WorkflowName: "demo", Env: "dev", Status: state.RunStatusRunning,
+		StartedAt: started, InputJSON: `{"topic":"cli-resume"}`, TotalCostUSD: 0,
+		WorkflowSpecHash: wfHash, EnvironmentName: "staging",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var input map[string]any
+	if err := json.Unmarshal([]byte(`{"topic":"cli-resume"}`), &input); err != nil {
+		t.Fatal(err)
+	}
+	idx := 0
+	ex := &engine.Executor{
+		Graph: graph, ProjectRoot: root,
+		Tools: tools.NewRegistry(graph), Models: models.NewRegistry(graph),
+		Store: st, Trace: trace.NewRecorder(st),
+		Now: func() time.Time { return started },
+	}
+	if err := ex.Run(ctx, engine.RunInput{
+		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
+		InterruptAfterStepIndex: &idx,
+	}); !errors.Is(err, engine.ErrInterrupted) {
+		t.Fatalf("interrupt: %v", err)
+	}
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "--resume", runID,
+		"--project", root,
+		"-e", "staging",
+		"--state", db,
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("resume: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "succeeded") {
+		t.Fatalf("output:\n%s", out.String())
+	}
+	got, err := st.GetRun(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.RunStatusSucceeded {
+		t.Fatalf("status %q", got.Status)
 	}
 }

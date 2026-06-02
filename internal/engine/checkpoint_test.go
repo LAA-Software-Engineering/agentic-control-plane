@@ -9,7 +9,7 @@ func TestMarshalCheckpointPayload_stableKeyOrder(t *testing.T) {
 	ictx := Context{
 		Input: map[string]any{"b": 2, "a": 1},
 		Steps: map[string]StepResult{
-			"z": {Output: map[string]any{"x": 1}, Meta: map[string]any{"costUsd": 0.1}},
+			"fetch": {Output: map[string]any{"x": 1}, Meta: map[string]any{"costUsd": 0.1}},
 		},
 	}
 	s1, err := marshalCheckpointPayload(ictx, 0.5)
@@ -27,7 +27,8 @@ func TestMarshalCheckpointPayload_stableKeyOrder(t *testing.T) {
 		t.Fatalf("invalid json: %s", s1)
 	}
 
-	gotCtx, cost, err := unmarshalCheckpointPayload(s1)
+	wf := demoWorkflowGraph(t).Workflows["demo"]
+	gotCtx, cost, err := unmarshalCheckpointPayload(s1, wf, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +45,8 @@ func TestMarshalCheckpointPayload_stableKeyOrder(t *testing.T) {
 }
 
 func TestUnmarshalCheckpointPayload_malformed(t *testing.T) {
-	_, _, err := unmarshalCheckpointPayload(`not-json`)
+	wf := demoWorkflowGraph(t).Workflows["demo"]
+	_, _, err := unmarshalCheckpointPayload(`not-json`, wf, 0)
 	if err == nil {
 		t.Fatal("expected error")
 	}

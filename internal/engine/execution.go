@@ -86,7 +86,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 	stepStartIdx := 0
 	if in.Resume {
 		var err error
-		ictx, totalCost, stepStartIdx, err = e.loadResumeState(ctx, in.RunID)
+		ictx, totalCost, stepStartIdx, err = e.loadResumeState(ctx, in)
 		if err != nil {
 			return err
 		}
@@ -179,6 +179,15 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 			return e.failRun(ctx, in, fmt.Errorf("engine: step %q: %w", step.ID, err), totalCost)
 		}
 
+		meta := map[string]any{"costUsd": stepCost, "durationMs": finished.Sub(started).Milliseconds()}
+		ictx.Steps[step.ID] = StepResult{Output: out, Meta: meta}
+
+		// Checkpoint before marking the step succeeded so resume never replays a completed step
+		// if the process dies after persistence (issue #105 / PR #127).
+		if err := e.saveCheckpoint(ctx, in.RunID, i, step.ID, ictx, totalCost, state.CheckpointStatusRunning); err != nil {
+			return e.failRun(ctx, in, fmt.Errorf("engine: checkpoint step %q: %w", step.ID, err), totalCost)
+		}
+
 		outJSON, _ := json.Marshal(out)
 		if err := e.Store.UpsertRunStep(ctx, state.RunStep{
 			RunID:      in.RunID,
@@ -194,13 +203,6 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 		}
 		if e.Trace != nil {
 			_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventStepFinished, map[string]any{"costUsd": stepCost})
-		}
-
-		meta := map[string]any{"costUsd": stepCost, "durationMs": finished.Sub(started).Milliseconds()}
-		ictx.Steps[step.ID] = StepResult{Output: out, Meta: meta}
-
-		if err := e.saveCheckpoint(ctx, in.RunID, i, step.ID, ictx, totalCost, state.CheckpointStatusRunning); err != nil {
-			return e.failRun(ctx, in, fmt.Errorf("engine: checkpoint step %q: %w", step.ID, err), totalCost)
 		}
 		if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
 			return e.interruptRun(ctx, in, i, step.ID, ictx, totalCost)
@@ -219,12 +221,14 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 	if err := e.saveCheckpoint(ctx, in.RunID, len(wf.Spec.Steps)-1, "", ictx, totalCost, state.CheckpointStatusCompleted); err != nil {
 		return e.failRun(ctx, in, fmt.Errorf("engine: final checkpoint: %w", err), totalCost)
 	}
-	return e.Store.FinishRun(ctx, in.RunID, "succeeded", finishAt, string(outBytes), "", totalCost)
+	return e.Store.FinishRun(ctx, in.RunID, state.RunStatusSucceeded, finishAt, string(outBytes), "", totalCost)
 }
 
 func (e *Executor) failRun(ctx context.Context, in RunInput, runErr error, totalCost float64) error {
+	ictx := Context{Input: in.Input, Steps: map[string]StepResult{}}
+	_ = e.saveCheckpoint(ctx, in.RunID, -1, "", ictx, totalCost, state.CheckpointStatusFailed)
 	finishAt := e.now()
-	_ = e.Store.FinishRun(ctx, in.RunID, "failed", finishAt, "", runErr.Error(), totalCost)
+	_ = e.Store.FinishRun(ctx, in.RunID, state.RunStatusFailed, finishAt, "", runErr.Error(), totalCost)
 	return runErr
 }
 

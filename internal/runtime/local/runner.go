@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
@@ -36,29 +36,16 @@ func (r *Runtime) ExecuteWorkflow(ctx context.Context, opts runtime.WorkflowRunO
 }
 
 func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOptions) (string, error) {
-	root := strings.TrimSpace(r.ProjectRoot)
-	if root == "" {
-		return "", fmt.Errorf("local: empty project root")
-	}
-
-	graph, err := project.LoadProject(root)
-	if err != nil {
-		return "", fmt.Errorf("local: load project: %w", err)
-	}
-	spec.NormalizeProjectGraph(graph)
-	graph, err = ApplyEnvironment(graph, opts.EnvironmentName)
+	prep, err := r.prepareProject(ctx, opts.EnvironmentName)
 	if err != nil {
 		return "", err
-	}
-	if err := spec.ValidateProjectGraph(graph, root); err != nil {
-		return "", fmt.Errorf("local: validate project: %w", err)
 	}
 
 	wfName := strings.TrimSpace(opts.WorkflowName)
 	if wfName == "" {
 		return "", fmt.Errorf("local: empty workflow name")
 	}
-	wf, ok := graph.Workflows[wfName]
+	wf, ok := prep.graph.Workflows[wfName]
 	if !ok || wf == nil {
 		return "", fmt.Errorf("local: unknown workflow %q", wfName)
 	}
@@ -71,16 +58,13 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 			return "", fmt.Errorf("local: invalid input JSON: %w", err)
 		}
 	}
-
-	if err := engine.ValidateWorkflowInput(root, wf, input); err != nil {
+	if err := engine.ValidateWorkflowInput(prep.root, wf, input); err != nil {
 		return "", err
 	}
 
-	if n := spec.TraceRetentionDays(graph); n > 0 {
-		cutoff := r.now().UTC().AddDate(0, 0, -n)
-		if _, err := r.Store.DeleteRunsStartedBefore(ctx, cutoff); err != nil {
-			return "", fmt.Errorf("local: prune trace runs: %w", err)
-		}
+	wfHash, err := plan.WorkflowSpecHash(wf)
+	if err != nil {
+		return "", err
 	}
 
 	runID := strings.TrimSpace(opts.RunID)
@@ -100,13 +84,15 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 
 	started := r.now()
 	if err := r.Store.StartRun(ctx, state.Run{
-		RunID:        runID,
-		WorkflowName: wfName,
-		Env:          envLabel,
-		Status:       "running",
-		StartedAt:    started,
-		InputJSON:    string(inputBytes),
-		TotalCostUSD: 0,
+		RunID:            runID,
+		WorkflowName:     wfName,
+		Env:              envLabel,
+		Status:           state.RunStatusRunning,
+		StartedAt:        started,
+		InputJSON:        string(inputBytes),
+		TotalCostUSD:     0,
+		WorkflowSpecHash: wfHash,
+		EnvironmentName:  strings.TrimSpace(opts.EnvironmentName),
 	}); err != nil {
 		return runID, fmt.Errorf("local: start run: %w", err)
 	}
@@ -118,35 +104,7 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 		return runID, fmt.Errorf("local: trace run.started: %w", err)
 	}
 
-	ex := &engine.Executor{
-		Graph:       graph,
-		ProjectRoot: root,
-		Tools:       tools.NewRegistry(graph),
-		Models:      models.NewRegistry(graph),
-		Store:       r.Store,
-		Trace:       rec,
-		Now:         r.Now,
-	}
-	runErr := ex.Run(ctx, engine.RunInput{
-		RunID:           runID,
-		WorkflowName:    wfName,
-		Env:             envLabel,
-		StartedAt:       started,
-		Input:           input,
-		ApprovedActions: opts.ApprovedActions,
-	})
-
-	finData := map[string]any{}
-	if runErr != nil {
-		if errors.Is(runErr, engine.ErrInterrupted) {
-			return runID, nil
-		}
-		finData["error"] = runErr.Error()
-	}
-	if _, terr := rec.Append(ctx, runID, "", trace.EventRunFinished, finData); terr != nil && runErr == nil {
-		return runID, fmt.Errorf("local: trace run.finished: %w", terr)
-	}
-	return runID, runErr
+	return r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, opts.ApprovedActions, false, rec)
 }
 
 func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOptions) (string, error) {
@@ -163,7 +121,7 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 		return runID, fmt.Errorf("local: get run: %w", err)
 	}
 	switch run.Status {
-	case "running", "interrupted":
+	case state.RunStatusRunning, state.RunStatusInterrupted:
 	default:
 		return runID, fmt.Errorf("local: run %q status %q is not resumable", runID, run.Status)
 	}
@@ -175,27 +133,23 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 		return runID, fmt.Errorf("local: load checkpoint: %w", err)
 	}
 
-	root := strings.TrimSpace(r.ProjectRoot)
-	if root == "" {
-		return runID, fmt.Errorf("local: empty project root")
-	}
-	graph, err := project.LoadProject(root)
-	if err != nil {
-		return runID, fmt.Errorf("local: load project: %w", err)
-	}
-	spec.NormalizeProjectGraph(graph)
-	graph, err = ApplyEnvironment(graph, opts.EnvironmentName)
+	envName, err := resumeEnvironmentName(run, opts)
 	if err != nil {
 		return runID, err
 	}
-	if err := spec.ValidateProjectGraph(graph, root); err != nil {
-		return runID, fmt.Errorf("local: validate project: %w", err)
+
+	prep, err := r.prepareProject(ctx, envName)
+	if err != nil {
+		return runID, err
 	}
 
 	wfName := strings.TrimSpace(run.WorkflowName)
-	wf, ok := graph.Workflows[wfName]
+	wf, ok := prep.graph.Workflows[wfName]
 	if !ok || wf == nil {
 		return runID, fmt.Errorf("local: unknown workflow %q", wfName)
+	}
+	if err := validateResumeWorkflowSpec(run, wf); err != nil {
+		return runID, err
 	}
 
 	var input map[string]any
@@ -205,18 +159,11 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 	if input == nil {
 		input = map[string]any{}
 	}
-	if err := engine.ValidateWorkflowInput(root, wf, input); err != nil {
+	if err := engine.ValidateWorkflowInput(prep.root, wf, input); err != nil {
 		return runID, err
 	}
 
-	if n := spec.TraceRetentionDays(graph); n > 0 {
-		cutoff := r.now().UTC().AddDate(0, 0, -n)
-		if _, err := r.Store.DeleteRunsStartedBefore(ctx, cutoff); err != nil {
-			return runID, fmt.Errorf("local: prune trace runs: %w", err)
-		}
-	}
-
-	if err := r.Store.UpdateRunStatus(ctx, runID, "running"); err != nil {
+	if err := r.Store.UpdateRunStatus(ctx, runID, state.RunStatusRunning); err != nil {
 		return runID, fmt.Errorf("local: mark run running: %w", err)
 	}
 
@@ -232,11 +179,24 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 		envLabel = "local"
 	}
 
+	return r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, opts.ApprovedActions, true, rec)
+}
+
+func (r *Runtime) executeEngine(
+	ctx context.Context,
+	prep *preparedProject,
+	runID, wfName, envLabel string,
+	started time.Time,
+	input map[string]any,
+	approved []string,
+	resume bool,
+	rec *trace.Recorder,
+) (string, error) {
 	ex := &engine.Executor{
-		Graph:       graph,
-		ProjectRoot: root,
-		Tools:       tools.NewRegistry(graph),
-		Models:      models.NewRegistry(graph),
+		Graph:       prep.graph,
+		ProjectRoot: prep.root,
+		Tools:       tools.NewRegistry(prep.graph),
+		Models:      models.NewRegistry(prep.graph),
 		Store:       r.Store,
 		Trace:       rec,
 		Now:         r.Now,
@@ -245,10 +205,10 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 		RunID:           runID,
 		WorkflowName:    wfName,
 		Env:             envLabel,
-		StartedAt:       run.StartedAt,
+		StartedAt:       started,
 		Input:           input,
-		ApprovedActions: opts.ApprovedActions,
-		Resume:          true,
+		ApprovedActions: approved,
+		Resume:          resume,
 	})
 
 	finData := map[string]any{}

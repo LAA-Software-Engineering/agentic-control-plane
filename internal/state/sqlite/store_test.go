@@ -275,7 +275,7 @@ func TestDeleteRunsStartedBefore_cascadesChildRows(t *testing.T) {
 	}
 	if err := st.SaveCheckpoint(ctx, state.RunCheckpoint{
 		RunID: "old-run", StepIndex: 0, StepID: "s1",
-		ContextJSON: `{"input":{},"steps":{},"totalCostUsd":0}`,
+		ContextJSON: `{"version":1,"input":{},"steps":{},"totalCostUsd":0}`,
 		Status:      state.CheckpointStatusRunning, CreatedAt: oldStart,
 	}); err != nil {
 		t.Fatal(err)
@@ -336,7 +336,7 @@ func TestSaveCheckpoint_roundTripAndLatest(t *testing.T) {
 
 	cp1 := state.RunCheckpoint{
 		RunID: "r1", StepIndex: 0, StepID: "step-a",
-		ContextJSON: `{"input":{"x":1},"steps":{"step-a":{"output":{"ok":true}}},"totalCostUsd":0.01}`,
+		ContextJSON: `{"version":1,"input":{"x":1},"steps":{"step-a":{"output":{"ok":true}}},"totalCostUsd":0.01}`,
 		Status:      state.CheckpointStatusRunning, CreatedAt: start,
 	}
 	if err := st.SaveCheckpoint(ctx, cp1); err != nil {
@@ -345,7 +345,7 @@ func TestSaveCheckpoint_roundTripAndLatest(t *testing.T) {
 	later := start.Add(time.Minute)
 	cp2 := state.RunCheckpoint{
 		RunID: "r1", StepIndex: 1, StepID: "step-b",
-		ContextJSON: `{"input":{"x":1},"steps":{},"totalCostUsd":0.02}`,
+		ContextJSON: `{"version":1,"input":{"x":1},"steps":{},"totalCostUsd":0.02}`,
 		Status:      state.CheckpointStatusInterrupted, CreatedAt: later,
 	}
 	if err := st.SaveCheckpoint(ctx, cp2); err != nil {

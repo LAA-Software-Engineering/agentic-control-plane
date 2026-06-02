@@ -20,18 +20,28 @@ type AppliedProject struct {
 	AppliedAt   time.Time
 }
 
+// Run status values stored on runs (design doc §14.2, issue #105).
+const (
+	RunStatusRunning     = "running"
+	RunStatusInterrupted = "interrupted"
+	RunStatusSucceeded   = "succeeded"
+	RunStatusFailed      = "failed"
+)
+
 // Run is one workflow execution row in runs (design doc §14.2).
 type Run struct {
-	RunID        string
-	WorkflowName string
-	Env          string
-	Status       string
-	StartedAt    time.Time
-	FinishedAt   *time.Time
-	InputJSON    string
-	OutputJSON   string
-	ErrorText    string
-	TotalCostUSD float64
+	RunID            string
+	WorkflowName     string
+	Env              string
+	Status           string
+	StartedAt        time.Time
+	FinishedAt       *time.Time
+	InputJSON        string
+	OutputJSON       string
+	ErrorText        string
+	TotalCostUSD     float64
+	WorkflowSpecHash string
+	EnvironmentName  string
 }
 
 // RunStep is one row in run_steps (design doc §14.2).

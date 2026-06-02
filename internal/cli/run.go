@@ -53,12 +53,12 @@ Exit codes (section 11.2):
 			resume, _ := cmd.Flags().GetString("resume")
 			if strings.TrimSpace(resume) != "" {
 				if len(args) != 0 {
-					return fmt.Errorf("run: --resume does not take a workflow argument")
+					return NewExitError(ExitValidationError, fmt.Errorf("run: --resume does not take a workflow argument"))
 				}
 				return nil
 			}
 			if len(args) != 1 {
-				return fmt.Errorf("run: requires workflow/<name> or --resume <run-id>")
+				return NewExitError(ExitValidationError, fmt.Errorf("run: requires workflow/<name> or --resume <run-id>"))
 			}
 			return nil
 		},
@@ -148,7 +148,9 @@ func classifyRunError(err error) int {
 		strings.Contains(msg, "invalid input JSON"),
 		strings.Contains(msg, "workflow input"),
 		strings.Contains(msg, "marshal workflow input"),
-		strings.Contains(msg, "unknown environment"):
+		strings.Contains(msg, "unknown environment"),
+		strings.Contains(msg, "workflow spec changed"),
+		strings.Contains(msg, "does not match run"):
 		return ExitValidationError
 	case strings.Contains(msg, "open sqlite"),
 		strings.Contains(msg, "ping sqlite"),
