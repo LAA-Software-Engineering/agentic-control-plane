@@ -31,6 +31,7 @@ type checkpointPayload struct {
 	Input        map[string]any        `json:"input"`
 	Steps        map[string]StepResult `json:"steps"`
 	TotalCostUSD float64               `json:"totalCostUsd"`
+	PendingHitl  *PendingHitlState     `json:"pendingHitl,omitempty"`
 }
 
 func marshalCheckpointPayload(ictx Context, totalCost float64) (string, error) {
@@ -39,6 +40,7 @@ func marshalCheckpointPayload(ictx Context, totalCost float64) (string, error) {
 		Input:        ictx.Input,
 		Steps:        ictx.Steps,
 		TotalCostUSD: totalCost,
+		PendingHitl:  ictx.PendingHitl,
 	}
 	if payload.Input == nil {
 		payload.Input = map[string]any{}
@@ -82,7 +84,7 @@ func unmarshalCheckpointPayload(contextJSON string, wf *spec.WorkflowResource, c
 	if payload.TotalCostUSD < 0 {
 		return Context{}, 0, fmt.Errorf("engine: negative totalCostUsd in checkpoint")
 	}
-	return Context{Input: payload.Input, Steps: payload.Steps}, payload.TotalCostUSD, nil
+	return Context{Input: payload.Input, Steps: payload.Steps, PendingHitl: payload.PendingHitl}, payload.TotalCostUSD, nil
 }
 
 func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResource, completedStepIndex int) error {
@@ -137,7 +139,11 @@ func (e *Executor) loadResumeState(ctx context.Context, in RunInput) (Context, f
 	if err != nil {
 		return Context{}, 0, 0, err
 	}
-	return ictx, totalCost, cp.StepIndex + 1, nil
+	startIdx := cp.StepIndex + 1
+	if ictx.PendingHitl != nil {
+		startIdx = cp.StepIndex
+	}
+	return ictx, totalCost, startIdx, nil
 }
 
 func (e *Executor) interruptRun(ctx context.Context, in RunInput, stepIndex int, stepID string, ictx Context, totalCost float64) error {

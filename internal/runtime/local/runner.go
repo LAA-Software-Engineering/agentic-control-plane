@@ -104,7 +104,9 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 		return runID, fmt.Errorf("local: trace run.started: %w", err)
 	}
 
-	return r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, opts.ApprovedActions, false, rec)
+	opts.RunID = runID
+	opts.Resume = false
+	return r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, opts, rec)
 }
 
 func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOptions) (string, error) {
@@ -179,7 +181,8 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 		envLabel = "local"
 	}
 
-	return r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, opts.ApprovedActions, true, rec)
+	opts.Resume = true
+	return r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, opts, rec)
 }
 
 func (r *Runtime) executeEngine(
@@ -188,8 +191,7 @@ func (r *Runtime) executeEngine(
 	runID, wfName, envLabel string,
 	started time.Time,
 	input map[string]any,
-	approved []string,
-	resume bool,
+	opts runtime.WorkflowRunOptions,
 	rec *trace.Recorder,
 ) (string, error) {
 	ex := &engine.Executor{
@@ -207,8 +209,9 @@ func (r *Runtime) executeEngine(
 		Env:             envLabel,
 		StartedAt:       started,
 		Input:           input,
-		ApprovedActions: approved,
-		Resume:          resume,
+		ApprovedActions: opts.ApprovedActions,
+		Resume:          opts.Resume,
+		Hitl:            buildEngineHitlOptions(opts),
 	})
 
 	finData := map[string]any{}

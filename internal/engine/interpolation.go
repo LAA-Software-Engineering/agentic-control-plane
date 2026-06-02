@@ -17,8 +17,9 @@ type StepResult struct {
 
 // Context holds values for ${input.*} and ${steps.*} interpolation (§13.1).
 type Context struct {
-	Input map[string]any
-	Steps map[string]StepResult
+	Input       map[string]any
+	Steps       map[string]StepResult
+	PendingHitl *PendingHitlState `json:"pendingHitl,omitempty"`
 }
 
 var tokenRE = regexp.MustCompile(`\$\{([^}]*)\}`)

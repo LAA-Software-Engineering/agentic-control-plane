@@ -138,24 +138,35 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		}
 	})
 
-	t.Run("policy_denial_exit5", func(t *testing.T) {
+	t.Run("hitl_interrupt_awaiting_decision", func(t *testing.T) {
 		fixture := filepath.Join(repoRoot(t), "internal", "cli", "testdata", "run_policy")
 		if _, err := os.Stat(filepath.Join(fixture, "project.yaml")); err != nil {
 			t.Fatalf("fixture: %v", err)
 		}
 		db := filepath.Join(t.TempDir(), "policy-denial.db")
 
-		_, err := runCLI(t,
+		out, err := runCLI(t,
 			"run", "workflow/gated",
 			"--project", fixture,
 			"--state", db,
 			"--input", "topic=x",
 		)
-		if err == nil {
-			t.Fatal("expected policy denial error")
+		if err != nil {
+			t.Fatalf("run: %v\n%s", err, out)
 		}
-		if cli.ExitCodeOf(err) != cli.ExitPolicyDenied {
-			t.Fatalf("exit=%d want %d err=%v", cli.ExitCodeOf(err), cli.ExitPolicyDenied, err)
+		if !strings.Contains(out, "Status: interrupted") {
+			t.Fatalf("expected interrupted status:\n%s", out)
+		}
+		runID := extractRunID(out)
+		if runID == "" {
+			t.Fatal("missing run id")
+		}
+		out, err = runCLI(t, "logs", "--project", fixture, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, trace.EventApprovalRequested) {
+			t.Fatalf("logs missing approval request:\n%s", out)
 		}
 	})
 
@@ -192,14 +203,14 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			"--state", db,
 			"--input-file", input,
 		)
-		if err == nil {
-			t.Fatalf("expected policy denial, output:\n%s", out)
+		if err != nil {
+			t.Fatalf("run: %v\n%s", err, out)
 		}
-		if cli.ExitCodeOf(err) != cli.ExitPolicyDenied {
-			t.Fatalf("exit=%d want %d err=%v\n%s", cli.ExitCodeOf(err), cli.ExitPolicyDenied, err, out)
+		if !strings.Contains(out, "Status: interrupted") {
+			t.Fatalf("expected interrupted run, output:\n%s", out)
 		}
-		if !strings.Contains(out, "Policy blocked this run") || !strings.Contains(out, "tool.github.pull_request.post_comment") {
-			t.Fatalf("expected policy UX in run output:\n%s", out)
+		if !strings.Contains(out, "Run ID:") {
+			t.Fatalf("expected run id in output:\n%s", out)
 		}
 		runID := extractRunID(out)
 		if runID == "" {
@@ -210,11 +221,11 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("logs: %v\n%s", err, out)
 		}
-		if !strings.Contains(out, trace.EventPolicyDenied) {
-			t.Fatalf("logs missing %q:\n%s", trace.EventPolicyDenied, out)
+		if !strings.Contains(out, trace.EventApprovalRequested) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventApprovalRequested, out)
 		}
 		if !strings.Contains(out, "post_comment") {
-			t.Fatalf("logs should mention blocked step post_comment:\n%s", out)
+			t.Fatalf("logs should mention gated step post_comment:\n%s", out)
 		}
 	})
 
@@ -321,14 +332,11 @@ func TestCLI_PrReviewGithubExample(t *testing.T) {
 		"--state", db,
 		"--input-file", input,
 	)
-	if err == nil {
-		t.Fatalf("expected policy denial, output:\n%s", out)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, out)
 	}
-	if cli.ExitCodeOf(err) != cli.ExitPolicyDenied {
-		t.Fatalf("exit=%d want %d err=%v\n%s", cli.ExitCodeOf(err), cli.ExitPolicyDenied, err, out)
-	}
-	if !strings.Contains(out, "tool.github.pull_request.post_comment") {
-		t.Fatalf("expected gated uses in output:\n%s", out)
+	if !strings.Contains(out, "Status: interrupted") {
+		t.Fatalf("expected interrupted run, output:\n%s", out)
 	}
 	runID := extractRunID(out)
 	if runID == "" {
@@ -339,8 +347,8 @@ func TestCLI_PrReviewGithubExample(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logs: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, trace.EventPolicyDenied) {
-		t.Fatalf("logs missing %q:\n%s", trace.EventPolicyDenied, out)
+	if !strings.Contains(out, trace.EventApprovalRequested) {
+		t.Fatalf("logs missing %q:\n%s", trace.EventApprovalRequested, out)
 	}
 }
 
