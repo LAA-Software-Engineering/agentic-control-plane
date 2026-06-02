@@ -6,4 +6,7 @@
 //
 // Tool resources may declare spec.safety (trusted, sideEffects, requiresApproval) for
 // fail-closed policy derivation when explicit Policy rules do not apply (issue #103).
+//
+// Built-in policy presets (strict, permissive, shell_safe) are defined in this package and
+// expanded during [NormalizeProjectGraph] via [ExpandPresetsInGraph] (issue #104).
 package spec

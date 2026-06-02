@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
 // ErrUnknownOperation indicates the operation name is not implemented by this registry.
@@ -30,6 +32,14 @@ func NewRegistry() *Registry {
 func (r *Registry) Dispatch(ctx context.Context, operation string, with map[string]any) (map[string]any, ExecMeta, error) {
 	start := time.Now()
 	meta := ExecMeta{CostUSD: 0}
+	if spec.IsShellCommandOperation(operation) {
+		meta.DurationMs = time.Since(start).Milliseconds()
+		cmd := spec.ExtractShellCommand(with)
+		if cmd == "" {
+			return nil, meta, fmt.Errorf("native: %s requires string field command, cmd, or script", operation)
+		}
+		return map[string]any{"command": cmd}, meta, nil
+	}
 	switch operation {
 	case "echo":
 		meta.DurationMs = time.Since(start).Milliseconds()

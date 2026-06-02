@@ -26,6 +26,7 @@ func ValidateProjectGraph(g *ProjectGraph, projectRoot string) error {
 	errs = append(errs, validateMVPRuntimes(g)...)
 	errs = append(errs, validateToolSpecs(g)...)
 	errs = append(errs, validatePolicySpecs(g)...)
+	errs = append(errs, validatePolicyPresets(g)...)
 	errs = append(errs, validateAgentSpecs(g)...)
 	errs = append(errs, validateEnvironmentOverrides(g)...)
 	errs = append(errs, validateSchemaFiles(g, root)...)
@@ -236,6 +237,9 @@ func validatePolicySpecs(g *ProjectGraph) []error {
 			}
 		}
 		if ap := pr.Spec.Approvals; ap != nil {
+			if ApprovalRequireAllTools(ap) && ApprovalPermissive(ap) {
+				errs = append(errs, fmt.Errorf("Policy/%s: approvals.requireAllTools and approvals.permissive are mutually exclusive", name))
+			}
 			seen := make(map[string]struct{})
 			for i, act := range ap.RequiredFor {
 				a := strings.TrimSpace(act)
@@ -248,6 +252,28 @@ func validatePolicySpecs(g *ProjectGraph) []error {
 				}
 				seen[a] = struct{}{}
 			}
+		}
+	}
+	return errs
+}
+
+func validatePolicyPresets(g *ProjectGraph) []error {
+	var errs []error
+	if g.Spec.Defaults != nil {
+		if p := strings.TrimSpace(g.Spec.Defaults.Policy); p != "" {
+			if _, ok := g.Policies[p]; !ok && !IsBuiltinPreset(p) {
+				errs = append(errs, fmt.Errorf("Project: defaults.policy %q is not a Policy resource or built-in preset (%s)",
+					p, strings.Join(BuiltinPresetNames(), ", ")))
+			}
+		}
+	}
+	for name, pr := range g.Policies {
+		if pr == nil {
+			continue
+		}
+		if preset := strings.TrimSpace(pr.Spec.Preset); preset != "" && !IsBuiltinPreset(preset) {
+			errs = append(errs, fmt.Errorf("Policy/%s: unknown preset %q (valid: %s)",
+				name, preset, strings.Join(BuiltinPresetNames(), ", ")))
 		}
 	}
 	return errs

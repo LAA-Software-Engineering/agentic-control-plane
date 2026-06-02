@@ -46,7 +46,7 @@ func parseAgentJSONObject(content string) (map[string]any, error) {
 
 func (e *Executor) runToolStep(ctx context.Context, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext) (map[string]any, tools.ToolCallMeta, error) {
 	uses := strings.TrimSpace(step.Uses)
-	if err := pol.CheckToolCall(ctx, policy.ToolCallContext{Run: pctx, StepID: step.ID, Uses: uses}); err != nil {
+	if err := pol.CheckToolCall(ctx, policy.ToolCallContext{Run: pctx, StepID: step.ID, Uses: uses, With: with}); err != nil {
 		if e.Trace != nil {
 			if d, ok := policy.AsDenied(err); ok {
 				_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventPolicyDenied, d.TraceData())

@@ -25,4 +25,6 @@ type ToolCallContext struct {
 	Run    RunContext
 	StepID string
 	Uses   string
+	// With is the interpolated workflow step input (used by shell_safe token classification).
+	With map[string]any
 }
