@@ -159,10 +159,15 @@ type WorkflowOutput struct {
 // --- Policy (design doc §7.5, MVP) ---
 
 type PolicySpec struct {
-	Execution *PolicyExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
-	Tools     *PolicyTools     `yaml:"tools,omitempty" json:"tools,omitempty"`
-	Approvals *PolicyApprovals `yaml:"approvals,omitempty" json:"approvals,omitempty"`
-	Security  *PolicySecurity  `yaml:"security,omitempty" json:"security,omitempty"`
+	// Preset references a built-in policy preset (strict, permissive, shell_safe) as a base
+	// for this Policy resource; local spec fields layer on top (issue #104).
+	Preset string `yaml:"preset,omitempty" json:"preset,omitempty"`
+	// ResolvedPreset is populated during [NormalizeProjectGraph] when a preset is expanded; not author YAML.
+	ResolvedPreset string           `yaml:"-" json:"-"`
+	Execution      *PolicyExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
+	Tools          *PolicyTools     `yaml:"tools,omitempty" json:"tools,omitempty"`
+	Approvals      *PolicyApprovals `yaml:"approvals,omitempty" json:"approvals,omitempty"`
+	Security       *PolicySecurity  `yaml:"security,omitempty" json:"security,omitempty"`
 }
 
 type PolicyExecution struct {
@@ -177,6 +182,10 @@ type PolicyTools struct {
 
 type PolicyApprovals struct {
 	RequiredFor []string `yaml:"requiredFor,omitempty" json:"requiredFor,omitempty"`
+	// RequireAllTools is set when the strict preset is expanded (every tool call requires approval).
+	RequireAllTools bool `yaml:"requireAllTools,omitempty" json:"requireAllTools,omitempty"`
+	// Permissive is set when the permissive preset is expanded (never gate tool calls).
+	Permissive bool `yaml:"permissive,omitempty" json:"permissive,omitempty"`
 }
 
 type PolicySecurity struct {

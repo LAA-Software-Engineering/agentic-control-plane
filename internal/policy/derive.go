@@ -50,6 +50,31 @@ func EffectiveToolDecision(graph *spec.ProjectGraph, pol *spec.PolicySpec, toolN
 	toolName = strings.TrimSpace(toolName)
 	safety := resolvedSafetyForTool(graph, toolName)
 	if pol != nil && pol.Approvals != nil {
+		if pol.Approvals.Permissive {
+			return ToolDecision{
+				Decision: DecisionAllow,
+				Source:   SourceExplicitPolicyRule,
+				Safety:   safety,
+			}
+		}
+		if pol.Approvals.RequireAllTools {
+			return ToolDecision{
+				Decision: DecisionRequireApproval,
+				Source:   SourceExplicitPolicyRule,
+				Safety:   safety,
+			}
+		}
+		if spec.ResolvedPresetName(pol) == spec.PresetShellSafe {
+			if safety.RequiresApproval || safety.SideEffects {
+				return ToolDecision{
+					Decision: DecisionRequireApproval,
+					Source:   SourceExplicitPolicyRule,
+					Safety:   safety,
+				}
+			}
+		}
+	}
+	if pol != nil && pol.Approvals != nil {
 		prefix := toolUsesPrefix(toolName)
 		for _, r := range pol.Approvals.RequiredFor {
 			r = strings.TrimSpace(r)

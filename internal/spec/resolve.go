@@ -43,7 +43,7 @@ func collectReferenceErrors(g *ProjectGraph) []error {
 		}
 	}
 	for agentName, pol := range ix.AgentPolicies {
-		if _, ok := g.Policies[pol]; !ok {
+		if _, ok := g.Policies[pol]; !ok && !IsBuiltinPreset(pol) {
 			errs = append(errs, &MissingRefError{
 				Referrer: ResourceID{Kind: KindAgent, Name: agentName},
 				Missing:  ResourceID{Kind: KindPolicy, Name: pol},
@@ -73,7 +73,7 @@ func collectReferenceErrors(g *ProjectGraph) []error {
 			}
 		}
 		if pol := ix.WorkflowPolicies[wfName]; pol != "" {
-			if _, ok := g.Policies[pol]; !ok {
+			if _, ok := g.Policies[pol]; !ok && !IsBuiltinPreset(pol) {
 				errs = append(errs, &MissingRefError{
 					Referrer: ResourceID{Kind: KindWorkflow, Name: wfName},
 					Missing:  ResourceID{Kind: KindPolicy, Name: pol},

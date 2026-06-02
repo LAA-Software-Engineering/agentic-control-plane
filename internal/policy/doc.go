@@ -5,6 +5,10 @@
 // Run context should carry elapsed wall clock, accumulated cost, and repeated --approve action strings
 // matching policy approvals.requiredFor entries.
 //
+// Built-in policy presets (issue #104): strict, permissive, and shell_safe. Select via
+// Project.spec.defaults.policy, a Policy resource spec.preset, or by referencing a preset name
+// as the workflow/agent policy. [spec.ExpandPresetsInGraph] materializes effective rules during normalize.
+//
 // When no explicit approvals.requiredFor rule matches a tool call, [Derive] consults
 // [spec.ResolveToolSafety] metadata (fail-closed defaults; issue #103).
 //

@@ -54,13 +54,60 @@ func (e *evaluator) CheckStep(ctx context.Context, step StepContext) error {
 func (e *evaluator) CheckToolCall(ctx context.Context, call ToolCallContext) error {
 	_ = ctx
 	p := e.spec()
+	if p != nil && p.Approvals != nil && p.Approvals.Permissive {
+		if err := checkKnownTool(e.graph, call.Uses, p.Tools); err != nil {
+			return err
+		}
+		return nil
+	}
 	if p != nil {
 		if err := checkKnownTool(e.graph, call.Uses, p.Tools); err != nil {
 			return err
+		}
+		if p.Approvals != nil && p.Approvals.RequireAllTools {
+			if actionApproved(call.Uses, call.Run.ApprovedActions) {
+				return nil
+			}
+			return denied(
+				ReasonApprovalRequired,
+				"policy: action requires explicit approval (--approve)",
+				call.Uses,
+				map[string]any{"requiredFor": call.Uses, "preset": spec.PresetStrict},
+			)
+		}
+		if spec.ResolvedPresetName(p) == spec.PresetShellSafe && !shellSafeRequiresApproval(e.graph, call) {
+			return nil
+		}
+		if presetRequiresApproval(p, e.graph, call) {
+			if actionApproved(call.Uses, call.Run.ApprovedActions) {
+				return nil
+			}
+			return denied(
+				ReasonApprovalRequired,
+				"policy: action requires explicit approval (--approve)",
+				call.Uses,
+				map[string]any{
+					"requiredFor": call.Uses,
+					"preset":      spec.ResolvedPresetName(p),
+				},
+			)
 		}
 		if approvalRequired(call.Uses, p.Approvals) {
 			return checkApprovalGranted(call.Uses, p.Approvals, call.Run.ApprovedActions)
 		}
 	}
 	return checkSafetyDerived(e.graph, call)
+}
+
+func presetRequiresApproval(p *spec.PolicySpec, graph *spec.ProjectGraph, call ToolCallContext) bool {
+	if p == nil || p.Approvals == nil {
+		return false
+	}
+	if p.Approvals.RequireAllTools {
+		return true
+	}
+	if spec.ResolvedPresetName(p) == spec.PresetShellSafe {
+		return shellSafeRequiresApproval(graph, call)
+	}
+	return false
 }

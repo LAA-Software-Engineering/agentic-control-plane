@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: default
 spec:
+  preset: shell_safe
   execution:
     maxWallClockSeconds: 300
     maxTotalCostUsd: 5
