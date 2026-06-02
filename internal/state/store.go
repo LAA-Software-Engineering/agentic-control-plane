@@ -43,4 +43,10 @@ type RuntimeStore interface {
 	// DeleteRunsStartedBefore removes every run with started_at strictly before cutoff (UTC), and
 	// associated run_steps / trace_events (SQLite: ON DELETE CASCADE). Used for trace retention (issue #75).
 	DeleteRunsStartedBefore(ctx context.Context, cutoff time.Time) (deleted int64, err error)
+	// SaveCheckpoint appends a checkpoint row for run_id (monotonic seq per run).
+	SaveCheckpoint(ctx context.Context, cp RunCheckpoint) error
+	// GetLatestCheckpoint returns the newest checkpoint for run_id or sql.ErrNoRows.
+	GetLatestCheckpoint(ctx context.Context, runID string) (*RunCheckpoint, error)
+	// UpdateRunStatus sets runs.status without finishing the run (issue #105 interrupted).
+	UpdateRunStatus(ctx context.Context, runID, status string) error
 }

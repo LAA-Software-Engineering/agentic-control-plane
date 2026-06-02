@@ -273,6 +273,13 @@ func TestDeleteRunsStartedBefore_cascadesChildRows(t *testing.T) {
 	if _, err := st.AppendTraceEvent(ctx, "old-run", oldStart, "log", "", `{}`); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.SaveCheckpoint(ctx, state.RunCheckpoint{
+		RunID: "old-run", StepIndex: 0, StepID: "s1",
+		ContextJSON: `{"input":{},"steps":{},"totalCostUsd":0}`,
+		Status:      state.CheckpointStatusRunning, CreatedAt: oldStart,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.StartRun(ctx, state.Run{
 		RunID: "new-run", WorkflowName: "wf", Env: "local", Status: "running",
 		StartedAt: newStart, InputJSON: `{}`, TotalCostUSD: 0,
@@ -299,11 +306,133 @@ func TestDeleteRunsStartedBefore_cascadesChildRows(t *testing.T) {
 	if len(evs) != 0 {
 		t.Fatalf("trace events for deleted run: %d", len(evs))
 	}
+	if _, err := st.GetLatestCheckpoint(ctx, "old-run"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("checkpoint for deleted run: %v", err)
+	}
 	got, err := st.GetRun(ctx, "new-run")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.RunID != "new-run" {
 		t.Fatalf("GetRun new: %+v", got)
+	}
+}
+
+func TestSaveCheckpoint_roundTripAndLatest(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "cp.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	start := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: "r1", WorkflowName: "wf", Env: "local", Status: "running",
+		StartedAt: start, InputJSON: `{"x":1}`, TotalCostUSD: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cp1 := state.RunCheckpoint{
+		RunID: "r1", StepIndex: 0, StepID: "step-a",
+		ContextJSON: `{"input":{"x":1},"steps":{"step-a":{"output":{"ok":true}}},"totalCostUsd":0.01}`,
+		Status:      state.CheckpointStatusRunning, CreatedAt: start,
+	}
+	if err := st.SaveCheckpoint(ctx, cp1); err != nil {
+		t.Fatal(err)
+	}
+	later := start.Add(time.Minute)
+	cp2 := state.RunCheckpoint{
+		RunID: "r1", StepIndex: 1, StepID: "step-b",
+		ContextJSON: `{"input":{"x":1},"steps":{},"totalCostUsd":0.02}`,
+		Status:      state.CheckpointStatusInterrupted, CreatedAt: later,
+	}
+	if err := st.SaveCheckpoint(ctx, cp2); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.GetLatestCheckpoint(ctx, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Seq != 2 {
+		t.Fatalf("Seq = %d want 2", got.Seq)
+	}
+	if got.StepIndex != 1 || got.StepID != "step-b" {
+		t.Fatalf("step = index %d id %q", got.StepIndex, got.StepID)
+	}
+	if got.Status != state.CheckpointStatusInterrupted {
+		t.Fatalf("Status = %q", got.Status)
+	}
+	if got.ContextJSON != cp2.ContextJSON {
+		t.Fatalf("ContextJSON = %q", got.ContextJSON)
+	}
+	if !got.CreatedAt.Equal(later) {
+		t.Fatalf("CreatedAt = %v", got.CreatedAt)
+	}
+}
+
+func TestSaveCheckpoint_foreignKeyRequiresRun(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "cp-fk.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	err = st.SaveCheckpoint(ctx, state.RunCheckpoint{
+		RunID: "missing", StepIndex: 0, StepID: "s",
+		ContextJSON: `{}`, Status: state.CheckpointStatusRunning, CreatedAt: now,
+	})
+	if err == nil {
+		t.Fatal("expected FK error")
+	}
+}
+
+func TestGetLatestCheckpoint_noRows(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "cp-none.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	if _, err := st.GetLatestCheckpoint(ctx, "nope"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestUpdateRunStatus(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "status.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	start := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: "r1", WorkflowName: "wf", Env: "local", Status: "running",
+		StartedAt: start, InputJSON: `{}`, TotalCostUSD: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRunStatus(ctx, "r1", "interrupted"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetRun(ctx, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "interrupted" {
+		t.Fatalf("status = %q", got.Status)
+	}
+	if got.FinishedAt != nil {
+		t.Fatalf("FinishedAt = %v want nil", got.FinishedAt)
+	}
+	if err := st.UpdateRunStatus(ctx, "missing", "running"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing run: %v", err)
 	}
 }

@@ -56,3 +56,24 @@ type TraceEvent struct {
 	StepID    string
 	DataJSON  string
 }
+
+// Checkpoint status values stored in run_checkpoints (issue #105).
+const (
+	CheckpointStatusRunning     = "running"
+	CheckpointStatusInterrupted = "interrupted"
+	CheckpointStatusCompleted   = "completed"
+	CheckpointStatusFailed      = "failed"
+)
+
+// RunCheckpoint is one row in run_checkpoints (issue #105).
+// ContextJSON holds the opaque engine-owned execution snapshot (interpolation context,
+// accumulated step outputs, total cost) serialized as canonical JSON.
+type RunCheckpoint struct {
+	RunID       string
+	Seq         int64
+	StepIndex   int
+	StepID      string
+	ContextJSON string
+	Status      string
+	CreatedAt   time.Time
+}
