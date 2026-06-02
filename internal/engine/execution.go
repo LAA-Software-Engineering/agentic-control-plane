@@ -36,6 +36,11 @@ type RunInput struct {
 	StartedAt       time.Time
 	Input           map[string]any
 	ApprovedActions []string
+	// Resume loads the latest checkpoint and continues from the next step (issue #105).
+	Resume bool
+	// InterruptAfterStepIndex, when non-nil, checkpoints and returns [ErrInterrupted] after
+	// completing the step at this index. Used to simulate approval gates until HITL lands.
+	InterruptAfterStepIndex *int
 }
 
 func (e *Executor) now() time.Time {
@@ -78,9 +83,21 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 
 	ictx := Context{Input: in.Input, Steps: make(map[string]StepResult)}
 	var totalCost float64
+	stepStartIdx := 0
+	if in.Resume {
+		var err error
+		ictx, totalCost, stepStartIdx, err = e.loadResumeState(ctx, in.RunID)
+		if err != nil {
+			return err
+		}
+	}
+	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
 	finishAt := e.now()
 
-	for _, step := range wf.Spec.Steps {
+	for i, step := range wf.Spec.Steps {
+		if i < stepStartIdx {
+			continue
+		}
 		step := step
 		if strings.TrimSpace(step.ID) == "" {
 			return e.failRun(ctx, in, fmt.Errorf("engine: workflow step missing id"), totalCost)
@@ -100,9 +117,9 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 			with = map[string]any{}
 		}
 
-		elapsed := e.now().Sub(in.StartedAt)
+		elapsed := e.now().Sub(runStartedAt)
 		pctx := policy.RunContext{
-			StartedAt:          in.StartedAt,
+			StartedAt:          runStartedAt,
 			Elapsed:            elapsed,
 			AccumulatedCostUSD: totalCost,
 			ApprovedActions:    in.ApprovedActions,
@@ -181,6 +198,13 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 
 		meta := map[string]any{"costUsd": stepCost, "durationMs": finished.Sub(started).Milliseconds()}
 		ictx.Steps[step.ID] = StepResult{Output: out, Meta: meta}
+
+		if err := e.saveCheckpoint(ctx, in.RunID, i, step.ID, ictx, totalCost, state.CheckpointStatusRunning); err != nil {
+			return e.failRun(ctx, in, fmt.Errorf("engine: checkpoint step %q: %w", step.ID, err), totalCost)
+		}
+		if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
+			return e.interruptRun(ctx, in, i, step.ID, ictx, totalCost)
+		}
 	}
 
 	finalOut, err := buildWorkflowOutput(wf, ictx)
@@ -192,6 +216,9 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 		return e.failRun(ctx, in, err, totalCost)
 	}
 	finishAt = e.now()
+	if err := e.saveCheckpoint(ctx, in.RunID, len(wf.Spec.Steps)-1, "", ictx, totalCost, state.CheckpointStatusCompleted); err != nil {
+		return e.failRun(ctx, in, fmt.Errorf("engine: final checkpoint: %w", err), totalCost)
+	}
 	return e.Store.FinishRun(ctx, in.RunID, "succeeded", finishAt, string(outBytes), "", totalCost)
 }
 

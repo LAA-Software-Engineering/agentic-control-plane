@@ -17,6 +17,12 @@ func WriteJSON(w io.Writer, v any) error {
 	return enc.Encode(nv)
 }
 
+// MarshalStableJSON encodes v as compact JSON with lexicographically sorted object keys.
+func MarshalStableJSON(v any) ([]byte, error) {
+	nv := normalizeForStableJSON(v)
+	return json.Marshal(nv)
+}
+
 func normalizeForStableJSON(v any) any {
 	switch t := v.(type) {
 	case map[string]any:

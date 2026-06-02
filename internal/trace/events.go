@@ -9,6 +9,8 @@ type Event = state.TraceEvent
 const (
 	EventRunStarted     = "run.started"
 	EventRunFinished    = "run.finished"
+	EventRunInterrupted = "run.interrupted"
+	EventRunResumed     = "run.resumed"
 	EventStepStarted    = "step.started"
 	EventStepFinished   = "step.finished"
 	EventStepFailed     = "step.failed"
