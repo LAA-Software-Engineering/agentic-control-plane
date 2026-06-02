@@ -17,9 +17,9 @@ func (s *Store) StartRun(ctx context.Context, r state.Run) error {
 	}
 	at := r.StartedAt.UTC().Format(time.RFC3339Nano)
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO runs (run_id, workflow_name, env, status, started_at, input_json, total_cost_usd)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-`, r.RunID, r.WorkflowName, r.Env, r.Status, at, in, r.TotalCostUSD)
+INSERT INTO runs (run_id, workflow_name, env, status, started_at, input_json, total_cost_usd, workflow_spec_hash, environment_name)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, r.RunID, r.WorkflowName, r.Env, r.Status, at, in, r.TotalCostUSD, r.WorkflowSpecHash, r.EnvironmentName)
 	return err
 }
 
@@ -125,7 +125,7 @@ func scanRunRow(sc rowScanner) (*state.Run, error) {
 	var r state.Run
 	var started, finished sql.NullString
 	var outJ, errT sql.NullString
-	if err := sc.Scan(&r.RunID, &r.WorkflowName, &r.Env, &r.Status, &started, &finished, &r.InputJSON, &outJ, &errT, &r.TotalCostUSD); err != nil {
+	if err := sc.Scan(&r.RunID, &r.WorkflowName, &r.Env, &r.Status, &started, &finished, &r.InputJSON, &outJ, &errT, &r.TotalCostUSD, &r.WorkflowSpecHash, &r.EnvironmentName); err != nil {
 		return nil, err
 	}
 	st, err := parseSQLiteTime(started.String)
@@ -152,7 +152,7 @@ func scanRunRow(sc rowScanner) (*state.Run, error) {
 // GetRun returns the run row or sql.ErrNoRows.
 func (s *Store) GetRun(ctx context.Context, runID string) (*state.Run, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd
+SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name
 FROM runs
 WHERE run_id = ?
 `, runID)
@@ -178,7 +178,7 @@ func (s *Store) ListRecentRuns(ctx context.Context, limit int) ([]state.Run, err
 	}
 	limit = clampRunListLimit(limit)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd
+SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name
 FROM runs
 ORDER BY started_at DESC
 LIMIT ?
@@ -205,7 +205,7 @@ func (s *Store) ListRunsByWorkflow(ctx context.Context, workflowName string, lim
 	}
 	limit = clampRunListLimit(limit)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd
+SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name
 FROM runs
 WHERE workflow_name = ?
 ORDER BY started_at DESC

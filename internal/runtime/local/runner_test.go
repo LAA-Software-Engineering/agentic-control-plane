@@ -3,15 +3,20 @@ package local
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
@@ -198,5 +203,89 @@ func TestExecuteWorkflow_prunesOldTraceRuns(t *testing.T) {
 	}
 	if _, err := st.GetRun(ctx, newID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExecuteWorkflow_resumeAfterInterrupt(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-local.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	root := testRunProjRoot(t)
+	graph, err := project.LoadProject(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.NormalizeProjectGraph(graph)
+	graph, err = ApplyEnvironment(graph, "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runID := "resume-local-1"
+	started := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
+	inputJSON := []byte(`{"topic":"resume-me"}`)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: runID, WorkflowName: "demo", Env: "dev", Status: "running",
+		StartedAt: started, InputJSON: string(inputJSON), TotalCostUSD: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var input map[string]any
+	if err := json.Unmarshal(inputJSON, &input); err != nil {
+		t.Fatal(err)
+	}
+	idx := 0
+	ex := &engine.Executor{
+		Graph: graph, ProjectRoot: root,
+		Tools: tools.NewRegistry(graph), Models: models.NewRegistry(graph),
+		Store: st, Trace: trace.NewRecorder(st),
+		Now: func() time.Time { return started },
+	}
+	if err := ex.Run(ctx, engine.RunInput{
+		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
+		InterruptAfterStepIndex: &idx,
+	}); !errors.Is(err, engine.ErrInterrupted) {
+		t.Fatalf("interrupt: %v", err)
+	}
+
+	rt := NewRuntime(root, st)
+	rt.Now = func() time.Time { return started.Add(time.Hour) }
+	if _, err := rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
+		RunID: runID, Resume: true, EnvironmentName: "staging",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.GetRun(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "succeeded" {
+		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
+	}
+
+	events, err := trace.NewReader(st).ListByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resumed, fetchStarts int
+	for _, ev := range events {
+		if ev.Type == trace.EventRunResumed {
+			resumed++
+		}
+		if ev.StepID == "fetch" && ev.Type == trace.EventStepStarted {
+			fetchStarts++
+		}
+	}
+	if resumed != 1 {
+		t.Fatalf("run.resumed count = %d", resumed)
+	}
+	if fetchStarts != 1 {
+		t.Fatalf("fetch step.started count = %d want 1", fetchStarts)
 	}
 }

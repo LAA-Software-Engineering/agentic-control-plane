@@ -20,18 +20,28 @@ type AppliedProject struct {
 	AppliedAt   time.Time
 }
 
+// Run status values stored on runs (design doc §14.2, issue #105).
+const (
+	RunStatusRunning     = "running"
+	RunStatusInterrupted = "interrupted"
+	RunStatusSucceeded   = "succeeded"
+	RunStatusFailed      = "failed"
+)
+
 // Run is one workflow execution row in runs (design doc §14.2).
 type Run struct {
-	RunID        string
-	WorkflowName string
-	Env          string
-	Status       string
-	StartedAt    time.Time
-	FinishedAt   *time.Time
-	InputJSON    string
-	OutputJSON   string
-	ErrorText    string
-	TotalCostUSD float64
+	RunID            string
+	WorkflowName     string
+	Env              string
+	Status           string
+	StartedAt        time.Time
+	FinishedAt       *time.Time
+	InputJSON        string
+	OutputJSON       string
+	ErrorText        string
+	TotalCostUSD     float64
+	WorkflowSpecHash string
+	EnvironmentName  string
 }
 
 // RunStep is one row in run_steps (design doc §14.2).
@@ -55,4 +65,25 @@ type TraceEvent struct {
 	Type      string
 	StepID    string
 	DataJSON  string
+}
+
+// Checkpoint status values stored in run_checkpoints (issue #105).
+const (
+	CheckpointStatusRunning     = "running"
+	CheckpointStatusInterrupted = "interrupted"
+	CheckpointStatusCompleted   = "completed"
+	CheckpointStatusFailed      = "failed"
+)
+
+// RunCheckpoint is one row in run_checkpoints (issue #105).
+// ContextJSON holds the opaque engine-owned execution snapshot (interpolation context,
+// accumulated step outputs, total cost) serialized as canonical JSON.
+type RunCheckpoint struct {
+	RunID       string
+	Seq         int64
+	StepIndex   int
+	StepID      string
+	ContextJSON string
+	Status      string
+	CreatedAt   time.Time
 }
