@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
 // ErrUnknownOperation indicates the operation name is not implemented by this registry.
@@ -30,6 +32,14 @@ func NewRegistry() *Registry {
 func (r *Registry) Dispatch(ctx context.Context, operation string, with map[string]any) (map[string]any, ExecMeta, error) {
 	start := time.Now()
 	meta := ExecMeta{CostUSD: 0}
+	if spec.IsShellCommandOperation(operation) {
+		meta.DurationMs = time.Since(start).Milliseconds()
+		cmd := spec.ExtractShellCommand(with)
+		if cmd == "" {
+			return nil, meta, fmt.Errorf("native: %s requires string field command, cmd, or script", operation)
+		}
+		return map[string]any{"command": cmd}, meta, nil
+	}
 	switch operation {
 	case "echo":
 		meta.DurationMs = time.Since(start).Milliseconds()
@@ -38,13 +48,6 @@ func (r *Registry) Dispatch(ctx context.Context, operation string, with map[stri
 		v, ok := with["value"]
 		meta.DurationMs = time.Since(start).Milliseconds()
 		return map[string]any{"value": v, "ok": ok}, meta, nil
-	case "command.run", "run", "exec", "shell":
-		meta.DurationMs = time.Since(start).Milliseconds()
-		cmd := shellCommandFromWith(with)
-		if cmd == "" {
-			return nil, meta, fmt.Errorf("native: %s requires string field command, cmd, or script", operation)
-		}
-		return map[string]any{"command": cmd}, meta, nil
 	case "pull_request.fetch":
 		// Offline demo: parse JSON from `pr` (interpolated from workflow input). No network.
 		meta.DurationMs = time.Since(start).Milliseconds()
@@ -133,18 +136,4 @@ func shallowCopy(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
-}
-
-func shellCommandFromWith(with map[string]any) string {
-	if with == nil {
-		return ""
-	}
-	for _, key := range []string{"command", "cmd", "script"} {
-		if v, ok := with[key]; ok {
-			if s, ok := v.(string); ok {
-				return strings.TrimSpace(s)
-			}
-		}
-	}
-	return ""
 }

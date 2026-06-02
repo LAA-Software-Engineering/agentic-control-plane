@@ -9,6 +9,9 @@
 // Project.spec.defaults.policy, a Policy resource spec.preset, or by referencing a preset name
 // as the workflow/agent policy. [spec.ExpandPresetsInGraph] materializes effective rules during normalize.
 //
+// shell_safe uses first-token heuristics plus metacharacter fail-closed checks — not a sandbox.
+// Plan risk for shell_safe is tool-granular (conservative); runtime applies per-command classification.
+//
 // When no explicit approvals.requiredFor rule matches a tool call, [Derive] consults
 // [spec.ResolveToolSafety] metadata (fail-closed defaults; issue #103).
 //

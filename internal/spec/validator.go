@@ -237,6 +237,9 @@ func validatePolicySpecs(g *ProjectGraph) []error {
 			}
 		}
 		if ap := pr.Spec.Approvals; ap != nil {
+			if ApprovalRequireAllTools(ap) && ApprovalPermissive(ap) {
+				errs = append(errs, fmt.Errorf("Policy/%s: approvals.requireAllTools and approvals.permissive are mutually exclusive", name))
+			}
 			seen := make(map[string]struct{})
 			for i, act := range ap.RequiredFor {
 				a := strings.TrimSpace(act)

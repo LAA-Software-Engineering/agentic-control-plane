@@ -2,9 +2,17 @@ package spec
 
 import "strings"
 
+// Shell command operation names for native tools (single source of truth, issue #104).
+var ShellCommandOperations = []string{"command.run", "run", "exec", "shell"}
+
 var shellReadOnlyTokens = map[string]struct{}{
 	"ls": {}, "cat": {}, "grep": {}, "head": {}, "tail": {}, "stat": {},
 	"find": {}, "pwd": {}, "wc": {}, "which": {},
+}
+
+var shellGateTokens = map[string]struct{}{
+	"rm": {}, "mv": {}, "cp": {}, "chmod": {}, "chown": {}, "mkfifo": {}, "dd": {},
+	"curl": {}, "wget": {}, "ssh": {}, "exec": {}, "eval": {}, "write": {}, "delete": {},
 }
 
 // ShellTokenClass classifies the first token of a shell command for shell_safe policy.
@@ -15,6 +23,39 @@ const (
 	ShellTokenReadOnly
 	ShellTokenGate
 )
+
+// ShellCommandRequiresApproval reports whether a command string must be gated under shell_safe.
+//
+// This is a first-token heuristic with metacharacter fail-closed checks — not a sandbox.
+// Commands containing shell composition syntax (;|&$`, newlines, $(…)) always require approval.
+func ShellCommandRequiresApproval(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return true
+	}
+	if containsShellMetacharacters(command) {
+		return true
+	}
+	switch ClassifyShellToken(FirstShellToken(command)) {
+	case ShellTokenReadOnly:
+		return false
+	default:
+		return true
+	}
+}
+
+func containsShellMetacharacters(command string) bool {
+	if strings.Contains(command, "$(") {
+		return true
+	}
+	for _, r := range command {
+		switch r {
+		case ';', '|', '&', '\n', '\r', '`', '$':
+			return true
+		}
+	}
+	return false
+}
 
 // ClassifyShellToken maps the first command token to read-only, gate, or unknown (fail-closed → gate).
 func ClassifyShellToken(token string) ShellTokenClass {
@@ -72,4 +113,15 @@ func ExtractShellCommand(with map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// IsShellCommandOperation reports whether operation is a shell command carrier for shell_safe.
+func IsShellCommandOperation(operation string) bool {
+	op := strings.ToLower(strings.TrimSpace(operation))
+	for _, candidate := range ShellCommandOperations {
+		if op == candidate {
+			return true
+		}
+	}
+	return false
 }

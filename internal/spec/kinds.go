@@ -182,10 +182,10 @@ type PolicyTools struct {
 
 type PolicyApprovals struct {
 	RequiredFor []string `yaml:"requiredFor,omitempty" json:"requiredFor,omitempty"`
-	// RequireAllTools is set when the strict preset is expanded (every tool call requires approval).
-	RequireAllTools bool `yaml:"requireAllTools,omitempty" json:"requireAllTools,omitempty"`
-	// Permissive is set when the permissive preset is expanded (never gate tool calls).
-	Permissive bool `yaml:"permissive,omitempty" json:"permissive,omitempty"`
+	// RequireAllTools gates every tool call when true (strict preset). Pointer preserves tri-state merge.
+	RequireAllTools *bool `yaml:"requireAllTools,omitempty" json:"requireAllTools,omitempty"`
+	// Permissive skips tool-call approval when true (permissive preset). Pointer preserves tri-state merge.
+	Permissive *bool `yaml:"permissive,omitempty" json:"permissive,omitempty"`
 }
 
 type PolicySecurity struct {

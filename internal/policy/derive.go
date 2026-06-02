@@ -50,20 +50,22 @@ func EffectiveToolDecision(graph *spec.ProjectGraph, pol *spec.PolicySpec, toolN
 	toolName = strings.TrimSpace(toolName)
 	safety := resolvedSafetyForTool(graph, toolName)
 	if pol != nil && pol.Approvals != nil {
-		if pol.Approvals.Permissive {
+		if spec.ApprovalPermissive(pol.Approvals) {
 			return ToolDecision{
 				Decision: DecisionAllow,
 				Source:   SourceExplicitPolicyRule,
 				Safety:   safety,
 			}
 		}
-		if pol.Approvals.RequireAllTools {
+		if spec.ApprovalRequireAllTools(pol.Approvals) {
 			return ToolDecision{
 				Decision: DecisionRequireApproval,
 				Source:   SourceExplicitPolicyRule,
 				Safety:   safety,
 			}
 		}
+		// shell_safe plan risk is tool-granular (conservative): side-effecting tools flag approval;
+		// runtime applies per-command token classification via shellSafeRequiresApproval.
 		if spec.ResolvedPresetName(pol) == spec.PresetShellSafe {
 			if safety.RequiresApproval || safety.SideEffects {
 				return ToolDecision{

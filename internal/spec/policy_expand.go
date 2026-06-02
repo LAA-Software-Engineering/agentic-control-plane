@@ -19,10 +19,7 @@ func ExpandPresetsInGraph(g *ProjectGraph) {
 		if _, exists := g.Policies[name]; exists {
 			continue
 		}
-		preset, err := BuildPreset(name)
-		if err != nil {
-			continue
-		}
+		preset, _ := BuildPreset(name)
 		g.Policies[name] = &PolicyResource{
 			APIVersion: APIVersionV0,
 			Kind:       KindPolicy,
@@ -34,11 +31,9 @@ func ExpandPresetsInGraph(g *ProjectGraph) {
 		if pr == nil {
 			continue
 		}
-		resolved, err := resolvePolicyResourcePreset(&pr.Spec)
-		if err != nil || resolved == nil {
-			continue
+		if resolved, err := resolvePolicyResourcePreset(&pr.Spec); err == nil && resolved != nil {
+			pr.Spec = *resolved
 		}
-		pr.Spec = *resolved
 	}
 }
 
@@ -47,10 +42,7 @@ func resolvePolicyResourcePreset(pol *PolicySpec) (*PolicySpec, error) {
 		return nil, nil
 	}
 	presetName := strings.TrimSpace(pol.Preset)
-	if presetName == "" {
-		if pol.ResolvedPreset != "" {
-			return nil, nil
-		}
+	if presetName == "" || pol.ResolvedPreset != "" {
 		return nil, nil
 	}
 	if !IsBuiltinPreset(presetName) {
@@ -81,9 +73,8 @@ func collectReferencedPolicyNames(g *ProjectGraph) []string {
 			add(wr.Spec.Policy)
 		}
 	}
-	for name, pr := range g.Policies {
+	for name := range g.Policies {
 		add(name)
-		_ = pr
 	}
 	out := make([]string, 0, len(seen))
 	for name := range seen {

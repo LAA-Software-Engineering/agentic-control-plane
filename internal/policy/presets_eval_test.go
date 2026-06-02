@@ -57,6 +57,38 @@ func TestCheckToolCall_shellSafe_gatesRm(t *testing.T) {
 	}
 }
 
+func TestCheckToolCall_shellSafe_gatesChainedCommand(t *testing.T) {
+	pol, err := spec.BuildPreset(spec.PresetShellSafe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := NewEvaluator(shellSafeGraph(), &pol)
+	err = ev.CheckToolCall(context.Background(), ToolCallContext{
+		Uses: "tool.shell.run",
+		With: map[string]any{"command": "ls; rm -rf /"},
+	})
+	if err == nil {
+		t.Fatal("expected chained command to require approval")
+	}
+}
+
+func TestCheckToolCall_shellSafe_approveGrantsRm(t *testing.T) {
+	pol, err := spec.BuildPreset(spec.PresetShellSafe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := NewEvaluator(shellSafeGraph(), &pol)
+	uses := "tool.shell.command.run"
+	err = ev.CheckToolCall(context.Background(), ToolCallContext{
+		Run:  RunContext{ApprovedActions: []string{uses}},
+		Uses: uses,
+		With: map[string]any{"command": "rm -rf /tmp/x"},
+	})
+	if err != nil {
+		t.Fatalf("--approve should grant gated command: %v", err)
+	}
+}
+
 func TestCheckToolCall_shellSafe_unknownTokenGated(t *testing.T) {
 	pol, err := spec.BuildPreset(spec.PresetShellSafe)
 	if err != nil {
@@ -64,11 +96,27 @@ func TestCheckToolCall_shellSafe_unknownTokenGated(t *testing.T) {
 	}
 	ev := NewEvaluator(shellSafeGraph(), &pol)
 	err = ev.CheckToolCall(context.Background(), ToolCallContext{
-		Uses: "tool.shell.command.run",
+		Uses: "tool.shell.exec",
 		With: map[string]any{"command": "totally-unknown"},
 	})
 	if err == nil {
 		t.Fatal("expected unknown token to gate")
+	}
+}
+
+func TestCheckToolCall_shellSafe_nonShellSideEffectToolGated(t *testing.T) {
+	g := testGraphWithTools("slack")
+	g.Tools["slack"].Spec.Safety = &spec.ToolSafety{SideEffects: spec.BoolPtr(true)}
+	pol, err := spec.BuildPreset(spec.PresetShellSafe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := NewEvaluator(g, &pol)
+	err = ev.CheckToolCall(context.Background(), ToolCallContext{
+		Uses: "tool.slack.message.send",
+	})
+	if err == nil {
+		t.Fatal("side-effecting non-shell tool should gate under shell_safe")
 	}
 }
 
@@ -101,6 +149,25 @@ func TestCheckToolCall_permissive_allowsMutatingTool(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("permissive should allow: %v", err)
+	}
+}
+
+func TestEngine_Evaluator_resolvesBuiltinShellSafeAfterNormalize(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Spec: spec.ProjectSpec{
+			Defaults: &spec.ProjectDefaults{Policy: spec.PresetShellSafe},
+		},
+		Tools: shellSafeGraph().Tools,
+	}
+	spec.NormalizeProjectGraph(g)
+	eng := NewEngine(g)
+	ev := eng.Evaluator(spec.PresetShellSafe)
+	err := ev.CheckToolCall(context.Background(), ToolCallContext{
+		Uses: "tool.shell.command.run",
+		With: map[string]any{"command": "ls"},
+	})
+	if err != nil {
+		t.Fatalf("builtin shell_safe after normalize should allow ls: %v", err)
 	}
 }
 
@@ -137,5 +204,17 @@ func TestExpandPresetsInGraph_userPolicyOverridesBuiltin(t *testing.T) {
 	spec.ExpandPresetsInGraph(g)
 	if g.Policies[spec.PresetStrict].Spec.Execution.MaxWallClockSeconds != 99 {
 		t.Fatal("user policy should not be replaced by builtin")
+	}
+}
+
+func TestEffectiveToolDecision_shellSafe_toolGranularPlan(t *testing.T) {
+	g := shellSafeGraph()
+	pol, err := spec.BuildPreset(spec.PresetShellSafe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	td := EffectiveToolDecision(g, &pol, "shell")
+	if td.Decision != DecisionRequireApproval {
+		t.Fatalf("plan should conservatively flag side-effecting shell tool: %+v", td)
 	}
 }

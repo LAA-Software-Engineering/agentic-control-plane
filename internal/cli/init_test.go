@@ -35,6 +35,34 @@ func TestInit_thenValidateSucceeds(t *testing.T) {
 	}
 }
 
+func TestInit_defaultPolicyExpandsShellSafePreset(t *testing.T) {
+	parent := t.TempDir()
+	name := "shellsafe"
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"init", name, "--parent-dir", parent})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetGlobalsForTest()
+	g := &Global{ProjectRoot: filepath.Join(parent, name)}
+	graph, _, err := prepareProjectGraph(g.ProjectRoot, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr, ok := graph.Policies["default"]
+	if !ok || pr == nil {
+		t.Fatal("expected default policy")
+	}
+	if pr.Spec.ResolvedPreset != "shell_safe" {
+		t.Fatalf("default policy ResolvedPreset = %q want shell_safe", pr.Spec.ResolvedPreset)
+	}
+}
+
 func TestInit_rejectsExistingDir(t *testing.T) {
 	parent := t.TempDir()
 	name := "dup"

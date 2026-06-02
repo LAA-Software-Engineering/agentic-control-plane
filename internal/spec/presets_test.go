@@ -59,7 +59,7 @@ func TestNormalizeProjectGraph_expandsPolicyPreset(t *testing.T) {
 	if sp.ResolvedPreset != PresetStrict {
 		t.Fatalf("ResolvedPreset = %q", sp.ResolvedPreset)
 	}
-	if sp.Approvals == nil || !sp.Approvals.RequireAllTools {
+	if sp.Approvals == nil || !ApprovalRequireAllTools(sp.Approvals) {
 		t.Fatalf("strict expansion: %+v", sp.Approvals)
 	}
 	if sp.Execution == nil || sp.Execution.MaxWallClockSeconds != 120 {

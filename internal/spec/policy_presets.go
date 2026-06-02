@@ -13,14 +13,6 @@ const (
 	PresetShellSafe  = "shell_safe"
 )
 
-// shellCommandOperations are native tool operations that carry a shell command in step input.
-var shellCommandOperations = []string{"command.run", "run", "exec", "shell"}
-
-var shellGateTokens = map[string]struct{}{
-	"rm": {}, "mv": {}, "cp": {}, "chmod": {}, "chown": {}, "mkfifo": {}, "dd": {},
-	"curl": {}, "wget": {}, "ssh": {}, "exec": {}, "eval": {}, "write": {}, "delete": {},
-}
-
 // ErrUnknownPreset is returned when a policy references an unrecognized preset name.
 type ErrUnknownPreset struct {
 	Name string
@@ -63,7 +55,7 @@ func buildStrictPreset() PolicySpec {
 	return PolicySpec{
 		ResolvedPreset: PresetStrict,
 		Approvals: &PolicyApprovals{
-			RequireAllTools: true,
+			RequireAllTools: BoolPtr(true),
 		},
 	}
 }
@@ -72,7 +64,7 @@ func buildPermissivePreset() PolicySpec {
 	return PolicySpec{
 		ResolvedPreset: PresetPermissive,
 		Approvals: &PolicyApprovals{
-			Permissive: true,
+			Permissive: BoolPtr(true),
 		},
 	}
 }
@@ -80,21 +72,8 @@ func buildPermissivePreset() PolicySpec {
 func buildShellSafePreset() PolicySpec {
 	return PolicySpec{
 		ResolvedPreset: PresetShellSafe,
-		Approvals: &PolicyApprovals{
-			RequiredFor: shellSafeExpandedRequiredFor(),
-		},
+		// Runtime gating uses ShellCommandRequiresApproval + safety metadata; no synthetic requiredFor.
 	}
-}
-
-func shellSafeExpandedRequiredFor() []string {
-	out := make([]string, 0, len(shellGateTokens)*len(shellCommandOperations))
-	for _, op := range shellCommandOperations {
-		for token := range shellGateTokens {
-			out = append(out, fmt.Sprintf("preset:%s:%s:%s", PresetShellSafe, op, token))
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 // BuildPreset returns a fresh [PolicySpec] for a built-in preset name.
@@ -153,25 +132,48 @@ func mergePolicyApprovals(base, overlay *PolicyApprovals) *PolicyApprovals {
 		return clonePolicyApprovals(base)
 	}
 	out := &PolicyApprovals{
-		RequireAllTools: overlay.RequireAllTools,
-		Permissive:      overlay.Permissive,
-	}
-	if base != nil {
-		if !out.RequireAllTools {
-			out.RequireAllTools = base.RequireAllTools
-		}
-		if !out.Permissive {
-			out.Permissive = base.Permissive
-		}
+		RequireAllTools: mergeOptionalBool(optionalRequireAllTools(base), overlay.RequireAllTools),
+		Permissive:      mergeOptionalBool(optionalPermissive(base), overlay.Permissive),
 	}
 	out.RequiredFor = mergePresetRequiredFor(
 		presetRequiredForSlice(base),
 		presetRequiredForSlice(overlay),
 	)
-	if out.RequiredFor == nil && !out.RequireAllTools && !out.Permissive {
+	if out.RequiredFor == nil && out.RequireAllTools == nil && out.Permissive == nil {
 		return nil
 	}
 	return out
+}
+
+func optionalRequireAllTools(a *PolicyApprovals) *bool {
+	if a == nil {
+		return nil
+	}
+	return a.RequireAllTools
+}
+
+func optionalPermissive(a *PolicyApprovals) *bool {
+	if a == nil {
+		return nil
+	}
+	return a.Permissive
+}
+
+func mergeOptionalBool(base, overlay *bool) *bool {
+	if overlay != nil {
+		return overlay
+	}
+	return base
+}
+
+// ApprovalPermissive reports whether merged approvals enable permissive mode.
+func ApprovalPermissive(a *PolicyApprovals) bool {
+	return a != nil && a.Permissive != nil && *a.Permissive
+}
+
+// ApprovalRequireAllTools reports whether merged approvals gate every tool call.
+func ApprovalRequireAllTools(a *PolicyApprovals) bool {
+	return a != nil && a.RequireAllTools != nil && *a.RequireAllTools
 }
 
 func presetRequiredForSlice(a *PolicyApprovals) []string {
@@ -274,6 +276,14 @@ func clonePolicyApprovals(in *PolicyApprovals) *PolicyApprovals {
 	if in.RequiredFor != nil {
 		cp.RequiredFor = append([]string(nil), in.RequiredFor...)
 	}
+	if in.RequireAllTools != nil {
+		v := *in.RequireAllTools
+		cp.RequireAllTools = &v
+	}
+	if in.Permissive != nil {
+		v := *in.Permissive
+		cp.Permissive = &v
+	}
 	return &cp
 }
 
@@ -286,20 +296,4 @@ func ResolvedPresetName(pol *PolicySpec) string {
 		return pol.ResolvedPreset
 	}
 	return strings.TrimSpace(pol.Preset)
-}
-
-// ShellCommandOperations returns native operations subject to shell_safe token classification.
-func ShellCommandOperations() []string {
-	return append([]string(nil), shellCommandOperations...)
-}
-
-// IsShellCommandOperation reports whether operation is a shell command carrier for shell_safe.
-func IsShellCommandOperation(operation string) bool {
-	op := strings.ToLower(strings.TrimSpace(operation))
-	for _, candidate := range shellCommandOperations {
-		if op == candidate {
-			return true
-		}
-	}
-	return false
 }

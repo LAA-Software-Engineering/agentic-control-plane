@@ -50,6 +50,26 @@ func TestFirstShellToken_adversarial(t *testing.T) {
 	}
 }
 
+func TestShellCommandRequiresApproval_metacharactersFailClosed(t *testing.T) {
+	adversarial := []string{
+		"ls; rm -rf /",
+		"ls | rm -rf /",
+		"ls && rm -rf /",
+		"$(rm -rf /)",
+		"`rm -rf /`",
+		"ls\nrm -rf /",
+		"echo $(whoami)",
+	}
+	for _, cmd := range adversarial {
+		if !ShellCommandRequiresApproval(cmd) {
+			t.Fatalf("expected gate for %q", cmd)
+		}
+	}
+	if ShellCommandRequiresApproval("ls -la") {
+		t.Fatal("plain ls should not require approval")
+	}
+}
+
 func TestBuildPreset_unknown(t *testing.T) {
 	_, err := BuildPreset("nope")
 	if err == nil {
@@ -86,12 +106,28 @@ func TestMergePolicySpec_localRequiredForOverridesPresetTool(t *testing.T) {
 	}
 }
 
+func TestMergePolicySpec_overlayRelaxesStrict(t *testing.T) {
+	base, err := BuildPreset(PresetStrict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlay := PolicySpec{
+		Approvals: &PolicyApprovals{
+			RequireAllTools: BoolPtr(false),
+		},
+	}
+	merged := MergePolicySpec(base, overlay)
+	if ApprovalRequireAllTools(merged.Approvals) {
+		t.Fatal("overlay requireAllTools: false should relax strict preset")
+	}
+}
+
 func TestBuildPreset_strict_expanded(t *testing.T) {
 	p, err := BuildPreset(PresetStrict)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Approvals == nil || !p.Approvals.RequireAllTools {
+	if p.Approvals == nil || !ApprovalRequireAllTools(p.Approvals) {
 		t.Fatalf("strict preset: %+v", p.Approvals)
 	}
 }
@@ -101,12 +137,12 @@ func TestBuildPreset_permissive_expanded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Approvals == nil || !p.Approvals.Permissive {
+	if p.Approvals == nil || !ApprovalPermissive(p.Approvals) {
 		t.Fatalf("permissive preset: %+v", p.Approvals)
 	}
 }
 
-func TestBuildPreset_shellSafe_hasGatePatterns(t *testing.T) {
+func TestBuildPreset_shellSafe_noSyntheticRequiredFor(t *testing.T) {
 	p, err := BuildPreset(PresetShellSafe)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +150,27 @@ func TestBuildPreset_shellSafe_hasGatePatterns(t *testing.T) {
 	if p.ResolvedPreset != PresetShellSafe {
 		t.Fatalf("ResolvedPreset = %q", p.ResolvedPreset)
 	}
-	if p.Approvals == nil || len(p.Approvals.RequiredFor) == 0 {
-		t.Fatal("expected expanded gate patterns")
+	if p.Approvals != nil && len(p.Approvals.RequiredFor) > 0 {
+		t.Fatalf("shell_safe should not expand synthetic requiredFor: %v", p.Approvals.RequiredFor)
+	}
+}
+
+func TestValidatePolicySpecs_conflictingApprovalFlags(t *testing.T) {
+	g := &ProjectGraph{
+		Policies: map[string]*PolicyResource{
+			"bad": {
+				Metadata: Metadata{Name: "bad"},
+				Spec: PolicySpec{
+					Approvals: &PolicyApprovals{
+						RequireAllTools: BoolPtr(true),
+						Permissive:      BoolPtr(true),
+					},
+				},
+			},
+		},
+	}
+	errs := validatePolicySpecs(g)
+	if len(errs) == 0 {
+		t.Fatal("expected validation error")
 	}
 }

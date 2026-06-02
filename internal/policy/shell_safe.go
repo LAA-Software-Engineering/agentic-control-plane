@@ -12,18 +12,8 @@ func shellSafeRequiresApproval(graph *spec.ProjectGraph, call ToolCallContext) b
 		return true
 	}
 	if spec.IsShellCommandOperation(operation) {
-		cmd := spec.ExtractShellCommand(call.With)
-		token := spec.FirstShellToken(cmd)
-		switch spec.ClassifyShellToken(token) {
-		case spec.ShellTokenReadOnly:
-			return false
-		case spec.ShellTokenGate, spec.ShellTokenUnknown:
-			return true
-		}
+		return spec.ShellCommandRequiresApproval(spec.ExtractShellCommand(call.With))
 	}
 	safety := resolvedSafetyForTool(graph, toolName)
-	if safety.RequiresApproval || safety.SideEffects {
-		return true
-	}
-	return false
+	return safety.RequiresApproval || safety.SideEffects
 }
