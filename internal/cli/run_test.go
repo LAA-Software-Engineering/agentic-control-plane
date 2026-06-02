@@ -220,3 +220,46 @@ func TestRun_inputFile_succeeds(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func TestRun_resume_missingRun_exit1(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "resume-missing.db")
+	root := runProjRoot(t)
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "--resume", "does-not-exist",
+		"--project", root,
+		"--state", db,
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if ExitCodeOf(err) != ExitGenericFailure {
+		t.Fatalf("exit=%d err=%v out=%s", ExitCodeOf(err), err, out.String())
+	}
+}
+
+func TestRun_resume_withWorkflowArg_exit2(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "resume-bad-args.db")
+	root := runProjRoot(t)
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{
+		"run", "workflow/demo", "--resume", "some-id",
+		"--project", root,
+		"--state", db,
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if ExitCodeOf(err) != ExitGenericFailure {
+		t.Fatalf("exit=%d err=%v", ExitCodeOf(err), err)
+	}
+}

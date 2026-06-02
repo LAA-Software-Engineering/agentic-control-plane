@@ -3,11 +3,13 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
@@ -21,6 +23,7 @@ func newRunCmd() *cobra.Command {
 	var inputFile string
 	var inputPairs []string
 	var approves []string
+	var resumeRunID string
 
 	cmd := &cobra.Command{
 		Use:          "run workflow/<name>",
@@ -33,24 +36,48 @@ Workflow input is built from optional --input-file (JSON object) plus repeated -
 (string values only for key=value pairs). Policy-gated tool uses can be allowed with repeated
 --approve using the full uses string (e.g. tool.helper.echo).
 
+Resume an interrupted or incomplete run with --resume <run-id> (no workflow argument).
+
 Examples:
   agentctl run workflow/demo --input topic=hello
   agentctl run workflow/demo --input-file input.json
+  agentctl run --resume run-abc123
 
 Exit codes (section 11.2):
-  0 — success
+  0 — success (including interrupted runs awaiting resume)
   1 — generic failure (e.g. cannot open SQLite, start run, trace)
   2 — validation failure (project, workflow ref, input, input-file)
   4 — execution failure (step/engine error after the run row exists)
   5 — policy denial`,
-		Args: cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			resume, _ := cmd.Flags().GetString("resume")
+			if strings.TrimSpace(resume) != "" {
+				if len(args) != 0 {
+					return fmt.Errorf("run: --resume does not take a workflow argument")
+				}
+				return nil
+			}
+			if len(args) != 1 {
+				return fmt.Errorf("run: requires workflow/<name> or --resume <run-id>")
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRun(cmd, args[0], inputFile, inputPairs, approves)
+			var wfName string
+			if len(args) == 1 {
+				var err error
+				wfName, err = parseWorkflowTarget(args[0])
+				if err != nil {
+					return NewExitError(ExitValidationError, err)
+				}
+			}
+			return runRun(cmd, wfName, resumeRunID, inputFile, inputPairs, approves)
 		},
 	}
 	cmd.Flags().StringVar(&inputFile, "input-file", "", "path to JSON file with workflow input object")
 	cmd.Flags().StringArrayVar(&inputPairs, "input", nil, "workflow input as key=value (repeatable; values are strings)")
 	cmd.Flags().StringArrayVar(&approves, "approve", nil, "approve a policy-gated tool uses string (repeatable)")
+	cmd.Flags().StringVar(&resumeRunID, "resume", "", "resume an interrupted or incomplete run by id")
 	return cmd
 }
 
@@ -107,6 +134,9 @@ func classifyRunError(err error) int {
 	if err == nil {
 		return ExitSuccess
 	}
+	if errors.Is(err, engine.ErrInterrupted) {
+		return ExitSuccess
+	}
 	if _, ok := policy.AsDenied(err); ok {
 		return ExitPolicyDenied
 	}
@@ -123,20 +153,23 @@ func classifyRunError(err error) int {
 	case strings.Contains(msg, "open sqlite"),
 		strings.Contains(msg, "ping sqlite"),
 		strings.Contains(msg, "start run:"),
-		strings.Contains(msg, "trace run."):
+		strings.Contains(msg, "trace run."),
+		strings.Contains(msg, "not found"),
+		strings.Contains(msg, "has no checkpoint"),
+		strings.Contains(msg, "is not resumable"):
 		return ExitGenericFailure
 	default:
 		return ExitExecutionError
 	}
 }
 
-func runRun(cmd *cobra.Command, target, inputFile string, inputPairs, approves []string) error {
+func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPairs, approves []string) error {
 	ctx := context.Background()
 	g := Globals()
 
-	wfName, err := parseWorkflowTarget(target)
-	if err != nil {
-		return NewExitError(ExitValidationError, err)
+	resumeID := strings.TrimSpace(resumeRunID)
+	if resumeID == "" && wfName == "" {
+		return NewExitError(ExitValidationError, fmt.Errorf("run: requires workflow/<name> or --resume <run-id>"))
 	}
 
 	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
@@ -144,9 +177,12 @@ func runRun(cmd *cobra.Command, target, inputFile string, inputPairs, approves [
 		return NewExitError(ExitValidationError, err)
 	}
 
-	inputJSON, err := buildRunInputJSON(inputFile, inputPairs)
-	if err != nil {
-		return NewExitError(ExitValidationError, err)
+	var inputJSON []byte
+	if resumeID == "" {
+		inputJSON, err = buildRunInputJSON(inputFile, inputPairs)
+		if err != nil {
+			return NewExitError(ExitValidationError, err)
+		}
 	}
 
 	env := planEnvironment(g)
@@ -165,15 +201,27 @@ func runRun(cmd *cobra.Command, target, inputFile string, inputPairs, approves [
 	defer func() { _ = st.Close() }()
 
 	rt := local.NewRuntime(root, st)
-	runID, runErr := rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
-		WorkflowName:    wfName,
+	opts := runtime.WorkflowRunOptions{
 		EnvironmentName: strings.TrimSpace(g.Env),
 		Env:             env,
 		InputJSON:       inputJSON,
 		ApprovedActions: approves,
-	})
+		Resume:          resumeID != "",
+		RunID:           resumeID,
+	}
+	if !opts.Resume {
+		opts.WorkflowName = wfName
+	}
+	runID, runErr := rt.ExecuteWorkflow(ctx, opts)
 
-	if werr := writeRunOutput(cmd, ctx, st, env, dsn, wfName, runID, runErr, g); werr != nil {
+	outWfName := wfName
+	if opts.Resume && runID != "" {
+		if r, gerr := st.GetRun(ctx, runID); gerr == nil && r != nil {
+			outWfName = r.WorkflowName
+		}
+	}
+
+	if werr := writeRunOutput(cmd, ctx, st, env, dsn, outWfName, runID, runErr, g); werr != nil {
 		return werr
 	}
 	if runErr != nil {

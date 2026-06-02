@@ -16,6 +16,9 @@ type WorkflowRunOptions struct {
 	InputJSON []byte
 	// ApprovedActions are full tool uses strings approved for policy gates.
 	ApprovedActions []string
+	// Resume continues an existing run from its latest checkpoint (issue #105).
+	// RunID must be set; InputJSON and WorkflowName are loaded from the persisted run.
+	Resume bool
 }
 
 // WorkflowRunner loads declarative state and executes a workflow locally (design doc section 16 MVP).
