@@ -1,0 +1,11 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: demo
+spec:
+  policy: default
+  steps:
+    - id: purge
+      uses: tool.delete_records.purge
+      with:
+        id: "123"

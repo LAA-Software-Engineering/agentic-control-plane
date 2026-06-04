@@ -33,4 +33,10 @@
 // When a tool call would require approval, [BuildHitlGate] and [ResolveHitlReview] supply review
 // configuration from Policy.spec.hitl. Operators resolve gates with approve, reject, edit, or switch;
 // [ApplyHitlDecision] and [ValidateHitlEdit] enforce per-call edit and switch rules.
+//
+// # Static policy lint (issue #107)
+//
+// [Lint] runs at validate/plan time and returns structured findings (ungated sensitive tools, invalid
+// HITL switch targets, unknown edit args, weakened presets, and similar). High-severity findings can
+// fail validate when --strict is set.
 package policy

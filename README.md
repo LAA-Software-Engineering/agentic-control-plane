@@ -46,8 +46,8 @@ The full product vision, YAML spec v0, and architecture are documented in [**`do
 ## Features (MVP today)
 
 - **`agentctl init`** — scaffold `project.yaml`, policies, tools, and a sample workflow  
-- **`agentctl validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references  
-- **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints; JSON/YAML output includes a **`deploymentBaseline`** digest for the store snapshot  
+- **`agentctl validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references; runs **policy lint** (ungated sensitive tools, invalid HITL config, etc.) as **advisory** output — use **`--strict`** to exit **2** on high-severity lint findings (fail-closed safety metadata still gates at **run** even when lint passes)  
+- **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint; JSON/YAML output includes **`policyLint`** and a **`deploymentBaseline`** digest for the store snapshot  
 - **`agentctl apply`** — persist plan (TTY confirm or `--auto-approve` / `AGENTCTL_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
 - **`agentctl run`** — execute a workflow locally; JSON Schema for inputs where configured; policy gates pause for **human-in-the-loop (HITL)** approval when a tool call requires it  
 - **`agentctl logs`** — read **trace events** from SQLite (`--run`, `--workflow`, or recent runs)  
