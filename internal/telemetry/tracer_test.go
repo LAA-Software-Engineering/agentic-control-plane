@@ -48,6 +48,17 @@ func TestNewTracer_consoleExport_emitsRunSpan(t *testing.T) {
 	h.End(nil)
 }
 
+func TestRunHandle_EndInterrupted_notErrorStatus(t *testing.T) {
+	tr := telemetry.NewTracer(telemetry.Config{
+		Enabled: true, ServiceName: "test-svc", ConsoleExport: true,
+	}, "0.1.0")
+	defer tr.Shutdown()
+
+	h := tr.BeginRun(context.Background(), telemetry.RunStartAttrs{RunID: "r", Workflow: "w"})
+	h.MarkInterrupted()
+	h.EndInterrupted()
+}
+
 func TestRunHandle_resumeLink(t *testing.T) {
 	tr := telemetry.NewTracer(telemetry.Config{
 		Enabled:       true,
@@ -115,4 +126,15 @@ func TestConfigFromGraph_nil(t *testing.T) {
 	if cfg.Enabled {
 		t.Fatal("expected disabled")
 	}
+}
+
+func TestRunHandle_EndInterrupted_okStatus(t *testing.T) {
+	tr := telemetry.NewTracer(telemetry.Config{
+		Enabled: true, ServiceName: "test-svc", ConsoleExport: true,
+	}, "0.1.0")
+	defer tr.Shutdown()
+
+	h := tr.BeginRun(context.Background(), telemetry.RunStartAttrs{RunID: "r", Workflow: "w"})
+	h.MarkInterrupted()
+	h.EndInterrupted()
 }

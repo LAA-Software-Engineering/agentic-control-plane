@@ -1,7 +1,6 @@
 package telemetry_test
 
 import (
-	"os"
 	"testing"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
@@ -40,5 +39,4 @@ func TestResolveEndpoint_empty(t *testing.T) {
 	if err != nil || got != "" {
 		t.Fatalf("got %q err %v", got, err)
 	}
-	_ = os.Getenv
 }

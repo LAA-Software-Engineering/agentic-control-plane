@@ -32,8 +32,10 @@ If the exporter cannot be initialized, `agentctl` logs a warning and the run sti
 agent.run (root)
  ├─ model.chat
  ├─ tool.exec        (gen_ai.tool.* safety attrs)
- └─ approval         (HITL gate)
+ └─ approval         (HITL gate fired — instantaneous, not human wait time)
 ```
+
+The `approval` span marks that a tool call hit an approval gate (same moment as SQLite `approval.requested`). It does **not** stay open while an operator decides; human wait time is outside the process. After interrupt, the root `agent.run` span ends with `gen_ai.hitl.interrupted=true` and `gen_ai.response.status=ok` (not an error — interrupts are successful pauses, matching CLI exit code 0).
 
 Resume after interrupt links the new `agent.run` span to the interrupted one via an OpenTelemetry span link (`gen_ai.hitl.resumed=true`).
 

@@ -32,6 +32,18 @@ func NewTracer(cfg Config, agentVersion string) *Tracer {
 		log.Printf("telemetry: disabled after init error: %v", err)
 		return &Tracer{enabled: false, agentVersion: agentVersion}
 	}
+	return newTracerFromProvider(tp, agentVersion)
+}
+
+// NewTracerWithProvider returns a tracer backed by an existing SDK provider (tests only).
+func NewTracerWithProvider(tp *sdktrace.TracerProvider, agentVersion string) *Tracer {
+	if tp == nil {
+		return &Tracer{enabled: false, agentVersion: agentVersion}
+	}
+	return newTracerFromProvider(tp, agentVersion)
+}
+
+func newTracerFromProvider(tp *sdktrace.TracerProvider, agentVersion string) *Tracer {
 	return &Tracer{
 		enabled:      true,
 		agentVersion: agentVersion,
@@ -148,6 +160,18 @@ func (h *RunHandle) End(err error) {
 		h.span.SetAttributes(attribute.String(AttrResponseStatus, StatusError))
 		return
 	}
+	h.span.SetStatus(codes.Ok, "")
+	h.span.SetAttributes(attribute.String(AttrResponseStatus, StatusOK))
+}
+
+// EndInterrupted ends a paused run span without error status (HITL / checkpoint interrupt).
+// Call when the engine returns [engine.ErrInterrupted]; gen_ai.hitl.interrupted should already be set.
+func (h *RunHandle) EndInterrupted() {
+	if h == nil || h.span == nil {
+		return
+	}
+	defer h.span.End()
+	h.span.SetStatus(codes.Ok, "")
 	h.span.SetAttributes(attribute.String(AttrResponseStatus, StatusOK))
 }
 
@@ -213,8 +237,11 @@ func (h *RunHandle) StartTool(attrs ToolAttrs) (context.Context, func(err error)
 		attribute.Bool(AttrToolSideEffects, attrs.SideEffects),
 		attribute.Bool(AttrToolRequiresApproval, attrs.RequiresApproval),
 	}
+	if attrs.StepID != "" {
+		kvs = append(kvs, attribute.String(AttrStepID, attrs.StepID))
+	}
 	if attrs.Uses != "" {
-		kvs = append(kvs, attribute.String("gen_ai.tool.name", attrs.Uses))
+		kvs = append(kvs, attribute.String(AttrToolName, attrs.Uses))
 	}
 	ctx, span := h.tracer.tracer.Start(h.Context(), SpanToolExec, oteltrace.WithAttributes(kvs...))
 	return ctx, func(err error) {
@@ -244,7 +271,7 @@ func (h *RunHandle) StartApproval(attrs ApprovalAttrs) func() {
 			attribute.String(AttrSystem, SystemName),
 			attribute.String(AttrOperationName, OpApproval),
 			attribute.String(AttrRunID, attrs.RunID),
-			attribute.String("gen_ai.tool.name", attrs.Uses),
+			attribute.String(AttrToolName, attrs.Uses),
 		),
 	)
 	return func() { span.End() }
@@ -256,11 +283,14 @@ func modelAttrs(attrs ModelAttrs) []attribute.KeyValue {
 		attribute.String(AttrOperationName, OpModelChat),
 		attribute.String(AttrRunID, attrs.RunID),
 	}
+	if attrs.StepID != "" {
+		kvs = append(kvs, attribute.String(AttrStepID, attrs.StepID))
+	}
 	if attrs.AgentName != "" {
 		kvs = append(kvs, attribute.String(AttrAgentName, attrs.AgentName))
 	}
 	if attrs.ModelRef != "" {
-		kvs = append(kvs, attribute.String("gen_ai.request.model", attrs.ModelRef))
+		kvs = append(kvs, attribute.String(AttrRequestModel, attrs.ModelRef))
 	}
 	return kvs
 }

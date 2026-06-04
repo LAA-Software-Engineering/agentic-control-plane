@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
+
+const providerShutdownTimeout = 5 * time.Second
 
 func newProvider(cfg Config, agentVersion string) (*sdktrace.TracerProvider, error) {
 	var exporters []sdktrace.SpanExporter
@@ -79,7 +80,6 @@ func newProvider(cfg Config, agentVersion string) (*sdktrace.TracerProvider, err
 		sdktrace.WithBatcher(batcher),
 		sdktrace.WithResource(res),
 	)
-	otel.SetTracerProvider(tp)
 	return tp, nil
 }
 
@@ -115,7 +115,7 @@ func flushProvider(tp *sdktrace.TracerProvider) {
 	if tp == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), providerShutdownTimeout)
 	defer cancel()
 	if err := tp.Shutdown(ctx); err != nil {
 		log.Printf("telemetry: shutdown: %v", err)

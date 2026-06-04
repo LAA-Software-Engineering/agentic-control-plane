@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -114,9 +115,14 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 		}
 	}
 	defer func() {
-		if runHandle != nil {
-			runHandle.End(err)
+		if runHandle == nil {
+			return
 		}
+		if errors.Is(err, ErrInterrupted) {
+			runHandle.EndInterrupted()
+			return
+		}
+		runHandle.End(err)
 	}()
 
 	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
