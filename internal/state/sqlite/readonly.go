@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
 	"path/filepath"
+	"strings"
 )
 
 // OpenReadOnly opens an existing SQLite database for read-only queries.
@@ -36,12 +36,29 @@ func OpenReadOnly(ctx context.Context, path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+// readOnlyDSN builds a modernc.org/sqlite file URI with mode=ro.
+// Windows paths use file:///C:/... (forward slashes); net/url.Path is incorrect for drive letters.
 func readOnlyDSN(path string) (string, error) {
-	abs, err := filepath.Abs(filepath.Clean(path))
+	clean := filepath.Clean(path)
+	if win, ok := windowsSQLitePath(clean); ok {
+		return "file:///" + win + "?mode=ro", nil
+	}
+	abs, err := filepath.Abs(clean)
 	if err != nil {
 		return "", fmt.Errorf("sqlite read-only path: %w", err)
 	}
-	// modernc.org/sqlite file URI: mode=ro prevents writes at the VFS layer.
-	u := url.URL{Scheme: "file", Path: abs, RawQuery: "mode=ro"}
-	return u.String(), nil
+	return "file://" + filepath.ToSlash(abs) + "?mode=ro", nil
+}
+
+// windowsSQLitePath reports whether p is a Windows drive path and returns C:/... form.
+func windowsSQLitePath(p string) (string, bool) {
+	if len(p) < 3 || p[1] != ':' {
+		return "", false
+	}
+	if p[2] != '\\' && p[2] != '/' {
+		return "", false
+	}
+	drive := strings.ToUpper(string(p[0])) + ":"
+	rest := strings.TrimPrefix(strings.ReplaceAll(p[2:], `\`, `/`), "/")
+	return drive + "/" + rest, true
 }
