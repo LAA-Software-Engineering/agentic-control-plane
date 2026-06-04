@@ -193,6 +193,44 @@ func TestServer_API_readOnly(t *testing.T) {
 	})
 }
 
+func TestServer_ListenAddr(t *testing.T) {
+	path, st := seedInspectorDB(t)
+	t.Cleanup(func() { _ = st.Close() })
+	srv, err := NewServer(st, Config{StatePath: path, Port: 8787})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := srv.ListenAddr(); got != "127.0.0.1:8787" {
+		t.Fatalf("ListenAddr=%q", got)
+	}
+	srv.cfg.Port = 0
+	if got := srv.ListenAddr(); got != "127.0.0.1:0" {
+		t.Fatalf("ListenAddr port0=%q", got)
+	}
+}
+
+func TestServer_Handler_securityHeaders(t *testing.T) {
+	path, st := seedInspectorDB(t)
+	t.Cleanup(func() { _ = st.Close() })
+	srv, err := NewServer(st, Config{StatePath: path, Env: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	res, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("headers=%v", res.Header)
+	}
+	if csp := res.Header.Get("Content-Security-Policy"); csp == "" || !strings.Contains(csp, "default-src 'self'") {
+		t.Fatalf("csp=%q", csp)
+	}
+}
+
 func TestServer_readOnlyStoreCannotMutate(t *testing.T) {
 	_, st := seedInspectorDB(t)
 	t.Cleanup(func() { _ = st.Close() })

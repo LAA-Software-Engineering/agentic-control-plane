@@ -48,6 +48,17 @@ func TestContract_runRecord_matchesLogsFields(t *testing.T) {
 	}
 }
 
+func TestContract_run_emptyInputDefaultsToObject(t *testing.T) {
+	r := state.Run{
+		RunID: "r", WorkflowName: "w", Env: "local", Status: "running",
+		StartedAt: time.Now().UTC(), InputJSON: "",
+	}
+	rec := Run(r)
+	if string(rec.Input) != `{}` {
+		t.Fatalf("input=%s want {}", rec.Input)
+	}
+}
+
 func TestContract_appliedResource_matchesStateCLI(t *testing.T) {
 	at := time.Date(2026, 6, 4, 8, 0, 0, 0, time.UTC)
 	row := state.AppliedResource{

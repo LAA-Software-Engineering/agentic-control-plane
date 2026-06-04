@@ -9,12 +9,18 @@ import (
 //go:embed web/*
 var webEmbed embed.FS
 
-func (s *Server) staticFS() http.Handler {
+var staticAssets http.FileSystem
+
+func init() {
 	sub, err := fs.Sub(webEmbed, "web/static")
 	if err != nil {
-		return http.FileServer(http.FS(webEmbed))
+		panic("inspect: embed web/static: " + err.Error())
 	}
-	return http.FileServer(http.FS(sub))
+	staticAssets = http.FS(sub)
+}
+
+func (s *Server) staticFS() http.Handler {
+	return http.FileServer(staticAssets)
 }
 
 func (s *Server) staticHandler(name string) http.Handler {

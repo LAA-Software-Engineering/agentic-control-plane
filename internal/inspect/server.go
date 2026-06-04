@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
@@ -45,9 +46,11 @@ type Config struct {
 
 // Server serves read-only JSON and static UI over HTTP.
 type Server struct {
-	store *sqlite.Store
-	cfg   Config
-	mux   *http.ServeMux
+	store     *sqlite.Store
+	cfg       Config
+	mux       *http.ServeMux
+	mu        sync.RWMutex
+	boundAddr string // set after Listen; use [Server.BoundAddr] when Port is 0
 }
 
 // NewServer wires handlers for a read-only SQLite store opened via [sqlite.OpenReadOnly].
@@ -58,7 +61,7 @@ func NewServer(st *sqlite.Store, cfg Config) (*Server, error) {
 	if strings.TrimSpace(cfg.StatePath) == "" {
 		return nil, errors.New("inspect: empty state path")
 	}
-	if cfg.Port <= 0 {
+	if cfg.Port < 0 {
 		cfg.Port = DefaultPort
 	}
 	s := &Server{store: st, cfg: cfg, mux: http.NewServeMux()}
@@ -75,15 +78,30 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", s.staticFS()))
 }
 
-// Handler returns the root HTTP handler (GET/HEAD only).
+// Handler returns the root HTTP handler (GET/HEAD only, security headers on responses).
 func (s *Server) Handler() http.Handler {
-	return RejectMutation(s.mux)
+	return securityHeaders(RejectMutation(s.mux))
+}
+
+// BoundAddr returns the address the server is listening on after [Server.ListenAndServe] starts.
+// When Port is 0, this is the kernel-assigned port (127.0.0.1:NNNN).
+func (s *Server) BoundAddr() string {
+	s.mu.RLock()
+	ba := s.boundAddr
+	s.mu.RUnlock()
+	if ba != "" {
+		return ba
+	}
+	return s.ListenAddr()
 }
 
 // ListenAddr returns the address this server will bind when [Server.ListenAndServe] is called.
 func (s *Server) ListenAddr() string {
 	if a := strings.TrimSpace(s.cfg.Addr); a != "" {
 		return a
+	}
+	if s.cfg.Port == 0 {
+		return "127.0.0.1:0"
 	}
 	return fmt.Sprintf("127.0.0.1:%d", s.cfg.Port)
 }
@@ -94,6 +112,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("inspect: listen %s: %w", s.ListenAddr(), err)
 	}
+	s.mu.Lock()
+	s.boundAddr = ln.Addr().String()
+	s.mu.Unlock()
 
 	srv := &http.Server{
 		Handler:           s.Handler(),
