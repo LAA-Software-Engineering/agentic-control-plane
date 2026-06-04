@@ -184,6 +184,72 @@ func TestLint_presetWeakened_strictToPermissive(t *testing.T) {
 	}
 }
 
+func TestLint_presetWeakened_strictRequireAllToolsFalse(t *testing.T) {
+	t.Helper()
+	requireAll := false
+	g := &spec.ProjectGraph{
+		Tools: testGraphWithTools("helper").Tools,
+		Policies: map[string]*spec.PolicyResource{
+			"relaxed": {
+				Metadata: spec.Metadata{Name: "relaxed"},
+				Spec: spec.PolicySpec{
+					Preset: spec.PresetStrict,
+					Approvals: &spec.PolicyApprovals{
+						RequireAllTools: &requireAll,
+					},
+				},
+			},
+		},
+	}
+	spec.NormalizeProjectGraph(g)
+	findings := Lint(g)
+	var found bool
+	for _, f := range findings {
+		if f.Rule == LintRulePresetWeakened && strings.Contains(f.Message, "requireAllTools: false") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("got %#v", findings)
+	}
+}
+
+func TestSwitchTargetAllowedByPolicy_invalidUses(t *testing.T) {
+	t.Helper()
+	if switchTargetAllowedByPolicy(nil, nil, "not-a-uses") {
+		t.Fatal("expected false for invalid uses")
+	}
+}
+
+func TestLint_unknownEditArg_withoutWorkflowUsesNativeCatalog(t *testing.T) {
+	t.Helper()
+	g := testGraphWithTools("helper")
+	g.Tools["helper"].Spec.Type = "native"
+	g.Tools["helper"].Spec.Safety = &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}
+	g.Policies = map[string]*spec.PolicyResource{
+		"default": {
+			Metadata: spec.Metadata{Name: "default"},
+			Spec: spec.PolicySpec{
+				Hitl: &spec.HitlPolicy{
+					InterruptOn: map[string]spec.HitlInterruptValue{
+						"helper": {
+							Enabled: true,
+							Config: &spec.HitlInterruptConfig{
+								DeniedEditArgs: []string{"secret"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	findings := Lint(g)
+	if !containsLintRule(findings, LintRuleUnknownEditArg) {
+		t.Fatalf("expected edit-arg lint against native catalog, got %#v", findings)
+	}
+}
+
 func TestLint_unreachableRequiredFor(t *testing.T) {
 	t.Helper()
 	g := testGraphWithTools("helper")

@@ -117,23 +117,30 @@ func writeValidateSuccess(cmd *cobra.Command, graph *spec.ProjectGraph, g *Globa
 
 func writeValidateLintFailure(cmd *cobra.Command, graph *spec.ProjectGraph, g *Global, findings []policy.LintFinding) error {
 	out := cmd.OutOrStdout()
+	envLabel := g.Env
+	if envLabel == "" {
+		envLabel = "(none)"
+	}
+	n := resourceCount(graph)
 	switch g.Output {
 	case render.FormatJSON:
 		payload := map[string]any{
-			"project":     graph.Meta.Name,
-			"environment": g.Env,
-			"valid":       false,
-			"message":     "Policy lint failed (--strict)",
-			"policyLint":  findings,
+			"project":       graph.Meta.Name,
+			"environment":   envLabel,
+			"resourceCount": n,
+			"valid":         false,
+			"message":       "Policy lint failed (--strict)",
+			"policyLint":    findings,
 		}
 		return render.WriteJSON(out, payload)
 	case render.FormatYAML:
 		return render.WriteYAML(out, map[string]any{
-			"project":     graph.Meta.Name,
-			"environment": g.Env,
-			"valid":       false,
-			"message":     "Policy lint failed (--strict)",
-			"policyLint":  findings,
+			"project":       graph.Meta.Name,
+			"environment":   envLabel,
+			"resourceCount": n,
+			"valid":         false,
+			"message":       "Policy lint failed (--strict)",
+			"policyLint":    findings,
 		})
 	default:
 		if err := writeValidateLintTable(out, g, findings); err != nil {

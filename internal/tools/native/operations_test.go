@@ -35,3 +35,24 @@ func TestTopLevelArgsForOperation(t *testing.T) {
 		t.Fatal("missing operation should not have schema")
 	}
 }
+
+func TestDispatchOperationsMatchCatalog(t *testing.T) {
+	t.Helper()
+	for _, op := range DispatchOperations {
+		if _, ok := operationCatalog[op]; !ok {
+			t.Errorf("DispatchOperations %q missing from operationCatalog", op)
+		}
+	}
+	for op := range operationCatalog {
+		found := false
+		for _, name := range DispatchOperations {
+			if name == op {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("operationCatalog %q missing from DispatchOperations", op)
+		}
+	}
+}

@@ -67,6 +67,12 @@ jobs:
       - name: Build agentctl
         run: go build -v -o agentctl${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/agentctl
 
+      - name: Policy lint strict gate (validate_ok fixture)
+        shell: bash
+        run: |
+          ./agentctl${{ runner.os == 'Windows' && '.exe' || '' }} validate \
+            --strict --no-color --project internal/cli/testdata/validate_ok
+
       # Use bash on Windows: PowerShell misparses -coverprofile=coverage.out
       # (".out" becomes a separate argument / package path).
       - name: Unit tests
