@@ -1,0 +1,12 @@
+Project: validate-lint-sensitive
+Environment: (none)
+
+* Loaded 3 resources
+* References resolved
+* Schemas valid
+* All workflows valid
+
+Policy lint (1 findings):
+! [high] Policy/default: sensitive Tool/delete_records has no explicit approval rule (requiredFor or requireAllTools)
+
+Validation successful

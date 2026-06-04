@@ -1,0 +1,6 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: delete_records
+spec:
+  type: native

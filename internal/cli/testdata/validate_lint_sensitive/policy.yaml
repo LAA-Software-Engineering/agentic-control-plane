@@ -1,0 +1,7 @@
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: default
+spec:
+  execution:
+    maxWallClockSeconds: 300

@@ -1,0 +1,11 @@
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: default
+spec:
+  hitl:
+    interruptOn:
+      deploy: true
+    toolSwitchMap:
+      deploy_to_production:
+        - missing_operation

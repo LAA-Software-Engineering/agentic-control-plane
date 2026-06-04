@@ -132,6 +132,19 @@ func planJSONModel(env, dsn string, p *plan.Plan) map[string]any {
 		"operations": ops,
 		"risk":       riskStrings(p),
 	}
+	if p != nil && len(p.Risk.Lint) > 0 {
+		entries := make([]map[string]any, len(p.Risk.Lint))
+		for i, f := range p.Risk.Lint {
+			entries[i] = map[string]any{
+				"severity": f.Severity,
+				"rule":     f.Rule,
+				"message":  f.Message,
+				"policy":   f.Policy,
+				"tool":     f.Tool,
+			}
+		}
+		m["policyLint"] = entries
+	}
 	if p != nil && p.DeploymentBaseline != "" {
 		m["deploymentBaseline"] = p.DeploymentBaseline
 	}

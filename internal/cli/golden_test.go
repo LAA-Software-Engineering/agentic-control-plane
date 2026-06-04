@@ -71,6 +71,19 @@ func TestGolden_validate_ok_table(t *testing.T) {
 	assertGoldenOutput(t, "validate_ok.table.golden.txt", out.String())
 }
 
+func TestGolden_validate_lint_sensitive_table(t *testing.T) {
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "--project", testdataPath(t, "validate_lint_sensitive"), "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	assertGoldenOutput(t, "validate_lint_sensitive.table.golden.txt", out.String())
+}
+
 func TestGolden_plan_first_table(t *testing.T) {
 	root := t.TempDir()
 	copyPlanFixture(t, root)
