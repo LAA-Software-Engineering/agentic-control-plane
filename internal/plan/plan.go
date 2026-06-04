@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 )
@@ -44,6 +45,8 @@ type FieldChange struct {
 // RiskSummary carries MVP plan risk signals (design doc §12.2, §10.2).
 type RiskSummary struct {
 	Messages []string
+	// Lint holds structured policy lint findings (issue #107).
+	Lint []policy.LintFinding
 }
 
 // Planner reads deployment state to compare desired vs applied resources (design doc §5.2).

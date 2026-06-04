@@ -107,6 +107,7 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 	sortOperations(ops)
 
 	risk := summarizeRisks(g, appliedByID, desiredByID, ops)
+	risk = mergePolicyLintRisk(g, risk)
 	fp, err := DeploymentStateFingerprint(ctx, p.Deploy, env, projectName)
 	if err != nil {
 		return nil, err

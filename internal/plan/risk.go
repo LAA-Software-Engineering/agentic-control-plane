@@ -103,6 +103,28 @@ func summarizeRisks(
 	return RiskSummary{Messages: msgs}
 }
 
+func mergePolicyLintRisk(g *spec.ProjectGraph, risk RiskSummary) RiskSummary {
+	findings := policy.Lint(g)
+	if len(findings) == 0 {
+		return risk
+	}
+	seen := make(map[string]struct{}, len(risk.Messages))
+	for _, m := range risk.Messages {
+		seen[m] = struct{}{}
+	}
+	for _, f := range findings {
+		msg := policy.FormatLintMessage(f)
+		if _, ok := seen[msg]; ok {
+			continue
+		}
+		seen[msg] = struct{}{}
+		risk.Messages = append(risk.Messages, msg)
+	}
+	sort.Strings(risk.Messages)
+	risk.Lint = findings
+	return risk
+}
+
 func summarizePolicyRisk(add func(string), op Operation, oldJSON, newJSON string, hadPrev bool) {
 	newPol, ok := parsePolicySpec(newJSON)
 	if !ok {
