@@ -41,8 +41,20 @@ type ProjectStateConfig struct {
 }
 
 type ProjectTracesConfig struct {
-	Backend       string `yaml:"backend,omitempty" json:"backend,omitempty"`
-	RetentionDays int    `yaml:"retentionDays,omitempty" json:"retentionDays,omitempty"`
+	Backend         string                     `yaml:"backend,omitempty" json:"backend,omitempty"`
+	RetentionDays   int                        `yaml:"retentionDays,omitempty" json:"retentionDays,omitempty"`
+	RedactKeys      []string                   `yaml:"redactKeys,omitempty" json:"redactKeys,omitempty"`
+	MaxPayloadBytes int                        `yaml:"maxPayloadBytes,omitempty" json:"maxPayloadBytes,omitempty"`
+	Redaction       *ProjectTracesRedactionCfg `yaml:"redaction,omitempty" json:"redaction,omitempty"`
+}
+
+// ProjectTracesRedactionCfg tunes sanitize/redact/truncate for trace payloads (issue #110).
+type ProjectTracesRedactionCfg struct {
+	RedactKeys      []string `yaml:"redactKeys,omitempty" json:"redactKeys,omitempty"`
+	MaxDepth        int      `yaml:"maxDepth,omitempty" json:"maxDepth,omitempty"`
+	MaxBytes        int      `yaml:"maxBytes,omitempty" json:"maxBytes,omitempty"`
+	MaxStringChars  int      `yaml:"maxStringChars,omitempty" json:"maxStringChars,omitempty"`
+	MaxPayloadBytes int      `yaml:"maxPayloadBytes,omitempty" json:"maxPayloadBytes,omitempty"`
 }
 
 // ProjectTelemetryConfig enables optional OpenTelemetry trace export (issue #108).

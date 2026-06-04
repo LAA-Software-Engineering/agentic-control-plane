@@ -149,6 +149,9 @@ Notes:
 - **`Policy.spec.hitl.interruptOn`** keys are **Tool metadata.name** values; they configure review options (edit rules, switch targets) for calls already gated by **`approvals.requiredFor`** or safety metadata — they do not gate tools on their own.  
 - **`run`** stores traces in the **same** SQLite file used for plan/apply (default **`.agentic/state.db`** under `--project`). Optional OTLP export (`spec.telemetry`, off by default) is additive only — see [`docs/OTEL.md`](docs/OTEL.md). When enabled you need `serviceName` plus either `consoleExport: true` or an `endpoint` (`https://…` or `env:VAR`, e.g. `env:OTEL_EXPORTER_OTLP_ENDPOINT`). Export that variable before `run` if you use `env:`; if it is missing or the collector is unreachable, `agentctl` logs a warning, skips OTLP, and the workflow still completes (SQLite traces unchanged).  
 - If **`spec.traces.retentionDays`** is a positive integer, runs older than that many **UTC calendar days** (by `runs.started_at`) are deleted lazily on **`run`** and **`logs`** (child trace rows cascade). Unset or non-positive means no pruning.  
+- **Trace payload redaction** (issue #110): before SQLite storage, event JSON is sanitized, key-redacted, and size-capped. Defaults mask common secret key names (substring match on map keys). Optional project knobs:
+  - **`spec.traces.redactKeys`** / **`maxPayloadBytes`** — merged with defaults; also available under **`spec.traces.redaction`** together with **`maxDepth`**, **`maxStringChars`**, and **`maxBytes`** (max bytes for **binary** previews in sanitized values, not the overall JSON cap).
+  - Stored events may show **`[REDACTED]`**, **`payload_truncated`** / **`preview`**, or depth/binary placeholders in **`logs`** / **`inspect --web`**.
 - Use **`logs --run <id>`** after a run if you want a single run’s trace (IDs are printed by **`run`**).  
 
 ### Global flags (common)

@@ -142,7 +142,12 @@ func (e *Executor) resolvePendingHitl(
 		"resolvedUses": uses,
 	}
 	if decision.Kind == spec.HitlDecisionEdit {
-		traceData["argsDiff"] = policy.HitlArgsDiff(pending.With, with)
+		diff := policy.HitlArgsDiff(pending.With, with)
+		if e.Trace != nil {
+			traceData["argsDiff"] = trace.RedactArgsDiff(diff, gate.Review.RedactKeys, e.Trace.Redaction)
+		} else {
+			traceData["argsDiff"] = diff
+		}
 	}
 	if decision.Kind == spec.HitlDecisionSwitch {
 		traceData["switchTarget"] = decision.SwitchTarget
