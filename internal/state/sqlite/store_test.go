@@ -165,6 +165,14 @@ func TestRuntime_insertRunEventsQueryByRunID(t *testing.T) {
 		t.Fatalf("event[1] = %+v", events[1])
 	}
 
+	steps, err := st.ListRunStepsByRunID(ctx, run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 1 || steps[0].StepID != "s1" || steps[0].CostUSD != 0.01 {
+		t.Fatalf("steps = %+v", steps)
+	}
+
 	fin := started.Add(4 * time.Minute)
 	if err := st.FinishRun(ctx, run.RunID, "succeeded", fin, `{"out":true}`, "", 0.02); err != nil {
 		t.Fatal(err)
@@ -370,6 +378,14 @@ func TestSaveCheckpoint_roundTripAndLatest(t *testing.T) {
 	}
 	if !got.CreatedAt.Equal(later) {
 		t.Fatalf("CreatedAt = %v", got.CreatedAt)
+	}
+
+	all, err := st.ListCheckpointsByRunID(ctx, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 || all[0].Seq != 1 || all[1].Seq != 2 {
+		t.Fatalf("ListCheckpointsByRunID = %+v", all)
 	}
 }
 

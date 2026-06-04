@@ -14,6 +14,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
 	"github.com/spf13/cobra"
 )
 
@@ -156,28 +157,17 @@ func writeStateListOutput(cmd *cobra.Command, g *Global, env, dsn string, proj *
 	out := cmd.OutOrStdout()
 	switch g.Output {
 	case render.FormatJSON:
-		payload := map[string]any{
-			"environment":    env,
-			"statePath":      dsn,
-			"resources":      stateListResourcesJSON(rows),
-			"appliedProject": nil,
-		}
-		if proj != nil {
-			payload["appliedProject"] = appliedProjectJSON(proj)
-		}
-		return render.WriteJSON(out, payload)
+		return render.WriteJSON(out, statejson.StateListPayload{
+			Environment: env, StatePath: dsn,
+			Resources:      statejson.AppliedResources(rows),
+			AppliedProject: statejson.AppliedProject(proj),
+		})
 	case render.FormatYAML:
-		m := map[string]any{
-			"environment": env,
-			"statePath":   dsn,
-			"resources":   stateListResourcesYAML(rows),
-		}
-		if proj != nil {
-			m["appliedProject"] = appliedProjectJSON(proj)
-		} else {
-			m["appliedProject"] = nil
-		}
-		return render.WriteYAML(out, m)
+		return render.WriteYAML(out, statejson.StateListPayload{
+			Environment: env, StatePath: dsn,
+			Resources:      statejson.AppliedResources(rows),
+			AppliedProject: statejson.AppliedProject(proj),
+		})
 	default:
 		if _, err := fmt.Fprintf(out, "Environment: %s\nState: %s\n\n", env, dsn); err != nil {
 			return err
@@ -201,41 +191,6 @@ func writeStateListOutput(cmd *cobra.Command, g *Global, env, dsn string, proj *
 	}
 }
 
-func stateListResourcesJSON(rows []state.AppliedResource) []map[string]any {
-	out := make([]map[string]any, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, appliedResourceJSON(r))
-	}
-	return out
-}
-
-func stateListResourcesYAML(rows []state.AppliedResource) []map[string]any {
-	return stateListResourcesJSON(rows)
-}
-
-func appliedProjectJSON(p *state.AppliedProject) map[string]any {
-	if p == nil {
-		return nil
-	}
-	return map[string]any{
-		"projectName": p.ProjectName,
-		"env":         p.Env,
-		"version":     p.Version,
-		"appliedAt":   p.AppliedAt.UTC().Format(time.RFC3339Nano),
-	}
-}
-
-func appliedResourceJSON(r state.AppliedResource) map[string]any {
-	return map[string]any{
-		"kind":               r.Kind,
-		"name":               r.Name,
-		"env":                r.Env,
-		"specHash":           r.SpecHash,
-		"appliedAt":          r.AppliedAt.UTC().Format(time.RFC3339Nano),
-		"normalizedSpecJson": r.NormalizedSpecJSON,
-	}
-}
-
 func writeStateShowOutput(cmd *cobra.Command, g *Global, dsn, env string, row *state.AppliedResource) error {
 	if row == nil {
 		return fmt.Errorf("state: nil row")
@@ -243,17 +198,17 @@ func writeStateShowOutput(cmd *cobra.Command, g *Global, dsn, env string, row *s
 	out := cmd.OutOrStdout()
 	switch g.Output {
 	case render.FormatJSON:
-		return render.WriteJSON(out, map[string]any{
-			"environment": env,
-			"statePath":   dsn,
-			"resource":    appliedResourceJSON(*row),
-		})
+		return render.WriteJSON(out, struct {
+			Environment string                          `json:"environment"`
+			StatePath   string                          `json:"statePath"`
+			Resource    statejson.AppliedResourceRecord `json:"resource"`
+		}{env, dsn, statejson.AppliedResource(*row)})
 	case render.FormatYAML:
-		return render.WriteYAML(out, map[string]any{
-			"environment": env,
-			"statePath":   dsn,
-			"resource":    appliedResourceJSON(*row),
-		})
+		return render.WriteYAML(out, struct {
+			Environment string                          `json:"environment"`
+			StatePath   string                          `json:"statePath"`
+			Resource    statejson.AppliedResourceRecord `json:"resource"`
+		}{env, dsn, statejson.AppliedResource(*row)})
 	default:
 		if _, err := fmt.Fprintf(out, "Environment: %s\nState: %s\n\n", env, dsn); err != nil {
 			return err

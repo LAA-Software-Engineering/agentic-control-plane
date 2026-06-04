@@ -53,6 +53,33 @@ func scanCheckpointRow(sc rowScanner) (*state.RunCheckpoint, error) {
 	return &cp, nil
 }
 
+// ListCheckpointsByRunID returns all checkpoints for run_id ordered by seq ascending.
+func (s *Store) ListCheckpointsByRunID(ctx context.Context, runID string) ([]state.RunCheckpoint, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("sqlite: nil store")
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT run_id, seq, step_index, step_id, context_json, status, created_at
+FROM run_checkpoints
+WHERE run_id = ?
+ORDER BY seq ASC
+`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []state.RunCheckpoint
+	for rows.Next() {
+		cp, err := scanCheckpointRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *cp)
+	}
+	return out, rows.Err()
+}
+
 // GetLatestCheckpoint returns the newest checkpoint for run_id or sql.ErrNoRows.
 func (s *Store) GetLatestCheckpoint(ctx context.Context, runID string) (*state.RunCheckpoint, error) {
 	if s == nil || s.db == nil {

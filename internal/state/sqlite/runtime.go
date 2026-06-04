@@ -160,15 +160,7 @@ WHERE run_id = ?
 }
 
 func clampRunListLimit(limit int) int {
-	const defaultLimit = 50
-	const maxLimit = 500
-	if limit <= 0 {
-		return defaultLimit
-	}
-	if limit > maxLimit {
-		return maxLimit
-	}
-	return limit
+	return state.ClampRunListLimit(limit)
 }
 
 // ListRecentRuns returns runs ordered by started_at descending.
@@ -224,6 +216,66 @@ LIMIT ?
 		out = append(out, *r)
 	}
 	return out, rows.Err()
+}
+
+// ListRunStepsByRunID returns run_steps for run_id ordered by step_id ascending.
+func (s *Store) ListRunStepsByRunID(ctx context.Context, runID string) ([]state.RunStep, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("sqlite: nil store")
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT run_id, step_id, status, started_at, finished_at, input_json, output_json, error_text, cost_usd
+FROM run_steps
+WHERE run_id = ?
+ORDER BY step_id ASC
+`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []state.RunStep
+	for rows.Next() {
+		st, err := scanRunStepRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *st)
+	}
+	return out, rows.Err()
+}
+
+func scanRunStepRow(sc rowScanner) (*state.RunStep, error) {
+	var st state.RunStep
+	var started, finished sql.NullString
+	var inJ, outJ, errT sql.NullString
+	if err := sc.Scan(&st.RunID, &st.StepID, &st.Status, &started, &finished, &inJ, &outJ, &errT, &st.CostUSD); err != nil {
+		return nil, err
+	}
+	if started.Valid && started.String != "" {
+		t, err := parseSQLiteTime(started.String)
+		if err != nil {
+			return nil, fmt.Errorf("started_at: %w", err)
+		}
+		st.StartedAt = &t
+	}
+	if finished.Valid && finished.String != "" {
+		t, err := parseSQLiteTime(finished.String)
+		if err != nil {
+			return nil, fmt.Errorf("finished_at: %w", err)
+		}
+		st.FinishedAt = &t
+	}
+	if inJ.Valid {
+		st.InputJSON = inJ.String
+	}
+	if outJ.Valid {
+		st.OutputJSON = outJ.String
+	}
+	if errT.Valid {
+		st.ErrorText = errT.String
+	}
+	return &st, nil
 }
 
 // ListTraceEventsByRunID returns trace rows for run_id ordered by seq ascending.
