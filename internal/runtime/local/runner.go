@@ -98,7 +98,7 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 		return runID, fmt.Errorf("local: start run: %w", err)
 	}
 
-	rec := trace.NewRecorder(r.Store)
+	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
 	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, map[string]any{
 		"workflow": wfName, "environment": opts.EnvironmentName,
 	}); err != nil {
@@ -170,7 +170,7 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 		return runID, fmt.Errorf("local: mark run running: %w", err)
 	}
 
-	rec := trace.NewRecorder(r.Store)
+	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
 	if _, err := rec.Append(ctx, runID, "", trace.EventRunResumed, map[string]any{
 		"workflow": wfName,
 	}); err != nil {

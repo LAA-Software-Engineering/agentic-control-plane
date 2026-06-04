@@ -17,13 +17,14 @@ var ErrRunNotFound = errors.New("trace: run not found")
 
 // Recorder appends trace_events rows via [state.RuntimeStore] (design doc §12.2 I, §14.2).
 type Recorder struct {
-	RT    state.RuntimeStore
-	Clock func() time.Time
+	RT        state.RuntimeStore
+	Clock     func() time.Time
+	Redaction RedactionOptions
 }
 
 // NewRecorder returns a recorder backed by rt. rt must not be nil when Append is called.
 func NewRecorder(rt state.RuntimeStore) *Recorder {
-	return &Recorder{RT: rt}
+	return &Recorder{RT: rt, Redaction: DefaultRedactionOptions()}
 }
 
 func (r *Recorder) now() time.Time {
@@ -57,7 +58,11 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID, typ string, data m
 
 	dataJSON := "{}"
 	if len(data) > 0 {
-		b, err := json.Marshal(data)
+		prepared, err := PrepareEventData(data, nil, NormalizeRedactionOptions(r.Redaction))
+		if err != nil {
+			return 0, fmt.Errorf("trace: prepare event data: %w", err)
+		}
+		b, err := json.Marshal(prepared)
 		if err != nil {
 			return 0, fmt.Errorf("trace: marshal event data: %w", err)
 		}
