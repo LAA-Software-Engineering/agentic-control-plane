@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
@@ -25,6 +27,7 @@ type Executor struct {
 	ModelResolve func(modelRef string) (models.ModelClient, string, error)
 	Store        state.RuntimeStore
 	Trace        *trace.Recorder
+	Telemetry    *telemetry.Tracer
 	Now          func() time.Time
 }
 
@@ -65,7 +68,7 @@ func (e *Executor) modelClient(modelRef string) (models.ModelClient, string, err
 // Run executes a workflow sequentially: interpolate step inputs, policy checks, tool/agent calls,
 // optional JSON Schema validation for agent output, persisted run_steps and trace events.
 // The run row must already exist in [state.RuntimeStore] (e.g. via [state.RuntimeStore.StartRun]).
-func (e *Executor) Run(ctx context.Context, in RunInput) error {
+func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	if e == nil || e.Store == nil {
 		return fmt.Errorf("engine: nil executor or store")
 	}
@@ -87,12 +90,41 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 	var totalCost float64
 	stepStartIdx := 0
 	if in.Resume {
-		var err error
 		ictx, totalCost, stepStartIdx, err = e.loadResumeState(ctx, in)
 		if err != nil {
 			return err
 		}
 	}
+
+	var runHandle *telemetry.RunHandle
+	if e.Telemetry != nil && e.Telemetry.Enabled() {
+		var link *telemetry.SpanRef
+		if in.Resume {
+			link = ictx.OtelInterrupt
+		}
+		runHandle = e.Telemetry.BeginRun(ctx, telemetry.RunStartAttrs{
+			RunID:     in.RunID,
+			Workflow:  in.WorkflowName,
+			AgentName: primaryAgentName(wf),
+			ActorID:   strings.TrimSpace(in.Hitl.Actor),
+			Resume:    in.Resume,
+			LinkFrom:  link,
+		})
+		if runHandle != nil {
+			ctx = runHandle.Context()
+		}
+	}
+	defer func() {
+		if runHandle == nil {
+			return
+		}
+		if errors.Is(err, ErrInterrupted) {
+			runHandle.EndInterrupted()
+			return
+		}
+		runHandle.End(err)
+	}()
+
 	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
 	finishAt := e.now()
 
@@ -152,7 +184,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 			toolWith := with
 			pending := ictx.PendingHitl
 			if pending == nil {
-				interrupted, ierr := e.maybeInterruptForHitl(ctx, in, i, step, with, wfPol, pctx, ictx, totalCost)
+				interrupted, ierr := e.maybeInterruptForHitl(ctx, in, i, step, with, wfPol, pctx, ictx, totalCost, runHandle)
 				if interrupted {
 					return ierr
 				}
@@ -179,7 +211,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 			}
 			if err == nil {
 				var meta tools.ToolCallMeta
-				out, meta, err = e.runToolStep(ctx, wfPol, in.RunID, step, with, pctx, toolUses, toolWith)
+				out, meta, err = e.runToolStep(ctx, runHandle, wfPol, in.RunID, step, with, pctx, toolUses, toolWith)
 				stepCost = meta.CostUSD
 			}
 		} else {
@@ -188,7 +220,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 				err = fmt.Errorf("engine: unknown agent %q", agentName)
 			} else {
 				var gmeta models.GenerateMeta
-				out, gmeta, err = e.runAgentStep(ctx, wfPol, in.RunID, step, with, pctx, ar)
+				out, gmeta, err = e.runAgentStep(ctx, runHandle, wfPol, in.RunID, step, with, pctx, ar)
 				stepCost = gmeta.CostUSD
 			}
 		}
@@ -238,7 +270,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 			_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventStepFinished, map[string]any{"costUsd": stepCost})
 		}
 		if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
-			return e.interruptRun(ctx, in, i, step.ID, ictx, totalCost)
+			return e.interruptRun(ctx, in, i, step.ID, ictx, totalCost, runHandle)
 		}
 	}
 
@@ -255,6 +287,18 @@ func (e *Executor) Run(ctx context.Context, in RunInput) error {
 		return e.failRun(ctx, in, fmt.Errorf("engine: final checkpoint: %w", err), totalCost)
 	}
 	return e.Store.FinishRun(ctx, in.RunID, state.RunStatusSucceeded, finishAt, string(outBytes), "", totalCost)
+}
+
+func primaryAgentName(wf *spec.WorkflowResource) string {
+	if wf == nil {
+		return ""
+	}
+	for _, step := range wf.Spec.Steps {
+		if n := strings.TrimSpace(step.Agent); n != "" {
+			return n
+		}
+	}
+	return ""
 }
 
 func (e *Executor) failRun(ctx context.Context, in RunInput, runErr error, totalCost float64) error {

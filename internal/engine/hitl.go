@@ -8,6 +8,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
@@ -38,6 +39,7 @@ func (e *Executor) maybeInterruptForHitl(
 	pctx policy.RunContext,
 	ictx Context,
 	totalCost float64,
+	runHandle *telemetry.RunHandle,
 ) (bool, error) {
 	if in.Hitl.AutoApprove {
 		return false, nil
@@ -60,6 +62,13 @@ func (e *Executor) maybeInterruptForHitl(
 		Uses:   gate.Uses,
 		With:   gate.With,
 		Review: gate.Review,
+	}
+	if runHandle != nil {
+		endApproval := runHandle.StartApproval(telemetry.ApprovalAttrs{RunID: in.RunID, Uses: gate.Uses})
+		endApproval()
+		runHandle.MarkInterrupted()
+		ref := runHandle.SpanRef()
+		ictx.OtelInterrupt = &ref
 	}
 	if err := e.saveCheckpoint(ctx, in.RunID, stepIndex, step.ID, ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
 		return false, fmt.Errorf("engine: save hitl checkpoint: %w", err)

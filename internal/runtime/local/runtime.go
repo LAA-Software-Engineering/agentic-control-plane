@@ -12,9 +12,10 @@ import (
 
 // Runtime is the MVP local workflow runner backend (issue #23): project root on disk + SQLite (or any [state.RuntimeStore]).
 type Runtime struct {
-	ProjectRoot string
-	Store       state.RuntimeStore
-	Now         func() time.Time
+	ProjectRoot  string
+	Store        state.RuntimeStore
+	Now          func() time.Time
+	AgentVersion string
 }
 
 // NewRuntime returns a local runtime. projectRoot is the directory containing project.yaml.
@@ -27,6 +28,16 @@ func (r *Runtime) now() time.Time {
 		return r.Now()
 	}
 	return time.Now().UTC()
+}
+
+func (r *Runtime) agentVersion() string {
+	if r == nil {
+		return "unknown"
+	}
+	if v := strings.TrimSpace(r.AgentVersion); v != "" {
+		return v
+	}
+	return "0.0.0-dev"
 }
 
 // ApplyEnvironment returns a shallow copy of g with Environment overrides applied (design doc §7.6 MVP).

@@ -3,11 +3,12 @@ package spec
 // --- Project (design doc §7.1) ---
 
 type ProjectSpec struct {
-	Imports   []string             `yaml:"imports,omitempty" json:"imports,omitempty"`
-	Defaults  *ProjectDefaults     `yaml:"defaults,omitempty" json:"defaults,omitempty"`
-	Providers *ProjectProviders    `yaml:"providers,omitempty" json:"providers,omitempty"`
-	State     *ProjectStateConfig  `yaml:"state,omitempty" json:"state,omitempty"`
-	Traces    *ProjectTracesConfig `yaml:"traces,omitempty" json:"traces,omitempty"`
+	Imports   []string                `yaml:"imports,omitempty" json:"imports,omitempty"`
+	Defaults  *ProjectDefaults        `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Providers *ProjectProviders       `yaml:"providers,omitempty" json:"providers,omitempty"`
+	State     *ProjectStateConfig     `yaml:"state,omitempty" json:"state,omitempty"`
+	Traces    *ProjectTracesConfig    `yaml:"traces,omitempty" json:"traces,omitempty"`
+	Telemetry *ProjectTelemetryConfig `yaml:"telemetry,omitempty" json:"telemetry,omitempty"`
 }
 
 type ProjectDefaults struct {
@@ -42,6 +43,15 @@ type ProjectStateConfig struct {
 type ProjectTracesConfig struct {
 	Backend       string `yaml:"backend,omitempty" json:"backend,omitempty"`
 	RetentionDays int    `yaml:"retentionDays,omitempty" json:"retentionDays,omitempty"`
+}
+
+// ProjectTelemetryConfig enables optional OpenTelemetry trace export (issue #108).
+// SQLite traces remain the local source of truth; OTLP export is additive.
+type ProjectTelemetryConfig struct {
+	Enabled       bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	ServiceName   string `yaml:"serviceName,omitempty" json:"serviceName,omitempty"`
+	Endpoint      string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+	ConsoleExport bool   `yaml:"consoleExport,omitempty" json:"consoleExport,omitempty"`
 }
 
 // --- Agent (design doc §7.2, MVP fields) ---
