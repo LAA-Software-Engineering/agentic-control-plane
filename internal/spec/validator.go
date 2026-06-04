@@ -29,6 +29,7 @@ func ValidateProjectGraph(g *ProjectGraph, projectRoot string) error {
 	errs = append(errs, validatePolicyPresets(g)...)
 	errs = append(errs, validateAgentSpecs(g)...)
 	errs = append(errs, validateEnvironmentOverrides(g)...)
+	errs = append(errs, validateProjectTelemetry(g)...)
 	errs = append(errs, validateSchemaFiles(g, root)...)
 	if err := ResolveReferences(g); err != nil {
 		errs = append(errs, err)

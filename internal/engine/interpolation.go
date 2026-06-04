@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
 )
 
 // StepResult is the MVP step result shape (design doc §13.2).
@@ -17,9 +19,10 @@ type StepResult struct {
 
 // Context holds values for ${input.*} and ${steps.*} interpolation (§13.1).
 type Context struct {
-	Input       map[string]any
-	Steps       map[string]StepResult
-	PendingHitl *PendingHitlState `json:"pendingHitl,omitempty"`
+	Input         map[string]any
+	Steps         map[string]StepResult
+	PendingHitl   *PendingHitlState  `json:"pendingHitl,omitempty"`
+	OtelInterrupt *telemetry.SpanRef `json:"otelInterrupt,omitempty"`
 }
 
 var tokenRE = regexp.MustCompile(`\$\{([^}]*)\}`)

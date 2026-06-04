@@ -10,6 +10,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
@@ -44,7 +45,7 @@ func parseAgentJSONObject(content string) (map[string]any, error) {
 	return m, nil
 }
 
-func (e *Executor) runToolStep(ctx context.Context, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, usesOverride string, withOverride map[string]any) (map[string]any, tools.ToolCallMeta, error) {
+func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, usesOverride string, withOverride map[string]any) (map[string]any, tools.ToolCallMeta, error) {
 	uses := strings.TrimSpace(usesOverride)
 	if uses == "" {
 		uses = strings.TrimSpace(step.Uses)
@@ -67,7 +68,19 @@ func (e *Executor) runToolStep(ctx context.Context, pol policy.PolicyEvaluator, 
 	if e.Tools == nil {
 		return nil, tools.ToolCallMeta{}, fmt.Errorf("engine: nil tool executor")
 	}
-	resp, err := e.Tools.Call(ctx, tools.ToolCallRequest{Uses: uses, With: withArgs})
+	toolCtx := ctx
+	var endTool func(error)
+	if runHandle != nil {
+		safety := e.toolSafetyForUses(uses)
+		toolCtx, endTool = runHandle.StartTool(telemetry.ToolAttrs{
+			RunID: runID, StepID: step.ID, Uses: uses,
+			Trusted: safety.Trusted, SideEffects: safety.SideEffects, RequiresApproval: safety.RequiresApproval,
+		})
+	}
+	resp, err := e.Tools.Call(toolCtx, tools.ToolCallRequest{Uses: uses, With: withArgs})
+	if endTool != nil {
+		endTool(err)
+	}
 	if err != nil {
 		return nil, tools.ToolCallMeta{}, err
 	}
@@ -80,7 +93,7 @@ func (e *Executor) runToolStep(ctx context.Context, pol policy.PolicyEvaluator, 
 	return resp.Output, resp.Meta, nil
 }
 
-func (e *Executor) runAgentStep(ctx context.Context, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, agent *spec.AgentResource) (map[string]any, models.GenerateMeta, error) {
+func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, agent *spec.AgentResource) (map[string]any, models.GenerateMeta, error) {
 	if agent == nil {
 		return nil, models.GenerateMeta{}, fmt.Errorf("engine: nil agent resource")
 	}
@@ -111,7 +124,17 @@ func (e *Executor) runAgentStep(ctx context.Context, pol policy.PolicyEvaluator,
 		if e.Trace != nil {
 			_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventModelCalled, map[string]any{"agent": step.Agent, "model": modelRef})
 		}
-		r, genErr := cli.Generate(ctx2, models.GenerateRequest{Model: modelID, Messages: messages})
+		callCtx := ctx2
+		var endModel func(error)
+		if runHandle != nil {
+			callCtx, endModel = runHandle.StartModel(telemetry.ModelAttrs{
+				RunID: runID, StepID: step.ID, AgentName: step.Agent, ModelRef: modelRef,
+			})
+		}
+		r, genErr := cli.Generate(callCtx, models.GenerateRequest{Model: modelID, Messages: messages})
+		if endModel != nil {
+			endModel(genErr)
+		}
 		if genErr != nil {
 			return genErr
 		}

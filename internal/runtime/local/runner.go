@@ -14,6 +14,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
@@ -194,6 +195,9 @@ func (r *Runtime) executeEngine(
 	opts runtime.WorkflowRunOptions,
 	rec *trace.Recorder,
 ) (string, error) {
+	tel := telemetry.NewTracer(telemetry.ConfigFromGraph(prep.graph), r.agentVersion())
+	defer tel.Shutdown()
+
 	ex := &engine.Executor{
 		Graph:       prep.graph,
 		ProjectRoot: prep.root,
@@ -201,6 +205,7 @@ func (r *Runtime) executeEngine(
 		Models:      models.NewRegistry(prep.graph),
 		Store:       r.Store,
 		Trace:       rec,
+		Telemetry:   tel,
 		Now:         r.Now,
 	}
 	hitl, err := buildEngineHitlOptions(opts)

@@ -12,6 +12,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
@@ -27,20 +28,22 @@ const (
 
 // checkpointPayload is the engine-owned snapshot stored in run_checkpoints.context_json.
 type checkpointPayload struct {
-	Version      int                   `json:"version"`
-	Input        map[string]any        `json:"input"`
-	Steps        map[string]StepResult `json:"steps"`
-	TotalCostUSD float64               `json:"totalCostUsd"`
-	PendingHitl  *PendingHitlState     `json:"pendingHitl,omitempty"`
+	Version       int                   `json:"version"`
+	Input         map[string]any        `json:"input"`
+	Steps         map[string]StepResult `json:"steps"`
+	TotalCostUSD  float64               `json:"totalCostUsd"`
+	PendingHitl   *PendingHitlState     `json:"pendingHitl,omitempty"`
+	OtelInterrupt *telemetry.SpanRef    `json:"otelInterrupt,omitempty"`
 }
 
 func marshalCheckpointPayload(ictx Context, totalCost float64) (string, error) {
 	payload := checkpointPayload{
-		Version:      checkpointPayloadVersion,
-		Input:        ictx.Input,
-		Steps:        ictx.Steps,
-		TotalCostUSD: totalCost,
-		PendingHitl:  ictx.PendingHitl,
+		Version:       checkpointPayloadVersion,
+		Input:         ictx.Input,
+		Steps:         ictx.Steps,
+		TotalCostUSD:  totalCost,
+		PendingHitl:   ictx.PendingHitl,
+		OtelInterrupt: ictx.OtelInterrupt,
 	}
 	if payload.Input == nil {
 		payload.Input = map[string]any{}
@@ -84,7 +87,10 @@ func unmarshalCheckpointPayload(contextJSON string, wf *spec.WorkflowResource, c
 	if payload.TotalCostUSD < 0 {
 		return Context{}, 0, fmt.Errorf("engine: negative totalCostUsd in checkpoint")
 	}
-	return Context{Input: payload.Input, Steps: payload.Steps, PendingHitl: payload.PendingHitl}, payload.TotalCostUSD, nil
+	return Context{
+		Input: payload.Input, Steps: payload.Steps,
+		PendingHitl: payload.PendingHitl, OtelInterrupt: payload.OtelInterrupt,
+	}, payload.TotalCostUSD, nil
 }
 
 func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResource, completedStepIndex int) error {
@@ -146,7 +152,12 @@ func (e *Executor) loadResumeState(ctx context.Context, in RunInput) (Context, f
 	return ictx, totalCost, startIdx, nil
 }
 
-func (e *Executor) interruptRun(ctx context.Context, in RunInput, stepIndex int, stepID string, ictx Context, totalCost float64) error {
+func (e *Executor) interruptRun(ctx context.Context, in RunInput, stepIndex int, stepID string, ictx Context, totalCost float64, runHandle *telemetry.RunHandle) error {
+	if runHandle != nil {
+		runHandle.MarkInterrupted()
+		ref := runHandle.SpanRef()
+		ictx.OtelInterrupt = &ref
+	}
 	if err := e.saveCheckpoint(ctx, in.RunID, stepIndex, stepID, ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
 		return fmt.Errorf("engine: save interrupted checkpoint: %w", err)
 	}

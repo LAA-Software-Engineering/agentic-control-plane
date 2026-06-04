@@ -215,6 +215,7 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 	defer func() { _ = st.Close() }()
 
 	rt := local.NewRuntime(root, st)
+	rt.AgentVersion = Version
 
 	for {
 		opts := runtime.WorkflowRunOptions{
