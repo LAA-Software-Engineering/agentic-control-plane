@@ -19,6 +19,11 @@ func runInspectWeb(cmd *cobra.Command, port int, traceUIBase string) error {
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
+	traceBase, err := inspect.ValidateTraceUIBaseURL(traceUIBase)
+	if err != nil {
+		return NewExitError(ExitValidationError, err)
+	}
+
 	env := planEnvironment(g)
 	dsn, err := resolveStateSQLitePath(root, graph, g.StatePath)
 	if err != nil {
@@ -43,7 +48,7 @@ func runInspectWeb(cmd *cobra.Command, port int, traceUIBase string) error {
 		StatePath:      dsn,
 		Env:            env,
 		ProjectName:    strings.TrimSpace(graph.Meta.Name),
-		TraceUIBaseURL: strings.TrimSpace(traceUIBase),
+		TraceUIBaseURL: traceBase,
 	}
 	srv, err := inspect.NewServer(st, cfg)
 	if err != nil {

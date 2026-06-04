@@ -56,7 +56,7 @@ func TestInspect_web_flagsAndAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ts := httptest.NewServer(inspect.RejectMutation(srv.Handler()))
+	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	res, err := http.Get(ts.URL + "/api/runs")
 	if err != nil {
@@ -81,6 +81,33 @@ func TestInspect_web_requiresNoArgs(t *testing.T) {
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{"inspect", "--web", "--project", root, "--state", db, "Workflow/demo"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d err=%v", ExitCodeOf(err), err)
+	}
+}
+
+func TestInspect_web_invalidTraceUI_exit2(t *testing.T) {
+	root := runProjRoot(t)
+	db := filepath.Join(t.TempDir(), "ui.db")
+
+	ResetGlobalsForTest()
+	runCmd := NewRootCmd()
+	runCmd.SetOut(io.Discard)
+	runCmd.SetErr(io.Discard)
+	runCmd.SetArgs([]string{"run", "workflow/demo", "--project", root, "--state", db, "--input", "topic=trace-ui-test"})
+	if err := runCmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"inspect", "--web", "--project", root, "--state", db, "--trace-ui", "javascript:alert(1)"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected error")

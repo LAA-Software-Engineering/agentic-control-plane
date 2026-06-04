@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,10 +13,9 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
 	"github.com/spf13/cobra"
 )
-
-const logsRunListDefaultLimit = 50
 
 func newLogsCmd() *cobra.Command {
 	var runID string
@@ -109,17 +107,17 @@ func writeLogsForRun(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, 
 }
 
 func writeLogsForWorkflow(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn, workflow string, g *Global) error {
-	runs, err := st.ListRunsByWorkflow(ctx, workflow, logsRunListDefaultLimit)
+	runs, err := st.ListRunsByWorkflow(ctx, workflow, state.DefaultRunListLimit)
 	if err != nil {
 		return fmt.Errorf("logs: list runs: %w", err)
 	}
 
 	if g.Output != render.FormatTable {
 		type runEntry struct {
-			RunID    string           `json:"runId"`
-			Status   string           `json:"status"`
-			Workflow string           `json:"workflow"`
-			Events   []logEventRecord `json:"events"`
+			RunID    string                       `json:"runId"`
+			Status   string                       `json:"status"`
+			Workflow string                       `json:"workflow"`
+			Events   []statejson.TraceEventRecord `json:"events"`
 		}
 		entries := make([]runEntry, 0, len(runs))
 		for _, r := range runs {
@@ -131,14 +129,14 @@ func writeLogsForWorkflow(cmd *cobra.Command, ctx context.Context, st *sqlite.St
 				RunID:    r.RunID,
 				Status:   r.Status,
 				Workflow: r.WorkflowName,
-				Events:   traceEventsToRecords(ev),
+				Events:   statejson.TraceEvents(ev),
 			})
 		}
-		payload := map[string]any{
-			"statePath": dsn,
-			"workflow":  workflow,
-			"runs":      entries,
-		}
+		payload := struct {
+			StatePath string     `json:"statePath"`
+			Workflow  string     `json:"workflow"`
+			Runs      []runEntry `json:"runs"`
+		}{StatePath: dsn, Workflow: workflow, Runs: entries}
 		out := cmd.OutOrStdout()
 		if g.Output == render.FormatJSON {
 			return render.WriteJSON(out, payload)
@@ -169,22 +167,16 @@ func writeLogsForWorkflow(cmd *cobra.Command, ctx context.Context, st *sqlite.St
 }
 
 func writeLogsRunList(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn string, g *Global) error {
-	runs, err := st.ListRecentRuns(ctx, logsRunListDefaultLimit)
+	runs, err := st.ListRecentRuns(ctx, state.DefaultRunListLimit)
 	if err != nil {
 		return fmt.Errorf("logs: list runs: %w", err)
 	}
 	out := cmd.OutOrStdout()
 	switch g.Output {
 	case render.FormatJSON:
-		return render.WriteJSON(out, map[string]any{
-			"statePath": dsn,
-			"runs":      runsToJSON(runs),
-		})
+		return render.WriteJSON(out, statejson.RunListPayload{StatePath: dsn, Runs: statejson.Runs(runs)})
 	case render.FormatYAML:
-		return render.WriteYAML(out, map[string]any{
-			"statePath": dsn,
-			"runs":      runsToJSON(runs),
-		})
+		return render.WriteYAML(out, statejson.RunListPayload{StatePath: dsn, Runs: statejson.Runs(runs)})
 	default:
 		var b strings.Builder
 		fmt.Fprintf(&b, "State: %s\n\n", dsn)
@@ -208,55 +200,18 @@ func writeLogsRunList(cmd *cobra.Command, ctx context.Context, st *sqlite.Store,
 	}
 }
 
-type logEventRecord struct {
-	Seq       int64           `json:"seq"`
-	Timestamp string          `json:"timestamp"`
-	Type      string          `json:"type"`
-	StepID    string          `json:"stepId,omitempty"`
-	Data      json.RawMessage `json:"data"`
-}
-
-func traceEventsToRecords(events []state.TraceEvent) []logEventRecord {
-	out := make([]logEventRecord, 0, len(events))
-	for _, e := range events {
-		rec := logEventRecord{
-			Seq:       e.Seq,
-			Timestamp: e.Timestamp.UTC().Format(time.RFC3339Nano),
-			Type:      e.Type,
-			StepID:    e.StepID,
-		}
-		if e.DataJSON != "" {
-			rec.Data = json.RawMessage(e.DataJSON)
-		} else {
-			rec.Data = json.RawMessage("{}")
-		}
-		out = append(out, rec)
-	}
-	return out
-}
-
 func writeLogsEventsOutput(cmd *cobra.Command, dsn, runID, workflow string, events []state.TraceEvent, g *Global) error {
 	out := cmd.OutOrStdout()
+	payload := statejson.RunEventsPayload{
+		StatePath: dsn,
+		RunID:     runID,
+		Workflow:  workflow,
+		Events:    statejson.TraceEvents(events),
+	}
 	switch g.Output {
 	case render.FormatJSON:
-		payload := map[string]any{
-			"statePath": dsn,
-			"runId":     runID,
-			"events":    traceEventsToRecords(events),
-		}
-		if workflow != "" {
-			payload["workflow"] = workflow
-		}
 		return render.WriteJSON(out, payload)
 	case render.FormatYAML:
-		payload := map[string]any{
-			"statePath": dsn,
-			"runId":     runID,
-			"events":    traceEventsToRecords(events),
-		}
-		if workflow != "" {
-			payload["workflow"] = workflow
-		}
 		return render.WriteYAML(out, payload)
 	default:
 		var b strings.Builder
@@ -302,34 +257,4 @@ func clipJSONForTable(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
-}
-
-func runsToJSON(runs []state.Run) []map[string]any {
-	out := make([]map[string]any, 0, len(runs))
-	for _, r := range runs {
-		in := r.InputJSON
-		if in == "" {
-			in = "{}"
-		}
-		m := map[string]any{
-			"runId":        r.RunID,
-			"workflow":     r.WorkflowName,
-			"env":          r.Env,
-			"status":       r.Status,
-			"startedAt":    r.StartedAt.UTC().Format(time.RFC3339Nano),
-			"totalCostUsd": r.TotalCostUSD,
-			"input":        json.RawMessage(in),
-		}
-		if r.FinishedAt != nil {
-			m["finishedAt"] = r.FinishedAt.UTC().Format(time.RFC3339Nano)
-		}
-		if r.OutputJSON != "" {
-			m["output"] = json.RawMessage(r.OutputJSON)
-		}
-		if r.ErrorText != "" {
-			m["error"] = r.ErrorText
-		}
-		out = append(out, m)
-	}
-	return out
 }

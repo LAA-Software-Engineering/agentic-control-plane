@@ -160,15 +160,7 @@ WHERE run_id = ?
 }
 
 func clampRunListLimit(limit int) int {
-	const defaultLimit = 50
-	const maxLimit = 500
-	if limit <= 0 {
-		return defaultLimit
-	}
-	if limit > maxLimit {
-		return maxLimit
-	}
-	return limit
+	return state.ClampRunListLimit(limit)
 }
 
 // ListRecentRuns returns runs ordered by started_at descending.

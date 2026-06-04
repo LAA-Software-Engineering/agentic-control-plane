@@ -8,16 +8,24 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
 )
 
 // DefaultPort is the default TCP port for the read-only inspector (issue #109).
 const DefaultPort = 8787
+
+const (
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 60 * time.Second
+	idleTimeout       = 120 * time.Second
+	shutdownTimeout   = 5 * time.Second
+)
 
 // Config holds inspector server settings.
 type Config struct {
@@ -67,9 +75,9 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", s.staticFS()))
 }
 
-// Handler returns the root HTTP handler (read-only routes only).
+// Handler returns the root HTTP handler (GET/HEAD only).
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	return RejectMutation(s.mux)
 }
 
 // ListenAddr returns the address this server will bind when [Server.ListenAndServe] is called.
@@ -89,10 +97,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	srv := &http.Server{
 		Handler:           s.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 	errCh := make(chan error, 1)
 	go func() {
@@ -101,7 +109,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 		<-errCh
@@ -117,7 +125,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	workflow := strings.TrimSpace(r.URL.Query().Get("workflow"))
-	limit := parseLimit(r.URL.Query().Get("limit"), 50)
+	limit := statejson.ParseRunListLimit(r.URL.Query().Get("limit"))
 
 	var runs []state.Run
 	var err error
@@ -127,13 +135,13 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		runs, err = s.store.ListRecentRuns(ctx, limit)
 	}
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list runs")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"statePath": s.cfg.StatePath,
-		"workflow":  workflow,
-		"runs":      runsToRecords(runs),
+	writeJSON(w, http.StatusOK, ListRunsResponse{
+		StatePath: s.cfg.StatePath,
+		Workflow:  workflow,
+		Runs:      statejson.Runs(runs),
 	})
 }
 
@@ -141,56 +149,56 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	runID := strings.TrimSpace(r.PathValue("id"))
 	if runID == "" {
-		writeAPIError(w, http.StatusBadRequest, errors.New("missing run id"))
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "missing run id")
 		return
 	}
 
 	run, err := s.store.GetRun(ctx, runID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeAPIError(w, http.StatusNotFound, fmt.Errorf("unknown run %q", runID))
+			writeAPIError(w, http.StatusNotFound, "not_found", "run not found")
 			return
 		}
-		writeAPIError(w, http.StatusInternalServerError, err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load run")
 		return
 	}
 	steps, err := s.store.ListRunStepsByRunID(ctx, runID)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load run steps")
 		return
 	}
 	events, err := s.store.ListTraceEventsByRunID(ctx, runID)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load trace events")
 		return
 	}
 
-	payload := map[string]any{
-		"statePath": s.cfg.StatePath,
-		"run":       runToRecord(*run),
-		"steps":     stepsToRecords(steps),
-		"events":    traceEventsToRecords(events),
+	resp := RunDetailResponse{
+		StatePath: s.cfg.StatePath,
+		Run:       statejson.Run(*run),
+		Steps:     stepsToRecords(steps),
+		Events:    statejson.TraceEvents(events),
 	}
 	if base := strings.TrimSpace(s.cfg.TraceUIBaseURL); base != "" {
-		if tid := traceIDFromEvents(events); tid != "" {
-			payload["traceLink"] = strings.TrimRight(base, "/") + "/" + tid
+		if tid := statejson.TraceIDFromEvents(events); tid != "" {
+			resp.TraceLink = base + "/" + tid
 		}
 	}
-	writeJSON(w, http.StatusOK, payload)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	env := strings.TrimSpace(s.cfg.Env)
 	if env == "" {
-		env = "local"
+		env = state.DefaultEnvironment
 	}
 	rows, err := s.store.ListAppliedResourcesByEnv(ctx, env)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list applied resources")
 		return
 	}
-	var appliedProject any
+	var appliedProject *statejson.AppliedProjectRecord
 	pname := strings.TrimSpace(s.cfg.ProjectName)
 	if pname == "" {
 		pname = strings.TrimSpace(r.URL.Query().Get("project"))
@@ -198,23 +206,18 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	if pname != "" {
 		p, err := s.store.GetAppliedProject(ctx, env, pname)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			writeAPIError(w, http.StatusInternalServerError, err)
+			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load applied project")
 			return
 		}
 		if err == nil {
-			appliedProject = map[string]any{
-				"projectName": p.ProjectName,
-				"env":         p.Env,
-				"version":     p.Version,
-				"appliedAt":   p.AppliedAt.UTC().Format(time.RFC3339Nano),
-			}
+			appliedProject = statejson.AppliedProject(p)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"environment":    env,
-		"statePath":      s.cfg.StatePath,
-		"resources":      appliedResourcesToRecords(rows),
-		"appliedProject": appliedProject,
+	writeJSON(w, http.StatusOK, StateResponse{
+		Environment:    env,
+		StatePath:      s.cfg.StatePath,
+		Resources:      statejson.AppliedResources(rows),
+		AppliedProject: appliedProject,
 	})
 }
 
@@ -222,34 +225,19 @@ func (s *Server) handleCheckpoints(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	runID := strings.TrimSpace(r.URL.Query().Get("run"))
 	if runID == "" {
-		writeAPIError(w, http.StatusBadRequest, errors.New("query parameter run is required"))
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "query parameter run is required")
 		return
 	}
 	cps, err := s.store.ListCheckpointsByRunID(ctx, runID)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list checkpoints")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"statePath":   s.cfg.StatePath,
-		"runId":       runID,
-		"checkpoints": checkpointsToRecords(cps),
+	writeJSON(w, http.StatusOK, CheckpointsResponse{
+		StatePath:   s.cfg.StatePath,
+		RunID:       runID,
+		Checkpoints: checkpointsToRecords(cps),
 	})
-}
-
-func parseLimit(raw string, defaultLimit int) int {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return defaultLimit
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return defaultLimit
-	}
-	if n > 500 {
-		return 500
-	}
-	return n
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -260,12 +248,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = enc.Encode(v)
 }
 
-func writeAPIError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+func writeAPIError(w http.ResponseWriter, status int, code, msg string) {
+	writeJSON(w, status, ErrorResponse{Error: msg, Code: code})
 }
 
-// RejectMutation is an http.Handler that answers non-GET requests with 405.
-// Wrap the inspector handler in tests to assert no accidental mutation routes exist.
+// RejectMutation is an http.Handler that answers non-GET/HEAD requests with 405.
 func RejectMutation(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {

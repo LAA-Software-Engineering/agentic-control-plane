@@ -48,6 +48,12 @@ func seedInspectorDB(t *testing.T) (string, *sqlite.Store) {
 	if _, err := st.AppendTraceEvent(ctx, "run-1", now.Add(time.Second), "run.finished", "", `{"trace_id":"abc"}`); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.SaveCheckpoint(ctx, state.RunCheckpoint{
+		RunID: "run-1", StepIndex: 0, StepID: "s1",
+		ContextJSON: `{"v":1}`, Status: state.CheckpointStatusRunning, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +76,7 @@ func TestServer_API_readOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := RejectMutation(srv.Handler())
-	ts := httptest.NewServer(handler)
+	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
 	t.Run("POST rejected", func(t *testing.T) {
@@ -110,16 +115,30 @@ func TestServer_API_readOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer res.Body.Close()
-		var body map[string]any
+		var body RunDetailResponse
 		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body["traceLink"] != "https://traces.example/abc" {
-			t.Fatalf("traceLink=%v", body["traceLink"])
+		if body.TraceLink != "https://traces.example/abc" {
+			t.Fatalf("traceLink=%q", body.TraceLink)
 		}
-		events, _ := body["events"].([]any)
-		if len(events) != 2 {
-			t.Fatalf("events=%v", body["events"])
+		if len(body.Events) != 2 {
+			t.Fatalf("events=%v", body.Events)
+		}
+	})
+
+	t.Run("checkpoints", func(t *testing.T) {
+		res, err := http.Get(ts.URL + "/api/checkpoints?run=run-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var body CheckpointsResponse
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Checkpoints) != 1 || body.Checkpoints[0].StepID != "s1" {
+			t.Fatalf("checkpoints=%+v", body.Checkpoints)
 		}
 	})
 
@@ -205,7 +224,7 @@ func TestServer_handleGetRun_notFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(RejectMutation(srv.Handler()))
+	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	res, err := http.Get(ts.URL + "/api/runs/nope")
 	if err != nil {

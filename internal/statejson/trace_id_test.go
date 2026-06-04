@@ -1,4 +1,4 @@
-package inspect
+package statejson
 
 import "testing"
 
@@ -14,8 +14,8 @@ func TestParseTraceID_variants(t *testing.T) {
 		{"not-json", ""},
 	}
 	for _, tc := range tests {
-		if got := parseTraceID(tc.json); got != tc.want {
-			t.Fatalf("parseTraceID(%q)=%q want %q", tc.json, got, tc.want)
+		if got := ParseTraceID(tc.json); got != tc.want {
+			t.Fatalf("ParseTraceID(%q)=%q want %q", tc.json, got, tc.want)
 		}
 	}
 }

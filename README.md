@@ -108,6 +108,8 @@ agentctl logs   --project my-agent-system --workflow hello
 agentctl inspect --web --project my-agent-system   # read-only local UI on http://127.0.0.1:8787
 ```
 
+`inspect --web` binds to **localhost only** and opens the state DB read-only. Avoid running it while `agentctl run` is writing the same SQLite file (you may see `database is locked` without WAL); use it when runs are idle or on a copy of the DB.
+
 ### Example `project.yaml`
 
 The project root is a **`Project`** resource: `apiVersion`, `kind`, `metadata.name`, and **`spec.imports`** listing other YAML files (policies, tools, workflows). After **`agentctl init my-agent-system`**, `my-agent-system/project.yaml` looks like this:
