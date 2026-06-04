@@ -7,6 +7,9 @@ import (
 )
 
 // Config is the runtime view of Project.spec.telemetry.
+//
+// Validation of required fields when enabled happens in [spec.ValidateProjectGraph].
+// Endpoint env tokens are resolved at tracer init; resolution errors disable export without failing runs.
 type Config struct {
 	Enabled       bool
 	ServiceName   string

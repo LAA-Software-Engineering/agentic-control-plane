@@ -14,6 +14,9 @@ func TelemetryEnabled(g *ProjectGraph) bool {
 }
 
 // validateProjectTelemetry returns validation errors for spec.telemetry (issue #108).
+//
+// Checks YAML shape only: enabled projects need serviceName and an exporter (endpoint or
+// consoleExport). env: endpoint tokens are not resolved here (same pattern as models apiKeyFrom).
 func validateProjectTelemetry(g *ProjectGraph) []error {
 	if g == nil || g.Spec.Telemetry == nil {
 		return nil

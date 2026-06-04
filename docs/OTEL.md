@@ -24,7 +24,19 @@ spec:
 
 At least one of `endpoint` or `consoleExport` must be set when telemetry is enabled.
 
-If the exporter cannot be initialized, `agentctl` logs a warning and the run still completes; SQLite traces are unchanged.
+`agentctl validate` checks YAML shape only (same as `apiKeyFrom: env:…` for models). It does **not** require the variable to be set at validate time.
+
+## Environment variables
+
+| Variable | When needed |
+|----------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | When `endpoint: env:OTEL_EXPORTER_OTLP_ENDPOINT` (or another `env:VAR` you choose). Set to the OTLP HTTP traces URL, e.g. `http://127.0.0.1:4318/v1/traces` for Jaeger all-in-one. |
+
+**If the variable is unset** at run time, telemetry init fails gracefully: a warning is printed, OTLP export is disabled for that process, and the workflow run continues with SQLite traces only. Runs are never failed because of telemetry.
+
+**If the collector is unreachable** after init, export may log errors in the background; runs still complete and SQLite traces are still written.
+
+For local debugging without a collector, use `consoleExport: true` and omit `endpoint`.
 
 ## Span tree
 

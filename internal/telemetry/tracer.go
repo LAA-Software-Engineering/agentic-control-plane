@@ -21,8 +21,9 @@ type Tracer struct {
 }
 
 // NewTracer builds a tracer from project telemetry config. When cfg.Enabled is false, returns a
-// disabled tracer with no exporters. On init failure, logs a warning and returns a disabled tracer
-// so runs never fail because of telemetry.
+// disabled tracer with no exporters. On init failure (missing env:VAR, bad endpoint, unreachable
+// collector setup, etc.), logs a warning and returns a disabled tracer so runs never fail because
+// of telemetry.
 func NewTracer(cfg Config, agentVersion string) *Tracer {
 	if !cfg.Enabled {
 		return &Tracer{enabled: false, agentVersion: agentVersion}

@@ -7,6 +7,9 @@ import (
 )
 
 // ResolveEndpoint expands endpoint values from project YAML, e.g. "env:OTEL_EXPORTER_OTLP_ENDPOINT".
+//
+// A missing or empty environment variable returns an error. [NewTracer] catches that error,
+// logs a warning, and returns a disabled tracer so workflow runs are not affected.
 func ResolveEndpoint(spec string) (string, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
