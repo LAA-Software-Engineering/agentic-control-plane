@@ -5,29 +5,49 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/inspect"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/spf13/cobra"
 )
 
 func newInspectCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "inspect Kind/name",
-		Short: "Print the effective normalized resource (after defaults and env overlay)",
+	var web bool
+	var port int
+	var traceUI string
+
+	cmd := &cobra.Command{
+		Use:   "inspect [Kind/name]",
+		Short: "Print an effective resource or start the read-only web inspector",
 		Long: `Load the project the same way as validate, plan, and run (defaults, optional -e / --env
-overlay via Environment resources, then validation), then print one resource.
+overlay via Environment resources, then validation).
 
-Argument must be Kind/name (e.g. Agent/reviewer, workflow/demo). Kind is matched case-insensitively.
+Without --web, prints one resource Kind/name (e.g. Agent/reviewer, workflow/demo).
+Kind is matched case-insensitively. Output is the full resource envelope (design doc §6.1).
 
-Output is the full resource envelope: apiVersion, kind, metadata, and spec (design doc §6.1).
+With --web, starts a local read-only HTTP server over the SQLite state database (runs,
+trace events, applied deployment resources, checkpoints). Binds to 127.0.0.1 by default.
 
 Exit code 2 for validation failure, unknown resource, or bad Kind/name (§11.2).`,
 		Example: `  agentctl inspect Workflow/pr-review
   agentctl inspect Agent/reviewer -o yaml
-  agentctl inspect Policy/default -e staging -o json`,
+  agentctl inspect --web
+  agentctl inspect --web --port 8787 --state .agentic/state.db`,
 		SilenceUsage: true,
-		RunE:         runInspect,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if web {
+				if len(args) != 0 {
+					return NewExitError(ExitValidationError, fmt.Errorf("inspect: --web does not accept Kind/name arguments"))
+				}
+				return runInspectWeb(cmd, port, traceUI)
+			}
+			return runInspect(cmd, args)
+		},
 	}
+	cmd.Flags().BoolVar(&web, "web", false, "start read-only local web inspector over SQLite state")
+	cmd.Flags().IntVar(&port, "port", inspect.DefaultPort, "TCP port when using --web (localhost only)")
+	cmd.Flags().StringVar(&traceUI, "trace-ui", "", "optional base URL for OTel trace deep links (issue #108)")
+	return cmd
 }
 
 func environmentLabel(g *Global) string {

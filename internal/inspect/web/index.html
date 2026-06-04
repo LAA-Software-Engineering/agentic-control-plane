@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agentctl inspector</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>agentctl inspector</h1>
+    <p class="subtitle">Read-only view of runs, traces, and deployment state</p>
+  </header>
+  <nav class="tabs">
+    <button type="button" data-tab="runs" class="active">Runs</button>
+    <button type="button" data-tab="state">State</button>
+  </nav>
+  <main>
+    <section id="panel-runs" class="panel active">
+      <div class="toolbar">
+        <label>Workflow filter
+          <input type="text" id="filter-workflow" placeholder="optional">
+        </label>
+        <button type="button" id="btn-refresh-runs">Refresh</button>
+      </div>
+      <div id="runs-list" class="list"></div>
+      <div id="run-detail" class="detail hidden">
+        <button type="button" id="btn-back-runs" class="link">← Back to runs</button>
+        <h2 id="run-title"></h2>
+        <p id="run-meta"></p>
+        <p id="run-trace-link" class="trace-link hidden"></p>
+        <h3>Steps</h3>
+        <div id="run-steps" class="table-wrap"></div>
+        <h3>Trace timeline</h3>
+        <div id="run-events" class="timeline"></div>
+        <h3>Checkpoints</h3>
+        <div id="run-checkpoints" class="list compact"></div>
+      </div>
+    </section>
+    <section id="panel-state" class="panel">
+      <button type="button" id="btn-refresh-state">Refresh</button>
+      <div id="state-list" class="list"></div>
+    </section>
+  </main>
+  <footer>
+    <span id="status">Loading…</span>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

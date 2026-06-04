@@ -105,6 +105,7 @@ agentctl plan   --project my-agent-system
 agentctl apply  --project my-agent-system --auto-approve
 agentctl run    workflow/hello --project my-agent-system
 agentctl logs   --project my-agent-system --workflow hello
+agentctl inspect --web --project my-agent-system   # read-only local UI on http://127.0.0.1:8787
 ```
 
 ### Example `project.yaml`
@@ -220,7 +221,7 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 Recent landings already cover much of “hardening”: **plan/apply optimistic concurrency** (exit **3** when deployment state drifts), **MCP** over **streamable HTTP** as well as stdio, **trace retention** (`spec.traces.retentionDays`), **`defaults.runtime`** / **`spec.runtime`** (MVP `local`), and clearer **defaults vs environment overlay** documentation. What is still open for near-term polish:
 
 - More **`diff` / drift** UX where the design doc calls for it (beyond today’s resource-level diff)  
-- Richer **`inspect`** output and **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`)  
+- Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/109))  
 - **`agentctl test`**-style workflow fixtures (**stretch** per design doc)  
 
 ### Post-MVP (from design doc section 19)
