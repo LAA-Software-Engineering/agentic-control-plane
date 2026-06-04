@@ -99,13 +99,26 @@ func TestServer_API_readOnly(t *testing.T) {
 		if res.StatusCode != http.StatusOK {
 			t.Fatalf("status=%d", res.StatusCode)
 		}
-		var body map[string]any
+		var body ListRunsResponse
 		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		runs, ok := body["runs"].([]any)
-		if !ok || len(runs) != 1 {
-			t.Fatalf("runs=%v", body["runs"])
+		if body.Workflow != "" {
+			t.Fatalf("workflow=%q want empty when unfiltered", body.Workflow)
+		}
+		if len(body.Runs) != 1 {
+			t.Fatalf("runs=%v", body.Runs)
+		}
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var top map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &top); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := top["workflow"]; ok {
+			t.Fatalf("top-level workflow key in list response: %s", raw)
 		}
 	})
 
@@ -148,13 +161,12 @@ func TestServer_API_readOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer res.Body.Close()
-		var body map[string]any
+		var body StateResponse
 		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		resources, _ := body["resources"].([]any)
-		if len(resources) != 1 {
-			t.Fatalf("resources=%v", body["resources"])
+		if len(body.Resources) != 1 {
+			t.Fatalf("resources=%v", body.Resources)
 		}
 	})
 

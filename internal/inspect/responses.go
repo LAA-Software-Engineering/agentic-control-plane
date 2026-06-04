@@ -9,7 +9,7 @@ import (
 // ListRunsResponse is GET /api/runs JSON.
 type ListRunsResponse struct {
 	StatePath string                `json:"statePath"`
-	Workflow  string                `json:"workflow"`
+	Workflow  string                `json:"workflow,omitempty"`
 	Runs      []statejson.RunRecord `json:"runs"`
 }
 

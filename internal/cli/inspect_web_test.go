@@ -117,6 +117,24 @@ func TestInspect_web_invalidTraceUI_exit2(t *testing.T) {
 	}
 }
 
+func TestInspect_web_invalidPort_exit2(t *testing.T) {
+	root := runProjRoot(t)
+	db := filepath.Join(t.TempDir(), "port.db")
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"inspect", "--web", "--project", root, "--state", db, "--port", "99999"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d err=%v", ExitCodeOf(err), err)
+	}
+}
+
 func TestInspect_web_missingDB_exit2(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "no.db")
 	root := runProjRoot(t)

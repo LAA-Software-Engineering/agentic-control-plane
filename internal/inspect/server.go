@@ -83,6 +83,14 @@ func (s *Server) Handler() http.Handler {
 	return securityHeaders(RejectMutation(s.mux))
 }
 
+// ListenReady reports whether [Server.ListenAndServe] has bound a TCP listener.
+func (s *Server) ListenReady() bool {
+	s.mu.RLock()
+	ok := s.boundAddr != ""
+	s.mu.RUnlock()
+	return ok
+}
+
 // BoundAddr returns the address the server is listening on after [Server.ListenAndServe] starts.
 // When Port is 0, this is the kernel-assigned port (127.0.0.1:NNNN).
 func (s *Server) BoundAddr() string {

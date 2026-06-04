@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/inspect"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
@@ -14,6 +15,9 @@ import (
 )
 
 func runInspectWeb(cmd *cobra.Command, port int, traceUIBase string) error {
+	if err := inspect.ValidateInspectPort(port); err != nil {
+		return NewExitError(ExitValidationError, err)
+	}
 	g := Globals()
 	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
 	if err != nil {
@@ -55,15 +59,27 @@ func runInspectWeb(cmd *cobra.Command, port int, traceUIBase string) error {
 		return fmt.Errorf("inspect: %w", err)
 	}
 
-	addr := srv.ListenAddr()
+	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe(runCtx) }()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !srv.ListenReady() {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("inspect: server did not start listening")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	addr := srv.BoundAddr()
 	url := "http://" + addr + "/"
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Inspector listening on %s (read-only)\nOpen %s\nPress Ctrl+C to stop.\n", addr, url); err != nil {
 		return err
 	}
 
-	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := srv.ListenAndServe(runCtx); err != nil && runCtx.Err() == nil {
+	if err := <-errCh; err != nil && runCtx.Err() == nil {
 		return fmt.Errorf("inspect: server: %w", err)
 	}
 	return nil
