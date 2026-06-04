@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -9,6 +10,13 @@ import (
 
 // RedactedPlaceholder replaces sensitive values in stored trace payloads (issue #110).
 const RedactedPlaceholder = "[REDACTED]"
+
+// Stable JSON field names emitted by the trace redaction pipeline.
+const (
+	FieldPayloadTruncated = "payload_truncated"
+	FieldPayloadPreview   = "preview"
+	FieldWrappedValue     = "value"
+)
 
 const (
 	defaultMaxDepth        = 64
@@ -94,9 +102,10 @@ func mergeRedactKeys(base, extra []string) []string {
 }
 
 // PrepareEventData runs sanitize → redact → truncate and returns JSON-safe event data.
-func PrepareEventData(data map[string]any, extraRedactKeys []string, opts RedactionOptions) (map[string]any, error) {
+// extraRedactKeys are merged with defaults and opts.RedactKeys (per-call / HITL review keys).
+func PrepareEventData(data map[string]any, extraRedactKeys []string, opts RedactionOptions) map[string]any {
 	if len(data) == 0 {
-		return map[string]any{}, nil
+		return map[string]any{}
 	}
 	o := opts.normalized()
 	o.RedactKeys = mergeRedactKeys(o.RedactKeys, extraRedactKeys)
@@ -104,9 +113,40 @@ func PrepareEventData(data map[string]any, extraRedactKeys []string, opts Redact
 	redacted := redactValue(sanitized, o.RedactKeys)
 	out, ok := redacted.(map[string]any)
 	if !ok {
-		out = map[string]any{"value": redacted}
+		out = map[string]any{FieldWrappedValue: redacted}
 	}
-	return truncatePayload(out, o.MaxPayloadBytes), nil
+	return truncatePayload(out, o.MaxPayloadBytes)
+}
+
+// RedactArgsDiff prepares HITL edit deltas for trace storage: sensitive change paths and
+// nested from/to values are masked (from/to keys alone do not imply sensitivity).
+func RedactArgsDiff(diff map[string]any, extraRedactKeys []string, opts RedactionOptions) map[string]any {
+	if len(diff) == 0 {
+		return map[string]any{}
+	}
+	o := opts.normalized()
+	o.RedactKeys = mergeRedactKeys(o.RedactKeys, extraRedactKeys)
+	out := make(map[string]any, len(diff))
+	for path, entry := range diff {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			out[path] = entry
+			continue
+		}
+		if keyMatchesRedact(path, o.RedactKeys) {
+			out[path] = map[string]any{"from": RedactedPlaceholder, "to": RedactedPlaceholder}
+			continue
+		}
+		payload := map[string]any{}
+		if v, ok := m["from"]; ok {
+			payload["from"] = v
+		}
+		if v, ok := m["to"]; ok {
+			payload["to"] = v
+		}
+		out[path] = PrepareEventData(payload, nil, o)
+	}
+	return out
 }
 
 func sanitizeValue(v any, depth int, o RedactionOptions) any {
@@ -201,7 +241,11 @@ func binaryPlaceholder(b []byte, max int) string {
 	if len(b) > max {
 		show = b[:max]
 	}
-	return fmt.Sprintf("<binary: %d bytes, showing first %d: %s>", len(b), len(show), string(show))
+	hexPreview := hex.EncodeToString(show)
+	if len(b) > len(show) {
+		return fmt.Sprintf("<binary: %d bytes, hex preview %d bytes: %s>", len(b), len(show), hexPreview)
+	}
+	return fmt.Sprintf("<binary: %d bytes, hex: %s>", len(b), hexPreview)
 }
 
 func unknownPlaceholder(v any, unsafeRepr bool) string {
@@ -229,7 +273,7 @@ func truncatePayload(data map[string]any, maxBytes int) map[string]any {
 		preview = preview[:maxBytes]
 	}
 	return map[string]any{
-		"payload_truncated": true,
-		"preview":           preview,
+		FieldPayloadTruncated: true,
+		FieldPayloadPreview:   preview,
 	}
 }

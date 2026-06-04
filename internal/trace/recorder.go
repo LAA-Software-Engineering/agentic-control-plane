@@ -24,7 +24,7 @@ type Recorder struct {
 
 // NewRecorder returns a recorder backed by rt. rt must not be nil when Append is called.
 func NewRecorder(rt state.RuntimeStore) *Recorder {
-	return &Recorder{RT: rt, Redaction: DefaultRedactionOptions()}
+	return &Recorder{RT: rt, Redaction: NormalizeRedactionOptions(DefaultRedactionOptions())}
 }
 
 func (r *Recorder) now() time.Time {
@@ -58,10 +58,7 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID, typ string, data m
 
 	dataJSON := "{}"
 	if len(data) > 0 {
-		prepared, err := PrepareEventData(data, nil, NormalizeRedactionOptions(r.Redaction))
-		if err != nil {
-			return 0, fmt.Errorf("trace: prepare event data: %w", err)
-		}
+		prepared := PrepareEventData(data, nil, r.Redaction)
 		b, err := json.Marshal(prepared)
 		if err != nil {
 			return 0, fmt.Errorf("trace: marshal event data: %w", err)

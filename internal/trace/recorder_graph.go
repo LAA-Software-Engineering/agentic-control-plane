@@ -9,6 +9,6 @@ import (
 func NewRecorderForGraph(rt state.RuntimeStore, g *spec.ProjectGraph) *Recorder {
 	return &Recorder{
 		RT:        rt,
-		Redaction: RedactionFromGraph(g),
+		Redaction: NormalizeRedactionOptions(RedactionFromGraph(g)),
 	}
 }
