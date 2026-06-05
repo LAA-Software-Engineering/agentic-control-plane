@@ -20,6 +20,9 @@ import (
 func newLogsCmd() *cobra.Command {
 	var runID string
 	var workflow string
+	var tenantID string
+	var threadID string
+	var actorID string
 
 	cmd := &cobra.Command{
 		Use:          "logs",
@@ -28,12 +31,14 @@ func newLogsCmd() *cobra.Command {
 		Long: `Inspect execution history stored in the SQLite state database.
 
 Without filters, lists recent runs (newest first). Use --run to print trace events for one run
-(ordered by seq), or --workflow to print events for recent runs of a workflow name.
+(ordered by seq), --workflow to print events for recent runs of a workflow name, or
+--tenant-id / --thread-id / --actor-id to filter the run list (combinable).
 
 Examples:
   agentctl logs
   agentctl logs --run <run-id>
   agentctl logs --workflow pr-review
+  agentctl logs --tenant-id acme --thread-id prod-session-1
 
 Exit codes (section 11.2):
   0 — success
@@ -41,22 +46,31 @@ Exit codes (section 11.2):
   2 — validation failure (unknown run id, invalid flags)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
-			return runLogs(cmd, runID, workflow)
+			return runLogs(cmd, runID, workflow, tenantID, threadID, actorID)
 		},
 	}
 	cmd.Flags().StringVar(&runID, "run", "", "show trace events for this run id")
 	cmd.Flags().StringVar(&workflow, "workflow", "", "show trace events for recent runs of this workflow")
+	cmd.Flags().StringVar(&tenantID, "tenant-id", "", "filter runs by tenant id")
+	cmd.Flags().StringVar(&threadID, "thread-id", "", "filter runs by thread id")
+	cmd.Flags().StringVar(&actorID, "actor-id", "", "filter runs by actor id")
 	return cmd
 }
 
-func runLogs(cmd *cobra.Command, runID, workflow string) error {
+func runLogs(cmd *cobra.Command, runID, workflow, tenantID, threadID, actorID string) error {
 	ctx := context.Background()
 	g := Globals()
 
 	runID = strings.TrimSpace(runID)
 	workflow = strings.TrimSpace(workflow)
+	tenantID = strings.TrimSpace(tenantID)
+	threadID = strings.TrimSpace(threadID)
+	actorID = strings.TrimSpace(actorID)
 	if runID != "" && workflow != "" {
 		return NewExitErrorf(ExitValidationError, "logs: use only one of --run or --workflow")
+	}
+	if runID != "" && (tenantID != "" || threadID != "" || actorID != "") {
+		return NewExitErrorf(ExitValidationError, "logs: --run cannot be combined with tenant/thread/actor filters")
 	}
 
 	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
@@ -82,11 +96,18 @@ func runLogs(cmd *cobra.Command, runID, workflow string) error {
 		}
 	}
 
+	filter := state.RunListFilter{
+		TenantID:     tenantID,
+		ThreadID:     threadID,
+		ActorID:      actorID,
+		WorkflowName: workflow,
+	}
+
 	switch {
 	case runID != "":
 		return writeLogsForRun(cmd, ctx, st, dsn, runID, g)
-	case workflow != "":
-		return writeLogsForWorkflow(cmd, ctx, st, dsn, workflow, g)
+	case workflow != "" || tenantID != "" || threadID != "" || actorID != "":
+		return writeLogsFiltered(cmd, ctx, st, dsn, filter, g)
 	default:
 		return writeLogsRunList(cmd, ctx, st, dsn, g)
 	}
@@ -106,11 +127,13 @@ func writeLogsForRun(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, 
 	return writeLogsEventsOutput(cmd, dsn, runID, "", events, g)
 }
 
-func writeLogsForWorkflow(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn, workflow string, g *Global) error {
-	runs, err := st.ListRunsByWorkflow(ctx, workflow, state.DefaultRunListLimit)
+func writeLogsFiltered(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn string, filter state.RunListFilter, g *Global) error {
+	filter.Limit = state.DefaultRunListLimit
+	runs, err := st.ListRunsFiltered(ctx, filter)
 	if err != nil {
 		return fmt.Errorf("logs: list runs: %w", err)
 	}
+	workflow := strings.TrimSpace(filter.WorkflowName)
 
 	if g.Output != render.FormatTable {
 		type runEntry struct {
@@ -145,7 +168,9 @@ func writeLogsForWorkflow(cmd *cobra.Command, ctx context.Context, st *sqlite.St
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "State: %s\nWorkflow filter: %s\n\n", dsn, workflow)
+	fmt.Fprintf(&b, "State: %s\n", dsn)
+	writeLogsFilterHeader(&b, filter)
+	b.WriteString("\n")
 	if len(runs) == 0 {
 		fmt.Fprintln(&b, "No runs found.")
 		_, err := fmt.Fprint(cmd.OutOrStdout(), b.String())
@@ -164,6 +189,21 @@ func writeLogsForWorkflow(cmd *cobra.Command, ctx context.Context, st *sqlite.St
 	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), b.String())
 	return err
+}
+
+func writeLogsFilterHeader(b *strings.Builder, filter state.RunListFilter) {
+	if w := strings.TrimSpace(filter.WorkflowName); w != "" {
+		fmt.Fprintf(b, "Workflow filter: %s\n", w)
+	}
+	if t := strings.TrimSpace(filter.TenantID); t != "" {
+		fmt.Fprintf(b, "Tenant filter: %s\n", t)
+	}
+	if th := strings.TrimSpace(filter.ThreadID); th != "" {
+		fmt.Fprintf(b, "Thread filter: %s\n", th)
+	}
+	if a := strings.TrimSpace(filter.ActorID); a != "" {
+		fmt.Fprintf(b, "Actor filter: %s\n", a)
+	}
 }
 
 func writeLogsRunList(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn string, g *Global) error {
@@ -186,10 +226,11 @@ func writeLogsRunList(cmd *cobra.Command, ctx context.Context, st *sqlite.Store,
 			return err
 		}
 		w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "RUN ID\tWORKFLOW\tENV\tSTATUS\tSTARTED")
+		fmt.Fprintln(w, "RUN ID\tWORKFLOW\tENV\tSTATUS\tTENANT\tTHREAD\tACTOR\tSTARTED")
 		for _, r := range runs {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				r.RunID, r.WorkflowName, r.Env, r.Status, r.StartedAt.UTC().Format(time.RFC3339),
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				r.RunID, r.WorkflowName, r.Env, r.Status, r.TenantID, r.ThreadID, r.ActorID,
+				r.StartedAt.UTC().Format(time.RFC3339),
 			)
 		}
 		if err := w.Flush(); err != nil {

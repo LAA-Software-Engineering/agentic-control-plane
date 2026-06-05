@@ -153,15 +153,21 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	workflow := strings.TrimSpace(r.URL.Query().Get("workflow"))
-	limit := statejson.ParseRunListLimit(r.URL.Query().Get("limit"))
+	q := r.URL.Query()
+	filter := state.RunListFilter{
+		WorkflowName: strings.TrimSpace(q.Get("workflow")),
+		TenantID:     strings.TrimSpace(q.Get("tenant_id")),
+		ThreadID:     strings.TrimSpace(q.Get("thread_id")),
+		ActorID:      strings.TrimSpace(q.Get("actor_id")),
+		Limit:        statejson.ParseRunListLimit(q.Get("limit")),
+	}
 
 	var runs []state.Run
 	var err error
-	if workflow != "" {
-		runs, err = s.store.ListRunsByWorkflow(ctx, workflow, limit)
+	if filter.WorkflowName != "" || filter.TenantID != "" || filter.ThreadID != "" || filter.ActorID != "" {
+		runs, err = s.store.ListRunsFiltered(ctx, filter)
 	} else {
-		runs, err = s.store.ListRecentRuns(ctx, limit)
+		runs, err = s.store.ListRecentRuns(ctx, filter.Limit)
 	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list runs")
@@ -169,7 +175,10 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, ListRunsResponse{
 		StatePath: s.cfg.StatePath,
-		Workflow:  workflow,
+		Workflow:  filter.WorkflowName,
+		TenantID:  filter.TenantID,
+		ThreadID:  filter.ThreadID,
+		ActorID:   filter.ActorID,
 		Runs:      statejson.Runs(runs),
 	})
 }

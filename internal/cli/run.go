@@ -30,6 +30,13 @@ func newRunCmd() *cobra.Command {
 	var decisionEditJSON string
 	var decisionSwitchTarget string
 	var resumeRunID string
+	var tenantID string
+	var threadID string
+	var actorID string
+	var parentRunID string
+	var requestID string
+	var idempotencyKey string
+	var source string
 
 	cmd := &cobra.Command{
 		Use:          "run workflow/<name>",
@@ -46,8 +53,13 @@ Resume an interrupted or incomplete run with --resume <run-id> (no workflow argu
 When a run pauses for human approval, resume with --decision and related flags, or use
 --auto-approve / AGENTCTL_AUTO_APPROVE=1 for non-interactive approval.
 
+Attribution flags (--tenant-id, --thread-id, --actor-id) scope runs for multi-tenant logs and
+compliance. When omitted, local defaults apply (tenant-1 / thread-1 / user-1). Never rely on
+defaults in CI or production; pass real actor ids and include tenant/env in thread_id.
+
 Examples:
   agentctl run workflow/demo --input topic=hello
+  agentctl run workflow/demo --tenant-id acme --thread-id prod-session-1 --actor-id ci-bot
   agentctl run workflow/demo --input-file input.json
   agentctl run --resume run-abc123
 
@@ -79,7 +91,8 @@ Exit codes (section 11.2):
 					return NewExitError(ExitValidationError, err)
 				}
 			}
-			return runRun(cmd, wfName, resumeRunID, inputFile, inputPairs, approves, autoApprove, decision, decisionEditJSON, decisionSwitchTarget)
+			return runRun(cmd, wfName, resumeRunID, inputFile, inputPairs, approves, autoApprove, decision, decisionEditJSON, decisionSwitchTarget,
+				tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source)
 		},
 	}
 	cmd.Flags().StringVar(&inputFile, "input-file", "", "path to JSON file with workflow input object")
@@ -90,6 +103,13 @@ Exit codes (section 11.2):
 	cmd.Flags().StringVar(&decisionEditJSON, "decision-edit-json", "", "JSON object of edited tool args when --decision edit")
 	cmd.Flags().StringVar(&decisionSwitchTarget, "decision-switch-target", "", "target operation when --decision switch")
 	cmd.Flags().StringVar(&resumeRunID, "resume", "", "resume an interrupted or incomplete run by id")
+	cmd.Flags().StringVar(&tenantID, "tenant-id", "", "multi-tenant scope (default: tenant-1; set explicitly in CI/prod)")
+	cmd.Flags().StringVar(&threadID, "thread-id", "", "session/thread continuity across runs and resumes (default: thread-1)")
+	cmd.Flags().StringVar(&actorID, "actor-id", "", "who triggered this run (default: user-1; use a real principal in CI/prod)")
+	cmd.Flags().StringVar(&parentRunID, "parent-run-id", "", "origin run for sub-runs (not used for --resume of the same run)")
+	cmd.Flags().StringVar(&requestID, "request-id", "", "per-invocation correlation id (generated when omitted)")
+	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "optional dedupe key for accidental re-triggers")
+	cmd.Flags().StringVar(&source, "source", "", "run origin label (default: cli)")
 	return cmd
 }
 
@@ -177,7 +197,8 @@ func classifyRunError(err error) int {
 	}
 }
 
-func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPairs, approves []string, autoApprove bool, decision, decisionEditJSON, decisionSwitchTarget string) error {
+func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPairs, approves []string, autoApprove bool, decision, decisionEditJSON, decisionSwitchTarget string,
+	tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string) error {
 	ctx := context.Background()
 	g := Globals()
 
@@ -225,6 +246,15 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 			ApprovedActions: approves,
 			Resume:          resumeID != "",
 			RunID:           resumeID,
+		}
+		if resumeID == "" {
+			opts.TenantID = strings.TrimSpace(tenantID)
+			opts.ThreadID = strings.TrimSpace(threadID)
+			opts.ActorID = strings.TrimSpace(actorID)
+			opts.ParentRunID = strings.TrimSpace(parentRunID)
+			opts.RequestID = strings.TrimSpace(requestID)
+			opts.IdempotencyKey = strings.TrimSpace(idempotencyKey)
+			opts.Source = strings.TrimSpace(source)
 		}
 		if err := applyHitlRunOptions(&opts, resumeID != "", autoApprove, decision, decisionEditJSON, decisionSwitchTarget); err != nil {
 			return NewExitError(ExitValidationError, err)

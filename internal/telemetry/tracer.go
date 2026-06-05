@@ -91,7 +91,10 @@ type RunStartAttrs struct {
 	RunID     string
 	Workflow  string
 	AgentName string
+	TenantID  string
+	ThreadID  string
 	ActorID   string
+	RequestID string
 	Resume    bool
 	LinkFrom  *SpanRef
 }
@@ -111,8 +114,17 @@ func (t *Tracer) BeginRun(ctx context.Context, attrs RunStartAttrs) *RunHandle {
 	if attrs.AgentName != "" {
 		base = append(base, attribute.String(AttrAgentName, attrs.AgentName))
 	}
+	if attrs.TenantID != "" {
+		base = append(base, attribute.String(AttrTenantID, attrs.TenantID))
+	}
+	if attrs.ThreadID != "" {
+		base = append(base, attribute.String(AttrThreadID, attrs.ThreadID))
+	}
 	if attrs.ActorID != "" {
 		base = append(base, attribute.String(AttrActorID, attrs.ActorID))
+	}
+	if attrs.RequestID != "" {
+		base = append(base, attribute.String(AttrRequestID, attrs.RequestID))
 	}
 	if attrs.Resume {
 		base = append(base, attribute.Bool(AttrHitlResumed, true))

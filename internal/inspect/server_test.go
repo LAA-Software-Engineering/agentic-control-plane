@@ -256,6 +256,57 @@ func TestServer_readOnlyStoreCannotMutate(t *testing.T) {
 	}
 }
 
+func TestServer_listRuns_filterByAttribution(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "filter.db")
+	st, err := sqlite.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 6, 4, 10, 0, 0, 0, time.UTC)
+	for _, r := range []state.Run{
+		{RunID: "a", WorkflowName: "wf", Env: "local", Status: state.RunStatusSucceeded,
+			StartedAt: now, InputJSON: `{}`, TenantID: "t1", ThreadID: "th1", ActorID: "u1", RequestID: "ra", Source: "cli"},
+		{RunID: "b", WorkflowName: "wf", Env: "local", Status: state.RunStatusSucceeded,
+			StartedAt: now.Add(time.Minute), InputJSON: `{}`, TenantID: "t1", ThreadID: "th2", ActorID: "u1", RequestID: "rb", Source: "cli"},
+	} {
+		if err := st.StartRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ro, err := sqlite.OpenReadOnly(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ro.Close() })
+
+	srv, err := NewServer(ro, Config{StatePath: path, Env: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	res, err := http.Get(ts.URL + "/api/runs?tenant_id=t1&thread_id=th1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var body ListRunsResponse
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.TenantID != "t1" || body.ThreadID != "th1" {
+		t.Fatalf("filters: %+v", body)
+	}
+	if len(body.Runs) != 1 || body.Runs[0].RunID != "a" {
+		t.Fatalf("runs: %+v", body.Runs)
+	}
+}
+
 func TestServer_handleGetRun_notFound(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "empty.db")

@@ -84,7 +84,7 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 	}
 
 	started := r.now()
-	if err := r.Store.StartRun(ctx, state.Run{
+	runRow := state.Run{
 		RunID:            runID,
 		WorkflowName:     wfName,
 		Env:              envLabel,
@@ -94,7 +94,20 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 		TotalCostUSD:     0,
 		WorkflowSpecHash: wfHash,
 		EnvironmentName:  strings.TrimSpace(opts.EnvironmentName),
-	}); err != nil {
+	}
+	state.ApplyAttribution(&runRow, state.RunAttribution{
+		TenantID:       opts.TenantID,
+		ThreadID:       opts.ThreadID,
+		ActorID:        opts.ActorID,
+		ParentRunID:    opts.ParentRunID,
+		RequestID:      opts.RequestID,
+		IdempotencyKey: opts.IdempotencyKey,
+		Source:         opts.Source,
+	})
+	if runRow.RequestID == "" {
+		runRow.RequestID = util.NewRequestID()
+	}
+	if err := r.Store.StartRun(ctx, runRow); err != nil {
 		return runID, fmt.Errorf("local: start run: %w", err)
 	}
 
@@ -212,6 +225,30 @@ func (r *Runtime) executeEngine(
 	if err != nil {
 		return runID, err
 	}
+	attr := state.RunAttribution{
+		TenantID:  opts.TenantID,
+		ThreadID:  opts.ThreadID,
+		ActorID:   opts.ActorID,
+		RequestID: opts.RequestID,
+		Source:    opts.Source,
+	}
+	if opts.Resume {
+		if run, gerr := r.Store.GetRun(ctx, runID); gerr == nil && run != nil {
+			attr.TenantID = run.TenantID
+			attr.ThreadID = run.ThreadID
+			attr.ActorID = run.ActorID
+			attr.RequestID = run.RequestID
+			attr.Source = run.Source
+		}
+	} else if stored, gerr := r.Store.GetRun(ctx, runID); gerr == nil && stored != nil {
+		attr.TenantID = stored.TenantID
+		attr.ThreadID = stored.ThreadID
+		attr.ActorID = stored.ActorID
+		attr.RequestID = stored.RequestID
+		attr.Source = stored.Source
+	}
+	state.NormalizeAttribution(&attr)
+
 	runErr := ex.Run(ctx, engine.RunInput{
 		RunID:           runID,
 		WorkflowName:    wfName,
@@ -221,6 +258,10 @@ func (r *Runtime) executeEngine(
 		ApprovedActions: opts.ApprovedActions,
 		Resume:          opts.Resume,
 		Hitl:            hitl,
+		TenantID:        attr.TenantID,
+		ThreadID:        attr.ThreadID,
+		ActorID:         attr.ActorID,
+		RequestID:       attr.RequestID,
 	})
 
 	finData := map[string]any{}

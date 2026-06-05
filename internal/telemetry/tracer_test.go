@@ -34,6 +34,7 @@ func TestNewTracer_consoleExport_emitsRunSpan(t *testing.T) {
 	ctx := context.Background()
 	h := tr.BeginRun(ctx, telemetry.RunStartAttrs{
 		RunID: "run-abc", Workflow: "demo", AgentName: "agent-a",
+		TenantID: "acme", ThreadID: "thread-9", ActorID: "ci-bot", RequestID: "req-1",
 	})
 	if h == nil {
 		t.Fatal("nil handle")
