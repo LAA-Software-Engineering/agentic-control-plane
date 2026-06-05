@@ -29,10 +29,10 @@ func TestDiscoverUserLocalPaths_order(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("paths = %v, want 2", got)
 	}
-	if !strings.HasSuffix(got[0], "agentctl/config.yaml") {
+	if !strings.HasSuffix(got[0], filepath.Join("agentctl", "config.yaml")) {
 		t.Fatalf("global should be first: %v", got)
 	}
-	if !strings.HasSuffix(got[1], ".agentic/local.yaml") {
+	if !strings.HasSuffix(got[1], filepath.Join(".agentic", "local.yaml")) {
 		t.Fatalf("project-local should be second: %v", got)
 	}
 }

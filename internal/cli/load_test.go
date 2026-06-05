@@ -51,7 +51,7 @@ spec:
 	if rc.Graph().Spec.Defaults.Model != "project-model" {
 		t.Fatalf("model = %q, want project-model", rc.Graph().Spec.Defaults.Model)
 	}
-	if !strings.HasSuffix(rc.StatePath(), ".agentic/state.db") {
+	if !strings.HasSuffix(rc.StatePath(), filepath.Join(".agentic", "state.db")) {
 		t.Fatalf("project state should win, got %q", rc.StatePath())
 	}
 }
