@@ -89,7 +89,7 @@ func TestSuggestYAMLField_typo(t *testing.T) {
 }
 
 func TestLevenshtein(t *testing.T) {
-	if levenshtein("defaults", "defualts") != 2 {
+	if Levenshtein("defaults", "defualts") != 2 {
 		t.Fatalf("unexpected distance")
 	}
 }

@@ -177,6 +177,29 @@ spec:
 	}
 }
 
+func TestAssertSnapshotMatchesStored_invalidEmptyDigest(t *testing.T) {
+	root := t.TempDir()
+	writeProject(t, root, nil)
+	rc, err := Resolve(ResolveOptions{ProjectRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := SnapshotPath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"digest":"","environment":"local"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = AssertSnapshotMatchesStored(rc)
+	if err == nil {
+		t.Fatal("expected invalid snapshot error")
+	}
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("want ErrInvalidSnapshot, got %v", err)
+	}
+}
+
 func TestAssertSnapshotMatchesStored_missingFile(t *testing.T) {
 	root := t.TempDir()
 	writeProject(t, root, nil)

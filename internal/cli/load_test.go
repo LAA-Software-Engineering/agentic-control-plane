@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -72,6 +73,42 @@ spec:
 	}
 	if !strings.Contains(err.Error(), "defualts") {
 		t.Fatalf("want typo in error: %v", err)
+	}
+}
+
+func TestRun_afterValidate_stateDrift_exit3(t *testing.T) {
+	root := runProjRoot(t)
+	db := filepath.Join(t.TempDir(), "run.db")
+	db2 := filepath.Join(t.TempDir(), "run-other.db")
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"validate", "--project", root, "--state", db})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	ResetGlobalsForTest()
+	var errBuf bytes.Buffer
+	cmd = NewRootCmd()
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{
+		"run", "workflow/demo",
+		"--project", root,
+		"--state", db2,
+		"--input", "topic=drift-test",
+	})
+	defer func() { _ = os.Remove(config.SnapshotPath(root)) }()
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected run to fail with config drift")
+	}
+	if ExitCodeOf(err) != ExitPlanApplyConflict {
+		t.Fatalf("exit code = %d, want %d; err=%v", ExitCodeOf(err), ExitPlanApplyConflict, err)
+	}
+	if !strings.Contains(err.Error(), "resolved config") {
+		t.Fatalf("want drift message, got: %v", err)
 	}
 }
 

@@ -18,6 +18,12 @@ import (
 // ErrResolvedConfigDrift means the resolved config digest differs from the stored snapshot.
 var ErrResolvedConfigDrift = errors.New("resolved config changed since last validate/plan/apply; re-run plan")
 
+// ErrInvalidSnapshot means a resolved-config snapshot file exists but is unusable.
+var ErrInvalidSnapshot = errors.New("resolved config snapshot is invalid or corrupt")
+
+// DefaultStateDSN is the built-in SQLite path relative to the project root.
+const DefaultStateDSN = ".agentic/state.db"
+
 const resolvedSnapshotRel = ".agentic/resolved-config.json"
 
 // ResolveOptions selects inputs for the configuration pipeline.
@@ -28,7 +34,8 @@ type ResolveOptions struct {
 	HomeDir     string // user home for ~/.config/agentctl; empty uses os.UserHomeDir
 }
 
-// ResolvedConfig is an immutable snapshot of the fully resolved project configuration.
+// ResolvedConfig is a frozen snapshot of the fully resolved project configuration.
+// Graph returns a defensive copy; treat it as read-only.
 type ResolvedConfig struct {
 	graph     *spec.ProjectGraph
 	root      string
@@ -37,12 +44,16 @@ type ResolvedConfig struct {
 	digest    string
 }
 
-// Graph returns the resolved, validated project graph. Callers must not mutate it.
+// Graph returns a defensive copy of the resolved, validated project graph.
 func (r *ResolvedConfig) Graph() *spec.ProjectGraph {
-	if r == nil {
+	if r == nil || r.graph == nil {
 		return nil
 	}
-	return r.graph
+	cp, err := spec.CloneProjectGraph(r.graph)
+	if err != nil {
+		return nil
+	}
+	return cp
 }
 
 // ProjectRoot returns the absolute project root directory.
@@ -125,8 +136,13 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 		return nil, err
 	}
 
+	frozen, err := spec.CloneProjectGraph(graph)
+	if err != nil {
+		return nil, fmt.Errorf("config: freeze resolved graph: %w", err)
+	}
+
 	return &ResolvedConfig{
-		graph:     graph,
+		graph:     frozen,
 		root:      root,
 		env:       env,
 		statePath: statePath,
@@ -165,7 +181,7 @@ func resolveStatePath(projectRoot string, graph *spec.ProjectGraph, override str
 		}
 		return filepath.Abs(filepath.Join(projectRoot, filepath.FromSlash(override)))
 	}
-	dsn := ".agentic/state.db"
+	dsn := DefaultStateDSN
 	if graph != nil && graph.Spec.State != nil {
 		if s := strings.TrimSpace(graph.Spec.State.DSN); s != "" {
 			dsn = s
@@ -246,7 +262,7 @@ func AssertSnapshotMatchesStored(rc *ResolvedConfig) error {
 		return fmt.Errorf("config: parse snapshot: %w", err)
 	}
 	if strings.TrimSpace(snap.Digest) == "" {
-		return nil
+		return fmt.Errorf("%w: missing digest in %s", ErrInvalidSnapshot, path)
 	}
 	if snap.Digest != rc.digest {
 		return fmt.Errorf("%w (stored %s, current %s)", ErrResolvedConfigDrift, snap.Digest, rc.digest)

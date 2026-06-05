@@ -95,7 +95,7 @@ func FormatStrictYAMLError(path string, err error) string {
 		if line == "" || strings.HasPrefix(line, "yaml:") {
 			continue
 		}
-		if field, typeName, ok := parseUnknownFieldLine(line); ok {
+		if field, typeName, ok := ParseUnknownFieldLine(line); ok {
 			hint := suggestYAMLField(typeName, field)
 			if hint != "" {
 				details = append(details, fmt.Sprintf(`unknown field %q (did you mean %q?)`, field, hint))
@@ -112,22 +112,6 @@ func FormatStrictYAMLError(path string, err error) string {
 	return strings.Join(details, "; ")
 }
 
-func parseUnknownFieldLine(line string) (field, typeName string, ok bool) {
-	// yaml.v3: "line 4: field defualts not found in type spec.ProjectSpec"
-	const prefix = "field "
-	const middle = " not found in type "
-	idx := strings.Index(line, prefix)
-	if idx < 0 {
-		return "", "", false
-	}
-	rest := line[idx+len(prefix):]
-	mid := strings.Index(rest, middle)
-	if mid < 0 {
-		return "", "", false
-	}
-	return strings.TrimSpace(rest[:mid]), strings.TrimSpace(rest[mid+len(middle):]), true
-}
-
 // SuggestYAMLField returns the closest known yaml tag for wrong within typeName, or "".
 func SuggestYAMLField(typeName, wrong string) string {
 	return suggestYAMLField(typeName, wrong)
@@ -142,19 +126,7 @@ func suggestYAMLField(typeName, wrong string) string {
 	if len(tags) == 0 {
 		return ""
 	}
-	best := ""
-	bestDist := 3 // only suggest within edit distance 2
-	for _, tag := range tags {
-		if tag == wrong {
-			continue
-		}
-		d := levenshtein(wrong, tag)
-		if d < bestDist {
-			bestDist = d
-			best = tag
-		}
-	}
-	return best
+	return ClosestTag(tags, wrong)
 }
 
 func lookupStrictType(typeName string) reflect.Type {
@@ -162,30 +134,26 @@ func lookupStrictType(typeName string) reflect.Type {
 	if i := strings.LastIndex(typeName, "."); i >= 0 {
 		short = typeName[i+1:]
 	}
-	registry := map[string]any{
-		"Metadata":            Metadata{},
-		"ProjectSpec":         ProjectSpec{},
-		"ProjectDefaults":     ProjectDefaults{},
-		"ProjectProviders":    ProjectProviders{},
-		"ProjectStateConfig":  ProjectStateConfig{},
-		"ProjectTracesConfig": ProjectTracesConfig{},
-		"AgentSpec":           AgentSpec{},
-		"ToolSpec":            ToolSpec{},
-		"WorkflowSpec":        WorkflowSpec{},
-		"PolicySpec":          PolicySpec{},
-		"EnvironmentSpec":     EnvironmentSpec{},
-		"AgentOverride":       AgentOverride{},
-		"PolicyOverride":      PolicyOverride{},
-		"AgentConstraints":    AgentConstraints{},
-		"PolicyExecution":     PolicyExecution{},
-		"ToolSafety":          ToolSafety{},
-		"HitlPolicy":          HitlPolicy{},
+	registry := map[string]reflect.Type{
+		"Metadata":            reflect.TypeOf(Metadata{}),
+		"ProjectSpec":         reflect.TypeOf(ProjectSpec{}),
+		"ProjectDefaults":     reflect.TypeOf(ProjectDefaults{}),
+		"ProjectProviders":    reflect.TypeOf(ProjectProviders{}),
+		"ProjectStateConfig":  reflect.TypeOf(ProjectStateConfig{}),
+		"ProjectTracesConfig": reflect.TypeOf(ProjectTracesConfig{}),
+		"AgentSpec":           reflect.TypeOf(AgentSpec{}),
+		"ToolSpec":            reflect.TypeOf(ToolSpec{}),
+		"WorkflowSpec":        reflect.TypeOf(WorkflowSpec{}),
+		"PolicySpec":          reflect.TypeOf(PolicySpec{}),
+		"EnvironmentSpec":     reflect.TypeOf(EnvironmentSpec{}),
+		"AgentOverride":       reflect.TypeOf(AgentOverride{}),
+		"PolicyOverride":      reflect.TypeOf(PolicyOverride{}),
+		"AgentConstraints":    reflect.TypeOf(AgentConstraints{}),
+		"PolicyExecution":     reflect.TypeOf(PolicyExecution{}),
+		"ToolSafety":          reflect.TypeOf(ToolSafety{}),
+		"HitlPolicy":          reflect.TypeOf(HitlPolicy{}),
 	}
-	v, ok := registry[short]
-	if !ok {
-		return nil
-	}
-	return reflect.TypeOf(v)
+	return registry[short]
 }
 
 func collectYAMLTags(t reflect.Type) []string {
@@ -211,38 +179,4 @@ func collectYAMLTags(t reflect.Type) []string {
 		}
 	}
 	return tags
-}
-
-func levenshtein(a, b string) int {
-	if a == b {
-		return 0
-	}
-	la, lb := len(a), len(b)
-	if la == 0 {
-		return lb
-	}
-	if lb == 0 {
-		return la
-	}
-	prev := make([]int, lb+1)
-	curr := make([]int, lb+1)
-	for j := 0; j <= lb; j++ {
-		prev[j] = j
-	}
-	for i := 1; i <= la; i++ {
-		curr[0] = i
-		for j := 1; j <= lb; j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			curr[j] = min(
-				curr[j-1]+1,
-				prev[j]+1,
-				prev[j-1]+cost,
-			)
-		}
-		prev, curr = curr, prev
-	}
-	return prev[lb]
 }

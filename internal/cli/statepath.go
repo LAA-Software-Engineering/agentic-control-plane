@@ -4,10 +4,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
-
-const defaultStateDSN = ".agentic/state.db"
 
 // resolveStateSQLitePath returns an absolute filesystem path for the SQLite deployment store.
 // If override is non-empty ([Global.StatePath]), it is resolved relative to projectRoot when not absolute.
@@ -21,7 +20,7 @@ func resolveStateSQLitePath(projectRoot string, graph *spec.ProjectGraph, overri
 		}
 		return filepath.Abs(filepath.Join(projectRoot, filepath.FromSlash(override)))
 	}
-	dsn := defaultStateDSN
+	dsn := config.DefaultStateDSN
 	if graph != nil && graph.Spec.State != nil {
 		if s := strings.TrimSpace(graph.Spec.State.DSN); s != "" {
 			dsn = s

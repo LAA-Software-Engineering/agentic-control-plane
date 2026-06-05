@@ -29,10 +29,11 @@ type UserLocalOverlay struct {
 }
 
 // DiscoverUserLocalPaths returns existing user-local files in merge order (lowest precedence first).
+// Global discovery honors XDG_CONFIG_HOME when set, otherwise $HOME/.config.
 func DiscoverUserLocalPaths(projectRoot, homeDir string) []string {
 	var paths []string
-	if homeDir != "" {
-		p := filepath.Join(homeDir, ".config", filepath.FromSlash(GlobalUserLocalRel))
+	if cfgBase := xdgConfigBase(homeDir); cfgBase != "" {
+		p := filepath.Join(cfgBase, filepath.FromSlash(GlobalUserLocalRel))
 		if fileExists(p) {
 			paths = append(paths, p)
 		}
@@ -49,6 +50,17 @@ func DiscoverUserLocalPaths(projectRoot, homeDir string) []string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func xdgConfigBase(homeDir string) string {
+	if xdg := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdg != "" {
+		return filepath.Clean(xdg)
+	}
+	homeDir = strings.TrimSpace(homeDir)
+	if homeDir == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, ".config")
 }
 
 // LoadUserLocalOverlay reads and strictly decodes one user-local YAML file.
@@ -85,7 +97,7 @@ func formatUserLocalDecodeError(path string, err error) string {
 	if field, typeName, ok := parseUserLocalUnknownField(err.Error()); ok {
 		hint := spec.SuggestYAMLField(typeName, field)
 		if hint == "" {
-			hint = suggestUserLocalField(field)
+			hint = spec.ClosestTag(userLocalYAMLTags, field)
 		}
 		if hint != "" {
 			return fmt.Sprintf(`unknown field %q (did you mean %q?)`, field, hint)
@@ -95,72 +107,15 @@ func formatUserLocalDecodeError(path string, err error) string {
 	return spec.FormatStrictYAMLError(path, err)
 }
 
+var userLocalYAMLTags = []string{"defaults", "providers", "state", "traces", "telemetry"}
+
 func parseUserLocalUnknownField(msg string) (field, typeName string, ok bool) {
 	for _, line := range strings.Split(msg, "\n") {
-		if f, t, found := parseUnknownFieldLine(strings.TrimSpace(line)); found {
+		if f, t, found := spec.ParseUnknownFieldLine(strings.TrimSpace(line)); found {
 			return f, t, true
 		}
 	}
 	return "", "", false
-}
-
-func parseUnknownFieldLine(line string) (field, typeName string, ok bool) {
-	const prefix = "field "
-	const middle = " not found in type "
-	idx := strings.Index(line, prefix)
-	if idx < 0 {
-		return "", "", false
-	}
-	rest := line[idx+len(prefix):]
-	mid := strings.Index(rest, middle)
-	if mid < 0 {
-		return "", "", false
-	}
-	return strings.TrimSpace(rest[:mid]), strings.TrimSpace(rest[mid+len(middle):]), true
-}
-
-func suggestUserLocalField(wrong string) string {
-	known := []string{"defaults", "providers", "state", "traces", "telemetry"}
-	best := ""
-	bestDist := 3
-	for _, tag := range known {
-		d := levenshteinUserLocal(wrong, tag)
-		if d < bestDist {
-			bestDist = d
-			best = tag
-		}
-	}
-	return best
-}
-
-func levenshteinUserLocal(a, b string) int {
-	if a == b {
-		return 0
-	}
-	la, lb := len(a), len(b)
-	if la == 0 {
-		return lb
-	}
-	if lb == 0 {
-		return la
-	}
-	prev := make([]int, lb+1)
-	curr := make([]int, lb+1)
-	for j := 0; j <= lb; j++ {
-		prev[j] = j
-	}
-	for i := 1; i <= la; i++ {
-		curr[0] = i
-		for j := 1; j <= lb; j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
-		}
-		prev, curr = curr, prev
-	}
-	return prev[lb]
 }
 
 // MergeUserLocalOverlays combines overlays in order; later entries override earlier ones.

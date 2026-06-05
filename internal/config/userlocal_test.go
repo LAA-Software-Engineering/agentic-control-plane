@@ -65,6 +65,22 @@ func TestMergeUserLocalOverlays_precedence(t *testing.T) {
 	}
 }
 
+func TestDiscoverUserLocalPaths_xdgConfigHome(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	writeYAML(t, filepath.Join(xdg, "agentctl", "config.yaml"), "defaults:\n  model: xdg\n")
+
+	got := DiscoverUserLocalPaths(root, home)
+	if len(got) != 1 {
+		t.Fatalf("paths = %v, want 1", got)
+	}
+	if got[0] != filepath.Join(xdg, "agentctl", "config.yaml") {
+		t.Fatalf("path = %q, want XDG path", got[0])
+	}
+}
+
 func TestApplyUserLocalUnder_projectWins(t *testing.T) {
 	project := &spec.ProjectSpec{
 		Defaults: &spec.ProjectDefaults{Model: "project"},

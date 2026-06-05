@@ -28,11 +28,14 @@ unless overridden by global --state.
 
 Environment for stored rows is taken from -e / --env when set, otherwise "local".
 
+Writes .agentic/resolved-config.json (digest of resolved graph + env + state path) for plan→run
+contract checks. JSON/YAML output includes resolvedConfigDigest alongside deploymentBaseline.
+
 Exit codes (section 11.2):
   0 — success
   1 — generic failure (e.g. cannot open SQLite)
   2 — validation failure (invalid project)
-  3 — plan/apply conflict (reserved; not used in this MVP)`,
+  3 — plan/apply conflict when applying a stale plan (deployment store changed; issue #78)`,
 		RunE: runPlan,
 	}
 }

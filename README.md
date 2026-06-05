@@ -174,7 +174,7 @@ Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 
 | Path | Scope |
 |------|--------|
-| `~/.config/agentctl/config.yaml` | Global per-user defaults (`defaults`, `state`, `providers`, `traces`, `telemetry`) |
+| `$XDG_CONFIG_HOME/agentctl/config.yaml` or `~/.config/agentctl/config.yaml` | Global per-user defaults (`defaults`, `state`, `providers`, `traces`, `telemetry`) |
 | `.agentic/local.yaml` under `--project` | Project-scoped overrides (same fields; wins over the global file) |
 
 `validate`, `plan`, and `apply` write `.agentic/resolved-config.json` (digest of the resolved graph + env + state path). `run` rejects drift from that snapshot with exit **3** — re-run `validate` or `plan` after changing config.
