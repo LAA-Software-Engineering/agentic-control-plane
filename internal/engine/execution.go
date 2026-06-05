@@ -46,6 +46,11 @@ type RunInput struct {
 	// InterruptAfterStepIndex, when non-nil, checkpoints and returns [ErrInterrupted] after
 	// completing the step at this index. Used to simulate approval gates until HITL lands.
 	InterruptAfterStepIndex *int
+	// Attribution for OTel gen_ai attributes (issue #111).
+	TenantID  string
+	ThreadID  string
+	ActorID   string
+	RequestID string
 }
 
 func (e *Executor) now() time.Time {
@@ -102,11 +107,18 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 		if in.Resume {
 			link = ictx.OtelInterrupt
 		}
+		actorID := strings.TrimSpace(in.ActorID)
+		if actorID == "" {
+			actorID = strings.TrimSpace(in.Hitl.Actor)
+		}
 		runHandle = e.Telemetry.BeginRun(ctx, telemetry.RunStartAttrs{
 			RunID:     in.RunID,
 			Workflow:  in.WorkflowName,
 			AgentName: primaryAgentName(wf),
-			ActorID:   strings.TrimSpace(in.Hitl.Actor),
+			TenantID:  in.TenantID,
+			ThreadID:  in.ThreadID,
+			ActorID:   actorID,
+			RequestID: in.RequestID,
 			Resume:    in.Resume,
 			LinkFrom:  link,
 		})

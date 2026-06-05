@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Run attribution** (issue #111): `tenant_id`, `thread_id`, `actor_id`, `parent_run_id`, `request_id`, `idempotency_key`, and `source` on `runs`; trace events carry matching tenant/thread/actor for filterable logs and inspector queries. `agentctl run` accepts `--tenant-id`, `--thread-id`, `--actor-id` (local defaults `tenant-1` / `thread-1` / `user-1`); `agentctl logs` and `GET /api/runs` filter by the same dimensions. `--resume` reuses persisted `run_id` and `thread_id`. OTel spans emit `gen_ai.tenant.id`, `gen_ai.thread.id`, `gen_ai.actor.id`, and `gen_ai.request.id`. See [`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md).
 - **Trace payload redaction** (issue #110): trace events are sanitized, key-redacted, and size-capped before SQLite storage. Defaults mask common secret key names; override via `Project.spec.traces.redactKeys`, `maxPayloadBytes`, and `spec.traces.redaction` (`maxDepth`, `maxBytes` for binary previews, `maxStringChars`). HITL edit `argsDiff` is redacted before persistence. Local runs use [trace.NewRecorderForGraph] from project spec.
 - **Optional OpenTelemetry trace export** (issue #108): `Project.spec.telemetry` (`enabled`, `serviceName`, `endpoint` with `env:` tokens, `consoleExport`) emits WayFind-aligned `gen_ai.*` spans (`agent.run`, `model.chat`, `tool.exec`, `approval`) alongside SQLite traces. Disabled by default; init failures log a warning and never fail runs. See [`docs/OTEL.md`](docs/OTEL.md) for a Jaeger quick start.
 - **`agentctl inspect --web`** — read-only local inspector (default `http://127.0.0.1:8787`) over SQLite state: runs, trace timeline, run steps, applied deployment resources, and checkpoints ([#109](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/109)).
@@ -20,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`agentctl logs` table output** (issue #111): the default (non-JSON) run list adds `TENANT`, `THREAD`, and `ACTOR` columns. Scripts that parse fixed column positions should switch to `-o json` or match by header names.
 - **Breaking — tool calls without explicit policy are no longer unrestricted.** Previously, `CheckToolCall` with a nil [spec.PolicySpec] allowed all tools. Now fail-closed safety always applies from the project graph (even when the workflow omits `spec.policy` or the Policy resource is missing).
 - Tools with **no** `spec.safety` block behave as **untrusted with side effects** after normalization → require `--approve` unless an explicit `approvals.requiredFor` rule matches.
 

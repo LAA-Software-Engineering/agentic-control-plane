@@ -10,6 +10,9 @@ import (
 type ListRunsResponse struct {
 	StatePath string                `json:"statePath"`
 	Workflow  string                `json:"workflow,omitempty"`
+	TenantID  string                `json:"tenantId,omitempty"`
+	ThreadID  string                `json:"threadId,omitempty"`
+	ActorID   string                `json:"actorId,omitempty"`
 	Runs      []statejson.RunRecord `json:"runs"`
 }
 

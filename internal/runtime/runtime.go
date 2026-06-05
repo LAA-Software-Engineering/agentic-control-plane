@@ -29,6 +29,17 @@ type WorkflowRunOptions struct {
 	HitlActor string
 	// HitlDecision supplies an explicit decision when resuming an interrupted run (issue #106).
 	HitlDecision *HitlDecisionOptions
+	// Attribution scopes the run for multi-tenant logs and compliance (issue #111).
+	// Empty fields receive local defaults; resume reuses persisted tenant/thread from the run row.
+	TenantID       string
+	ThreadID       string
+	ActorID        string
+	ParentRunID    string
+	RequestID      string
+	IdempotencyKey string
+	Source         string
+	// RequireAttribution rejects runs when tenant_id, thread_id, or actor_id is omitted.
+	RequireAttribution bool
 }
 
 // HitlDecisionOptions configures a non-interactive HITL resolution on resume.

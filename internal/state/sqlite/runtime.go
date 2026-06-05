@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
 )
+
+const runSelectColumns = `run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name, tenant_id, thread_id, actor_id, parent_run_id, request_id, idempotency_key, source`
 
 // StartRun inserts a new row in runs (design doc §14.2).
 func (s *Store) StartRun(ctx context.Context, r state.Run) error {
@@ -15,11 +19,32 @@ func (s *Store) StartRun(ctx context.Context, r state.Run) error {
 	if in == "" {
 		in = "{}"
 	}
+	attr := state.RunAttribution{
+		TenantID:       r.TenantID,
+		ThreadID:       r.ThreadID,
+		ActorID:        r.ActorID,
+		ParentRunID:    r.ParentRunID,
+		RequestID:      r.RequestID,
+		IdempotencyKey: r.IdempotencyKey,
+		Source:         r.Source,
+	}
+	state.NormalizeAttribution(&attr)
+	if attr.RequestID == "" {
+		attr.RequestID = util.NewRequestID()
+	}
 	at := r.StartedAt.UTC().Format(time.RFC3339Nano)
+	var parent, idem any
+	if attr.ParentRunID != "" {
+		parent = attr.ParentRunID
+	}
+	if attr.IdempotencyKey != "" {
+		idem = attr.IdempotencyKey
+	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO runs (run_id, workflow_name, env, status, started_at, input_json, total_cost_usd, workflow_spec_hash, environment_name)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, r.RunID, r.WorkflowName, r.Env, r.Status, at, in, r.TotalCostUSD, r.WorkflowSpecHash, r.EnvironmentName)
+INSERT INTO runs (run_id, workflow_name, env, status, started_at, input_json, total_cost_usd, workflow_spec_hash, environment_name, tenant_id, thread_id, actor_id, parent_run_id, request_id, idempotency_key, source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, r.RunID, r.WorkflowName, r.Env, r.Status, at, in, r.TotalCostUSD, r.WorkflowSpecHash, r.EnvironmentName,
+		attr.TenantID, attr.ThreadID, attr.ActorID, parent, attr.RequestID, idem, attr.Source)
 	return err
 }
 
@@ -105,11 +130,19 @@ func (s *Store) AppendTraceEvent(ctx context.Context, runID string, ts time.Time
 	if err := tx.QueryRowContext(ctx, `SELECT IFNULL(MAX(seq), 0) + 1 FROM trace_events WHERE run_id = ?`, runID).Scan(&seq); err != nil {
 		return 0, err
 	}
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO trace_events (run_id, seq, timestamp, type, step_id, data_json)
-VALUES (?, ?, ?, ?, ?, ?)
-`, runID, seq, tss, eventType, sid, dj); err != nil {
+	res, err := tx.ExecContext(ctx, `
+INSERT INTO trace_events (run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id)
+SELECT ?, ?, ?, ?, ?, ?, tenant_id, thread_id, actor_id FROM runs WHERE run_id = ?
+`, runID, seq, tss, eventType, sid, dj, runID)
+	if err != nil {
 		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, sql.ErrNoRows
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
@@ -124,9 +157,19 @@ type rowScanner interface {
 func scanRunRow(sc rowScanner) (*state.Run, error) {
 	var r state.Run
 	var started, finished sql.NullString
-	var outJ, errT sql.NullString
-	if err := sc.Scan(&r.RunID, &r.WorkflowName, &r.Env, &r.Status, &started, &finished, &r.InputJSON, &outJ, &errT, &r.TotalCostUSD, &r.WorkflowSpecHash, &r.EnvironmentName); err != nil {
+	var outJ, errT, parent, idem sql.NullString
+	if err := sc.Scan(
+		&r.RunID, &r.WorkflowName, &r.Env, &r.Status, &started, &finished,
+		&r.InputJSON, &outJ, &errT, &r.TotalCostUSD, &r.WorkflowSpecHash, &r.EnvironmentName,
+		&r.TenantID, &r.ThreadID, &r.ActorID, &parent, &r.RequestID, &idem, &r.Source,
+	); err != nil {
 		return nil, err
+	}
+	if parent.Valid {
+		r.ParentRunID = parent.String
+	}
+	if idem.Valid {
+		r.IdempotencyKey = idem.String
 	}
 	st, err := parseSQLiteTime(started.String)
 	if err != nil {
@@ -152,7 +195,7 @@ func scanRunRow(sc rowScanner) (*state.Run, error) {
 // GetRun returns the run row or sql.ErrNoRows.
 func (s *Store) GetRun(ctx context.Context, runID string) (*state.Run, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name
+SELECT `+runSelectColumns+`
 FROM runs
 WHERE run_id = ?
 `, runID)
@@ -170,7 +213,7 @@ func (s *Store) ListRecentRuns(ctx context.Context, limit int) ([]state.Run, err
 	}
 	limit = clampRunListLimit(limit)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name
+SELECT `+runSelectColumns+`
 FROM runs
 ORDER BY started_at DESC
 LIMIT ?
@@ -197,7 +240,7 @@ func (s *Store) ListRunsByWorkflow(ctx context.Context, workflowName string, lim
 	}
 	limit = clampRunListLimit(limit)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name
+SELECT `+runSelectColumns+`
 FROM runs
 WHERE workflow_name = ?
 ORDER BY started_at DESC
@@ -278,10 +321,53 @@ func scanRunStepRow(sc rowScanner) (*state.RunStep, error) {
 	return &st, nil
 }
 
+// ListRunsFiltered returns runs matching optional tenant/thread/actor/workflow filters.
+func (s *Store) ListRunsFiltered(ctx context.Context, filter state.RunListFilter) ([]state.Run, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("sqlite: nil store")
+	}
+	limit := clampRunListLimit(filter.Limit)
+	q := `SELECT ` + runSelectColumns + ` FROM runs WHERE 1=1`
+	var args []any
+	if t := strings.TrimSpace(filter.TenantID); t != "" {
+		q += ` AND tenant_id = ?`
+		args = append(args, t)
+	}
+	if th := strings.TrimSpace(filter.ThreadID); th != "" {
+		q += ` AND thread_id = ?`
+		args = append(args, th)
+	}
+	if a := strings.TrimSpace(filter.ActorID); a != "" {
+		q += ` AND actor_id = ?`
+		args = append(args, a)
+	}
+	if w := strings.TrimSpace(filter.WorkflowName); w != "" {
+		q += ` AND workflow_name = ?`
+		args = append(args, w)
+	}
+	q += ` ORDER BY started_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []state.Run
+	for rows.Next() {
+		r, err := scanRunRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
 // ListTraceEventsByRunID returns trace rows for run_id ordered by seq ascending.
 func (s *Store) ListTraceEventsByRunID(ctx context.Context, runID string) ([]state.TraceEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT run_id, seq, timestamp, type, step_id, data_json
+SELECT run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id
 FROM trace_events
 WHERE run_id = ?
 ORDER BY seq ASC
@@ -296,7 +382,7 @@ ORDER BY seq ASC
 		var e state.TraceEvent
 		var ts string
 		var step sql.NullString
-		if err := rows.Scan(&e.RunID, &e.Seq, &ts, &e.Type, &step, &e.DataJSON); err != nil {
+		if err := rows.Scan(&e.RunID, &e.Seq, &ts, &e.Type, &step, &e.DataJSON, &e.TenantID, &e.ThreadID, &e.ActorID); err != nil {
 			return nil, err
 		}
 		t, err := parseSQLiteTime(ts)

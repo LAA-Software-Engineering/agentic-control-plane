@@ -8,21 +8,31 @@ type TraceEventRecord struct {
 	Timestamp string          `json:"timestamp"`
 	Type      string          `json:"type"`
 	StepID    string          `json:"stepId,omitempty"`
+	TenantID  string          `json:"tenantId,omitempty"`
+	ThreadID  string          `json:"threadId,omitempty"`
+	ActorID   string          `json:"actorId,omitempty"`
 	Data      json.RawMessage `json:"data"`
 }
 
 // RunRecord is one runs row (agentctl logs -o json, inspector /api/runs).
 type RunRecord struct {
-	RunID        string          `json:"runId"`
-	Workflow     string          `json:"workflow"`
-	Env          string          `json:"env"`
-	Status       string          `json:"status"`
-	StartedAt    string          `json:"startedAt"`
-	FinishedAt   string          `json:"finishedAt,omitempty"`
-	TotalCostUsd float64         `json:"totalCostUsd"`
-	Input        json.RawMessage `json:"input"`
-	Output       json.RawMessage `json:"output,omitempty"`
-	Error        string          `json:"error,omitempty"`
+	RunID          string          `json:"runId"`
+	Workflow       string          `json:"workflow"`
+	Env            string          `json:"env"`
+	Status         string          `json:"status"`
+	StartedAt      string          `json:"startedAt"`
+	FinishedAt     string          `json:"finishedAt,omitempty"`
+	TotalCostUsd   float64         `json:"totalCostUsd"`
+	TenantID       string          `json:"tenantId,omitempty"`
+	ThreadID       string          `json:"threadId,omitempty"`
+	ActorID        string          `json:"actorId,omitempty"`
+	ParentRunID    string          `json:"parentRunId,omitempty"`
+	RequestID      string          `json:"requestId,omitempty"`
+	IdempotencyKey string          `json:"idempotencyKey,omitempty"`
+	Source         string          `json:"source,omitempty"`
+	Input          json.RawMessage `json:"input"`
+	Output         json.RawMessage `json:"output,omitempty"`
+	Error          string          `json:"error,omitempty"`
 }
 
 // AppliedResourceRecord is one applied_resources row (agentctl state list -o json).

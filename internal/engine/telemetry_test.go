@@ -57,6 +57,38 @@ func TestTelemetry_hitlInterruptRootSpanNotError(t *testing.T) {
 	}
 }
 
+func TestTelemetry_runSpanCarriesAttribution(t *testing.T) {
+	ex, sr, runID, started := setupHitlExecutorWithTelemetry(t)
+	ctx := context.Background()
+
+	err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "hitl", Env: "local", StartedAt: started, Input: map[string]any{},
+		TenantID: "acme", ThreadID: "thread-1", ActorID: "alice", RequestID: "req-42",
+	})
+	if !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("run: %v", err)
+	}
+	ex.Telemetry.Shutdown()
+
+	runSpans := endedSpansNamed(sr, telemetry.SpanAgentRun)
+	if len(runSpans) != 1 {
+		t.Fatalf("agent.run count = %d", len(runSpans))
+	}
+	sp := runSpans[0]
+	if got := attrString(sp, telemetry.AttrTenantID); got != "acme" {
+		t.Fatalf("tenant = %q", got)
+	}
+	if got := attrString(sp, telemetry.AttrThreadID); got != "thread-1" {
+		t.Fatalf("thread = %q", got)
+	}
+	if got := attrString(sp, telemetry.AttrActorID); got != "alice" {
+		t.Fatalf("actor = %q", got)
+	}
+	if got := attrString(sp, telemetry.AttrRequestID); got != "req-42" {
+		t.Fatalf("request = %q", got)
+	}
+}
+
 func TestTelemetry_hitlResumeLinksPriorRunSpan(t *testing.T) {
 	ex, sr, runID, started := setupHitlExecutorWithTelemetry(t)
 	ctx := context.Background()
@@ -85,7 +117,8 @@ func TestTelemetry_hitlResumeLinksPriorRunSpan(t *testing.T) {
 	sr.Reset()
 	err = ex.Run(ctx, RunInput{
 		RunID: runID, WorkflowName: "hitl", Env: "local", StartedAt: started, Input: map[string]any{},
-		Resume: true,
+		Resume:   true,
+		TenantID: "persisted-tenant", ThreadID: "persisted-thread", ActorID: "persisted-actor", RequestID: "persisted-req",
 		Hitl: HitlRunOptions{
 			Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"},
 		},
@@ -102,6 +135,18 @@ func TestTelemetry_hitlResumeLinksPriorRunSpan(t *testing.T) {
 	resume := runSpans[0]
 	if !attrBool(resume, telemetry.AttrHitlResumed) {
 		t.Fatalf("missing %s on resume span", telemetry.AttrHitlResumed)
+	}
+	if got := attrString(resume, telemetry.AttrTenantID); got != "persisted-tenant" {
+		t.Fatalf("resume tenant = %q", got)
+	}
+	if got := attrString(resume, telemetry.AttrThreadID); got != "persisted-thread" {
+		t.Fatalf("resume thread = %q", got)
+	}
+	if got := attrString(resume, telemetry.AttrActorID); got != "persisted-actor" {
+		t.Fatalf("resume actor = %q", got)
+	}
+	if got := attrString(resume, telemetry.AttrRequestID); got != "persisted-req" {
+		t.Fatalf("resume request = %q", got)
 	}
 	if resume.Status().Code == codes.Error {
 		t.Fatal("resumed agent.run should not be Error")

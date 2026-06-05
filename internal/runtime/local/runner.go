@@ -84,7 +84,21 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 	}
 
 	started := r.now()
-	if err := r.Store.StartRun(ctx, state.Run{
+	attr := state.RunAttribution{
+		TenantID:       opts.TenantID,
+		ThreadID:       opts.ThreadID,
+		ActorID:        opts.ActorID,
+		ParentRunID:    opts.ParentRunID,
+		RequestID:      opts.RequestID,
+		IdempotencyKey: opts.IdempotencyKey,
+		Source:         opts.Source,
+	}
+	if opts.RequireAttribution {
+		if err := state.RequireExplicitAttribution(attr); err != nil {
+			return runID, err
+		}
+	}
+	runRow := state.Run{
 		RunID:            runID,
 		WorkflowName:     wfName,
 		Env:              envLabel,
@@ -94,7 +108,9 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 		TotalCostUSD:     0,
 		WorkflowSpecHash: wfHash,
 		EnvironmentName:  strings.TrimSpace(opts.EnvironmentName),
-	}); err != nil {
+	}
+	state.ApplyAttribution(&runRow, attr)
+	if err := r.Store.StartRun(ctx, runRow); err != nil {
 		return runID, fmt.Errorf("local: start run: %w", err)
 	}
 
@@ -107,7 +123,7 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 
 	opts.RunID = runID
 	opts.Resume = false
-	return r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, opts, rec)
+	return r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, opts, state.AttributionFromRun(&runRow), rec)
 }
 
 func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOptions) (string, error) {
@@ -183,7 +199,7 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 	}
 
 	opts.Resume = true
-	return r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, opts, rec)
+	return r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, opts, state.AttributionFromRun(run), rec)
 }
 
 func (r *Runtime) executeEngine(
@@ -193,6 +209,7 @@ func (r *Runtime) executeEngine(
 	started time.Time,
 	input map[string]any,
 	opts runtime.WorkflowRunOptions,
+	attr state.RunAttribution,
 	rec *trace.Recorder,
 ) (string, error) {
 	tel := telemetry.NewTracer(telemetry.ConfigFromGraph(prep.graph), r.agentVersion())
@@ -212,6 +229,8 @@ func (r *Runtime) executeEngine(
 	if err != nil {
 		return runID, err
 	}
+	state.NormalizeAttribution(&attr)
+
 	runErr := ex.Run(ctx, engine.RunInput{
 		RunID:           runID,
 		WorkflowName:    wfName,
@@ -221,6 +240,10 @@ func (r *Runtime) executeEngine(
 		ApprovedActions: opts.ApprovedActions,
 		Resume:          opts.Resume,
 		Hitl:            hitl,
+		TenantID:        attr.TenantID,
+		ThreadID:        attr.ThreadID,
+		ActorID:         attr.ActorID,
+		RequestID:       attr.RequestID,
 	})
 
 	finData := map[string]any{}
