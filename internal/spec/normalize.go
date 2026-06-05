@@ -15,7 +15,7 @@ import "strings"
 //
 // Environment overlays (design doc §7.6) are not applied here. Typical pipelines load the graph,
 // run NormalizeProjectGraph, then apply the selected environment with ApplyEnvironment in
-// internal/runtime/local (e.g. agentctl validate/plan/apply/run, local ExecuteWorkflow), and
+// [ApplyEnvironment] (e.g. agentctl validate/plan/apply/run, local ExecuteWorkflow), and
 // finally validate. Mutates g in place.
 func NormalizeProjectGraph(g *ProjectGraph) {
 	if g == nil {

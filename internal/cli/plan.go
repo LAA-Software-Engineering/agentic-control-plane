@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
@@ -51,16 +52,13 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	g := Globals()
 
-	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
+	rc, err := prepareResolvedConfig(g)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
-
-	env := planEnvironment(g)
-	dsn, err := resolveStateSQLitePath(root, graph, g.StatePath)
-	if err != nil {
-		return fmt.Errorf("plan: resolve state path: %w", err)
-	}
+	graph := rc.Graph()
+	env := rc.Environment()
+	dsn := rc.StatePath()
 	if err := os.MkdirAll(filepath.Dir(dsn), 0o755); err != nil {
 		return fmt.Errorf("plan: create state directory: %w", err)
 	}
@@ -76,16 +74,22 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("plan: compute: %w", err)
 	}
 
-	return writePlanOutput(cmd, env, dsn, pl, g)
+	if err := writePlanOutput(cmd, env, dsn, pl, rc, g); err != nil {
+		return err
+	}
+	if err := config.WriteSnapshot(rc); err != nil {
+		return fmt.Errorf("plan: write resolved config snapshot: %w", err)
+	}
+	return nil
 }
 
-func writePlanOutput(cmd *cobra.Command, env, dsn string, p *plan.Plan, g *Global) error {
+func writePlanOutput(cmd *cobra.Command, env, dsn string, p *plan.Plan, rc *config.ResolvedConfig, g *Global) error {
 	out := cmd.OutOrStdout()
 	switch g.Output {
 	case render.FormatJSON:
-		return writePlanJSON(out, env, dsn, p)
+		return writePlanJSON(out, env, dsn, p, rc)
 	case render.FormatYAML:
-		return render.WriteYAML(out, planJSONModel(env, dsn, p))
+		return render.WriteYAML(out, planJSONModel(env, dsn, p, rc))
 	default:
 		if _, err := fmt.Fprintf(out, "Environment: %s\nState: %s\n\n", env, dsn); err != nil {
 			return err
@@ -95,7 +99,7 @@ func writePlanOutput(cmd *cobra.Command, env, dsn string, p *plan.Plan, g *Globa
 	}
 }
 
-func planJSONModel(env, dsn string, p *plan.Plan) map[string]any {
+func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map[string]any {
 	if p == nil {
 		return map[string]any{
 			"environment": env,
@@ -148,6 +152,9 @@ func planJSONModel(env, dsn string, p *plan.Plan) map[string]any {
 	if p != nil && p.DeploymentBaseline != "" {
 		m["deploymentBaseline"] = p.DeploymentBaseline
 	}
+	if rc != nil && rc.Digest() != "" {
+		m["resolvedConfigDigest"] = rc.Digest()
+	}
 	return m
 }
 
@@ -158,8 +165,8 @@ func riskStrings(p *plan.Plan) []string {
 	return p.Risk.Messages
 }
 
-func writePlanJSON(w io.Writer, env, dsn string, p *plan.Plan) error {
-	return render.WriteJSON(w, planJSONModel(env, dsn, p))
+func writePlanJSON(w io.Writer, env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) error {
+	return render.WriteJSON(w, planJSONModel(env, dsn, p, rc))
 }
 
 func planCounts(p *plan.Plan) (create, update, delete int) {

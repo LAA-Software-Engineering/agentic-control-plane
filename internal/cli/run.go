@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
@@ -214,10 +215,17 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 		return NewExitError(ExitValidationError, fmt.Errorf("run: requires workflow/<name> or --resume <run-id>"))
 	}
 
-	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
+	rc, err := prepareResolvedConfig(g)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
+	if err := config.AssertSnapshotMatchesStored(rc); err != nil {
+		if errors.Is(err, config.ErrResolvedConfigDrift) {
+			return NewExitError(ExitPlanApplyConflict, err)
+		}
+		return fmt.Errorf("run: resolved config snapshot: %w", err)
+	}
+	root := rc.ProjectRoot()
 
 	var inputJSON []byte
 	if resumeID == "" {
@@ -227,11 +235,8 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 		}
 	}
 
-	env := planEnvironment(g)
-	dsn, err := resolveStateSQLitePath(root, graph, g.StatePath)
-	if err != nil {
-		return fmt.Errorf("run: resolve state path: %w", err)
-	}
+	env := rc.Environment()
+	dsn := rc.StatePath()
 	if err := os.MkdirAll(filepath.Dir(dsn), 0o755); err != nil {
 		return fmt.Errorf("run: create state directory: %w", err)
 	}

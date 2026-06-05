@@ -19,7 +19,7 @@ func runInspectWeb(cmd *cobra.Command, port int, traceUIBase string) error {
 		return NewExitError(ExitValidationError, err)
 	}
 	g := Globals()
-	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
+	graph, root, err := prepareProjectGraph(g)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}

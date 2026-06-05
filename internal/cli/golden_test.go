@@ -108,7 +108,7 @@ func TestGolden_plan_noop_after_apply_table(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "golden-plan2.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}

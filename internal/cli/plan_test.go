@@ -70,7 +70,7 @@ func TestPlan_afterApply_noChanges(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "plan2.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestPlan_policyCostIncrease_riskDelta(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "plan3.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}

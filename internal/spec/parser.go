@@ -9,14 +9,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// rawEnvelope captures the document shell before kind-specific spec decoding.
-type rawEnvelope struct {
-	APIVersion string    `yaml:"apiVersion"`
-	Kind       string    `yaml:"kind"`
-	Metadata   *Metadata `yaml:"metadata"`
-	Spec       yaml.Node `yaml:"spec"`
-}
-
 // Decoded is one parsed MVP resource from a single YAML document.
 type Decoded struct {
 	Path     string
@@ -83,126 +75,88 @@ func (d *Decoded) ResourceID() ResourceID {
 	}
 }
 
-// ParseResourceFromBytes decodes exactly one YAML document from data.
+// ParseResourceFromBytes decodes exactly one YAML document from data with strict unknown-key rejection.
 // path is used only for error messages (e.g. when data did not come from a file).
 func ParseResourceFromBytes(data []byte, path string) (*Decoded, error) {
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	dec.KnownFields(false)
-
-	var env rawEnvelope
-	if err := dec.Decode(&env); err != nil {
+	kind, err := peekKind(data)
+	if err != nil {
 		return nil, wrapLoadError(path, "invalid YAML", err)
 	}
 
+	switch strings.TrimSpace(kind) {
+	case KindProject:
+		return parseStrictResource(data, path, KindProject, func(doc resourceDoc[ProjectSpec]) any {
+			return &ProjectResource{
+				APIVersion: strings.TrimSpace(doc.APIVersion),
+				Kind:       KindProject,
+				Metadata:   doc.Metadata,
+				Spec:       doc.Spec,
+			}
+		})
+	case KindAgent:
+		return parseStrictResource(data, path, KindAgent, func(doc resourceDoc[AgentSpec]) any {
+			return &AgentResource{
+				APIVersion: strings.TrimSpace(doc.APIVersion),
+				Kind:       KindAgent,
+				Metadata:   doc.Metadata,
+				Spec:       doc.Spec,
+			}
+		})
+	case KindTool:
+		return parseStrictResource(data, path, KindTool, func(doc resourceDoc[ToolSpec]) any {
+			return &ToolResource{
+				APIVersion: strings.TrimSpace(doc.APIVersion),
+				Kind:       KindTool,
+				Metadata:   doc.Metadata,
+				Spec:       doc.Spec,
+			}
+		})
+	case KindWorkflow:
+		return parseStrictResource(data, path, KindWorkflow, func(doc resourceDoc[WorkflowSpec]) any {
+			return &WorkflowResource{
+				APIVersion: strings.TrimSpace(doc.APIVersion),
+				Kind:       KindWorkflow,
+				Metadata:   doc.Metadata,
+				Spec:       doc.Spec,
+			}
+		})
+	case KindPolicy:
+		return parseStrictResource(data, path, KindPolicy, func(doc resourceDoc[PolicySpec]) any {
+			return &PolicyResource{
+				APIVersion: strings.TrimSpace(doc.APIVersion),
+				Kind:       KindPolicy,
+				Metadata:   doc.Metadata,
+				Spec:       doc.Spec,
+			}
+		})
+	case KindEnvironment:
+		return parseStrictResource(data, path, KindEnvironment, func(doc resourceDoc[EnvironmentSpec]) any {
+			return &EnvironmentResource{
+				APIVersion: strings.TrimSpace(doc.APIVersion),
+				Kind:       KindEnvironment,
+				Metadata:   doc.Metadata,
+				Spec:       doc.Spec,
+			}
+		})
+	default:
+		return nil, &LoadError{Path: path, Msg: fmt.Sprintf("unknown kind %q", kind), Err: ErrUnknownKind}
+	}
+}
+
+// peekKind reads kind from the first YAML document without full validation.
+func peekKind(data []byte) (string, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var env struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := dec.Decode(&env); err != nil {
+		return "", err
+	}
 	if err := dec.Decode(&struct{}{}); err != io.EOF {
 		if err == nil {
-			return nil, &LoadError{Path: path, Msg: "expected exactly one YAML document", Err: ErrMultipleDocuments}
+			return "", ErrMultipleDocuments
 		}
-		return nil, wrapLoadError(path, "invalid YAML", err)
+		return "", err
 	}
-
-	if err := validateEnvelope(path, &env); err != nil {
-		return nil, err
-	}
-
-	res, err := decodeByKind(path, &env)
-	if err != nil {
-		return nil, err
-	}
-	return &Decoded{Path: path, Resource: res}, nil
-}
-
-func validateEnvelope(path string, env *rawEnvelope) error {
-	av := strings.TrimSpace(env.APIVersion)
-	if av == "" {
-		return &LoadError{Path: path, Msg: "missing required field: apiVersion"}
-	}
-	k := strings.TrimSpace(env.Kind)
-	if k == "" {
-		return &LoadError{Path: path, Msg: "missing required field: kind"}
-	}
-	if env.Metadata == nil {
-		return &LoadError{Path: path, Msg: "missing required field: metadata"}
-	}
-	if strings.TrimSpace(env.Metadata.Name) == "" {
-		return &LoadError{Path: path, Msg: "missing required field: metadata.name"}
-	}
-	if !specNodePresent(env.Spec) {
-		return &LoadError{Path: path, Msg: "missing or null required field: spec"}
-	}
-	return nil
-}
-
-func specNodePresent(n yaml.Node) bool {
-	if n.Kind == 0 {
-		return false
-	}
-	if n.Kind == yaml.ScalarNode && n.Tag == "!!null" {
-		return false
-	}
-	return true
-}
-
-func decodeByKind(path string, env *rawEnvelope) (any, error) {
-	k := strings.TrimSpace(env.Kind)
-	md := *env.Metadata
-
-	switch k {
-	case KindProject:
-		var r ProjectResource
-		r.APIVersion = strings.TrimSpace(env.APIVersion)
-		r.Kind = k
-		r.Metadata = md
-		if err := env.Spec.Decode(&r.Spec); err != nil {
-			return nil, wrapLoadError(path, "decode Project spec", err)
-		}
-		return &r, nil
-	case KindAgent:
-		var r AgentResource
-		r.APIVersion = strings.TrimSpace(env.APIVersion)
-		r.Kind = k
-		r.Metadata = md
-		if err := env.Spec.Decode(&r.Spec); err != nil {
-			return nil, wrapLoadError(path, "decode Agent spec", err)
-		}
-		return &r, nil
-	case KindTool:
-		var r ToolResource
-		r.APIVersion = strings.TrimSpace(env.APIVersion)
-		r.Kind = k
-		r.Metadata = md
-		if err := env.Spec.Decode(&r.Spec); err != nil {
-			return nil, wrapLoadError(path, "decode Tool spec", err)
-		}
-		return &r, nil
-	case KindWorkflow:
-		var r WorkflowResource
-		r.APIVersion = strings.TrimSpace(env.APIVersion)
-		r.Kind = k
-		r.Metadata = md
-		if err := env.Spec.Decode(&r.Spec); err != nil {
-			return nil, wrapLoadError(path, "decode Workflow spec", err)
-		}
-		return &r, nil
-	case KindPolicy:
-		var r PolicyResource
-		r.APIVersion = strings.TrimSpace(env.APIVersion)
-		r.Kind = k
-		r.Metadata = md
-		if err := env.Spec.Decode(&r.Spec); err != nil {
-			return nil, wrapLoadError(path, "decode Policy spec", err)
-		}
-		return &r, nil
-	case KindEnvironment:
-		var r EnvironmentResource
-		r.APIVersion = strings.TrimSpace(env.APIVersion)
-		r.Kind = k
-		r.Metadata = md
-		if err := env.Spec.Decode(&r.Spec); err != nil {
-			return nil, wrapLoadError(path, "decode Environment spec", err)
-		}
-		return &r, nil
-	default:
-		return nil, &LoadError{Path: path, Msg: fmt.Sprintf("unknown kind %q", k), Err: ErrUnknownKind}
-	}
+	return env.Kind, nil
 }

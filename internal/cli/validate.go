@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -33,10 +34,11 @@ Exit code 2 indicates validation or strict lint failure (design doc sections 10.
 func runValidate(cmd *cobra.Command, args []string, strict bool) error {
 	_ = args
 	g := Globals()
-	graph, _, err := prepareProjectGraph(g.ProjectRoot, g)
+	rc, err := prepareResolvedConfig(g)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
+	graph := rc.Graph()
 
 	findings := policy.Lint(graph)
 	if strict && policy.HasHighSeverityLint(findings) {
@@ -45,7 +47,13 @@ func runValidate(cmd *cobra.Command, args []string, strict bool) error {
 		}
 		return NewExitError(ExitValidationError, fmt.Errorf("validation failed: high-severity policy lint findings (--strict)"))
 	}
-	return writeValidateSuccess(cmd, graph, g, findings)
+	if err := writeValidateSuccess(cmd, graph, g, findings); err != nil {
+		return err
+	}
+	if err := config.WriteSnapshot(rc); err != nil {
+		return fmt.Errorf("validate: write resolved config snapshot: %w", err)
+	}
+	return nil
 }
 
 func writeValidateSuccess(cmd *cobra.Command, graph *spec.ProjectGraph, g *Global, findings []policy.LintFinding) error {

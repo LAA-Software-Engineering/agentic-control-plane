@@ -73,7 +73,7 @@ func runLogs(cmd *cobra.Command, runID, workflow, tenantID, threadID, actorID st
 		return NewExitErrorf(ExitValidationError, "logs: --run cannot be combined with tenant/thread/actor filters")
 	}
 
-	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
+	graph, root, err := prepareProjectGraph(g)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}

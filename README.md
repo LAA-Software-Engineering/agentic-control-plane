@@ -164,7 +164,20 @@ Notes:
 | `-o` / `--output` | `table`, `json`, or `yaml` |
 | `--no-color` | ASCII-friendly validate output |
 
-Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md) (`0` success, `2` validation, **`3` plan/apply conflict** when deployment state changed after `plan`, `4` execution, `5` policy denial, …).
+Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md) (`0` success, `2` validation, **`3` plan/apply conflict** when deployment state changed after `plan` or resolved config drifted before `run`, `4` execution, `5` policy denial, …).
+
+### User-local config (per-developer overrides)
+
+Config is resolved in this order (highest wins): **CLI flags** → **environment overlay** (`-e`) → **project YAML** → **user-local** → **built-in defaults**.
+
+Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
+
+| Path | Scope |
+|------|--------|
+| `~/.config/agentctl/config.yaml` | Global per-user defaults (`defaults`, `state`, `providers`, `traces`, `telemetry`) |
+| `.agentic/local.yaml` under `--project` | Project-scoped overrides (same fields; wins over the global file) |
+
+`validate`, `plan`, and `apply` write `.agentic/resolved-config.json` (digest of the resolved graph + env + state path). `run` rejects drift from that snapshot with exit **3** — re-run `validate` or `plan` after changing config.
 
 ---
 
@@ -175,6 +188,7 @@ Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DES
 | `cmd/agentctl` | CLI entrypoint |
 | `internal/cli` | Cobra commands, flags, golden tests |
 | `internal/spec` | YAML types, normalize, validate |
+| `internal/config` | Layered config resolution, immutable snapshot |
 | `internal/project` | Load project + imports |
 | `internal/plan` | Planner and risk summary |
 | `internal/apply` | Apply plan to deployment store |

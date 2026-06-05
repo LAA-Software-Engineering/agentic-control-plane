@@ -49,7 +49,7 @@ func TestDiff_afterApply_noDifferences(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "diff2.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestDiff_singleResource_inSync(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "diff3.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestDiff_singleResource_policyUpdate(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "diff4.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestDiff_json_inSyncSingleTarget(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "diff9.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
