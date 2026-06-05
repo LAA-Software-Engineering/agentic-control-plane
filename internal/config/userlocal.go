@@ -32,7 +32,7 @@ type UserLocalOverlay struct {
 // Global discovery honors XDG_CONFIG_HOME when set, otherwise $HOME/.config.
 func DiscoverUserLocalPaths(projectRoot, homeDir string) []string {
 	var paths []string
-	if cfgBase := xdgConfigBase(homeDir); cfgBase != "" {
+	if cfgBase := globalConfigDir(homeDir); cfgBase != "" {
 		p := filepath.Join(cfgBase, filepath.FromSlash(GlobalUserLocalRel))
 		if fileExists(p) {
 			paths = append(paths, p)
@@ -52,15 +52,21 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-func xdgConfigBase(homeDir string) string {
+// globalConfigDir returns the directory that contains the global user-local file
+// (…/agentctl/config.yaml). When explicitHome is set, only explicitHome/.config is used
+// (test isolation). Otherwise XDG_CONFIG_HOME wins, then os.UserHomeDir()/.config.
+func globalConfigDir(explicitHome string) string {
+	if h := strings.TrimSpace(explicitHome); h != "" {
+		return filepath.Join(h, ".config")
+	}
 	if xdg := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdg != "" {
 		return filepath.Clean(xdg)
 	}
-	homeDir = strings.TrimSpace(homeDir)
-	if homeDir == "" {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
-	return filepath.Join(homeDir, ".config")
+	return filepath.Join(home, ".config")
 }
 
 // LoadUserLocalOverlay reads and strictly decodes one user-local YAML file.

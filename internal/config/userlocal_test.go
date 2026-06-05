@@ -67,12 +67,11 @@ func TestMergeUserLocalOverlays_precedence(t *testing.T) {
 
 func TestDiscoverUserLocalPaths_xdgConfigHome(t *testing.T) {
 	root := t.TempDir()
-	home := t.TempDir()
 	xdg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 	writeYAML(t, filepath.Join(xdg, "agentctl", "config.yaml"), "defaults:\n  model: xdg\n")
 
-	got := DiscoverUserLocalPaths(root, home)
+	got := DiscoverUserLocalPaths(root, "")
 	if len(got) != 1 {
 		t.Fatalf("paths = %v, want 1", got)
 	}

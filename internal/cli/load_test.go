@@ -42,6 +42,7 @@ spec:
 	ResetGlobalsForTest()
 	global = Global{ProjectRoot: root}
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	rc, err := prepareResolvedConfig(&global)
 	if err != nil {

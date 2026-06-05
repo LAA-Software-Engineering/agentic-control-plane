@@ -95,15 +95,7 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 		return nil, fmt.Errorf("config: project root: %w", err)
 	}
 
-	home := strings.TrimSpace(opts.HomeDir)
-	if home == "" {
-		home, err = os.UserHomeDir()
-		if err != nil {
-			home = ""
-		}
-	}
-
-	userLocal, err := loadMergedUserLocal(root, home)
+	userLocal, err := loadMergedUserLocal(root, strings.TrimSpace(opts.HomeDir))
 	if err != nil {
 		return nil, err
 	}
