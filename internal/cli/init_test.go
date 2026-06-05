@@ -52,7 +52,7 @@ func TestInit_defaultPolicyExpandsShellSafePreset(t *testing.T) {
 
 	ResetGlobalsForTest()
 	g := &Global{ProjectRoot: filepath.Join(parent, name)}
-	graph, _, err := prepareProjectGraph(g.ProjectRoot, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}

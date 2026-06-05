@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,30 @@ func copyPlanFixture(t *testing.T, dstDir string) {
 		if err := os.WriteFile(filepath.Join(dstDir, e.Name()), b, 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestPlan_json_includesResolvedConfigDigest(t *testing.T) {
+	root := t.TempDir()
+	copyPlanFixture(t, root)
+	db := filepath.Join(t.TempDir(), "plan-json.db")
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\nbody=%s", err, out.String())
+	}
+	d, ok := payload["resolvedConfigDigest"].(string)
+	if !ok || strings.TrimSpace(d) == "" {
+		t.Fatalf("resolvedConfigDigest missing or empty: %#v", payload["resolvedConfigDigest"])
 	}
 }
 
@@ -70,7 +95,7 @@ func TestPlan_afterApply_noChanges(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "plan2.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +135,7 @@ func TestPlan_policyCostIncrease_riskDelta(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "plan3.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}

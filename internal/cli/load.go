@@ -2,32 +2,30 @@ package cli
 
 import (
 	"fmt"
-	"path/filepath"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
-// prepareProjectGraph loads the project from disk, applies defaults and optional environment
-// overlays, and validates. projectRoot is the directory containing project.yaml (typically
-// [Global.ProjectRoot]).
-func prepareProjectGraph(projectRoot string, g *Global) (*spec.ProjectGraph, string, error) {
-	root, err := filepath.Abs(filepath.Clean(projectRoot))
+// prepareResolvedConfig loads and resolves the project configuration using the full
+// precedence ladder (CLI > environment > project > user-local > defaults).
+func prepareResolvedConfig(g *Global) (*config.ResolvedConfig, error) {
+	if g == nil {
+		return nil, fmt.Errorf("cli: nil globals")
+	}
+	return config.Resolve(config.ResolveOptions{
+		ProjectRoot: g.ProjectRoot,
+		Env:         g.Env,
+		StatePath:   g.StatePath,
+	})
+}
+
+// prepareProjectGraph resolves configuration and returns the validated graph and root.
+// Prefer [prepareResolvedConfig] when the resolved snapshot or state path is needed.
+func prepareProjectGraph(g *Global) (*spec.ProjectGraph, string, error) {
+	rc, err := prepareResolvedConfig(g)
 	if err != nil {
-		return nil, "", fmt.Errorf("project root: %w", err)
+		return nil, "", err
 	}
-	graph, err := project.LoadProject(root)
-	if err != nil {
-		return nil, root, err
-	}
-	spec.NormalizeProjectGraph(graph)
-	graph, err = local.ApplyEnvironment(graph, g.Env)
-	if err != nil {
-		return nil, root, err
-	}
-	if err := spec.ValidateProjectGraph(graph, root); err != nil {
-		return nil, root, err
-	}
-	return graph, root, nil
+	return rc.Graph(), rc.ProjectRoot(), nil
 }

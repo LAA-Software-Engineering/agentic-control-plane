@@ -40,7 +40,7 @@ func TestStateList_afterApply_table(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "state-apply.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestStateList_afterApply_json(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "state-json.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestStateShow_afterApply(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "state-show.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestStateShow_json_fullSpec(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "state-showj.db")
 
 	g := &Global{ProjectRoot: root}
-	graph, _, err := prepareProjectGraph(root, g)
+	graph, _, err := prepareProjectGraph(g)
 	if err != nil {
 		t.Fatal(err)
 	}

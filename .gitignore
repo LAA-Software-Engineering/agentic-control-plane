@@ -36,3 +36,5 @@ go.work.sum
 
 tmp/
 examples/**/.agentic/
+**/.agentic/local.yaml
+**/.agentic/resolved-config.json

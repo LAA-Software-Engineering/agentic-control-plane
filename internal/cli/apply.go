@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/apply"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
@@ -70,16 +71,13 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 	g := Globals()
 	approved := flagAutoApprove || envAutoApproveEnabled()
 
-	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
+	rc, err := prepareResolvedConfig(g)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
-
-	env := planEnvironment(g)
-	dsn, err := resolveStateSQLitePath(root, graph, g.StatePath)
-	if err != nil {
-		return fmt.Errorf("apply: resolve state path: %w", err)
-	}
+	graph := rc.Graph()
+	env := rc.Environment()
+	dsn := rc.StatePath()
 	if err := os.MkdirAll(filepath.Dir(dsn), 0o755); err != nil {
 		return fmt.Errorf("apply: create state directory: %w", err)
 	}
@@ -96,7 +94,10 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 	}
 
 	if len(pl.Operations) == 0 {
-		return writeApplyEmptyOutput(cmd, env, dsn, pl, g)
+		if err := writeApplyEmptyOutput(cmd, env, dsn, pl, rc, g); err != nil {
+			return err
+		}
+		return config.WriteSnapshot(rc)
 	}
 
 	if g.Output != render.FormatTable {
@@ -133,7 +134,10 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 		return fmt.Errorf("apply: %w", err)
 	}
 
-	return writeApplySuccessOutput(cmd, env, dsn, pl, g, at)
+	if err := writeApplySuccessOutput(cmd, env, dsn, pl, rc, g, at); err != nil {
+		return err
+	}
+	return config.WriteSnapshot(rc)
 }
 
 func readApplyConfirmation(r io.Reader) (bool, error) {
@@ -145,16 +149,16 @@ func readApplyConfirmation(r io.Reader) (bool, error) {
 	return s == "y" || s == "yes", nil
 }
 
-func writeApplyEmptyOutput(cmd *cobra.Command, env, dsn string, pl *plan.Plan, g *Global) error {
+func writeApplyEmptyOutput(cmd *cobra.Command, env, dsn string, pl *plan.Plan, rc *config.ResolvedConfig, g *Global) error {
 	out := cmd.OutOrStdout()
 	switch g.Output {
 	case render.FormatJSON:
-		m := planJSONModel(env, dsn, pl)
+		m := planJSONModel(env, dsn, pl, rc)
 		m["applied"] = false
 		m["message"] = "no changes"
 		return render.WriteJSON(out, m)
 	case render.FormatYAML:
-		m := planJSONModel(env, dsn, pl)
+		m := planJSONModel(env, dsn, pl, rc)
 		m["applied"] = false
 		m["message"] = "no changes"
 		return render.WriteYAML(out, m)
@@ -164,17 +168,17 @@ func writeApplyEmptyOutput(cmd *cobra.Command, env, dsn string, pl *plan.Plan, g
 	}
 }
 
-func writeApplySuccessOutput(cmd *cobra.Command, env, dsn string, pl *plan.Plan, g *Global, at time.Time) error {
+func writeApplySuccessOutput(cmd *cobra.Command, env, dsn string, pl *plan.Plan, rc *config.ResolvedConfig, g *Global, at time.Time) error {
 	out := cmd.OutOrStdout()
 	c, u, d := planCounts(pl)
 	switch g.Output {
 	case render.FormatJSON:
-		m := planJSONModel(env, dsn, pl)
+		m := planJSONModel(env, dsn, pl, rc)
 		m["applied"] = true
 		m["appliedAt"] = at.Format(time.RFC3339Nano)
 		return render.WriteJSON(out, m)
 	case render.FormatYAML:
-		m := planJSONModel(env, dsn, pl)
+		m := planJSONModel(env, dsn, pl, rc)
 		m["applied"] = true
 		m["appliedAt"] = at.Format(time.RFC3339Nano)
 		return render.WriteYAML(out, m)

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
@@ -31,6 +32,7 @@ func runProjRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = os.Remove(config.SnapshotPath(abs))
 	return abs
 }
 
@@ -41,6 +43,7 @@ func runPolicyRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = os.Remove(config.SnapshotPath(abs))
 	return abs
 }
 
@@ -51,6 +54,7 @@ func runSafetyRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = os.Remove(config.SnapshotPath(abs))
 	return abs
 }
 

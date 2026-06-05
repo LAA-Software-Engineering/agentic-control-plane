@@ -56,7 +56,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	g := Globals()
 
-	graph, root, err := prepareProjectGraph(g.ProjectRoot, g)
+	graph, root, err := prepareProjectGraph(g)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}

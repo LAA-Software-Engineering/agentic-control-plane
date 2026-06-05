@@ -119,7 +119,7 @@ func runInspect(cmd *cobra.Command, args []string) error {
 		return NewExitError(ExitValidationError, fmt.Errorf("inspect: %w", err))
 	}
 	gl := Globals()
-	graph, _, err := prepareProjectGraph(gl.ProjectRoot, gl)
+	graph, _, err := prepareProjectGraph(gl)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
