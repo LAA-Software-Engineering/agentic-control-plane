@@ -36,8 +36,11 @@ func TestStartRun_attributionDefaultsAndTracePropagation(t *testing.T) {
 	if got.Source != state.DefaultSource {
 		t.Fatalf("source = %q", got.Source)
 	}
-	if got.RequestID != "run-attr" {
-		t.Fatalf("request_id = %q want run-attr", got.RequestID)
+	if got.RequestID == "" {
+		t.Fatal("expected generated request_id")
+	}
+	if got.RequestID == got.RunID {
+		t.Fatalf("request_id should differ from run_id: %q", got.RequestID)
 	}
 
 	if _, err := st.AppendTraceEvent(ctx, "run-attr", start, "run.started", "", `{}`); err != nil {

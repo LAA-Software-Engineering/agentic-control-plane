@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
 )
 
 const runSelectColumns = `run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name, tenant_id, thread_id, actor_id, parent_run_id, request_id, idempotency_key, source`
@@ -29,7 +30,7 @@ func (s *Store) StartRun(ctx context.Context, r state.Run) error {
 	}
 	state.NormalizeAttribution(&attr)
 	if attr.RequestID == "" {
-		attr.RequestID = r.RunID
+		attr.RequestID = util.NewRequestID()
 	}
 	at := r.StartedAt.UTC().Format(time.RFC3339Nano)
 	var parent, idem any

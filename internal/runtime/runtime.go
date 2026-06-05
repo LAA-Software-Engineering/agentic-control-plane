@@ -38,6 +38,8 @@ type WorkflowRunOptions struct {
 	RequestID      string
 	IdempotencyKey string
 	Source         string
+	// RequireAttribution rejects runs when tenant_id, thread_id, or actor_id is omitted.
+	RequireAttribution bool
 }
 
 // HitlDecisionOptions configures a non-interactive HITL resolution on resume.

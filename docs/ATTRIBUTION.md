@@ -11,7 +11,7 @@ Issue [#111](https://github.com/LAA-Software-Engineering/agentic-control-plane/i
 | `actor_id` | Who triggered the run (caller-asserted for now) |
 | `parent_run_id` | Lineage for sub-runs (not set on resume of the same run) |
 | `request_id` | Per-invocation correlation id (distinct from `run_id`) |
-| `idempotency_key` | Optional dedupe key for accidental re-triggers |
+| `idempotency_key` | Client reference key (stored only; dedupe is not enforced yet) |
 | `source` | Origin label (`cli`, `actions`, `api`, …) |
 
 Trace events duplicate `tenant_id`, `thread_id`, and `actor_id` from the parent run so `logs` and the inspector can filter without joins.
@@ -25,7 +25,14 @@ When flags are omitted, `agentctl run` stores:
 - `actor_id`: `user-1`
 - `source`: `cli`
 
-**Do not rely on these defaults in CI or production.** Pass real actor ids (for example the CI principal) and include tenant/environment context in `thread_id`.
+**Do not rely on these defaults in CI or production.** A stderr warning is emitted when defaults apply. For CI/prod, pass real actor ids, set env vars, or enable the guardrail:
+
+```bash
+export AGENTCTL_REQUIRE_ATTRIBUTION=1
+# or: agentctl run ... --require-attribution --tenant-id ... --thread-id ... --actor-id ...
+```
+
+Env overrides when flags are omitted: `AGENTCTL_TENANT_ID`, `AGENTCTL_THREAD_ID`, `AGENTCTL_ACTOR_ID`.
 
 ```bash
 agentctl run workflow/demo \
@@ -58,7 +65,15 @@ agentctl logs --tenant-id acme --thread-id prod-review-42
 
 When telemetry is enabled, spans emit `gen_ai.tenant.id`, `gen_ai.thread.id`, `gen_ai.actor.id`, `gen_ai.run.id`, and `gen_ai.request.id` alongside existing gen_ai attributes. See [OTEL.md](./OTEL.md).
 
+## request_id
+
+When omitted, [state.RuntimeStore.StartRun] assigns a new UUID via `util.NewRequestID()`. Legacy rows migrated from pre-005 databases may have `request_id == run_id`.
+
+## Idempotency key
+
+`idempotency_key` is persisted and exposed in JSON for future dedupe. There is no unique index or at-most-once enforcement in this release — do not assume idempotent execution from the key alone.
+
 ## Production guidance
 
 - SQLite attribution is advisory; DB-level tenant isolation belongs to a future remote/Postgres store.
-- `actor_id` is supplied by the caller and is not authenticated in this release.
+- `actor_id` is supplied by the caller and is not authenticated in this release. Do not use attribution for access control.

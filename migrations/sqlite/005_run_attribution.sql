@@ -1,4 +1,5 @@
 -- Tenant/thread/actor attribution for runs and trace events (issue #111).
+-- Default literals match internal/state.DefaultTenantID, DefaultThreadID, DefaultActorID, DefaultSource.
 
 ALTER TABLE runs ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'tenant-1';
 ALTER TABLE runs ADD COLUMN thread_id TEXT NOT NULL DEFAULT 'thread-1';

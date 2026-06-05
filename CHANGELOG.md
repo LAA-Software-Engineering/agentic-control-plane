@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`agentctl logs` table output** (issue #111): the default (non-JSON) run list adds `TENANT`, `THREAD`, and `ACTOR` columns. Scripts that parse fixed column positions should switch to `-o json` or match by header names.
 - **Breaking — tool calls without explicit policy are no longer unrestricted.** Previously, `CheckToolCall` with a nil [spec.PolicySpec] allowed all tools. Now fail-closed safety always applies from the project graph (even when the workflow omits `spec.policy` or the Policy resource is missing).
 - Tools with **no** `spec.safety` block behave as **untrusted with side effects** after normalization → require `--approve` unless an explicit `approvals.requiredFor` rule matches.
 

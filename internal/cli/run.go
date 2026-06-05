@@ -37,6 +37,7 @@ func newRunCmd() *cobra.Command {
 	var requestID string
 	var idempotencyKey string
 	var source string
+	var requireAttribution bool
 
 	cmd := &cobra.Command{
 		Use:          "run workflow/<name>",
@@ -54,8 +55,10 @@ When a run pauses for human approval, resume with --decision and related flags, 
 --auto-approve / AGENTCTL_AUTO_APPROVE=1 for non-interactive approval.
 
 Attribution flags (--tenant-id, --thread-id, --actor-id) scope runs for multi-tenant logs and
-compliance. When omitted, local defaults apply (tenant-1 / thread-1 / user-1). Never rely on
-defaults in CI or production; pass real actor ids and include tenant/env in thread_id.
+compliance. When omitted, local defaults apply (tenant-1 / thread-1 / user-1) with a stderr
+warning. Never rely on defaults in CI or production; pass real actor ids, set
+AGENTCTL_REQUIRE_ATTRIBUTION=1, or use --require-attribution. Env overrides: AGENTCTL_TENANT_ID,
+AGENTCTL_THREAD_ID, AGENTCTL_ACTOR_ID. The idempotency-key field is stored metadata only (no dedupe yet).
 
 Examples:
   agentctl run workflow/demo --input topic=hello
@@ -92,7 +95,7 @@ Exit codes (section 11.2):
 				}
 			}
 			return runRun(cmd, wfName, resumeRunID, inputFile, inputPairs, approves, autoApprove, decision, decisionEditJSON, decisionSwitchTarget,
-				tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source)
+				tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireAttribution)
 		},
 	}
 	cmd.Flags().StringVar(&inputFile, "input-file", "", "path to JSON file with workflow input object")
@@ -108,8 +111,9 @@ Exit codes (section 11.2):
 	cmd.Flags().StringVar(&actorID, "actor-id", "", "who triggered this run (default: user-1; use a real principal in CI/prod)")
 	cmd.Flags().StringVar(&parentRunID, "parent-run-id", "", "origin run for sub-runs (not used for --resume of the same run)")
 	cmd.Flags().StringVar(&requestID, "request-id", "", "per-invocation correlation id (generated when omitted)")
-	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "optional dedupe key for accidental re-triggers")
+	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "client reference key stored on the run (dedupe not enforced yet)")
 	cmd.Flags().StringVar(&source, "source", "", "run origin label (default: cli)")
+	cmd.Flags().BoolVar(&requireAttribution, "require-attribution", false, "require explicit --tenant-id, --thread-id, and --actor-id (or set AGENTCTL_REQUIRE_ATTRIBUTION=1)")
 	return cmd
 }
 
@@ -172,6 +176,9 @@ func classifyRunError(err error) int {
 	if _, ok := policy.AsDenied(err); ok {
 		return ExitPolicyDenied
 	}
+	if errors.Is(err, state.ErrAttributionRequired) {
+		return ExitValidationError
+	}
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "validate project"):
@@ -198,7 +205,7 @@ func classifyRunError(err error) int {
 }
 
 func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPairs, approves []string, autoApprove bool, decision, decisionEditJSON, decisionSwitchTarget string,
-	tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string) error {
+	tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string, requireAttribution bool) error {
 	ctx := context.Background()
 	g := Globals()
 
@@ -248,13 +255,10 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 			RunID:           resumeID,
 		}
 		if resumeID == "" {
-			opts.TenantID = strings.TrimSpace(tenantID)
-			opts.ThreadID = strings.TrimSpace(threadID)
-			opts.ActorID = strings.TrimSpace(actorID)
-			opts.ParentRunID = strings.TrimSpace(parentRunID)
-			opts.RequestID = strings.TrimSpace(requestID)
-			opts.IdempotencyKey = strings.TrimSpace(idempotencyKey)
-			opts.Source = strings.TrimSpace(source)
+			applyRunAttributionOpts(&opts, tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireAttribution)
+			warnAttributionDefaults(cmd.ErrOrStderr(), state.RunAttribution{
+				TenantID: opts.TenantID, ThreadID: opts.ThreadID, ActorID: opts.ActorID,
+			})
 		}
 		if err := applyHitlRunOptions(&opts, resumeID != "", autoApprove, decision, decisionEditJSON, decisionSwitchTarget); err != nil {
 			return NewExitError(ExitValidationError, err)

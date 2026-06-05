@@ -289,3 +289,83 @@ func TestExecuteWorkflow_resumeAfterInterrupt(t *testing.T) {
 		t.Fatalf("fetch step.started count = %d want 1", fetchStarts)
 	}
 }
+
+func TestExecuteWorkflow_resume_preservesAttribution(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-attr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	root := testRunProjRoot(t)
+	graph, err := project.LoadProject(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.NormalizeProjectGraph(graph)
+	graph, err = ApplyEnvironment(graph, "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runID := "resume-attr-1"
+	started := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+	inputJSON := []byte(`{"topic":"resume-attr"}`)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: runID, WorkflowName: "demo", Env: "dev", Status: state.RunStatusRunning,
+		StartedAt: started, InputJSON: string(inputJSON), TotalCostUSD: 0,
+		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot",
+		RequestID: "req-original", Source: "cli",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var input map[string]any
+	if err := json.Unmarshal(inputJSON, &input); err != nil {
+		t.Fatal(err)
+	}
+	idx := 0
+	ex := &engine.Executor{
+		Graph: graph, ProjectRoot: root,
+		Tools: tools.NewRegistry(graph), Models: models.NewRegistry(graph),
+		Store: st, Trace: trace.NewRecorder(st),
+		Now: func() time.Time { return started },
+	}
+	if err := ex.Run(ctx, engine.RunInput{
+		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
+		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot", RequestID: "req-original",
+		InterruptAfterStepIndex: &idx,
+	}); !errors.Is(err, engine.ErrInterrupted) {
+		t.Fatalf("interrupt: %v", err)
+	}
+
+	rt := NewRuntime(root, st)
+	rt.Now = func() time.Time { return started.Add(time.Hour) }
+	if _, err := rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
+		RunID: runID, Resume: true, EnvironmentName: "staging",
+		TenantID: "other-tenant", ThreadID: "thread-override", ActorID: "other-actor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.GetRun(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TenantID != "acme" || got.ThreadID != "thread-original" || got.ActorID != "starter-bot" {
+		t.Fatalf("run attribution changed: %+v", got)
+	}
+
+	events, err := trace.NewReader(st).ListByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.Type == trace.EventRunResumed {
+			if ev.TenantID != "acme" || ev.ThreadID != "thread-original" || ev.ActorID != "starter-bot" {
+				t.Fatalf("resume trace attribution: %+v", ev)
+			}
+		}
+	}
+}

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestNewTracer_disabledZeroCost(t *testing.T) {
@@ -18,6 +20,57 @@ func TestNewTracer_disabledZeroCost(t *testing.T) {
 		t.Fatal("disabled tracer should not return handle")
 	}
 	tr.Shutdown()
+}
+
+func TestBeginRun_attributionAttrsOnExportedSpan(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	tr := telemetry.NewTracerWithProvider(tp, "0.1.0")
+	defer tr.Shutdown()
+
+	h := tr.BeginRun(context.Background(), telemetry.RunStartAttrs{
+		RunID: "run-1", Workflow: "demo", AgentName: "agent-a",
+		TenantID: "acme", ThreadID: "thread-9", ActorID: "ci-bot", RequestID: "req-1",
+	})
+	if h == nil {
+		t.Fatal("nil handle")
+	}
+	h.End(nil)
+
+	var runSpan sdktrace.ReadOnlySpan
+	for _, sp := range sr.Ended() {
+		if sp.Name() == telemetry.SpanAgentRun {
+			runSpan = sp
+			break
+		}
+	}
+	if runSpan == nil {
+		t.Fatal("missing agent.run span")
+	}
+	if got := attrString(runSpan, telemetry.AttrTenantID); got != "acme" {
+		t.Fatalf("tenant = %q", got)
+	}
+	if got := attrString(runSpan, telemetry.AttrThreadID); got != "thread-9" {
+		t.Fatalf("thread = %q", got)
+	}
+	if got := attrString(runSpan, telemetry.AttrActorID); got != "ci-bot" {
+		t.Fatalf("actor = %q", got)
+	}
+	if got := attrString(runSpan, telemetry.AttrRequestID); got != "req-1" {
+		t.Fatalf("request = %q", got)
+	}
+	if got := attrString(runSpan, telemetry.AttrRunID); got != "run-1" {
+		t.Fatalf("run id = %q", got)
+	}
+}
+
+func attrString(sp sdktrace.ReadOnlySpan, key string) string {
+	for _, a := range sp.Attributes() {
+		if string(a.Key) == key {
+			return a.Value.AsString()
+		}
+	}
+	return ""
 }
 
 func TestNewTracer_consoleExport_emitsRunSpan(t *testing.T) {
