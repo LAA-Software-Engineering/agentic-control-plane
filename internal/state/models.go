@@ -42,6 +42,13 @@ type Run struct {
 	TotalCostUSD     float64
 	WorkflowSpecHash string
 	EnvironmentName  string
+	TenantID         string
+	ThreadID         string
+	ActorID          string
+	ParentRunID      string
+	RequestID        string
+	IdempotencyKey   string
+	Source           string
 }
 
 // RunStep is one row in run_steps (design doc §14.2).
@@ -65,6 +72,19 @@ type TraceEvent struct {
 	Type      string
 	StepID    string
 	DataJSON  string
+	TenantID  string
+	ThreadID  string
+	ActorID   string
+}
+
+// RunListFilter selects runs for logs and inspector queries (issue #111).
+// Empty filter fields are ignored. Limit is clamped via [ClampRunListLimit].
+type RunListFilter struct {
+	TenantID     string
+	ThreadID     string
+	ActorID      string
+	WorkflowName string
+	Limit        int
 }
 
 // Checkpoint status values stored in run_checkpoints (issue #105).

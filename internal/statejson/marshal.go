@@ -16,6 +16,9 @@ func TraceEvents(events []state.TraceEvent) []TraceEventRecord {
 			Timestamp: e.Timestamp.UTC().Format(time.RFC3339Nano),
 			Type:      e.Type,
 			StepID:    e.StepID,
+			TenantID:  e.TenantID,
+			ThreadID:  e.ThreadID,
+			ActorID:   e.ActorID,
 		}
 		if e.DataJSON != "" {
 			rec.Data = json.RawMessage(e.DataJSON)
@@ -34,13 +37,20 @@ func Run(r state.Run) RunRecord {
 		in = "{}"
 	}
 	rec := RunRecord{
-		RunID:        r.RunID,
-		Workflow:     r.WorkflowName,
-		Env:          r.Env,
-		Status:       r.Status,
-		StartedAt:    r.StartedAt.UTC().Format(time.RFC3339Nano),
-		TotalCostUsd: r.TotalCostUSD,
-		Input:        json.RawMessage(in),
+		RunID:          r.RunID,
+		Workflow:       r.WorkflowName,
+		Env:            r.Env,
+		Status:         r.Status,
+		StartedAt:      r.StartedAt.UTC().Format(time.RFC3339Nano),
+		TotalCostUsd:   r.TotalCostUSD,
+		TenantID:       r.TenantID,
+		ThreadID:       r.ThreadID,
+		ActorID:        r.ActorID,
+		ParentRunID:    r.ParentRunID,
+		RequestID:      r.RequestID,
+		IdempotencyKey: r.IdempotencyKey,
+		Source:         r.Source,
+		Input:          json.RawMessage(in),
 	}
 	if r.FinishedAt != nil {
 		rec.FinishedAt = r.FinishedAt.UTC().Format(time.RFC3339Nano)

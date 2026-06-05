@@ -6,3 +6,8 @@ import "github.com/google/uuid"
 func NewRunID() string {
 	return uuid.NewString()
 }
+
+// NewRequestID returns a per-invocation correlation identifier distinct from [NewRunID] (issue #111).
+func NewRequestID() string {
+	return uuid.NewString()
+}

@@ -39,6 +39,8 @@ type RuntimeStore interface {
 	ListRecentRuns(ctx context.Context, limit int) ([]Run, error)
 	// ListRunsByWorkflow returns runs for the given workflow_name ordered by started_at descending.
 	ListRunsByWorkflow(ctx context.Context, workflowName string, limit int) ([]Run, error)
+	// ListRunsFiltered returns runs matching optional tenant/thread/actor/workflow filters.
+	ListRunsFiltered(ctx context.Context, filter RunListFilter) ([]Run, error)
 	ListTraceEventsByRunID(ctx context.Context, runID string) ([]TraceEvent, error)
 	// DeleteRunsStartedBefore removes every run with started_at strictly before cutoff (UTC), and
 	// associated run_steps / trace_events (SQLite: ON DELETE CASCADE). Used for trace retention (issue #75).
