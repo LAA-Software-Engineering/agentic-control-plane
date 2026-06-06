@@ -1,0 +1,7 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: demo
+spec:
+  policy: default
+  steps: []

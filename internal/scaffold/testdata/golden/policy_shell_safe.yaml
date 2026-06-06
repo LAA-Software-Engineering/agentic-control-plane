@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: guarded
+spec:
+  preset: shell_safe
+  execution:
+    maxWallClockSeconds: 300
+    maxTotalCostUsd: 5

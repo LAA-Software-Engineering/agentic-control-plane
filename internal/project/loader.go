@@ -79,6 +79,11 @@ type resourceKey struct {
 	name string
 }
 
+// FindProjectFile returns the absolute path to project.yaml or project.yml under dir.
+func FindProjectFile(dir string) (string, error) {
+	return findProjectFile(dir)
+}
+
 func findProjectFile(dir string) (string, error) {
 	for _, name := range []string{"project.yaml", "project.yml"} {
 		p := filepath.Join(dir, name)
