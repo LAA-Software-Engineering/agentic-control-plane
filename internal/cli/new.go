@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/scaffold"
@@ -121,20 +120,18 @@ func runNew(cmd *cobra.Command, dryRun bool, gen newGenerator) error {
 }
 
 func mapScaffoldError(err error) error {
-	switch {
-	case errors.Is(err, scaffold.ErrInvalidName),
-		errors.Is(err, scaffold.ErrResourceExists):
+	if errors.Is(err, scaffold.ErrInvalidName) || errors.Is(err, scaffold.ErrResourceExists) {
 		return NewExitError(ExitValidationError, err)
-	default:
-		var presetErr *spec.ErrUnknownPreset
-		if errors.As(err, &presetErr) {
-			return NewExitError(ExitValidationError, err)
-		}
-		if strings.Contains(err.Error(), "unsupported tool kind") {
-			return NewExitError(ExitValidationError, err)
-		}
-		return NewExitError(ExitValidationError, fmt.Errorf("new: %w", err))
 	}
+	var presetErr *spec.ErrUnknownPreset
+	if errors.As(err, &presetErr) {
+		return NewExitError(ExitValidationError, err)
+	}
+	var kindErr *scaffold.UnsupportedToolKindError
+	if errors.As(err, &kindErr) {
+		return NewExitError(ExitValidationError, err)
+	}
+	return fmt.Errorf("new: %w", err)
 }
 
 func writeNewSuccess(cmd *cobra.Command, plan *scaffold.Plan) error {
@@ -210,9 +207,9 @@ func writeNewDryRun(cmd *cobra.Command, plan *scaffold.Plan) error {
 			if _, err := fmt.Fprintf(out, "\n--- project.yaml imports (after) ---\n+ %s\n", plan.ImportPath); err != nil {
 				return err
 			}
-			diff := importsDiff(plan.ProjectBefore, plan.ProjectAfter)
-			if diff != "" {
-				if _, err := fmt.Fprint(out, diff); err != nil {
+			preview := projectYAMLPreview(plan.ProjectBefore, plan.ProjectAfter)
+			if preview != "" {
+				if _, err := fmt.Fprint(out, preview); err != nil {
 					return err
 				}
 			}
@@ -225,14 +222,13 @@ func writeNewDryRun(cmd *cobra.Command, plan *scaffold.Plan) error {
 	}
 }
 
-func importsDiff(before, after []byte) string {
+func projectYAMLPreview(before, after []byte) string {
 	if bytes.Equal(before, after) {
 		return ""
 	}
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "\n--- project.yaml diff ---\n")
-	fmt.Fprintf(&buf, "--- before\n+++ after\n")
-	fmt.Fprintf(&buf, "%s", string(after))
+	fmt.Fprintf(&buf, "\n--- project.yaml (before) ---\n%s", before)
+	fmt.Fprintf(&buf, "\n--- project.yaml (after) ---\n%s", after)
 	return buf.String()
 }
 

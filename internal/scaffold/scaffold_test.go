@@ -188,7 +188,9 @@ func TestApply_rollbackOnInjectedFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	zero := 0
-	err = Apply(plan, Options{ProjectRoot: root, TestFailAfter: &zero})
+	opts := Options{ProjectRoot: root}
+	opts.testFailAfter = &zero
+	err = Apply(plan, opts)
 	if err == nil {
 		t.Fatal("expected injected failure")
 	}
@@ -255,6 +257,31 @@ func TestValidateResourceName(t *testing.T) {
 		if !tc.wantErr && err != nil {
 			t.Fatalf("%q: %v", tc.name, err)
 		}
+	}
+}
+
+func TestApply_singleFileWhenImportExists(t *testing.T) {
+	root := scaffoldFixtureRoot(t)
+	plan, err := GenerateTool(Options{ProjectRoot: root}, "solo", ToolKindMock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(plan.ProjectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate import already present without writing project.yaml.
+	plan.ImportAppended = false
+	plan.ProjectAfter = before
+	if err := Apply(plan, Options{ProjectRoot: root}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(plan.ProjectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("project.yaml should be unchanged when import is not appended")
 	}
 }
 

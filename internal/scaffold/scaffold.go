@@ -31,8 +31,8 @@ const (
 type Options struct {
 	ProjectRoot string
 	DryRun      bool
-	// TestFailAfter injects a commit failure after N successful renames when non-nil (tests only).
-	TestFailAfter *int
+	// testFailAfter injects a commit failure after N successful renames when non-nil (tests only).
+	testFailAfter *int
 }
 
 // Plan describes files that would be written without mutating the project.
@@ -95,8 +95,8 @@ func Apply(plan *Plan, opts Options) error {
 	}
 
 	failAfter := -1
-	if opts.TestFailAfter != nil {
-		failAfter = *opts.TestFailAfter
+	if opts.testFailAfter != nil {
+		failAfter = *opts.testFailAfter
 	}
 	c := &committer{root: root, failAfter: failAfter}
 	return c.commitFiles(edits)

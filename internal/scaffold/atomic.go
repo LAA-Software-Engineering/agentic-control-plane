@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
 )
 
 // stagedWrite tracks a temp file pending rename to its final path.
@@ -97,14 +98,14 @@ func (c *committer) stageWrite(e fileEdit) (stagedWrite, error) {
 func (c *committer) resolveUnderRoot(path string) (string, error) {
 	if filepath.IsAbs(path) {
 		abs := filepath.Clean(path)
-		if !isUnderRoot(c.root, abs) {
+		if !util.IsUnderRoot(c.root, abs) {
 			return "", fmt.Errorf("scaffold: path %q is outside project root", path)
 		}
 		return abs, nil
 	}
 	abs := filepath.Join(c.root, filepath.FromSlash(path))
 	abs = filepath.Clean(abs)
-	if !isUnderRoot(c.root, abs) {
+	if !util.IsUnderRoot(c.root, abs) {
 		return "", fmt.Errorf("scaffold: path %q resolves outside project root", path)
 	}
 	return abs, nil
@@ -140,14 +141,4 @@ func rollbackWrites(staged []stagedWrite) {
 		}
 		_ = os.Remove(sw.finalPath)
 	}
-}
-
-func isUnderRoot(root, p string) bool {
-	root = filepath.Clean(root)
-	p = filepath.Clean(p)
-	if root == p {
-		return true
-	}
-	sep := string(os.PathSeparator)
-	return strings.HasPrefix(p, root+sep)
 }

@@ -7,6 +7,24 @@ import (
 	"testing"
 )
 
+func TestGolden_toolHTTP(t *testing.T) {
+	root := scaffoldFixtureRoot(t)
+	plan, err := GenerateTool(Options{ProjectRoot: root}, "webhook", ToolKindHTTP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGoldenYAML(t, "tool_http.yaml", plan.ResourceYAML)
+}
+
+func TestGolden_toolMCP(t *testing.T) {
+	root := scaffoldFixtureRoot(t)
+	plan, err := GenerateTool(Options{ProjectRoot: root}, "mcpdemo", ToolKindMCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGoldenYAML(t, "tool_mcp.yaml", plan.ResourceYAML)
+}
+
 func TestGolden_toolNative(t *testing.T) {
 	root := scaffoldFixtureRoot(t)
 	plan, err := GenerateTool(Options{ProjectRoot: root}, "echo", ToolKindNative)

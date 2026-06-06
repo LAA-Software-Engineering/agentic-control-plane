@@ -2,13 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/scaffold"
 )
 
 func newTestProjectRoot(t *testing.T) string {
@@ -143,28 +142,75 @@ func TestNew_policy_workflow_agent(t *testing.T) {
 	}
 }
 
-func TestNew_rollbackOnFailure(t *testing.T) {
+func TestNew_invalidKind_exitValidation(t *testing.T) {
 	root := newTestProjectRoot(t)
-	projPath := filepath.Join(root, "project.yaml")
-	before, err := os.ReadFile(projPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	plan, err := scaffold.GenerateTool(scaffold.Options{ProjectRoot: root}, "rb", scaffold.ToolKindNative)
-	if err != nil {
-		t.Fatal(err)
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"new", "tool", "bad", "--kind", "nope", "--project", root})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
 	}
-	zero := 0
-	if err := scaffold.Apply(plan, scaffold.Options{ProjectRoot: root, TestFailAfter: &zero}); err == nil {
-		t.Fatal("expected failure")
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d err=%v", ExitCodeOf(err), err)
 	}
+}
 
-	after, err := os.ReadFile(projPath)
-	if err != nil {
+func TestNew_invalidPreset_exitValidation(t *testing.T) {
+	root := newTestProjectRoot(t)
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"new", "policy", "bad", "--preset", "nope", "--project", root})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d err=%v", ExitCodeOf(err), err)
+	}
+}
+
+func TestNew_missingProject_exitGeneric(t *testing.T) {
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"new", "tool", "foo", "--project", filepath.Join(t.TempDir(), "missing")})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if ExitCodeOf(err) != ExitGenericFailure {
+		t.Fatalf("exit=%d err=%v", ExitCodeOf(err), err)
+	}
+}
+
+func TestNew_dryRun_json(t *testing.T) {
+	root := newTestProjectRoot(t)
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"new", "tool", "jsoned", "--dry-run", "-o", "json", "--project", root})
+	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if string(after) != string(before) {
-		t.Fatal("project unchanged after rollback")
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\n%s", err, out.String())
+	}
+	if payload["dryRun"] != true {
+		t.Fatalf("payload: %v", payload)
+	}
+	if payload["name"] != "jsoned" {
+		t.Fatalf("payload: %v", payload)
 	}
 }

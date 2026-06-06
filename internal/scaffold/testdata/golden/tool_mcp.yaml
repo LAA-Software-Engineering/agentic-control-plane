@@ -1,0 +1,14 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: mcpdemo
+spec:
+  type: mcp
+  mcp:
+    transport: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-example"
+  safety:
+    sideEffects: true

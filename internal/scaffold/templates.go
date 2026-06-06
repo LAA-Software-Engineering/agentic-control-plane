@@ -1,11 +1,31 @@
 package scaffold
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
+
+// ErrUnsupportedToolKind is returned when --kind is not a supported tool type.
+var ErrUnsupportedToolKind = errors.New("scaffold: unsupported tool kind")
+
+// UnsupportedToolKindError carries the rejected kind name for errors.As.
+type UnsupportedToolKindError struct {
+	Kind string
+}
+
+func (e *UnsupportedToolKindError) Error() string {
+	if e == nil || e.Kind == "" {
+		return ErrUnsupportedToolKind.Error()
+	}
+	return fmt.Sprintf("scaffold: unsupported tool kind %q (want %s)", e.Kind, strings.Join(ToolKindNames(), ", "))
+}
+
+func (e *UnsupportedToolKindError) Is(target error) bool {
+	return target == ErrUnsupportedToolKind
+}
 
 // Tool kinds supported by agentctl new tool.
 const (
@@ -73,7 +93,7 @@ spec:
     sideEffects: true
 `, spec.APIVersionV0, name)), nil
 	default:
-		return nil, fmt.Errorf("scaffold: unsupported tool kind %q (want %s)", kind, strings.Join(ToolKindNames(), ", "))
+		return nil, &UnsupportedToolKindError{Kind: kind}
 	}
 }
 
