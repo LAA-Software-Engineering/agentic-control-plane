@@ -1519,18 +1519,16 @@ type TraceEvent struct {
 }
 ```
 
-Event types:
+Event types (issue #115 closed taxonomy, `TaxonomyVersion` 1):
 
-* run.started
-* run.finished
-* step.started
-* step.finished
-* step.failed
-* tool.called
-* tool.completed
-* model.called
-* model.completed
-* policy.denied
+* run_started, run_finished, run_error
+* llm_completion
+* tool_selection, tool_execution
+* hitl_request_created, hitl_decision_submitted, hitl_resolution_applied
+* memory_read, memory_write (reserved)
+* system_error
+
+Legacy dot-notation types (`run.started`, `tool.called`, …) are normalized to the above on read and by SQLite migration `006`.
 
 ---
 

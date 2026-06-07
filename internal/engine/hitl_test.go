@@ -136,6 +136,35 @@ func TestHitl_interruptThenApprove(t *testing.T) {
 	assertTraceContains(t, ex.Store, runID, trace.EventHitlRequestCreated, trace.EventHitlDecisionSubmitted)
 }
 
+func TestHitl_interrupt_emitsRequestAndRunError(t *testing.T) {
+	ex, _, runID, started := setupHitlExecutor(t)
+	ctx := context.Background()
+
+	err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "hitl", Env: "local", StartedAt: started, Input: map[string]any{},
+	})
+	if !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("first run: %v", err)
+	}
+
+	events, err := trace.NewReader(ex.Store).ListByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hitlReq, runErr bool
+	for _, ev := range events {
+		if ev.Type == string(trace.EventHitlRequestCreated) {
+			hitlReq = true
+		}
+		if ev.Type == string(trace.EventRunError) && strings.Contains(ev.DataJSON, `"reason":"hitl"`) {
+			runErr = true
+		}
+	}
+	if !hitlReq || !runErr {
+		t.Fatalf("expected hitl_request_created + run_error(hitl); hitl=%v runErr=%v events=%d", hitlReq, runErr, len(events))
+	}
+}
+
 func TestHitl_autoApprove(t *testing.T) {
 	ex, _, runID, started := setupHitlExecutor(t)
 	ctx := context.Background()

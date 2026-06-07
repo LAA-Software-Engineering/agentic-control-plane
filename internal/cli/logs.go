@@ -36,6 +36,8 @@ Without filters, lists recent runs (newest first). Use --run to print trace even
 (ordered by seq), --workflow to print events for recent runs of a workflow name, or
 --tenant-id / --thread-id / --actor-id to filter the run list (combinable).
 Use --event to filter trace events by closed event type (repeatable; issue #115).
+Canonical names are snake_case (e.g. tool_execution); legacy dot-notation (e.g. run.started)
+is accepted for --event filters only.
 
 Examples:
   agentctl logs
@@ -287,7 +289,7 @@ func formatTraceTable(events []state.TraceEvent) string {
 	}
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "SEQ\tTIME\tTYPE\tACTOR\tSTEP\tDATA")
+	fmt.Fprintln(w, "SEQ\tTIME\tTYPE\tACTOR TYPE\tSTEP\tDATA")
 	for _, e := range events {
 		step := e.StepID
 		if step == "" {

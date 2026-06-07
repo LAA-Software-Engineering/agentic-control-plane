@@ -116,7 +116,7 @@ func (s *Store) AppendTraceEvent(ctx context.Context, runID string, ts time.Time
 		dj = "{}"
 	}
 	if strings.TrimSpace(actorType) == "" {
-		actorType = "agent"
+		actorType = state.TraceActorTypeAgent
 	}
 	var sid any
 	if stepID != "" {

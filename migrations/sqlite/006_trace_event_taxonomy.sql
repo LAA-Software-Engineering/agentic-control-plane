@@ -1,4 +1,5 @@
 -- Trace event taxonomy (issue #115): actor_type column + migrate legacy type strings.
+-- Legacy type → canonical mappings must match internal/trace/legacy.go (LegacyEventTypeMappings).
 
 ALTER TABLE trace_events ADD COLUMN actor_type TEXT NOT NULL DEFAULT 'system';
 

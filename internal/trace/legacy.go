@@ -1,6 +1,7 @@
 package trace
 
-// legacyEventTypeMap translates pre-#115 dot-notation trace type strings to the closed taxonomy.
+// Legacy dot-notation → canonical mappings are also applied by SQLite migration 006
+// (migrations/sqlite/006_trace_event_taxonomy.sql). Keep both in sync when TaxonomyVersion changes.
 var legacyEventTypeMap = map[string]string{
 	"run.started":        string(EventRunStarted),
 	"run.finished":       string(EventRunFinished),
@@ -49,4 +50,14 @@ func NormalizeStoredEventType(raw string) string {
 		return mapped
 	}
 	return raw
+}
+
+// LegacyEventTypeMappings returns a copy of legacy dot-notation → canonical type mappings
+// applied on read and by migration 006. Tests use this to verify SQL and Go stay aligned.
+func LegacyEventTypeMappings() map[string]string {
+	out := make(map[string]string, len(legacyEventTypeMap))
+	for k, v := range legacyEventTypeMap {
+		out[k] = v
+	}
+	return out
 }
