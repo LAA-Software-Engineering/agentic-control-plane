@@ -219,6 +219,11 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 	if resumeID == "" && wfName == "" {
 		return NewExitError(ExitValidationError, fmt.Errorf("run: requires workflow/<name> or --resume <run-id>"))
 	}
+	if resumeID == "" {
+		if strings.TrimSpace(decision) != "" || strings.TrimSpace(decisionEditJSON) != "" || strings.TrimSpace(decisionSwitchTarget) != "" {
+			return NewExitError(ExitValidationError, fmt.Errorf("run: --decision requires --resume <run-id>"))
+		}
+	}
 
 	rc, err := prepareResolvedConfig(g)
 	if err != nil {
@@ -230,7 +235,8 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 		}
 		return fmt.Errorf("run: resolved config snapshot: %w", err)
 	}
-	root := rc.ProjectRoot()
+	env := rc.Environment()
+	dsn := rc.StatePath()
 
 	var inputJSON []byte
 	if resumeID == "" {
@@ -240,8 +246,6 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 		}
 	}
 
-	env := rc.Environment()
-	dsn := rc.StatePath()
 	if err := os.MkdirAll(filepath.Dir(dsn), 0o755); err != nil {
 		return fmt.Errorf("run: create state directory: %w", err)
 	}
@@ -252,34 +256,78 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 	}
 	defer func() { _ = st.Close() }()
 
-	rt := local.NewRuntime(root, st)
-	rt.AgentVersion = Version
+	resolveOpts := config.ResolveOptions{
+		ProjectRoot: g.ProjectRoot,
+		Env:         g.Env,
+		StatePath:   g.StatePath,
+	}
 
 	for {
-		opts := runtime.WorkflowRunOptions{
-			EnvironmentName: strings.TrimSpace(g.Env),
-			Env:             env,
-			InputJSON:       inputJSON,
-			ApprovedActions: approves,
-			Resume:          resumeID != "",
-			RunID:           resumeID,
+		activeRC := rc
+		var runID string
+		var runErr error
+		var wfRuntime string
+
+		if resumeID != "" {
+			run, gerr := st.GetRun(ctx, resumeID)
+			if gerr != nil {
+				return fmt.Errorf("run: get run: %w", gerr)
+			}
+			activeRC, err = local.ResolvedConfigForRun(run, resolveOpts, strings.TrimSpace(g.Env))
+			if err != nil {
+				return NewExitError(ExitValidationError, err)
+			}
+			wfRuntime = runtime.WorkflowRuntimeName(activeRC.Graph(), run.WorkflowName)
+		} else {
+			wfRuntime = runtime.WorkflowRuntimeName(activeRC.Graph(), wfName)
 		}
-		if resumeID == "" {
-			applyRunAttributionOpts(&opts, tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireAttribution)
+
+		factory, err := runtime.Lookup(wfRuntime)
+		if err != nil {
+			return NewExitError(ExitValidationError, fmt.Errorf("run: runtime %q: %w", wfRuntime, err))
+		}
+		rtExec, err := factory(runtime.Deps{
+			Store:        st,
+			AgentVersion: Version,
+		})
+		if err != nil {
+			return fmt.Errorf("run: create runtime: %w", err)
+		}
+
+		if resumeID != "" {
+			resOpts := runtime.ResumeOptions{
+				RunID:           resumeID,
+				EnvironmentName: strings.TrimSpace(g.Env),
+				ApprovedActions: approves,
+				AutoApprove:     autoApprove,
+			}
+			if err := applyHitlResumeOptions(&resOpts, autoApprove, decision, decisionEditJSON, decisionSwitchTarget); err != nil {
+				return NewExitError(ExitValidationError, err)
+			}
+			var result runtime.RunResult
+			result, runErr = rtExec.Resume(ctx, activeRC, resOpts)
+			runID = result.RunID
+		} else {
+			invOpts := runtime.InvokeOptions{
+				Env:             env,
+				EnvironmentName: strings.TrimSpace(g.Env),
+				InputJSON:       inputJSON,
+				ApprovedActions: approves,
+				AutoApprove:     autoApprove,
+				WorkflowName:    wfName,
+			}
+			applyRunAttributionInvokeOpts(&invOpts, tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireAttribution)
 			warnAttributionDefaults(cmd.ErrOrStderr(), state.RunAttribution{
-				TenantID: opts.TenantID, ThreadID: opts.ThreadID, ActorID: opts.ActorID,
+				TenantID: invOpts.TenantID, ThreadID: invOpts.ThreadID, ActorID: invOpts.ActorID,
 			})
+			applyHitlInvokeOptions(&invOpts, autoApprove)
+			var result runtime.RunResult
+			result, runErr = rtExec.Invoke(ctx, activeRC, invOpts)
+			runID = result.RunID
 		}
-		if err := applyHitlRunOptions(&opts, resumeID != "", autoApprove, decision, decisionEditJSON, decisionSwitchTarget); err != nil {
-			return NewExitError(ExitValidationError, err)
-		}
-		if !opts.Resume {
-			opts.WorkflowName = wfName
-		}
-		runID, runErr := rt.ExecuteWorkflow(ctx, opts)
 
 		outWfName := wfName
-		if opts.Resume && runID != "" {
+		if resumeID != "" && runID != "" {
 			if r, gerr := st.GetRun(ctx, runID); gerr == nil && r != nil {
 				outWfName = r.WorkflowName
 			}
@@ -287,7 +335,7 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 
 		if runErr == nil && runID != "" {
 			if r, gerr := st.GetRun(ctx, runID); gerr == nil && r != nil && r.Status == state.RunStatusInterrupted {
-				if opts.AutoApprove || strings.TrimSpace(decision) != "" {
+				if autoApprove || strings.TrimSpace(decision) != "" {
 					if _, gerr := requirePendingHitlGate(ctx, st, runID); gerr != nil {
 						return gerr
 					}

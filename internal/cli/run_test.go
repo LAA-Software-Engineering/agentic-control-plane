@@ -17,7 +17,6 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
@@ -424,7 +423,7 @@ func TestRun_resume_happyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec.NormalizeProjectGraph(graph)
-	graph, err = local.ApplyEnvironment(graph, "staging")
+	graph, err = spec.ApplyEnvironment(graph, "staging")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,5 +484,61 @@ func TestRun_resume_happyPath(t *testing.T) {
 	}
 	if got.Status != state.RunStatusSucceeded {
 		t.Fatalf("status %q", got.Status)
+	}
+}
+
+func TestRun_resume_conflictingEnvironment_exit2(t *testing.T) {
+	ctx := context.Background()
+	db := filepath.Join(t.TempDir(), "resume-env-conflict.db")
+	root := runProjRoot(t)
+
+	st, err := sqlite.Open(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	graph, err := project.LoadProject(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.NormalizeProjectGraph(graph)
+	graph, err = spec.ApplyEnvironment(graph, "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wf := graph.Workflows["demo"]
+	wfHash, err := plan.WorkflowSpecHash(wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runID := "cli-resume-env-conflict"
+	started := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: runID, WorkflowName: "demo", Env: "dev", Status: state.RunStatusRunning,
+		StartedAt: started, InputJSON: `{"topic":"env-conflict"}`, TotalCostUSD: 0,
+		WorkflowSpecHash: wfHash, EnvironmentName: "staging",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "--resume", runID,
+		"--project", root,
+		"-e", "prod",
+		"--state", db,
+	})
+	err = cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d want %d err=%v\n%s", ExitCodeOf(err), ExitValidationError, err, out.String())
 	}
 }

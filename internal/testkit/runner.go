@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
+	_ "github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 )
 
-// RunOptions configures environment labels for [RunCase] (mirror [runtime.WorkflowRunOptions]).
+// RunOptions configures environment labels for [RunCase].
 type RunOptions struct {
 	EnvironmentName string
 	EnvLabel        string
@@ -51,6 +52,26 @@ func RunCase(ctx context.Context, projectRoot string, opts RunOptions, suitePath
 	}
 	defer func() { _ = st.Close() }()
 
+	rc, err := config.Resolve(config.ResolveOptions{
+		ProjectRoot: projectRoot,
+		Env:         strings.TrimSpace(opts.EnvironmentName),
+	})
+	if err != nil {
+		out.Detail = fmt.Sprintf("resolve config: %v", err)
+		return out
+	}
+
+	factory, err := runtime.Lookup(runtime.WorkflowRuntimeName(rc.Graph(), suite.Workflow))
+	if err != nil {
+		out.Detail = fmt.Sprintf("runtime: %v", err)
+		return out
+	}
+	rtExec, err := factory(runtime.Deps{Store: st})
+	if err != nil {
+		out.Detail = fmt.Sprintf("create runtime: %v", err)
+		return out
+	}
+
 	inputJSON, err := json.Marshal(c.Input)
 	if err != nil {
 		out.Detail = fmt.Sprintf("marshal input: %v", err)
@@ -60,15 +81,18 @@ func RunCase(ctx context.Context, projectRoot string, opts RunOptions, suitePath
 		inputJSON = nil
 	}
 
-	rt := local.NewRuntime(projectRoot, st)
-	runID, runErr := rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
-		WorkflowName:    suite.Workflow,
-		EnvironmentName: strings.TrimSpace(opts.EnvironmentName),
-		Env:             opts.EnvLabel,
-		InputJSON:       inputJSON,
+	envLabel := strings.TrimSpace(opts.EnvLabel)
+	if envLabel == "" {
+		envLabel = "local"
+	}
+
+	result, runErr := rtExec.Invoke(ctx, rc, runtime.InvokeOptions{
+		WorkflowName: suite.Workflow,
+		Env:          envLabel,
+		InputJSON:    inputJSON,
 	})
 
-	run, gerr := st.GetRun(ctx, runID)
+	run, gerr := st.GetRun(ctx, result.RunID)
 	if gerr != nil {
 		out.Detail = fmt.Sprintf("get run: %v", gerr)
 		return out

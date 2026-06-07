@@ -9,8 +9,8 @@ import (
 
 func TestBuildEngineHitlOptions_invalidKind(t *testing.T) {
 	t.Helper()
-	_, err := buildEngineHitlOptions(runtime.WorkflowRunOptions{
-		HitlDecision: &runtime.HitlDecisionOptions{Kind: spec.HitlDecisionKind("maybe")},
+	_, err := buildEngineHitlOptions(engineRunConfig{
+		hitlDecision: &runtime.HitlDecisionOptions{Kind: spec.HitlDecisionKind("maybe")},
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid decision kind")
@@ -19,8 +19,8 @@ func TestBuildEngineHitlOptions_invalidKind(t *testing.T) {
 
 func TestBuildEngineHitlOptions_validDecision(t *testing.T) {
 	t.Helper()
-	out, err := buildEngineHitlOptions(runtime.WorkflowRunOptions{
-		HitlDecision: &runtime.HitlDecisionOptions{Kind: spec.HitlDecisionApprove},
+	out, err := buildEngineHitlOptions(engineRunConfig{
+		hitlDecision: &runtime.HitlDecisionOptions{Kind: spec.HitlDecisionApprove},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -14,9 +14,9 @@ import "strings"
 //   - Workflow.spec.runtime ← defaults.runtime when the workflow omits runtime (issue #76).
 //
 // Environment overlays (design doc §7.6) are not applied here. Typical pipelines load the graph,
-// run NormalizeProjectGraph, then apply the selected environment with ApplyEnvironment in
-// [ApplyEnvironment] (e.g. agentctl validate/plan/apply/run, local ExecuteWorkflow), and
-// finally validate. Mutates g in place.
+// run NormalizeProjectGraph, then apply the selected environment with [spec.ApplyEnvironment] in
+// the control plane before handing an immutable snapshot to [runtime.Runtime], then validate.
+// Mutates g in place.
 func NormalizeProjectGraph(g *ProjectGraph) {
 	if g == nil {
 		return

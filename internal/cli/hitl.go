@@ -33,51 +33,66 @@ func hitlActorFromEnv() string {
 	return policy.DefaultHitlActor
 }
 
-func applyHitlRunOptions(opts *runtime.WorkflowRunOptions, resuming bool, autoApprove bool, decision string, editJSON string, switchTarget string) error {
+func applyHitlInvokeOptions(opts *runtime.InvokeOptions, autoApprove bool) {
+	if opts == nil {
+		return
+	}
+	opts.AutoApprove = autoApprove || envAutoApproveEnabled()
+	opts.HitlActor = hitlActorFromEnv()
+}
+
+func applyHitlResumeOptions(opts *runtime.ResumeOptions, autoApprove bool, decision string, editJSON string, switchTarget string) error {
+	if opts == nil {
+		return nil
+	}
 	opts.AutoApprove = autoApprove || envAutoApproveEnabled()
 	opts.HitlActor = hitlActorFromEnv()
 	decision = strings.TrimSpace(decision)
 	editJSON = strings.TrimSpace(editJSON)
 	switchTarget = strings.TrimSpace(switchTarget)
-
 	if decision == "" {
 		if editJSON != "" || switchTarget != "" {
 			return fmt.Errorf("run: --decision-edit-json and --decision-switch-target require --decision")
 		}
 		return nil
 	}
-	if !resuming {
-		return fmt.Errorf("run: --decision requires --resume <run-id>")
-	}
-	kind, err := spec.ParseHitlDecisionKind(decision)
+	hd, err := parseHitlDecisionOptions(decision, editJSON, switchTarget)
 	if err != nil {
 		return err
+	}
+	opts.HitlDecision = hd
+	return nil
+}
+
+func parseHitlDecisionOptions(decision, editJSON, switchTarget string) (*runtime.HitlDecisionOptions, error) {
+	kind, err := spec.ParseHitlDecisionKind(decision)
+	if err != nil {
+		return nil, err
 	}
 	hd := &runtime.HitlDecisionOptions{Kind: kind}
 	switch kind {
 	case spec.HitlDecisionEdit:
 		if editJSON == "" {
-			return fmt.Errorf("run: --decision edit requires --decision-edit-json")
+			return nil, fmt.Errorf("run: --decision edit requires --decision-edit-json")
 		}
 		if len(editJSON) > maxDecisionEditJSONBytes {
-			return fmt.Errorf("run: --decision-edit-json exceeds %d bytes", maxDecisionEditJSONBytes)
+			return nil, fmt.Errorf("run: --decision-edit-json exceeds %d bytes", maxDecisionEditJSONBytes)
 		}
 		var m map[string]any
 		if err := json.Unmarshal([]byte(editJSON), &m); err != nil {
-			return fmt.Errorf("run: --decision-edit-json: %w", err)
+			return nil, fmt.Errorf("run: --decision-edit-json: %w", err)
 		}
 		if m == nil {
-			return fmt.Errorf("run: --decision-edit-json must be a JSON object")
+			return nil, fmt.Errorf("run: --decision-edit-json must be a JSON object")
 		}
 		hd.EditedWith = m
 	case spec.HitlDecisionSwitch:
 		hd.SwitchTarget = switchTarget
 		if hd.SwitchTarget == "" {
-			return fmt.Errorf("run: --decision switch requires --decision-switch-target")
+			return nil, fmt.Errorf("run: --decision switch requires --decision-switch-target")
 		}
 	}
-	opts.HitlDecision = hd
-	return nil
+	return hd, nil
 }
 
 func maybePromptHitlDecision(in io.Reader, out io.Writer, gate policy.HitlGate) (*policy.HitlDecisionInput, error) {

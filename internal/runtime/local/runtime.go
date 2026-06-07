@@ -1,24 +1,44 @@
 package local
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 )
 
-// Runtime is the MVP local workflow runner backend (issue #23): project root on disk + SQLite (or any [state.RuntimeStore]).
+// Compile-time check that [Runtime] implements the runtime adapter contract.
+var _ runtime.Runtime = (*Runtime)(nil)
+
+// Runtime is the MVP local workflow runner backend (issue #23): SQLite state + resolved config snapshot.
 type Runtime struct {
-	ProjectRoot  string
 	Store        state.RuntimeStore
 	Now          func() time.Time
 	AgentVersion string
 }
 
-// NewRuntime returns a local runtime. projectRoot is the directory containing project.yaml.
-func NewRuntime(projectRoot string, store state.RuntimeStore) *Runtime {
-	return &Runtime{ProjectRoot: projectRoot, Store: store}
+// NewFromDeps constructs a local runtime from control-plane dependencies.
+func NewFromDeps(deps runtime.Deps) (runtime.Runtime, error) {
+	if deps.Store == nil {
+		return nil, fmt.Errorf("local: nil runtime store")
+	}
+	return &Runtime{
+		Store:        deps.Store,
+		Now:          deps.Now,
+		AgentVersion: deps.AgentVersion,
+	}, nil
+}
+
+// NewRuntime returns a local runtime backed by store. Prefer [NewFromDeps] via [runtime.Lookup].
+func NewRuntime(store state.RuntimeStore) *Runtime {
+	rt, err := NewFromDeps(runtime.Deps{Store: store})
+	if err != nil {
+		panic(err)
+	}
+	return rt.(*Runtime)
 }
 
 func (r *Runtime) now() time.Time {
@@ -38,7 +58,13 @@ func (r *Runtime) agentVersion() string {
 	return "0.0.0-dev"
 }
 
-// ApplyEnvironment delegates to [spec.ApplyEnvironment] for backward compatibility.
-func ApplyEnvironment(g *spec.ProjectGraph, envName string) (*spec.ProjectGraph, error) {
-	return spec.ApplyEnvironment(g, envName)
+// Health reports local runtime readiness based on store availability.
+func (r *Runtime) Health(_ context.Context) runtime.HealthStatus {
+	if r == nil || r.Store == nil {
+		return runtime.HealthStatus{
+			State:   runtime.HealthError,
+			Details: "nil runtime store",
+		}
+	}
+	return runtime.HealthStatus{State: runtime.HealthOK}
 }

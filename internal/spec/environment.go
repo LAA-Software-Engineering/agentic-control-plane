@@ -8,7 +8,7 @@ import (
 
 // ApplyEnvironment returns a shallow copy of g with Environment overrides applied (design doc §7.6 MVP).
 // Call after [NormalizeProjectGraph] so Project.spec.defaults are merged first; agentctl and
-// [Runtime.ExecuteWorkflow] use that order before [ValidateProjectGraph].
+// [Runtime.Invoke] and [Runtime.Resume] receive a resolved config snapshot from the control plane.
 func ApplyEnvironment(g *ProjectGraph, envName string) (*ProjectGraph, error) {
 	envName = strings.TrimSpace(envName)
 	if envName == "" || g == nil {

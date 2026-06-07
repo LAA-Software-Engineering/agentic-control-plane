@@ -2,35 +2,62 @@ package runtime
 
 import (
 	"context"
+	"time"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 )
 
-// WorkflowRunOptions configures a single workflow execution for [WorkflowRunner].
-type WorkflowRunOptions struct {
-	// RunID optional; when empty the runner generates one via [util.NewRunID].
+// HealthState reports runtime readiness.
+type HealthState string
+
+const (
+	// HealthOK means the runtime is ready to accept work.
+	HealthOK HealthState = "ok"
+	// HealthDegraded means the runtime can execute but with reduced capability.
+	HealthDegraded HealthState = "degraded"
+	// HealthError means the runtime cannot execute workflows.
+	HealthError HealthState = "error"
+)
+
+// HealthStatus is returned by [Runtime.Health].
+type HealthStatus struct {
+	State   HealthState
+	Details string
+}
+
+// RunResult is the outcome of [Runtime.Invoke] or [Runtime.Resume].
+type RunResult struct {
+	RunID string
+}
+
+// Deps are control-plane supplied dependencies shared by all runtime implementations.
+type Deps struct {
+	Store        state.RuntimeStore
+	AgentVersion string
+	Now          func() time.Time
+}
+
+// InvokeOptions configures a new workflow execution.
+type InvokeOptions struct {
+	// RunID optional; when empty the runtime generates one.
 	RunID string
 	// WorkflowName is the metadata.name of a Workflow resource.
 	WorkflowName string
-	// EnvironmentName selects an Environment resource for overrides (agents/policies). Empty skips overrides.
-	EnvironmentName string
 	// Env is stored on the run row (e.g. deployment target label).
 	Env string
+	// EnvironmentName is the CLI -e overlay name; empty skips Environment resource overrides.
+	EnvironmentName string
 	// InputJSON is JSON object bytes for workflow input. Empty means {}.
 	InputJSON []byte
 	// ApprovedActions are full tool uses strings approved for policy gates.
 	ApprovedActions []string
-	// Resume continues an existing run from its latest checkpoint (issue #105).
-	// RunID must be set; InputJSON and WorkflowName are loaded from the persisted run.
-	Resume bool
-	// AutoApprove skips interactive HITL prompts and approves gated tool calls (issue #106).
+	// AutoApprove skips interactive HITL prompts and approves gated tool calls.
 	AutoApprove bool
-	// HitlActor attributes approval decisions in trace events (default: operator or $USER).
+	// HitlActor attributes approval decisions in trace events.
 	HitlActor string
-	// HitlDecision supplies an explicit decision when resuming an interrupted run (issue #106).
-	HitlDecision *HitlDecisionOptions
-	// Attribution scopes the run for multi-tenant logs and compliance (issue #111).
-	// Empty fields receive local defaults; resume reuses persisted tenant/thread from the run row.
+	// Attribution scopes the run for multi-tenant logs and compliance.
 	TenantID       string
 	ThreadID       string
 	ActorID        string
@@ -42,6 +69,26 @@ type WorkflowRunOptions struct {
 	RequireAttribution bool
 }
 
+// ResumeOptions continues an existing run from its latest checkpoint.
+type ResumeOptions struct {
+	// RunID is required.
+	RunID string
+	// EnvironmentName is the CLI -e value; must match the persisted run when pinned.
+	EnvironmentName string
+	// ApprovedActions are full tool uses strings approved for policy gates.
+	ApprovedActions []string
+	// AutoApprove skips interactive HITL prompts and approves gated tool calls.
+	AutoApprove bool
+	// HitlActor attributes approval decisions in trace events.
+	HitlActor string
+	// HitlDecision supplies an explicit decision when resuming an interrupted run.
+	HitlDecision *HitlDecisionOptions
+	// Attribution fields on resume are ignored; persisted run attribution is reused.
+	TenantID string
+	ThreadID string
+	ActorID  string
+}
+
 // HitlDecisionOptions configures a non-interactive HITL resolution on resume.
 type HitlDecisionOptions struct {
 	Kind         spec.HitlDecisionKind
@@ -49,7 +96,10 @@ type HitlDecisionOptions struct {
 	SwitchTarget string
 }
 
-// WorkflowRunner loads declarative state and executes a workflow locally (design doc section 16 MVP).
-type WorkflowRunner interface {
-	ExecuteWorkflow(ctx context.Context, opts WorkflowRunOptions) (runID string, err error)
+// Runtime executes workflows from a resolved configuration snapshot supplied by the control plane.
+// Implementations must not reload project YAML/TOML; they receive [config.ResolvedConfig] only.
+type Runtime interface {
+	Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts InvokeOptions) (RunResult, error)
+	Resume(ctx context.Context, cfg *config.ResolvedConfig, opts ResumeOptions) (RunResult, error)
+	Health(ctx context.Context) HealthStatus
 }

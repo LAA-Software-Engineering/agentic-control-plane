@@ -9,31 +9,31 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
-// preparedProject is a loaded, normalized, environment-overlaid, validated project graph.
+// preparedProject holds the resolved graph snapshot for one execution.
 type preparedProject struct {
 	root  string
 	graph *spec.ProjectGraph
 }
 
-// prepareProject resolves configuration (user-local, project, environment), validates, and prunes old runs.
-func (r *Runtime) prepareProject(ctx context.Context, environmentName string) (*preparedProject, error) {
-	root := strings.TrimSpace(r.ProjectRoot)
-	if root == "" {
-		return nil, fmt.Errorf("local: empty project root")
+// prepareFromConfig builds execution state from a resolved config snapshot.
+// The runtime must not reload project YAML/TOML; cfg is the sole configuration source.
+func (r *Runtime) prepareFromConfig(ctx context.Context, cfg *config.ResolvedConfig) (*preparedProject, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("local: nil resolved config")
 	}
-	rc, err := config.Resolve(config.ResolveOptions{
-		ProjectRoot: root,
-		Env:         environmentName,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("local: resolve config: %w", err)
+	graph := cfg.Graph()
+	if graph == nil {
+		return nil, fmt.Errorf("local: resolved config has no graph")
 	}
-	graph := rc.Graph()
+	root := cfg.ProjectRoot()
+	if strings.TrimSpace(root) == "" {
+		return nil, fmt.Errorf("local: empty project root in resolved config")
+	}
 	if n := spec.TraceRetentionDays(graph); n > 0 {
 		cutoff := r.now().UTC().AddDate(0, 0, -n)
 		if _, err := r.Store.DeleteRunsStartedBefore(ctx, cutoff); err != nil {
 			return nil, fmt.Errorf("local: prune trace runs: %w", err)
 		}
 	}
-	return &preparedProject{root: rc.ProjectRoot(), graph: graph}, nil
+	return &preparedProject{root: root, graph: graph}, nil
 }
