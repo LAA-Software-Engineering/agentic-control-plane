@@ -37,7 +37,10 @@ func echoOnlyWorkflow(t *testing.T) *spec.ProjectGraph {
 		},
 	}}
 	g.Workflows["demo"].Spec.Output = &spec.WorkflowOutput{
-		Value: map[string]any{"topic": "${input.topic}"},
+		Value: map[string]any{
+			"topic": "${input.topic}",
+			"echo":  "${steps.fetch.output.echo.topic}",
+		},
 	}
 	return g
 }
@@ -108,11 +111,42 @@ func TestRun_toolOutputTruncatedAtLimit(t *testing.T) {
 	if limitHits == 0 {
 		t.Fatal("expected limit_hit trace event")
 	}
+
+	got, err := st.GetRun(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "succeeded" {
+		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(got.OutputJSON), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["topic"] != "agents" {
+		t.Fatalf("topic = %v", out["topic"])
+	}
+	if out["echo"] != "agents" {
+		t.Fatalf("truncated output should preserve echo.topic, got %v", out["echo"])
+	}
 }
 
-func TestRun_toolOutputFailPolicy(t *testing.T) {
+func countLimitHitEvents(events []state.TraceEvent, kind string) int {
+	n := 0
+	for _, ev := range events {
+		if ev.Type != trace.EventLimitHit.String() {
+			continue
+		}
+		if kind == "" || strings.Contains(ev.DataJSON, `"kind":"`+kind+`"`) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestRun_toolOutputFailPolicy_emitsLimitHit(t *testing.T) {
 	ctx := context.Background()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "limits-fail.db"))
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "limits-fail-trace.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,16 +157,13 @@ func TestRun_toolOutputFailPolicy(t *testing.T) {
 		ToolOutputExceedPolicy: spec.LimitExceedFail,
 	}, nil)
 
-	runID := "run-fail"
-	started := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	runID := "run-fail-trace"
+	started := time.Date(2026, 6, 7, 12, 30, 0, 0, time.UTC)
 	input := startDemoRun(t, st, runID, started)
 
 	ex := &Executor{
-		Graph:       graph,
-		ProjectRoot: testProjectRoot(t),
-		Tools:       tools.NewRegistry(graph),
-		Store:       st,
-		Trace:       trace.NewRecorder(st),
+		Graph: graph, ProjectRoot: testProjectRoot(t),
+		Tools: tools.NewRegistry(graph), Store: st, Trace: trace.NewRecorder(st),
 	}
 	err = ex.Run(ctx, RunInput{
 		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
@@ -143,6 +174,136 @@ func TestRun_toolOutputFailPolicy(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "tool_output exceeds limit") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	events, err := st.ListTraceEventsByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countLimitHitEvents(events, "tool_output") == 0 {
+		t.Fatal("expected limit_hit for tool_output fail policy")
+	}
+}
+
+func TestRun_toolInputTruncate(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "limits-in-trunc.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	graph := echoOnlyWorkflow(t)
+	graph.Spec.Limits = &spec.ExecutionLimits{
+		MaxToolInputBytes:     60,
+		ToolInputExceedPolicy: spec.LimitExceedTruncate,
+	}
+
+	runID := "run-in-trunc"
+	started := time.Date(2026, 6, 7, 15, 0, 0, 0, time.UTC)
+	input := startDemoRun(t, st, runID, started)
+
+	ex := &Executor{
+		Graph: graph, ProjectRoot: testProjectRoot(t),
+		Tools: tools.NewRegistry(graph), Store: st, Trace: trace.NewRecorder(st),
+	}
+	if err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
+		Hitl: HitlRunOptions{AutoApprove: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := st.ListTraceEventsByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countLimitHitEvents(events, "tool_input") == 0 {
+		t.Fatal("expected limit_hit for tool_input truncation")
+	}
+}
+
+func TestRun_toolInputFailPolicy(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "limits-in-fail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	graph := echoOnlyWorkflow(t)
+	graph.Spec.Limits = &spec.ExecutionLimits{
+		MaxToolInputBytes:     60,
+		ToolInputExceedPolicy: spec.LimitExceedFail,
+	}
+
+	runID := "run-in-fail"
+	started := time.Date(2026, 6, 7, 15, 30, 0, 0, time.UTC)
+	input := startDemoRun(t, st, runID, started)
+
+	ex := &Executor{
+		Graph: graph, ProjectRoot: testProjectRoot(t),
+		Tools: tools.NewRegistry(graph), Store: st, Trace: trace.NewRecorder(st),
+	}
+	err = ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
+		Hitl: HitlRunOptions{AutoApprove: true},
+	})
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	if !strings.Contains(err.Error(), "tool_input exceeds limit") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_checkpointExceedsLimit_emitsLimitHit(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "limits-cp-trace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	graph := echoOnlyWorkflow(t)
+	graph.Spec.Limits = &spec.ExecutionLimits{MaxCheckpointBytes: 200}
+
+	runID := "run-cp-trace"
+	started := time.Date(2026, 6, 7, 16, 0, 0, 0, time.UTC)
+	input := startDemoRun(t, st, runID, started)
+
+	ex := &Executor{
+		Graph: graph, ProjectRoot: testProjectRoot(t),
+		Tools: tools.NewRegistry(graph), Store: st, Trace: trace.NewRecorder(st),
+	}
+	err = ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
+		Hitl: HitlRunOptions{AutoApprove: true},
+	})
+	if err == nil {
+		t.Fatal("expected checkpoint limit failure")
+	}
+	if !strings.Contains(err.Error(), "checkpoint context exceeds") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	events, err := st.ListTraceEventsByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countLimitHitEvents(events, "checkpoint") == 0 {
+		t.Fatal("expected limit_hit for checkpoint exceed")
+	}
+}
+
+func TestRun_workflowLimitOverride(t *testing.T) {
+	graph := echoOnlyWorkflow(t)
+	graph.Spec.Limits = &spec.ExecutionLimits{MaxToolOutputBytes: 10000}
+	graph.Workflows["demo"].Spec.Limits = &spec.ExecutionLimits{
+		MaxToolOutputBytes:     80,
+		ToolOutputExceedPolicy: spec.LimitExceedFail,
+	}
+	ex := &Executor{Graph: graph}
+	got := ex.resolveToolLimits(graph.Workflows["demo"], "tool.helper.echo")
+	if got.MaxToolOutputBytes != 80 {
+		t.Fatalf("workflow override = %d", got.MaxToolOutputBytes)
 	}
 }
 
@@ -195,37 +356,6 @@ func TestRun_toolOutputAtBoundary(t *testing.T) {
 	}
 }
 
-func TestRun_checkpointExceedsLimitFailsClosed(t *testing.T) {
-	ctx := context.Background()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "limits-cp.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-
-	graph := echoOnlyWorkflow(t)
-	graph.Spec.Limits = &spec.ExecutionLimits{MaxCheckpointBytes: 200}
-
-	runID := "run-cp"
-	started := time.Date(2026, 6, 7, 14, 0, 0, 0, time.UTC)
-	input := startDemoRun(t, st, runID, started)
-
-	ex := &Executor{
-		Graph: graph, ProjectRoot: testProjectRoot(t),
-		Tools: tools.NewRegistry(graph), Store: st, Trace: trace.NewRecorder(st),
-	}
-	err = ex.Run(ctx, RunInput{
-		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
-		Hitl: HitlRunOptions{AutoApprove: true},
-	})
-	if err == nil {
-		t.Fatal("expected checkpoint limit failure")
-	}
-	if !strings.Contains(err.Error(), "checkpoint context exceeds") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestResolveToolLimits_toolOverrideWins(t *testing.T) {
 	graph := graphWithLimits(t, &spec.ExecutionLimits{MaxToolInputBytes: 1000}, &spec.ExecutionLimits{MaxToolInputBytes: 100})
 	ex := &Executor{Graph: graph}
@@ -240,11 +370,11 @@ func TestEnforceMapLimit_concurrentSafety(t *testing.T) {
 	t.Parallel()
 	ex := &Executor{Trace: nil}
 	ctx := context.Background()
-	v := map[string]any{"x": strings.Repeat("z", 100)}
+	v := map[string]any{"x": strings.Repeat("z", 4000)}
 	done := make(chan error, 8)
 	for i := 0; i < 8; i++ {
 		go func() {
-			_, err := ex.enforceMapLimit(ctx, "r", "s", "tool.helper.echo", spec.LimitKindToolInput, v, 1000, spec.LimitExceedTruncate)
+			_, err := ex.enforceMapLimit(ctx, "r", "s", "tool.helper.echo", spec.LimitKindToolInput, v, 200, spec.LimitExceedTruncate)
 			done <- err
 		}()
 	}

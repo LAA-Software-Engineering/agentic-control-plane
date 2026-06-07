@@ -11,7 +11,7 @@ func TestLimitHitTraceData_golden(t *testing.T) {
 	t.Parallel()
 	got := LimitHitTraceData(
 		spec.LimitKindToolOutput,
-		256000,
+		262144,
 		300000,
 		spec.LimitExceedTruncate,
 		true,
@@ -22,7 +22,7 @@ func TestLimitHitTraceData_golden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"kind":"tool_output","maxBytes":256000,"originalBytes":300000,"policy":"truncate","stepId":"fetch","truncated":true,"uses":"tool.helper.echo"}`
+	const want = `{"kind":"tool_output","maxBytes":262144,"originalBytes":300000,"policy":"truncate","stepId":"fetch","truncated":true,"uses":"tool.helper.echo"}`
 	if string(b) != want {
 		t.Fatalf("golden mismatch:\ngot  %s\nwant %s", b, want)
 	}
@@ -78,7 +78,7 @@ func TestLimitHitTraceData_failPolicy(t *testing.T) {
 	t.Parallel()
 	got := LimitHitTraceData(
 		spec.LimitKindCheckpoint,
-		1000000,
+		1048576,
 		1500000,
 		spec.LimitExceedFail,
 		false,

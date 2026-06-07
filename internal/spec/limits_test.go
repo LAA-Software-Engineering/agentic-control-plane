@@ -25,6 +25,16 @@ func TestDefaultExecutionLimits(t *testing.T) {
 	}
 }
 
+func TestDefaultExecutionLimits_binaryUnits(t *testing.T) {
+	t.Parallel()
+	if DefaultMaxToolInputBytes != 262144 {
+		t.Fatalf("DefaultMaxToolInputBytes = %d", DefaultMaxToolInputBytes)
+	}
+	if DefaultMaxCheckpointBytes != 1048576 {
+		t.Fatalf("DefaultMaxCheckpointBytes = %d", DefaultMaxCheckpointBytes)
+	}
+}
+
 func TestMergeExecutionLimits_partialOverride(t *testing.T) {
 	t.Parallel()
 	base := ExecutionLimits{

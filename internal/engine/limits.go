@@ -68,7 +68,7 @@ func (e *Executor) enforceMapLimit(
 	if policy == spec.LimitExceedFail {
 		return nil, fmt.Errorf("engine: %s exceeds limit (%d > %d bytes)", kind, orig, maxBytes)
 	}
-	out, _, _, err := trace.TruncateMapValue(v, maxBytes, e.redactionOpts())
+	out, _, _, err := truncateMapInPlace(v, maxBytes, e.redactionOpts())
 	if err != nil {
 		return nil, fmt.Errorf("engine: truncate %s: %w", kind, err)
 	}

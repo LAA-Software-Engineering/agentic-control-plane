@@ -5,18 +5,18 @@ import (
 	"strings"
 )
 
-// Default byte limits for execution bounds (issue #117).
+// Default byte limits for execution bounds (issue #117). Values use binary KiB/MiB.
 const (
-	DefaultMaxToolInputBytes  = 256_000
-	DefaultMaxToolOutputBytes = 256_000
-	DefaultMaxCheckpointBytes = 1_000_000
+	DefaultMaxToolInputBytes  = 256 << 10 // 256 KiB
+	DefaultMaxToolOutputBytes = 256 << 10 // 256 KiB
+	DefaultMaxCheckpointBytes = 1 << 20   // 1 MiB
 )
 
 // LimitExceedPolicy controls behavior when a byte limit is exceeded.
 type LimitExceedPolicy string
 
 const (
-	// LimitExceedTruncate shortens the payload and records a limit-hit trace event.
+	// LimitExceedTruncate shortens payload fields in-place (engine truncateMapInPlace) and records a limit-hit trace event.
 	LimitExceedTruncate LimitExceedPolicy = "truncate"
 	// LimitExceedFail aborts the step or run with a clear error.
 	LimitExceedFail LimitExceedPolicy = "fail"

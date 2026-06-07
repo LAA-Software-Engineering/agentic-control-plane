@@ -59,7 +59,16 @@ spec:
     models:
       mock:
         type: mock
+  limits:
+    maxToolInputBytes: 262144    # 256 KiB; truncate by default
+    maxToolOutputBytes: 262144   # 256 KiB
+    maxCheckpointBytes: 1048576  # 1 MiB; fail closed (never truncate checkpoints)
+    toolInputExceedPolicy: truncate
+    toolOutputExceedPolicy: truncate
+    checkpointExceedPolicy: fail
 ```
+
+`spec.limits` bounds tool I/O and checkpoint bytes. Workflow and Tool resources may override individual fields. `maxStateBytes` is an alias for `maxCheckpointBytes`. When `truncate` is set, long string fields are shortened in-place (top-level keys are preserved); `fail` aborts the step. Checkpoint limits always fail closed.
 
 ---
 

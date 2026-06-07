@@ -59,3 +59,22 @@ func TestResolvedGraphDigest_changesWithGraph(t *testing.T) {
 		t.Fatal("digest should change when graph changes")
 	}
 }
+
+func TestResolvedGraphDigest_changesWithLimits(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Meta: spec.Metadata{Name: "demo"},
+		Spec: spec.ProjectSpec{},
+	}
+	d1, err := ResolvedGraphDigest(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Spec.Limits = &spec.ExecutionLimits{MaxToolOutputBytes: 1024}
+	d2, err := ResolvedGraphDigest(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d1 == d2 {
+		t.Fatal("digest should change when spec.limits is added")
+	}
+}

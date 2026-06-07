@@ -49,7 +49,8 @@ func LimitHitTraceData(kind spec.LimitKind, maxBytes, originalBytes int, policy 
 
 // TruncateMapValue shortens v when its stable JSON encoding exceeds maxBytes.
 // When truncated, the returned map uses [FieldPayloadTruncated] and [FieldPayloadPreview]
-// consistent with issue #110 trace truncation.
+// consistent with issue #110 trace truncation. Use for trace/event payloads only;
+// live tool I/O uses engine in-place truncation instead.
 func TruncateMapValue(v map[string]any, maxBytes int, opts RedactionOptions) (map[string]any, int, bool, error) {
 	if v == nil {
 		v = map[string]any{}
