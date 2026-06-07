@@ -156,7 +156,7 @@ func validateToolSpecs(g *ProjectGraph) []error {
 			if tr.Spec.HTTP == nil {
 				errs = append(errs, fmt.Errorf("Tool/%s: type http requires spec.http", name))
 			}
-		case "native":
+		case "native", "mock":
 			// MVP: no required transport block
 		case "":
 			errs = append(errs, fmt.Errorf("Tool/%s: spec.type is required", name))

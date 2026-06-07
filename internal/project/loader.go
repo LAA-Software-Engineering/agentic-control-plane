@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
 )
 
 // YAML file suffixes loaded from directories (recursive) and explicit import paths.
@@ -79,6 +80,11 @@ type resourceKey struct {
 	name string
 }
 
+// FindProjectFile returns the absolute path to project.yaml or project.yml under dir.
+func FindProjectFile(dir string) (string, error) {
+	return findProjectFile(dir)
+}
+
 func findProjectFile(dir string) (string, error) {
 	for _, name := range []string{"project.yaml", "project.yml"} {
 		p := filepath.Join(dir, name)
@@ -114,7 +120,7 @@ func expandImports(rootAbs, projPath string, imports []string) ([]string, error)
 		}
 		full := filepath.Join(rootAbs, filepath.FromSlash(imp))
 		full = filepath.Clean(full)
-		if !isUnderRoot(rootAbs, full) {
+		if !util.IsUnderRoot(rootAbs, full) {
 			return nil, fmt.Errorf("import %q resolves outside project root", imp)
 		}
 
@@ -160,19 +166,6 @@ func walkYAMLFiles(dir string) ([]string, error) {
 	}
 	sort.Strings(files)
 	return files, nil
-}
-
-func isUnderRoot(root, p string) bool {
-	root = filepath.Clean(root)
-	p = filepath.Clean(p)
-	rel, err := filepath.Rel(root, p)
-	if err != nil {
-		return false
-	}
-	if rel == "." {
-		return true
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func mergeDecoded(g *spec.ProjectGraph, d *spec.Decoded, path string, seen map[resourceKey]string) error {

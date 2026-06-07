@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
 )
 
 // ResolveSchemaPath joins schemaRef to projectRoot for Agent/Workflow schema fields
@@ -25,23 +27,10 @@ func ResolveSchemaPath(projectRoot, schemaRef string) (string, error) {
 		full = filepath.Join(projectRoot, filepath.FromSlash(schemaRef))
 		full = filepath.Clean(full)
 	}
-	if !isUnderRoot(projectRoot, full) {
+	if !util.IsUnderRoot(projectRoot, full) {
 		return "", fmt.Errorf("schema path %q resolves outside project root %q", schemaRef, projectRoot)
 	}
 	return full, nil
-}
-
-func isUnderRoot(root, p string) bool {
-	root = filepath.Clean(root)
-	p = filepath.Clean(p)
-	rel, err := filepath.Rel(root, p)
-	if err != nil {
-		return false
-	}
-	if rel == "." {
-		return true
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // FileError is returned when the schema file cannot be read or does not exist.

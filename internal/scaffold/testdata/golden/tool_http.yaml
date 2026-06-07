@@ -1,0 +1,10 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: webhook
+spec:
+  type: http
+  http:
+    baseUrl: https://api.example.com
+  safety:
+    sideEffects: true

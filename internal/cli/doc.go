@@ -3,6 +3,9 @@
 //
 // The init command scaffolds a minimal project from embedded templates (section 10.2).
 //
+// The new command (issue #113) scaffolds individual Tool, Policy, Workflow, or Agent resources
+// under conventional paths and appends them to project.yaml imports with atomic rollback-safe writes.
+//
 // The validate command (section 10.2) loads the project, applies defaults and optional environment
 // overlays, then runs [spec.ValidateProjectGraph].
 //
