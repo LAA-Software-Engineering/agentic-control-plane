@@ -33,30 +33,6 @@ func hitlActorFromEnv() string {
 	return policy.DefaultHitlActor
 }
 
-func applyHitlRunOptions(opts *runtime.WorkflowRunOptions, resuming bool, autoApprove bool, decision string, editJSON string, switchTarget string) error {
-	opts.AutoApprove = autoApprove || envAutoApproveEnabled()
-	opts.HitlActor = hitlActorFromEnv()
-	decision = strings.TrimSpace(decision)
-	editJSON = strings.TrimSpace(editJSON)
-	switchTarget = strings.TrimSpace(switchTarget)
-
-	if decision == "" {
-		if editJSON != "" || switchTarget != "" {
-			return fmt.Errorf("run: --decision-edit-json and --decision-switch-target require --decision")
-		}
-		return nil
-	}
-	if !resuming {
-		return fmt.Errorf("run: --decision requires --resume <run-id>")
-	}
-	hd, err := parseHitlDecisionOptions(decision, editJSON, switchTarget)
-	if err != nil {
-		return err
-	}
-	opts.HitlDecision = hd
-	return nil
-}
-
 func applyHitlInvokeOptions(opts *runtime.InvokeOptions, autoApprove bool) {
 	if opts == nil {
 		return

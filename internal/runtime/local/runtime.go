@@ -7,15 +7,11 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 )
 
-// Compile-time checks that [Runtime] implements the runtime adapter contract.
-var (
-	_ runtime.Runtime        = (*Runtime)(nil)
-	_ runtime.WorkflowRunner = (*Runtime)(nil)
-)
+// Compile-time check that [Runtime] implements the runtime adapter contract.
+var _ runtime.Runtime = (*Runtime)(nil)
 
 // Runtime is the MVP local workflow runner backend (issue #23): SQLite state + resolved config snapshot.
 type Runtime struct {
@@ -71,9 +67,4 @@ func (r *Runtime) Health(_ context.Context) runtime.HealthStatus {
 		}
 	}
 	return runtime.HealthStatus{State: runtime.HealthOK}
-}
-
-// ApplyEnvironment delegates to [spec.ApplyEnvironment] for backward compatibility.
-func ApplyEnvironment(g *spec.ProjectGraph, envName string) (*spec.ProjectGraph, error) {
-	return spec.ApplyEnvironment(g, envName)
 }

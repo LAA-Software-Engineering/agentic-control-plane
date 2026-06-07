@@ -6,26 +6,11 @@ import (
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 )
 
-// resumeEnvironmentName returns the environment overlay to apply when resuming a run.
-// When the run row pins a non-empty name, the CLI must not pass a conflicting -e value.
-func resumeEnvironmentName(run *state.Run, opts runtime.WorkflowRunOptions) (string, error) {
-	pinned := strings.TrimSpace(run.EnvironmentName)
-	cli := strings.TrimSpace(opts.EnvironmentName)
-	if pinned == "" {
-		return cli, nil
-	}
-	if cli != "" && cli != pinned {
-		return "", fmt.Errorf("local: environment %q does not match run %q", cli, pinned)
-	}
-	return pinned, nil
-}
-
-// resolveConfigForResume picks the environment name used to resolve config before resume.
+// resolveConfigForResume picks the environment overlay name for resume and rejects CLI conflicts.
 func resolveConfigForResume(run *state.Run, cliEnv string) (string, error) {
 	if run == nil {
 		return strings.TrimSpace(cliEnv), nil

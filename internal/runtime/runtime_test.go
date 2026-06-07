@@ -1,10 +1,8 @@
 package runtime
 
 import (
-	"path/filepath"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
@@ -20,10 +18,21 @@ func TestWorkflowRuntimeName_workflowOverride(t *testing.T) {
 			Defaults: &spec.ProjectDefaults{Runtime: NameLocal},
 		},
 		Workflows: map[string]*spec.WorkflowResource{
-			"w": {Spec: spec.WorkflowSpec{Runtime: NameLocal}},
+			"w": {Spec: spec.WorkflowSpec{Runtime: "edge"}},
 		},
 	}
-	if got := WorkflowRuntimeName(g, "w"); got != NameLocal {
+	if got := WorkflowRuntimeName(g, "w"); got != "edge" {
+		t.Fatalf("got %q want edge", got)
+	}
+}
+
+func TestWorkflowRuntimeName_unknownWorkflowUsesDefault(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Spec: spec.ProjectSpec{
+			Defaults: &spec.ProjectDefaults{Runtime: NameLocal},
+		},
+	}
+	if got := WorkflowRuntimeName(g, "missing"); got != NameLocal {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -39,15 +48,4 @@ func TestRunResult_zeroValue(t *testing.T) {
 	if r.RunID != "" {
 		t.Fatal("expected empty run id")
 	}
-}
-
-func TestInvokeOptions_fields(t *testing.T) {
-	opts := InvokeOptions{
-		RunID: "r1", WorkflowName: "demo", Env: "prod",
-		InputJSON: []byte(`{"k":"v"}`),
-	}
-	if opts.WorkflowName != "demo" {
-		t.Fatalf("opts %+v", opts)
-	}
-	_ = config.ResolveOptions{ProjectRoot: filepath.Join("..", "..", "examples")}
 }

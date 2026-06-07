@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/catalog"
 )
 
 func TestLookup_unknownRuntime(t *testing.T) {
@@ -62,16 +63,31 @@ func TestKnownNames_includesLocal(t *testing.T) {
 	}
 }
 
+func TestLookup_knownWithoutFactory(t *testing.T) {
+	const name = "test-runtime-unlinked"
+	catalog.Register(name)
+	t.Cleanup(func() { catalog.ResetForTest(name) })
+
+	_, err := Lookup(name)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "no factory is registered") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestRegister_duplicatePanics(t *testing.T) {
 	const testName = "test-runtime-dup"
 	Register(testName, func(Deps) (Runtime, error) {
 		return stubRuntime{}, nil
 	})
-	defer func() {
+	t.Cleanup(func() {
 		registryMu.Lock()
 		delete(registry, testName)
 		registryMu.Unlock()
-	}()
+		catalog.ResetForTest(testName)
+	})
 
 	defer func() {
 		if r := recover(); r == nil {
@@ -92,6 +108,7 @@ func TestRegister_concurrentLookup(t *testing.T) {
 		registryMu.Lock()
 		delete(registry, testName)
 		registryMu.Unlock()
+		catalog.ResetForTest(testName)
 	})
 
 	var wg sync.WaitGroup

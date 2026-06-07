@@ -22,8 +22,19 @@ const EnvThreadID = "AGENTCTL_THREAD_ID"
 // EnvActorID overrides --actor-id when the flag is omitted.
 const EnvActorID = "AGENTCTL_ACTOR_ID"
 
-func resolveRunAttributionFlags(tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string, requireFlag bool) runtime.WorkflowRunOptions {
-	return runtime.WorkflowRunOptions{
+type runAttributionFields struct {
+	TenantID           string
+	ThreadID           string
+	ActorID            string
+	ParentRunID        string
+	RequestID          string
+	IdempotencyKey     string
+	Source             string
+	RequireAttribution bool
+}
+
+func resolveRunAttributionFields(tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string, requireFlag bool) runAttributionFields {
+	return runAttributionFields{
 		TenantID:           firstNonEmpty(strings.TrimSpace(tenantID), os.Getenv(EnvTenantID)),
 		ThreadID:           firstNonEmpty(strings.TrimSpace(threadID), os.Getenv(EnvThreadID)),
 		ActorID:            firstNonEmpty(strings.TrimSpace(actorID), os.Getenv(EnvActorID)),
@@ -35,26 +46,11 @@ func resolveRunAttributionFlags(tenantID, threadID, actorID, parentRunID, reques
 	}
 }
 
-func applyRunAttributionOpts(opts *runtime.WorkflowRunOptions, tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string, requireFlag bool) {
-	if opts == nil {
-		return
-	}
-	resolved := resolveRunAttributionFlags(tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireFlag)
-	opts.TenantID = resolved.TenantID
-	opts.ThreadID = resolved.ThreadID
-	opts.ActorID = resolved.ActorID
-	opts.ParentRunID = resolved.ParentRunID
-	opts.RequestID = resolved.RequestID
-	opts.IdempotencyKey = resolved.IdempotencyKey
-	opts.Source = resolved.Source
-	opts.RequireAttribution = resolved.RequireAttribution
-}
-
 func applyRunAttributionInvokeOpts(opts *runtime.InvokeOptions, tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string, requireFlag bool) {
 	if opts == nil {
 		return
 	}
-	resolved := resolveRunAttributionFlags(tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireFlag)
+	resolved := resolveRunAttributionFields(tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireFlag)
 	opts.TenantID = resolved.TenantID
 	opts.ThreadID = resolved.ThreadID
 	opts.ActorID = resolved.ActorID

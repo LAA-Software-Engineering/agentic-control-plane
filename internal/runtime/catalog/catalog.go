@@ -66,3 +66,14 @@ func (e *ErrUnknownRuntime) Error() string {
 	}
 	return fmt.Sprintf("runtime: unknown runtime %q (valid: %s)", e.Name, strings.Join(KnownNames(), ", "))
 }
+
+// ResetForTest removes a runtime name registered during tests.
+func ResetForTest(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	mu.Lock()
+	delete(names, name)
+	mu.Unlock()
+}

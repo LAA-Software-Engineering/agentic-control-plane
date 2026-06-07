@@ -110,15 +110,8 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: trace run.started: %w", err)
 	}
 
-	runOpts := runtime.WorkflowRunOptions{
-		RunID:           runID,
-		WorkflowName:    wfName,
-		Env:             envLabel,
-		ApprovedActions: opts.ApprovedActions,
-		AutoApprove:     opts.AutoApprove,
-		HitlActor:       opts.HitlActor,
-	}
-	_, runErr := r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, runOpts, false, state.AttributionFromRun(&runRow), rec)
+	runCfg := engineRunConfigFromInvoke(opts)
+	_, runErr := r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, runCfg, false, state.AttributionFromRun(&runRow), rec)
 	return runtime.RunResult{RunID: runID}, runErr
 }
 
@@ -152,7 +145,7 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: load checkpoint: %w", err)
 	}
 
-	if err := validateResumeEnvironment(run, opts.EnvironmentName); err != nil {
+	if _, err := resolveConfigForResume(run, opts.EnvironmentName); err != nil {
 		return runtime.RunResult{RunID: runID}, err
 	}
 
@@ -197,62 +190,9 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		envLabel = "local"
 	}
 
-	runOpts := runtime.WorkflowRunOptions{
-		RunID:           runID,
-		Env:             envLabel,
-		ApprovedActions: opts.ApprovedActions,
-		AutoApprove:     opts.AutoApprove,
-		HitlActor:       opts.HitlActor,
-		HitlDecision:    opts.HitlDecision,
-	}
-	_, runErr := r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, runOpts, true, state.AttributionFromRun(run), rec)
+	runCfg := engineRunConfigFromResume(opts)
+	_, runErr := r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, runCfg, true, state.AttributionFromRun(run), rec)
 	return runtime.RunResult{RunID: runID}, runErr
-}
-
-// ExecuteWorkflow dispatches to [Runtime.Invoke] or [Runtime.Resume] for legacy callers.
-func (r *Runtime) ExecuteWorkflow(ctx context.Context, cfg *config.ResolvedConfig, opts runtime.WorkflowRunOptions) (string, error) {
-	if opts.Resume {
-		result, err := r.Resume(ctx, cfg, runtime.ResumeOptions{
-			RunID:           opts.RunID,
-			EnvironmentName: opts.EnvironmentName,
-			ApprovedActions: opts.ApprovedActions,
-			AutoApprove:     opts.AutoApprove,
-			HitlActor:       opts.HitlActor,
-			HitlDecision:    opts.HitlDecision,
-			TenantID:        opts.TenantID,
-			ThreadID:        opts.ThreadID,
-			ActorID:         opts.ActorID,
-		})
-		return result.RunID, err
-	}
-	result, err := r.Invoke(ctx, cfg, runtime.InvokeOptions{
-		RunID:              opts.RunID,
-		WorkflowName:       opts.WorkflowName,
-		Env:                opts.Env,
-		EnvironmentName:    opts.EnvironmentName,
-		InputJSON:          opts.InputJSON,
-		ApprovedActions:    opts.ApprovedActions,
-		AutoApprove:        opts.AutoApprove,
-		HitlActor:          opts.HitlActor,
-		TenantID:           opts.TenantID,
-		ThreadID:           opts.ThreadID,
-		ActorID:            opts.ActorID,
-		ParentRunID:        opts.ParentRunID,
-		RequestID:          opts.RequestID,
-		IdempotencyKey:     opts.IdempotencyKey,
-		Source:             opts.Source,
-		RequireAttribution: opts.RequireAttribution,
-	})
-	return result.RunID, err
-}
-
-func validateResumeEnvironment(run *state.Run, cliEnv string) error {
-	pinned := strings.TrimSpace(run.EnvironmentName)
-	cli := strings.TrimSpace(cliEnv)
-	if pinned != "" && cli != "" && cli != pinned {
-		return fmt.Errorf("local: environment %q does not match run %q", cli, pinned)
-	}
-	return nil
 }
 
 func (r *Runtime) executeEngine(
@@ -261,7 +201,7 @@ func (r *Runtime) executeEngine(
 	runID, wfName, envLabel string,
 	started time.Time,
 	input map[string]any,
-	opts runtime.WorkflowRunOptions,
+	cfg engineRunConfig,
 	resume bool,
 	attr state.RunAttribution,
 	rec *trace.Recorder,
@@ -279,7 +219,7 @@ func (r *Runtime) executeEngine(
 		Telemetry:   tel,
 		Now:         r.Now,
 	}
-	hitl, err := buildEngineHitlOptions(opts)
+	hitl, err := buildEngineHitlOptions(cfg)
 	if err != nil {
 		return runID, err
 	}
@@ -291,7 +231,7 @@ func (r *Runtime) executeEngine(
 		Env:             envLabel,
 		StartedAt:       started,
 		Input:           input,
-		ApprovedActions: opts.ApprovedActions,
+		ApprovedActions: cfg.approvedActions,
 		Resume:          resume,
 		Hitl:            hitl,
 		TenantID:        attr.TenantID,

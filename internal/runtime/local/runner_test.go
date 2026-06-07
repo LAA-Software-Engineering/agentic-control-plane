@@ -15,6 +15,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
@@ -174,7 +175,7 @@ func TestApplyEnvironment_mergesAgentConstraints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := ApplyEnvironment(g, "staging")
+	out, err := spec.ApplyEnvironment(g, "staging")
 	if err != nil {
 		t.Fatal(err)
 	}

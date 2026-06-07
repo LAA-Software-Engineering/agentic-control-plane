@@ -103,34 +103,3 @@ type Runtime interface {
 	Resume(ctx context.Context, cfg *config.ResolvedConfig, opts ResumeOptions) (RunResult, error)
 	Health(ctx context.Context) HealthStatus
 }
-
-// WorkflowRunOptions configures a single workflow execution for [WorkflowRunner].
-//
-// Deprecated: prefer [InvokeOptions] and [ResumeOptions] on [Runtime].
-type WorkflowRunOptions struct {
-	RunID              string
-	WorkflowName       string
-	EnvironmentName    string
-	Env                string
-	InputJSON          []byte
-	ApprovedActions    []string
-	Resume             bool
-	AutoApprove        bool
-	HitlActor          string
-	HitlDecision       *HitlDecisionOptions
-	TenantID           string
-	ThreadID           string
-	ActorID            string
-	ParentRunID        string
-	RequestID          string
-	IdempotencyKey     string
-	Source             string
-	RequireAttribution bool
-}
-
-// WorkflowRunner executes a workflow from a resolved configuration snapshot.
-//
-// Deprecated: prefer [Runtime].
-type WorkflowRunner interface {
-	ExecuteWorkflow(ctx context.Context, cfg *config.ResolvedConfig, opts WorkflowRunOptions) (runID string, err error)
-}

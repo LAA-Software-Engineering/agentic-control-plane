@@ -14,12 +14,12 @@ func TestResolveRunAttributionFlags_envOverrides(t *testing.T) {
 	t.Setenv(EnvThreadID, "env-thread")
 	t.Setenv(EnvActorID, "env-actor")
 
-	got := resolveRunAttributionFlags("", "", "", "", "", "", "", false)
+	got := resolveRunAttributionFields("", "", "", "", "", "", "", false)
 	if got.TenantID != "env-tenant" || got.ThreadID != "env-thread" || got.ActorID != "env-actor" {
 		t.Fatalf("env overrides: %+v", got)
 	}
 
-	got = resolveRunAttributionFlags("flag-tenant", "", "", "", "", "", "", false)
+	got = resolveRunAttributionFields("flag-tenant", "", "", "", "", "", "", false)
 	if got.TenantID != "flag-tenant" {
 		t.Fatalf("flag wins: %+v", got)
 	}
