@@ -45,7 +45,7 @@ func parseAgentJSONObject(content string) (map[string]any, error) {
 	return m, nil
 }
 
-func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, usesOverride string, withOverride map[string]any) (map[string]any, tools.ToolCallMeta, error) {
+func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, wf *spec.WorkflowResource, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, usesOverride string, withOverride map[string]any) (map[string]any, tools.ToolCallMeta, error) {
 	uses := strings.TrimSpace(usesOverride)
 	if uses == "" {
 		uses = strings.TrimSpace(step.Uses)
@@ -53,6 +53,11 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 	withArgs := with
 	if withOverride != nil {
 		withArgs = withOverride
+	}
+	var err error
+	withArgs, err = e.enforceToolInput(ctx, wf, runID, step.ID, uses, withArgs)
+	if err != nil {
+		return nil, tools.ToolCallMeta{}, err
 	}
 	if err := pol.CheckToolCall(ctx, policy.ToolCallContext{Run: pctx, StepID: step.ID, Uses: uses, With: withArgs}); err != nil {
 		if e.Trace != nil {
@@ -87,10 +92,14 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 	if e.Trace != nil {
 		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolExecution, trace.ActorAgent, map[string]any{"uses": uses, "costUsd": resp.Meta.CostUSD})
 	}
+	out, err := e.enforceToolOutput(ctx, wf, runID, step.ID, uses, resp.Output)
+	if err != nil {
+		return nil, resp.Meta, err
+	}
 	if err := pol.CheckStep(ctx, policy.StepContext{StepID: step.ID, OutputIsStructured: true}); err != nil {
 		return nil, resp.Meta, err
 	}
-	return resp.Output, resp.Meta, nil
+	return out, resp.Meta, nil
 }
 
 func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, agent *spec.AgentResource) (map[string]any, models.GenerateMeta, error) {

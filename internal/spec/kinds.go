@@ -9,6 +9,8 @@ type ProjectSpec struct {
 	State     *ProjectStateConfig     `yaml:"state,omitempty" json:"state,omitempty"`
 	Traces    *ProjectTracesConfig    `yaml:"traces,omitempty" json:"traces,omitempty"`
 	Telemetry *ProjectTelemetryConfig `yaml:"telemetry,omitempty" json:"telemetry,omitempty"`
+	// Limits bounds tool I/O and checkpoint bytes for all workflows (issue #117).
+	Limits *ExecutionLimits `yaml:"limits,omitempty" json:"limits,omitempty"`
 }
 
 type ProjectDefaults struct {
@@ -107,6 +109,8 @@ type ToolSpec struct {
 	Retry       *ToolRetry       `yaml:"retry,omitempty" json:"retry,omitempty"`
 	// Safety carries blast-radius metadata for fail-closed policy derivation (issue #103).
 	Safety *ToolSafety `yaml:"safety,omitempty" json:"safety,omitempty"`
+	// Limits optionally overrides project execution byte limits for this tool (issue #117).
+	Limits *ExecutionLimits `yaml:"limits,omitempty" json:"limits,omitempty"`
 }
 
 // ToolSafety describes trust and side effects for policy fallback when no explicit Policy rule matches.
@@ -157,6 +161,8 @@ type WorkflowSpec struct {
 	Policy      string           `yaml:"policy,omitempty" json:"policy,omitempty"`
 	Steps       []WorkflowStep   `yaml:"steps,omitempty" json:"steps,omitempty"`
 	Output      *WorkflowOutput  `yaml:"output,omitempty" json:"output,omitempty"`
+	// Limits optionally overrides project execution byte limits for this workflow (issue #117).
+	Limits *ExecutionLimits `yaml:"limits,omitempty" json:"limits,omitempty"`
 }
 
 type WorkflowTrigger struct {

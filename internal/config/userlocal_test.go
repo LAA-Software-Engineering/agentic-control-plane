@@ -103,3 +103,26 @@ func TestApplyUserLocalUnder_projectWins(t *testing.T) {
 		t.Fatalf("unset backend should come from user-local, got %q", project.State.Backend)
 	}
 }
+
+func TestApplyUserLocalUnder_limitsPrecedence(t *testing.T) {
+	project := &spec.ProjectSpec{
+		Limits: &spec.ExecutionLimits{MaxToolOutputBytes: 1000},
+	}
+	userLocal := &UserLocalOverlay{
+		Limits: &spec.ExecutionLimits{
+			MaxToolInputBytes:  500,
+			MaxToolOutputBytes: 2000,
+			MaxCheckpointBytes: 3000,
+		},
+	}
+	ApplyUserLocalUnder(project, userLocal)
+	if project.Limits.MaxToolOutputBytes != 1000 {
+		t.Fatalf("project output limit should win, got %d", project.Limits.MaxToolOutputBytes)
+	}
+	if project.Limits.MaxToolInputBytes != 500 {
+		t.Fatalf("unset input limit should come from user-local, got %d", project.Limits.MaxToolInputBytes)
+	}
+	if project.Limits.MaxCheckpointBytes != 3000 {
+		t.Fatalf("unset checkpoint limit should come from user-local, got %d", project.Limits.MaxCheckpointBytes)
+	}
+}

@@ -193,7 +193,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 			toolWith := with
 			pending := ictx.PendingHitl
 			if pending == nil {
-				interrupted, ierr := e.maybeInterruptForHitl(ctx, in, i, step, with, wfPol, pctx, ictx, totalCost, runHandle)
+				interrupted, ierr := e.maybeInterruptForHitl(ctx, in, wf, i, step, with, wfPol, pctx, ictx, totalCost, runHandle)
 				if interrupted {
 					return ierr
 				}
@@ -220,7 +220,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 			}
 			if err == nil {
 				var meta tools.ToolCallMeta
-				out, meta, err = e.runToolStep(ctx, runHandle, wfPol, in.RunID, step, with, pctx, toolUses, toolWith)
+				out, meta, err = e.runToolStep(ctx, runHandle, wfPol, wf, in.RunID, step, with, pctx, toolUses, toolWith)
 				stepCost = meta.CostUSD
 			}
 		} else {
@@ -258,7 +258,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 
 		// Checkpoint before marking the step succeeded so resume never replays a completed step
 		// if the process dies after persistence (issue #105 / PR #127).
-		if err := e.saveCheckpoint(ctx, in.RunID, i, step.ID, ictx, totalCost, state.CheckpointStatusRunning); err != nil {
+		if err := e.saveCheckpoint(ctx, wf, in.RunID, i, step.ID, ictx, totalCost, state.CheckpointStatusRunning); err != nil {
 			return e.failRun(ctx, in, fmt.Errorf("engine: checkpoint step %q: %w", step.ID, err), totalCost)
 		}
 
@@ -276,7 +276,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 			return e.failRun(ctx, in, fmt.Errorf("engine: upsert step %q: %w", step.ID, err), totalCost)
 		}
 		if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
-			return e.interruptRun(ctx, in, i, step.ID, ictx, totalCost, runHandle)
+			return e.interruptRun(ctx, wf, in, i, step.ID, ictx, totalCost, runHandle)
 		}
 	}
 
@@ -289,7 +289,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 		return e.failRun(ctx, in, err, totalCost)
 	}
 	finishAt = e.now()
-	if err := e.saveCheckpoint(ctx, in.RunID, len(wf.Spec.Steps)-1, "", ictx, totalCost, state.CheckpointStatusCompleted); err != nil {
+	if err := e.saveCheckpoint(ctx, wf, in.RunID, len(wf.Spec.Steps)-1, "", ictx, totalCost, state.CheckpointStatusCompleted); err != nil {
 		return e.failRun(ctx, in, fmt.Errorf("engine: final checkpoint: %w", err), totalCost)
 	}
 	return e.Store.FinishRun(ctx, in.RunID, state.RunStatusSucceeded, finishAt, string(outBytes), "", totalCost)
@@ -308,8 +308,9 @@ func primaryAgentName(wf *spec.WorkflowResource) string {
 }
 
 func (e *Executor) failRun(ctx context.Context, in RunInput, runErr error, totalCost float64) error {
+	wf, _ := lookupWorkflow(e.Graph, in.WorkflowName)
 	ictx := Context{Input: in.Input, Steps: map[string]StepResult{}}
-	_ = e.saveCheckpoint(ctx, in.RunID, -1, "", ictx, totalCost, state.CheckpointStatusFailed)
+	_ = e.saveCheckpoint(ctx, wf, in.RunID, -1, "", ictx, totalCost, state.CheckpointStatusFailed)
 	finishAt := e.now()
 	_ = e.Store.FinishRun(ctx, in.RunID, state.RunStatusFailed, finishAt, "", runErr.Error(), totalCost)
 	return runErr
