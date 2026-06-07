@@ -307,7 +307,15 @@ Or list recent runs as JSON (includes **`output`** on each run):
 agentctl logs -o json --project examples/example1
 ```
 
-**`agentctl logs --run <id> -o json`** also includes top-level **`input`**, **`output`**, and **`workflowName`** alongside **`events`**.
+**`agentctl logs --run <id> -o json`** also includes top-level **`input`**, **`output`**, and **`workflowName`** alongside **`events`**. Chained events include **`prevHash`** and **`hash`** when present (issue #116).
+
+To verify trace integrity after a run:
+
+```bash
+agentctl audit verify --project examples/example1 --run <run-id>
+```
+
+See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
 
 Optional: add **`spec.output.schema`** on the agent (path relative to the project root) so replies are validated with JSON Schema; see `internal/engine/testdata/wfproj/schemas/` and **`DESIGN_DOC.md`**.
 

@@ -36,4 +36,7 @@
 //
 // The logs command reads runs and trace_events from that SQLite file (ordered by seq per run)
 // and supports listing recent runs, filtering by --run, or by --workflow.
+//
+// The audit command (issue #116) verifies tamper-evident hash chains over trace_events via
+// [audit.VerifyRunChain]; see docs/AUDIT_CHAIN.md.
 package cli

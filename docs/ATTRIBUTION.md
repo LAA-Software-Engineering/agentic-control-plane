@@ -14,7 +14,7 @@ Issue [#111](https://github.com/LAA-Software-Engineering/agentic-control-plane/i
 | `idempotency_key` | Client reference key (stored only; dedupe is not enforced yet) |
 | `source` | Origin label (`cli`, `actions`, `api`, …) |
 
-Trace events duplicate `tenant_id`, `thread_id`, and `actor_id` from the parent run so `logs` and the inspector can filter without joins.
+Trace events duplicate `tenant_id`, `thread_id`, and `actor_id` from the parent run so `logs` and the inspector can filter without joins. These fields are included in the tamper-evident trace hash chain (issue #116); see [AUDIT_CHAIN.md](./AUDIT_CHAIN.md).
 
 ## CLI defaults (local only)
 

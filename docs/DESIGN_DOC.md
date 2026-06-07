@@ -397,6 +397,10 @@ Permission checks, budget checks, approval rules, safety gates.
 
 Structured execution events and trace persistence.
 
+### `internal/audit`
+
+Tamper-evident hash chain for `trace_events` (issue #116): canonical serialization, append-time hashing, and run-level verification.
+
 ### `internal/testkit`
 
 Fixture-driven workflow tests.
@@ -1103,6 +1107,23 @@ yes, basic trace/event view
 
 ---
 
+## `agentctl audit`
+
+Verify tamper-evident hash chains over `trace_events`.
+
+```bash
+agentctl audit verify
+agentctl audit verify --run <run-id>
+```
+
+Re-derives each stored `hash` and checks `prev_hash` linkage. Pre-migration rows without hashes are reported as **unchained** and do not fail verification. Exit **1** on chain break. See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
+
+### MVP
+
+yes (issue #116)
+
+---
+
 ## `agentctl inspect`
 
 Print normalized resource.
@@ -1530,6 +1551,8 @@ Event types (issue #115 closed taxonomy, `TaxonomyVersion` 1):
 
 Legacy dot-notation types (`run.started`, `tool.called`, …) are normalized to the above on read and by SQLite migration `006`.
 
+Issue #116 adds a **tamper-evident hash chain** per run: each persisted event stores `prev_hash` and `hash` over canonical (redacted) fields. See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
+
 ---
 
 # 13. Execution Semantics
@@ -1672,8 +1695,13 @@ Suggested tables:
 * `seq`
 * `timestamp`
 * `type`
+* `actor_type` (issue #115)
 * `step_id`
 * `data_json`
+* `tenant_id`, `thread_id`, `actor_id` (issue #111; copied from parent run)
+* `prev_hash`, `hash` (issue #116; nullable for pre-migration rows)
+
+Per-run hash chain: `hash = SHA-256(canonical_event ‖ prev_hash)`. First chained event in a run links to a run-scoped genesis anchor. See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
 
 ---
 
