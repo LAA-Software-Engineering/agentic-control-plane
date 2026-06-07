@@ -4,14 +4,18 @@ import "encoding/json"
 
 // TraceEventRecord is one trace_events row (agentctl logs -o json, inspector /api/runs/{id}).
 type TraceEventRecord struct {
-	Seq       int64           `json:"seq"`
-	Timestamp string          `json:"timestamp"`
-	Type      string          `json:"type"`
-	StepID    string          `json:"stepId,omitempty"`
-	TenantID  string          `json:"tenantId,omitempty"`
-	ThreadID  string          `json:"threadId,omitempty"`
-	ActorID   string          `json:"actorId,omitempty"`
-	Data      json.RawMessage `json:"data"`
+	Seq           int64           `json:"seq"`
+	Timestamp     string          `json:"timestamp"`
+	Type          string          `json:"type"`
+	ActorType     string          `json:"actorType,omitempty"`
+	StepID        string          `json:"stepId,omitempty"`
+	TenantID      string          `json:"tenantId,omitempty"`
+	ThreadID      string          `json:"threadId,omitempty"`
+	ActorID       string          `json:"actorId,omitempty"`
+	TimelineGroup string          `json:"timelineGroup,omitempty"`
+	TimelineIcon  string          `json:"timelineIcon,omitempty"`
+	SpanName      string          `json:"spanName,omitempty"`
+	Data          json.RawMessage `json:"data"`
 }
 
 // RunRecord is one runs row (agentctl logs -o json, inspector /api/runs).

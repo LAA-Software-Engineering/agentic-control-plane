@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Reason values for [DeniedError] and trace event data (trace.EventPolicyDenied).
+// Reason values for [DeniedError] and trace event data (trace.EventSystemError).
 const (
 	ReasonMaxWallClock     = "max_wall_clock"
 	ReasonMaxCost          = "max_cost"
@@ -34,7 +34,7 @@ func (e *DeniedError) Error() string {
 	return fmt.Sprintf("policy denied: %s", e.Reason)
 }
 
-// TraceData returns payload suitable for trace.EventPolicyDenied.
+// TraceData returns payload suitable for trace.EventSystemError.
 func (e *DeniedError) TraceData() map[string]any {
 	if e == nil {
 		return map[string]any{"reason": "unknown"}

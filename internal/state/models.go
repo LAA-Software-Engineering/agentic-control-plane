@@ -70,12 +70,20 @@ type TraceEvent struct {
 	Seq       int64
 	Timestamp time.Time
 	Type      string
+	ActorType string
 	StepID    string
 	DataJSON  string
 	TenantID  string
 	ThreadID  string
 	ActorID   string
 }
+
+// Trace actor_type column values (issue #115). Canonical typed enums live in internal/trace.
+const (
+	TraceActorTypeUser   = "user"
+	TraceActorTypeAgent  = "agent"
+	TraceActorTypeSystem = "system"
+)
 
 // RunListFilter selects runs for logs and inspector queries (issue #111).
 // Empty filter fields are ignored. Limit is clamped via [ClampRunListLimit].

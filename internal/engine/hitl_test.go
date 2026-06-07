@@ -133,7 +133,36 @@ func TestHitl_interruptThenApprove(t *testing.T) {
 	if run.Status != state.RunStatusSucceeded {
 		t.Fatalf("status = %q err=%q", run.Status, run.ErrorText)
 	}
-	assertTraceContains(t, ex.Store, runID, trace.EventApprovalRequested, trace.EventApprovalResolved)
+	assertTraceContains(t, ex.Store, runID, trace.EventHitlRequestCreated, trace.EventHitlDecisionSubmitted)
+}
+
+func TestHitl_interrupt_emitsRequestAndRunError(t *testing.T) {
+	ex, _, runID, started := setupHitlExecutor(t)
+	ctx := context.Background()
+
+	err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "hitl", Env: "local", StartedAt: started, Input: map[string]any{},
+	})
+	if !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("first run: %v", err)
+	}
+
+	events, err := trace.NewReader(ex.Store).ListByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hitlReq, runErr bool
+	for _, ev := range events {
+		if ev.Type == string(trace.EventHitlRequestCreated) {
+			hitlReq = true
+		}
+		if ev.Type == string(trace.EventRunError) && strings.Contains(ev.DataJSON, `"reason":"hitl"`) {
+			runErr = true
+		}
+	}
+	if !hitlReq || !runErr {
+		t.Fatalf("expected hitl_request_created + run_error(hitl); hitl=%v runErr=%v events=%d", hitlReq, runErr, len(events))
+	}
 }
 
 func TestHitl_autoApprove(t *testing.T) {
@@ -167,10 +196,10 @@ func TestHitl_autoApprove_emitsApprovalTrace(t *testing.T) {
 	}
 	var requested, resolved bool
 	for _, ev := range events {
-		if ev.Type == trace.EventApprovalRequested {
+		if ev.Type == string(trace.EventHitlRequestCreated) {
 			requested = true
 		}
-		if ev.Type == trace.EventApprovalResolved {
+		if ev.Type == string(trace.EventHitlDecisionSubmitted) || ev.Type == string(trace.EventHitlResolutionApplied) {
 			resolved = true
 		}
 	}
@@ -298,7 +327,7 @@ func TestHitl_editDeniedArgRejected(t *testing.T) {
 	}
 }
 
-func assertTraceContains(t *testing.T, store state.RuntimeStore, runID string, types ...string) {
+func assertTraceContains(t *testing.T, store state.RuntimeStore, runID string, types ...trace.EventType) {
 	t.Helper()
 	events, err := trace.NewReader(store).ListByRunID(context.Background(), runID)
 	if err != nil {
@@ -309,7 +338,7 @@ func assertTraceContains(t *testing.T, store state.RuntimeStore, runID string, t
 		found[ev.Type] = true
 	}
 	for _, typ := range types {
-		if !found[typ] {
+		if !found[typ.String()] {
 			t.Fatalf("missing trace event %q in %d events", typ, len(events))
 		}
 	}

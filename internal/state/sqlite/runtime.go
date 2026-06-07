@@ -110,10 +110,13 @@ ON CONFLICT(run_id, step_id) DO UPDATE SET
 }
 
 // AppendTraceEvent appends one trace row with the next monotonic seq for run_id.
-func (s *Store) AppendTraceEvent(ctx context.Context, runID string, ts time.Time, eventType string, stepID string, dataJSON string) (seq int64, err error) {
+func (s *Store) AppendTraceEvent(ctx context.Context, runID string, ts time.Time, eventType, actorType, stepID, dataJSON string) (seq int64, err error) {
 	dj := dataJSON
 	if dj == "" {
 		dj = "{}"
+	}
+	if strings.TrimSpace(actorType) == "" {
+		actorType = state.TraceActorTypeAgent
 	}
 	var sid any
 	if stepID != "" {
@@ -131,9 +134,9 @@ func (s *Store) AppendTraceEvent(ctx context.Context, runID string, ts time.Time
 		return 0, err
 	}
 	res, err := tx.ExecContext(ctx, `
-INSERT INTO trace_events (run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id)
-SELECT ?, ?, ?, ?, ?, ?, tenant_id, thread_id, actor_id FROM runs WHERE run_id = ?
-`, runID, seq, tss, eventType, sid, dj, runID)
+INSERT INTO trace_events (run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id, actor_type)
+SELECT ?, ?, ?, ?, ?, ?, tenant_id, thread_id, actor_id, ? FROM runs WHERE run_id = ?
+`, runID, seq, tss, eventType, sid, dj, actorType, runID)
 	if err != nil {
 		return 0, err
 	}
@@ -367,7 +370,7 @@ func (s *Store) ListRunsFiltered(ctx context.Context, filter state.RunListFilter
 // ListTraceEventsByRunID returns trace rows for run_id ordered by seq ascending.
 func (s *Store) ListTraceEventsByRunID(ctx context.Context, runID string) ([]state.TraceEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id
+SELECT run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id, actor_type
 FROM trace_events
 WHERE run_id = ?
 ORDER BY seq ASC
@@ -382,7 +385,7 @@ ORDER BY seq ASC
 		var e state.TraceEvent
 		var ts string
 		var step sql.NullString
-		if err := rows.Scan(&e.RunID, &e.Seq, &ts, &e.Type, &step, &e.DataJSON, &e.TenantID, &e.ThreadID, &e.ActorID); err != nil {
+		if err := rows.Scan(&e.RunID, &e.Seq, &ts, &e.Type, &step, &e.DataJSON, &e.TenantID, &e.ThreadID, &e.ActorID, &e.ActorType); err != nil {
 			return nil, err
 		}
 		t, err := parseSQLiteTime(ts)

@@ -159,7 +159,7 @@ func TestRun_sequentialToolAndAgent_mockModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) < 4 {
+	if len(events) < 3 {
 		t.Fatalf("expected trace events, got %d", len(events))
 	}
 }

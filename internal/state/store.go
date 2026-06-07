@@ -33,7 +33,7 @@ type RuntimeStore interface {
 	StartRun(ctx context.Context, r Run) error
 	FinishRun(ctx context.Context, runID, status string, finishedAt time.Time, outputJSON, errorText string, totalCostUSD float64) error
 	UpsertRunStep(ctx context.Context, st RunStep) error
-	AppendTraceEvent(ctx context.Context, runID string, ts time.Time, eventType string, stepID string, dataJSON string) (seq int64, err error)
+	AppendTraceEvent(ctx context.Context, runID string, ts time.Time, eventType, actorType, stepID, dataJSON string) (seq int64, err error)
 	GetRun(ctx context.Context, runID string) (*Run, error)
 	// ListRecentRuns returns runs ordered by started_at descending (newest first), limited to limit rows.
 	ListRecentRuns(ctx context.Context, limit int) ([]Run, error)

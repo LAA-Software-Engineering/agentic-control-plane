@@ -35,8 +35,9 @@ func (r *Recorder) now() time.Time {
 }
 
 // Append verifies the run exists, serializes data to JSON for data_json, then appends one event.
-// stepID may be empty for run-level events.
-func (r *Recorder) Append(ctx context.Context, runID, stepID, typ string, data map[string]any) (seq int64, err error) {
+// stepID may be empty for run-level events. eventType must be a known [EventType]; actorType must
+// be a known [ActorType].
+func (r *Recorder) Append(ctx context.Context, runID, stepID string, eventType EventType, actorType ActorType, data map[string]any) (seq int64, err error) {
 	if r == nil || r.RT == nil {
 		return 0, errors.New("trace: nil recorder or runtime store")
 	}
@@ -44,9 +45,11 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID, typ string, data m
 	if runID == "" {
 		return 0, errors.New("trace: empty run_id")
 	}
-	typ = strings.TrimSpace(typ)
-	if typ == "" {
-		return 0, errors.New("trace: empty event type")
+	if err := ValidateEventType(eventType); err != nil {
+		return 0, err
+	}
+	if err := ValidateActorType(actorType); err != nil {
+		return 0, err
 	}
 
 	if _, err := r.RT.GetRun(ctx, runID); err != nil {
@@ -66,5 +69,5 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID, typ string, data m
 		dataJSON = string(b)
 	}
 
-	return r.RT.AppendTraceEvent(ctx, runID, r.now(), typ, strings.TrimSpace(stepID), dataJSON)
+	return r.RT.AppendTraceEvent(ctx, runID, r.now(), eventType.String(), actorType.String(), strings.TrimSpace(stepID), dataJSON)
 }

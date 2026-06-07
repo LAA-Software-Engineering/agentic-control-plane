@@ -152,18 +152,18 @@ func TestRun_interruptAndResume_completesWithoutReplay(t *testing.T) {
 		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
 	}
 
-	rows, err := st.ListTraceEventsByRunID(ctx, runID)
+	rows, err := trace.NewReader(st).ListByRunID(ctx, runID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fetchStarts int
+	var fetchSelections int
 	for _, ev := range rows {
-		if ev.StepID == "fetch" && ev.Type == "step.started" {
-			fetchStarts++
+		if ev.StepID == "fetch" && ev.Type == string(trace.EventToolSelection) {
+			fetchSelections++
 		}
 	}
-	if fetchStarts != 1 {
-		t.Fatalf("fetch step.started count = %d want 1", fetchStarts)
+	if fetchSelections != 1 {
+		t.Fatalf("fetch tool_selection count = %d want 1", fetchSelections)
 	}
 }
 

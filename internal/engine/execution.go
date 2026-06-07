@@ -185,9 +185,6 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 		}); err != nil {
 			return e.failRun(ctx, in, fmt.Errorf("engine: upsert step %q: %w", step.ID, err), totalCost)
 		}
-		if e.Trace != nil {
-			_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventStepStarted, map[string]any{"uses": uses, "agent": agentName})
-		}
 
 		var out map[string]any
 		var stepCost float64
@@ -251,7 +248,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 				CostUSD:    stepCost,
 			})
 			if e.Trace != nil {
-				_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventStepFailed, map[string]any{"error": err.Error()})
+				_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, map[string]any{"error": err.Error(), "stepId": step.ID})
 			}
 			return e.failRun(ctx, in, fmt.Errorf("engine: step %q: %w", step.ID, err), totalCost)
 		}
@@ -277,9 +274,6 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 			CostUSD:    stepCost,
 		}); err != nil {
 			return e.failRun(ctx, in, fmt.Errorf("engine: upsert step %q: %w", step.ID, err), totalCost)
-		}
-		if e.Trace != nil {
-			_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventStepFinished, map[string]any{"costUsd": stepCost})
 		}
 		if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
 			return e.interruptRun(ctx, in, i, step.ID, ictx, totalCost, runHandle)
@@ -334,7 +328,7 @@ func (e *Executor) failRunStep(ctx context.Context, in RunInput, stepID string, 
 		ErrorText:  runErr.Error(),
 	})
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, in.RunID, stepID, trace.EventStepFailed, map[string]any{"error": runErr.Error()})
+		_, _ = e.Trace.Append(ctx, in.RunID, stepID, trace.EventRunError, trace.ActorSystem, map[string]any{"error": runErr.Error(), "stepId": stepID})
 	}
 	return e.failRun(ctx, in, runErr, totalCost)
 }

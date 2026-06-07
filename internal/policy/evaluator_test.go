@@ -110,7 +110,7 @@ func TestCheckToolCall_approvalRequired_withoutApprove_policyDeniedTraceAndError
 
 	data := d.TraceData()
 	rec := trace.NewRecorder(st)
-	seq, err := rec.Append(ctx, "run-policy", "merge-step", trace.EventPolicyDenied, data)
+	seq, err := rec.Append(ctx, "run-policy", "merge-step", trace.EventSystemError, trace.ActorSystem, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestCheckToolCall_approvalRequired_withoutApprove_policyDeniedTraceAndError
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 || events[0].Type != trace.EventPolicyDenied {
+	if len(events) != 1 || events[0].Type != string(trace.EventSystemError) {
 		t.Fatalf("events %+v", events)
 	}
 	if events[0].DataJSON == "" {

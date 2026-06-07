@@ -34,7 +34,7 @@ func TestLogs_filterByTenantAndThread(t *testing.T) {
 		if err := st.StartRun(ctx, r); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.AppendTraceEvent(ctx, r.RunID, start, "run.started", "", `{}`); err != nil {
+		if _, err := st.AppendTraceEvent(ctx, r.RunID, start, "run_started", "agent", "", `{}`); err != nil {
 			t.Fatal(err)
 		}
 	}

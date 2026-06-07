@@ -54,10 +54,10 @@ func TestLogs_afterRun_showsStartedAndFinished(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := logOut.String()
-	if !strings.Contains(s, trace.EventRunStarted) {
+	if !strings.Contains(s, string(trace.EventRunStarted)) {
 		t.Fatalf("missing %s in:\n%s", trace.EventRunStarted, s)
 	}
-	if !strings.Contains(s, trace.EventRunFinished) {
+	if !strings.Contains(s, string(trace.EventRunFinished)) {
 		t.Fatalf("missing %s in:\n%s", trace.EventRunFinished, s)
 	}
 }

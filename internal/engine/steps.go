@@ -57,13 +57,13 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 	if err := pol.CheckToolCall(ctx, policy.ToolCallContext{Run: pctx, StepID: step.ID, Uses: uses, With: withArgs}); err != nil {
 		if e.Trace != nil {
 			if d, ok := policy.AsDenied(err); ok {
-				_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventPolicyDenied, d.TraceData())
+				_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventSystemError, trace.ActorSystem, d.TraceData())
 			}
 		}
 		return nil, tools.ToolCallMeta{}, err
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolCalled, map[string]any{"uses": uses})
+		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolSelection, trace.ActorAgent, map[string]any{"uses": uses})
 	}
 	if e.Tools == nil {
 		return nil, tools.ToolCallMeta{}, fmt.Errorf("engine: nil tool executor")
@@ -85,7 +85,7 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 		return nil, tools.ToolCallMeta{}, err
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolCompleted, map[string]any{"uses": uses, "costUsd": resp.Meta.CostUSD})
+		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolExecution, trace.ActorAgent, map[string]any{"uses": uses, "costUsd": resp.Meta.CostUSD})
 	}
 	if err := pol.CheckStep(ctx, policy.StepContext{StepID: step.ID, OutputIsStructured: true}); err != nil {
 		return nil, resp.Meta, err
@@ -121,9 +121,6 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 
 	var resp models.GenerateResponse
 	err = withAgentRetry(ctx2, func() error {
-		if e.Trace != nil {
-			_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventModelCalled, map[string]any{"agent": step.Agent, "model": modelRef})
-		}
 		callCtx := ctx2
 		var endModel func(error)
 		if runHandle != nil {
@@ -145,7 +142,9 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		return nil, models.GenerateMeta{}, err
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventModelCompleted, map[string]any{"agent": step.Agent, "costUsd": resp.Meta.CostUSD})
+		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventLLMCompletion, trace.ActorAgent, map[string]any{
+			"agent": step.Agent, "model": modelRef, "costUsd": resp.Meta.CostUSD,
+		})
 	}
 	if err := validateAgentOutput(e.ProjectRoot, agent, resp.Content); err != nil {
 		return nil, resp.Meta, err

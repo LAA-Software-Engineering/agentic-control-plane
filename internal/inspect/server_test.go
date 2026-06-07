@@ -42,10 +42,10 @@ func seedInspectorDB(t *testing.T) (string, *sqlite.Store) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AppendTraceEvent(ctx, "run-1", now, "run.started", "", `{}`); err != nil {
+	if _, err := st.AppendTraceEvent(ctx, "run-1", now, "run_started", "agent", "", `{}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AppendTraceEvent(ctx, "run-1", now.Add(time.Second), "run.finished", "", `{"trace_id":"abc"}`); err != nil {
+	if _, err := st.AppendTraceEvent(ctx, "run-1", now.Add(time.Second), "run_finished", "agent", "", `{"trace_id":"abc"}`); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SaveCheckpoint(ctx, state.RunCheckpoint{

@@ -43,7 +43,7 @@ func TestStartRun_attributionDefaultsAndTracePropagation(t *testing.T) {
 		t.Fatalf("request_id should differ from run_id: %q", got.RequestID)
 	}
 
-	if _, err := st.AppendTraceEvent(ctx, "run-attr", start, "run.started", "", `{}`); err != nil {
+	if _, err := st.AppendTraceEvent(ctx, "run-attr", start, "run_started", "agent", "", `{}`); err != nil {
 		t.Fatal(err)
 	}
 	events, err := st.ListTraceEventsByRunID(ctx, "run-attr")

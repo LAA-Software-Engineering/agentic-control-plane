@@ -13,8 +13,8 @@ import (
 func TestContract_runEvents_matchesLogsJSON(t *testing.T) {
 	ts := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 	events := []state.TraceEvent{
-		{RunID: "r1", Seq: 1, Timestamp: ts, Type: "run.started", DataJSON: `{}`},
-		{RunID: "r1", Seq: 2, Timestamp: ts.Add(time.Second), Type: "tool.called", StepID: "s1", DataJSON: `{"x":1}`},
+		{RunID: "r1", Seq: 1, Timestamp: ts, Type: "run_started", ActorType: "agent", DataJSON: `{}`},
+		{RunID: "r1", Seq: 2, Timestamp: ts.Add(time.Second), Type: "tool_selection", ActorType: "agent", StepID: "s1", DataJSON: `{"x":1}`},
 	}
 
 	logsEvents := statejson.RunEventsPayload{RunID: "r1", Events: statejson.TraceEvents(events)}.Events
