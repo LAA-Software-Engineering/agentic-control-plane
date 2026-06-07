@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/audit"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
 )
@@ -133,10 +134,46 @@ func (s *Store) AppendTraceEvent(ctx context.Context, runID string, ts time.Time
 	if err := tx.QueryRowContext(ctx, `SELECT IFNULL(MAX(seq), 0) + 1 FROM trace_events WHERE run_id = ?`, runID).Scan(&seq); err != nil {
 		return 0, err
 	}
+
+	var tenantID, threadID, actorID string
+	if err := tx.QueryRowContext(ctx, `
+SELECT tenant_id, thread_id, actor_id FROM runs WHERE run_id = ?
+`, runID).Scan(&tenantID, &threadID, &actorID); err != nil {
+		return 0, err
+	}
+
+	var lastChainedHash sql.NullString
+	err = tx.QueryRowContext(ctx, `
+SELECT hash FROM trace_events
+WHERE run_id = ? AND hash IS NOT NULL AND hash != ''
+ORDER BY seq DESC
+LIMIT 1
+`, runID).Scan(&lastChainedHash)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	prevHash := audit.PrevHashForChainTip(runID, lastChainedHash.String)
+	event := state.TraceEvent{
+		RunID:     runID,
+		Seq:       seq,
+		Timestamp: ts.UTC(),
+		Type:      eventType,
+		ActorType: actorType,
+		StepID:    stepID,
+		DataJSON:  dj,
+		TenantID:  tenantID,
+		ThreadID:  threadID,
+		ActorID:   actorID,
+	}
+	eventHash, err := audit.EventHash(event, prevHash)
+	if err != nil {
+		return 0, err
+	}
+
 	res, err := tx.ExecContext(ctx, `
-INSERT INTO trace_events (run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id, actor_type)
-SELECT ?, ?, ?, ?, ?, ?, tenant_id, thread_id, actor_id, ? FROM runs WHERE run_id = ?
-`, runID, seq, tss, eventType, sid, dj, actorType, runID)
+INSERT INTO trace_events (run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id, actor_type, prev_hash, hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, runID, seq, tss, eventType, sid, dj, tenantID, threadID, actorID, actorType, prevHash, eventHash)
 	if err != nil {
 		return 0, err
 	}
@@ -367,10 +404,37 @@ func (s *Store) ListRunsFiltered(ctx context.Context, filter state.RunListFilter
 	return out, rows.Err()
 }
 
+func scanTraceEventRow(sc rowScanner) (state.TraceEvent, error) {
+	var e state.TraceEvent
+	var ts string
+	var step, prevHash, eventHash sql.NullString
+	if err := sc.Scan(
+		&e.RunID, &e.Seq, &ts, &e.Type, &step, &e.DataJSON,
+		&e.TenantID, &e.ThreadID, &e.ActorID, &e.ActorType, &prevHash, &eventHash,
+	); err != nil {
+		return state.TraceEvent{}, err
+	}
+	t, err := parseSQLiteTime(ts)
+	if err != nil {
+		return state.TraceEvent{}, fmt.Errorf("timestamp: %w", err)
+	}
+	e.Timestamp = t
+	if step.Valid {
+		e.StepID = step.String
+	}
+	if prevHash.Valid {
+		e.PrevHash = prevHash.String
+	}
+	if eventHash.Valid {
+		e.Hash = eventHash.String
+	}
+	return e, nil
+}
+
 // ListTraceEventsByRunID returns trace rows for run_id ordered by seq ascending.
 func (s *Store) ListTraceEventsByRunID(ctx context.Context, runID string) ([]state.TraceEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id, actor_type
+SELECT run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id, actor_type, prev_hash, hash
 FROM trace_events
 WHERE run_id = ?
 ORDER BY seq ASC
@@ -382,19 +446,9 @@ ORDER BY seq ASC
 
 	var out []state.TraceEvent
 	for rows.Next() {
-		var e state.TraceEvent
-		var ts string
-		var step sql.NullString
-		if err := rows.Scan(&e.RunID, &e.Seq, &ts, &e.Type, &step, &e.DataJSON, &e.TenantID, &e.ThreadID, &e.ActorID, &e.ActorType); err != nil {
-			return nil, err
-		}
-		t, err := parseSQLiteTime(ts)
+		e, err := scanTraceEventRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("timestamp: %w", err)
-		}
-		e.Timestamp = t
-		if step.Valid {
-			e.StepID = step.String
+			return nil, err
 		}
 		out = append(out, e)
 	}

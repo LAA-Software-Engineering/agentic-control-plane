@@ -58,6 +58,12 @@ agentctl logs --project examples/pr-review-demo --state /tmp/pr-review-state.db 
 
 You should see steps through `review_diff`, then **`policy.denied`** on `post_comment` with reason **`approval_required`**.
 
+Verify the trace chain was not tampered with:
+
+```bash
+agentctl audit verify --project examples/pr-review-demo --state /tmp/pr-review-state.db --run <run-id>
+```
+
 ### Optional: allow the write (full success)
 
 ```bash
@@ -87,6 +93,6 @@ This records a simulated comment result (still **no** real GitHub traffic).
 | Order of operations | Workflow YAML | Implicit control flow |
 | “Can we post?” | Policy resource + trace | Easy to forget a guard |
 | Model output shape | JSON Schema on the agent | String parsing / hope |
-| Audit trail | `agentctl logs` | Printf / none |
+| Audit trail | `agentctl logs`; `agentctl audit verify` for tamper detection | Printf / none |
 
-For broader patterns, see [`docs/EXAMPLES.md`](../../docs/EXAMPLES.md) and [`docs/DESIGN_DOC.md`](../../docs/DESIGN_DOC.md).
+For broader patterns, see [`docs/EXAMPLES.md`](../../docs/EXAMPLES.md), [`docs/AUDIT_CHAIN.md`](../../docs/AUDIT_CHAIN.md), and [`docs/DESIGN_DOC.md`](../../docs/DESIGN_DOC.md).

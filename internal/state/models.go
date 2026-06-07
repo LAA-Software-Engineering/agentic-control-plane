@@ -76,6 +76,10 @@ type TraceEvent struct {
 	TenantID  string
 	ThreadID  string
 	ActorID   string
+	// PrevHash and Hash link events into a per-run tamper-evident chain (issue #116).
+	// Empty values mean the row predates the chain migration or was not chained on insert.
+	PrevHash string
+	Hash     string
 }
 
 // Trace actor_type column values (issue #115). Canonical typed enums live in internal/trace.

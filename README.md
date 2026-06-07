@@ -50,7 +50,8 @@ The full product vision, YAML spec v0, and architecture are documented in [**`do
 - **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint; JSON/YAML output includes **`policyLint`** and a **`deploymentBaseline`** digest for the store snapshot  
 - **`agentctl apply`** — persist plan (TTY confirm or `--auto-approve` / `AGENTCTL_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
 - **`agentctl run`** — execute a workflow locally; JSON Schema for inputs where configured; policy gates pause for **human-in-the-loop (HITL)** approval when a tool call requires it  
-- **`agentctl logs`** — read **trace events** from SQLite (`--run`, `--workflow`, or recent runs)  
+- **`agentctl logs`** — read **trace events** from SQLite (`--run`, `--workflow`, or recent runs)
+- **`agentctl audit verify`** — re-walk hash-linked trace chains and detect tampering (see [`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md))  
 - **Tools** — **`native`**, **`http`**, **`mock`**, and **`mcp`** — MCP supports **stdio** (subprocess) or **streamable HTTP** (`spec.mcp.transport: http`, `url`, optional `headers` with `env:` tokens)  
 - **Project defaults** — besides **`model`** and **`policy`**, optional **`runtime`** flows to **`spec.runtime`** on agents/workflows when omitted (MVP: **`local`** or unset; see spec validation)  
 - **Output** — table, JSON, or YAML (`-o` / `--output`)  
@@ -105,6 +106,7 @@ agentctl plan   --project my-agent-system
 agentctl apply  --project my-agent-system --auto-approve
 agentctl run    workflow/hello --project my-agent-system
 agentctl logs   --project my-agent-system --workflow hello
+agentctl audit verify --project my-agent-system --run <run-id>
 agentctl inspect --web --project my-agent-system   # read-only local UI on http://127.0.0.1:8787
 ```
 
@@ -195,6 +197,7 @@ Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 | `internal/engine` | Workflow execution |
 | `internal/policy` | Policy evaluation |
 | `internal/state/sqlite` | SQLite deployment + runtime/trace tables |
+| `internal/audit` | Tamper-evident hash chain for trace events (issue #116) |
 | `test/integration` | End-to-end CLI flow tests |
 | `docs/DESIGN_DOC.md` | Spec, CLI UX, architecture, roadmap |
 | `docs/GITHUB_ACTIONS.md` | Running **`agentctl`** from GitHub Actions (tokens, exit code **5**, template path) |
@@ -257,6 +260,9 @@ The **recommended implementation phases** are outlined in **section 20** of [`do
 ## Documentation
 
 - **[`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md)** — design document v0 (problem statement, spec, CLI, engine, state model, testing strategy, MVP vs end state, section 23 recommendation).  
+- **[`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md)** — hash-linked trace audit chain and `agentctl audit verify` (issue #116).  
+- **[`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md)** — tenant, thread, and actor fields on runs and traces (issue #111).  
+- **[`docs/OTEL.md`](docs/OTEL.md)** — optional OTLP trace export alongside SQLite (issue #108).  
 - **[`examples/pr-review-demo/README.md`](examples/pr-review-demo/README.md)** — end-to-end demo: structured review output, traceable run, **approval-gated** write (`validate` → `plan` → `apply` → `run` → `logs`).
 - **[`docs/EXAMPLES.md`](docs/EXAMPLES.md)** — copy-paste YAML and CLI examples (`init`, mock vs OpenAI, workflows, environment overlays).  
 - **[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)** — Contributor Covenant 2.1; participation expectations and reporting.  

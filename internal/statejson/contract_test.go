@@ -8,6 +8,24 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 )
 
+func TestContract_traceEvents_includesAuditHashes(t *testing.T) {
+	ts := time.Date(2026, 6, 4, 10, 0, 0, 0, time.UTC)
+	events := []state.TraceEvent{
+		{
+			RunID: "r1", Seq: 1, Timestamp: ts, Type: "run_started", ActorType: "agent",
+			DataJSON: `{}`, PrevHash: "prev1", Hash: "hash1",
+		},
+	}
+	got, err := json.Marshal(TraceEvents(events))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `[{"seq":1,"timestamp":"2026-06-04T10:00:00Z","type":"run_started","actorType":"agent","timelineGroup":"run","timelineIcon":"▶","spanName":"agent.run","prevHash":"prev1","hash":"hash1","data":{}}]`
+	if string(got) != want {
+		t.Fatalf("marshal:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestContract_traceEvents_matchLogsShape(t *testing.T) {
 	ts := time.Date(2026, 6, 4, 10, 0, 0, 0, time.UTC)
 	events := []state.TraceEvent{
