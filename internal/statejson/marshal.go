@@ -32,6 +32,8 @@ func TraceEvents(events []state.TraceEvent) []TraceEventRecord {
 		} else {
 			rec.Data = json.RawMessage("{}")
 		}
+		rec.PrevHash = e.PrevHash
+		rec.Hash = e.Hash
 		out = append(out, rec)
 	}
 	return out

@@ -15,6 +15,8 @@ type TraceEventRecord struct {
 	TimelineGroup string          `json:"timelineGroup,omitempty"`
 	TimelineIcon  string          `json:"timelineIcon,omitempty"`
 	SpanName      string          `json:"spanName,omitempty"`
+	PrevHash      string          `json:"prevHash,omitempty"`
+	Hash          string          `json:"hash,omitempty"`
 	Data          json.RawMessage `json:"data"`
 }
 
