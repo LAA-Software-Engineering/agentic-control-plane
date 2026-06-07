@@ -41,6 +41,15 @@ func testResolvedConfig(t *testing.T, root, env string) *config.ResolvedConfig {
 	return rc
 }
 
+func copyTestProject(t *testing.T, src string) string {
+	t.Helper()
+	dst := filepath.Join(t.TempDir(), "proj")
+	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
+		t.Fatalf("copy test project: %v", err)
+	}
+	return dst
+}
+
 func TestInvoke_persistsRunAndTraceInSQLite(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "localrun.db"))
@@ -146,14 +155,9 @@ func TestInvoke_usesResolvedSnapshotNotDisk(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	root := testRunProjRoot(t)
+	root := copyTestProject(t, testRunProjRoot(t))
 	rc := testResolvedConfig(t, root, "staging")
 	projectPath := filepath.Join(root, "project.yaml")
-	original, err := os.ReadFile(projectPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.WriteFile(projectPath, original, 0o644) })
 	if err := os.WriteFile(projectPath, []byte("invalid: yaml: ["), 0o644); err != nil {
 		t.Fatal(err)
 	}
