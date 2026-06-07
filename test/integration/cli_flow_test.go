@@ -133,7 +133,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("logs: %v\n%s", err, out)
 		}
-		if !strings.Contains(out, trace.EventRunStarted) || !strings.Contains(out, trace.EventRunFinished) {
+		if !strings.Contains(out, string(trace.EventRunStarted)) || !strings.Contains(out, string(trace.EventRunFinished)) {
 			t.Fatalf("logs output:\n%s", out)
 		}
 	})
@@ -165,7 +165,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out, trace.EventApprovalRequested) {
+		if !strings.Contains(out, string(trace.EventHitlRequestCreated)) {
 			t.Fatalf("logs missing approval request:\n%s", out)
 		}
 	})
@@ -221,8 +221,8 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("logs: %v\n%s", err, out)
 		}
-		if !strings.Contains(out, trace.EventApprovalRequested) {
-			t.Fatalf("logs missing %q:\n%s", trace.EventApprovalRequested, out)
+		if !strings.Contains(out, string(trace.EventHitlRequestCreated)) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventHitlRequestCreated, out)
 		}
 		if !strings.Contains(out, "post_comment") {
 			t.Fatalf("logs should mention gated step post_comment:\n%s", out)
@@ -347,8 +347,8 @@ func TestCLI_PrReviewGithubExample(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logs: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, trace.EventApprovalRequested) {
-		t.Fatalf("logs missing %q:\n%s", trace.EventApprovalRequested, out)
+	if !strings.Contains(out, string(trace.EventHitlRequestCreated)) {
+		t.Fatalf("logs missing %q:\n%s", trace.EventHitlRequestCreated, out)
 	}
 }
 

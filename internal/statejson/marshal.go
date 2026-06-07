@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
 // TraceEvents maps trace rows to API/CLI JSON records.
@@ -14,11 +15,17 @@ func TraceEvents(events []state.TraceEvent) []TraceEventRecord {
 		rec := TraceEventRecord{
 			Seq:       e.Seq,
 			Timestamp: e.Timestamp.UTC().Format(time.RFC3339Nano),
-			Type:      e.Type,
+			Type:      trace.NormalizeStoredEventType(e.Type),
+			ActorType: e.ActorType,
 			StepID:    e.StepID,
 			TenantID:  e.TenantID,
 			ThreadID:  e.ThreadID,
 			ActorID:   e.ActorID,
+		}
+		if et, known := trace.ParseEventType(rec.Type); known {
+			rec.TimelineIcon = et.TimelineIcon()
+			rec.TimelineGroup = et.TimelineGroup()
+			rec.SpanName = et.SpanName()
 		}
 		if e.DataJSON != "" {
 			rec.Data = json.RawMessage(e.DataJSON)

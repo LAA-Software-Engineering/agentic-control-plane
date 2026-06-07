@@ -138,12 +138,12 @@ func TestRuntime_insertRunEventsQueryByRunID(t *testing.T) {
 	}
 
 	ts1 := started.Add(2 * time.Minute)
-	seq1, err := st.AppendTraceEvent(ctx, run.RunID, ts1, "log", "", `{"m":"a"}`)
+	seq1, err := st.AppendTraceEvent(ctx, run.RunID, ts1, "log", "system", "", `{"m":"a"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ts2 := started.Add(3 * time.Minute)
-	seq2, err := st.AppendTraceEvent(ctx, run.RunID, ts2, "metric", "s1", `{"cpu":1}`)
+	seq2, err := st.AppendTraceEvent(ctx, run.RunID, ts2, "metric", "system", "s1", `{"cpu":1}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestAppendTraceEvent_foreignKeyRequiresRun(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	_, err = st.AppendTraceEvent(ctx, "no-such-run", time.Now().UTC(), "log", "", `{}`)
+	_, err = st.AppendTraceEvent(ctx, "no-such-run", time.Now().UTC(), "log", "system", "", `{}`)
 	if err == nil {
 		t.Fatal("expected error for missing run_id")
 	}
@@ -278,7 +278,7 @@ func TestDeleteRunsStartedBefore_cascadesChildRows(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AppendTraceEvent(ctx, "old-run", oldStart, "log", "", `{}`); err != nil {
+	if _, err := st.AppendTraceEvent(ctx, "old-run", oldStart, "log", "system", "", `{}`); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SaveCheckpoint(ctx, state.RunCheckpoint{

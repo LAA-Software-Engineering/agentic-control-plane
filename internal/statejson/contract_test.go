@@ -11,15 +11,15 @@ import (
 func TestContract_traceEvents_matchLogsShape(t *testing.T) {
 	ts := time.Date(2026, 6, 4, 10, 0, 0, 0, time.UTC)
 	events := []state.TraceEvent{
-		{RunID: "r1", Seq: 1, Timestamp: ts, Type: "run.started", DataJSON: `{"k":1}`},
-		{RunID: "r1", Seq: 2, Timestamp: ts.Add(time.Second), Type: "run.finished", StepID: "s1", DataJSON: ""},
+		{RunID: "r1", Seq: 1, Timestamp: ts, Type: "run.started", ActorType: "agent", DataJSON: `{"k":1}`},
+		{RunID: "r1", Seq: 2, Timestamp: ts.Add(time.Second), Type: "run.finished", ActorType: "agent", StepID: "s1", DataJSON: ""},
 	}
 	got, err := json.Marshal(TraceEvents(events))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `[{"seq":1,"timestamp":"2026-06-04T10:00:00Z","type":"run.started","data":{"k":1}},` +
-		`{"seq":2,"timestamp":"2026-06-04T10:00:01Z","type":"run.finished","stepId":"s1","data":{}}]`
+	want := `[{"seq":1,"timestamp":"2026-06-04T10:00:00Z","type":"run_started","actorType":"agent","timelineGroup":"run","timelineIcon":"▶","spanName":"agent.run","data":{"k":1}},` +
+		`{"seq":2,"timestamp":"2026-06-04T10:00:01Z","type":"run_finished","actorType":"agent","stepId":"s1","timelineGroup":"run","timelineIcon":"✓","spanName":"agent.run","data":{}}]`
 	if string(got) != want {
 		t.Fatalf("marshal:\n%s\nwant:\n%s", got, want)
 	}

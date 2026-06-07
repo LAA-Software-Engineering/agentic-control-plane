@@ -93,10 +93,13 @@
       evEl.innerHTML = '';
       (data.events || []).forEach((e) => {
         const div = document.createElement('div');
-        div.className = 'event';
+        div.className = 'event event-' + (e.timelineGroup || 'other');
+        const icon = e.timelineIcon ? e.timelineIcon + ' ' : '';
         div.innerHTML =
-          '<span class="type">' + esc(e.type) + '</span> ' +
-          '<span class="meta">seq ' + e.seq + (e.stepId ? ' · ' + esc(e.stepId) : '') + '</span>' +
+          '<span class="type">' + icon + esc(e.type) + '</span> ' +
+          '<span class="meta">seq ' + e.seq +
+          (e.actorType ? ' · ' + esc(e.actorType) : '') +
+          (e.stepId ? ' · ' + esc(e.stepId) : '') + '</span>' +
           '<pre>' + esc(JSON.stringify(e.data, null, 2)) + '</pre>';
         evEl.appendChild(div);
       });

@@ -133,7 +133,7 @@ func TestHitl_interruptThenApprove(t *testing.T) {
 	if run.Status != state.RunStatusSucceeded {
 		t.Fatalf("status = %q err=%q", run.Status, run.ErrorText)
 	}
-	assertTraceContains(t, ex.Store, runID, trace.EventApprovalRequested, trace.EventApprovalResolved)
+	assertTraceContains(t, ex.Store, runID, trace.EventHitlRequestCreated, trace.EventHitlDecisionSubmitted)
 }
 
 func TestHitl_autoApprove(t *testing.T) {
@@ -167,10 +167,10 @@ func TestHitl_autoApprove_emitsApprovalTrace(t *testing.T) {
 	}
 	var requested, resolved bool
 	for _, ev := range events {
-		if ev.Type == trace.EventApprovalRequested {
+		if ev.Type == string(trace.EventHitlRequestCreated) {
 			requested = true
 		}
-		if ev.Type == trace.EventApprovalResolved {
+		if ev.Type == string(trace.EventHitlDecisionSubmitted) || ev.Type == string(trace.EventHitlResolutionApplied) {
 			resolved = true
 		}
 	}
@@ -298,7 +298,7 @@ func TestHitl_editDeniedArgRejected(t *testing.T) {
 	}
 }
 
-func assertTraceContains(t *testing.T, store state.RuntimeStore, runID string, types ...string) {
+func assertTraceContains(t *testing.T, store state.RuntimeStore, runID string, types ...trace.EventType) {
 	t.Helper()
 	events, err := trace.NewReader(store).ListByRunID(context.Background(), runID)
 	if err != nil {
@@ -309,7 +309,7 @@ func assertTraceContains(t *testing.T, store state.RuntimeStore, runID string, t
 		found[ev.Type] = true
 	}
 	for _, typ := range types {
-		if !found[typ] {
+		if !found[typ.String()] {
 			t.Fatalf("missing trace event %q in %d events", typ, len(events))
 		}
 	}

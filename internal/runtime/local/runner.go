@@ -104,10 +104,10 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	}
 
 	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
-	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, map[string]any{
+	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, trace.ActorAgent, map[string]any{
 		"workflow": wfName, "environment": cfg.Environment(),
 	}); err != nil {
-		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: trace run.started: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: trace run_started: %w", err)
 	}
 
 	runCfg := engineRunConfigFromInvoke(opts)
@@ -179,10 +179,11 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	}
 
 	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
-	if _, err := rec.Append(ctx, runID, "", trace.EventRunResumed, map[string]any{
+	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, trace.ActorAgent, map[string]any{
 		"workflow": wfName,
+		"resumed":  true,
 	}); err != nil {
-		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: trace run.resumed: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: trace run_started (resumed): %w", err)
 	}
 
 	envLabel := strings.TrimSpace(run.Env)
@@ -246,9 +247,12 @@ func (r *Runtime) executeEngine(
 			return runID, nil
 		}
 		finData["error"] = runErr.Error()
+		if _, terr := rec.Append(ctx, runID, "", trace.EventRunError, trace.ActorSystem, finData); terr != nil && runErr == nil {
+			return runID, fmt.Errorf("local: trace run_error: %w", terr)
+		}
 	}
-	if _, terr := rec.Append(ctx, runID, "", trace.EventRunFinished, finData); terr != nil && runErr == nil {
-		return runID, fmt.Errorf("local: trace run.finished: %w", terr)
+	if _, terr := rec.Append(ctx, runID, "", trace.EventRunFinished, trace.ActorAgent, finData); terr != nil && runErr == nil {
+		return runID, fmt.Errorf("local: trace run_finished: %w", terr)
 	}
 	return runID, runErr
 }

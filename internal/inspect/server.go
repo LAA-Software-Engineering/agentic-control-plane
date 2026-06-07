@@ -15,6 +15,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
 // DefaultPort is the default TCP port for the read-only inspector (issue #109).
@@ -210,6 +211,7 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load trace events")
 		return
 	}
+	events = trace.NormalizeEvents(events)
 
 	resp := RunDetailResponse{
 		StatePath: s.cfg.StatePath,

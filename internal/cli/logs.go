@@ -14,6 +14,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +24,7 @@ func newLogsCmd() *cobra.Command {
 	var tenantID string
 	var threadID string
 	var actorID string
+	var eventTypes []string
 
 	cmd := &cobra.Command{
 		Use:          "logs",
@@ -33,10 +35,12 @@ func newLogsCmd() *cobra.Command {
 Without filters, lists recent runs (newest first). Use --run to print trace events for one run
 (ordered by seq), --workflow to print events for recent runs of a workflow name, or
 --tenant-id / --thread-id / --actor-id to filter the run list (combinable).
+Use --event to filter trace events by closed event type (repeatable; issue #115).
 
 Examples:
   agentctl logs
   agentctl logs --run <run-id>
+  agentctl logs --run <run-id> --event tool_execution
   agentctl logs --workflow pr-review
   agentctl logs --tenant-id acme --thread-id prod-session-1
 
@@ -46,7 +50,7 @@ Exit codes (section 11.2):
   2 — validation failure (unknown run id, invalid flags)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
-			return runLogs(cmd, runID, workflow, tenantID, threadID, actorID)
+			return runLogs(cmd, runID, workflow, tenantID, threadID, actorID, eventTypes)
 		},
 	}
 	cmd.Flags().StringVar(&runID, "run", "", "show trace events for this run id")
@@ -54,10 +58,11 @@ Exit codes (section 11.2):
 	cmd.Flags().StringVar(&tenantID, "tenant-id", "", "filter runs by tenant id")
 	cmd.Flags().StringVar(&threadID, "thread-id", "", "filter runs by thread id")
 	cmd.Flags().StringVar(&actorID, "actor-id", "", "filter runs by actor id")
+	cmd.Flags().StringArrayVar(&eventTypes, "event", nil, "filter trace events by event type (repeatable)")
 	return cmd
 }
 
-func runLogs(cmd *cobra.Command, runID, workflow, tenantID, threadID, actorID string) error {
+func runLogs(cmd *cobra.Command, runID, workflow, tenantID, threadID, actorID string, eventTypes []string) error {
 	ctx := context.Background()
 	g := Globals()
 
@@ -71,6 +76,10 @@ func runLogs(cmd *cobra.Command, runID, workflow, tenantID, threadID, actorID st
 	}
 	if runID != "" && (tenantID != "" || threadID != "" || actorID != "") {
 		return NewExitErrorf(ExitValidationError, "logs: --run cannot be combined with tenant/thread/actor filters")
+	}
+	eventFilter, err := parseLogsEventFilter(eventTypes)
+	if err != nil {
+		return NewExitError(ExitValidationError, err)
 	}
 
 	graph, root, err := prepareProjectGraph(g)
@@ -105,15 +114,15 @@ func runLogs(cmd *cobra.Command, runID, workflow, tenantID, threadID, actorID st
 
 	switch {
 	case runID != "":
-		return writeLogsForRun(cmd, ctx, st, dsn, runID, g)
+		return writeLogsForRun(cmd, ctx, st, dsn, runID, eventFilter, g)
 	case workflow != "" || tenantID != "" || threadID != "" || actorID != "":
-		return writeLogsFiltered(cmd, ctx, st, dsn, filter, g)
+		return writeLogsFiltered(cmd, ctx, st, dsn, filter, eventFilter, g)
 	default:
 		return writeLogsRunList(cmd, ctx, st, dsn, g)
 	}
 }
 
-func writeLogsForRun(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn, runID string, g *Global) error {
+func writeLogsForRun(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn, runID string, eventFilter map[string]struct{}, g *Global) error {
 	if _, err := st.GetRun(ctx, runID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NewExitErrorf(ExitValidationError, "logs: unknown run %q", runID)
@@ -124,10 +133,12 @@ func writeLogsForRun(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, 
 	if err != nil {
 		return fmt.Errorf("logs: list trace events: %w", err)
 	}
+	events = trace.NormalizeEvents(events)
+	events = filterTraceEvents(events, eventFilter)
 	return writeLogsEventsOutput(cmd, dsn, runID, "", events, g)
 }
 
-func writeLogsFiltered(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn string, filter state.RunListFilter, g *Global) error {
+func writeLogsFiltered(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, dsn string, filter state.RunListFilter, eventFilter map[string]struct{}, g *Global) error {
 	filter.Limit = state.DefaultRunListLimit
 	runs, err := st.ListRunsFiltered(ctx, filter)
 	if err != nil {
@@ -148,6 +159,8 @@ func writeLogsFiltered(cmd *cobra.Command, ctx context.Context, st *sqlite.Store
 			if err != nil {
 				return fmt.Errorf("logs: list trace events: %w", err)
 			}
+			ev = trace.NormalizeEvents(ev)
+			ev = filterTraceEvents(ev, eventFilter)
 			entries = append(entries, runEntry{
 				RunID:    r.RunID,
 				Status:   r.Status,
@@ -184,6 +197,8 @@ func writeLogsFiltered(cmd *cobra.Command, ctx context.Context, st *sqlite.Store
 		if err != nil {
 			return fmt.Errorf("logs: list trace events: %w", err)
 		}
+		ev = trace.NormalizeEvents(ev)
+		ev = filterTraceEvents(ev, eventFilter)
 		fmt.Fprintf(&b, "=== Run %s (%s, %s) ===\n", r.RunID, r.WorkflowName, r.Status)
 		b.WriteString(formatTraceTable(ev))
 	}
@@ -272,22 +287,62 @@ func formatTraceTable(events []state.TraceEvent) string {
 	}
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "SEQ\tTIME\tTYPE\tSTEP\tDATA")
+	fmt.Fprintln(w, "SEQ\tTIME\tTYPE\tACTOR\tSTEP\tDATA")
 	for _, e := range events {
 		step := e.StepID
 		if step == "" {
 			step = "-"
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
+		actor := e.ActorType
+		if actor == "" {
+			actor = "-"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n",
 			e.Seq,
 			e.Timestamp.UTC().Format(time.RFC3339),
 			e.Type,
+			actor,
 			step,
 			clipJSONForTable(e.DataJSON, 96),
 		)
 	}
 	_ = w.Flush()
 	return b.String()
+}
+
+func parseLogsEventFilter(raw []string) (map[string]struct{}, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		s := strings.TrimSpace(item)
+		if s == "" {
+			continue
+		}
+		et, known := trace.ParseEventType(s)
+		if !known {
+			return nil, fmt.Errorf("logs: unknown event type %q (known: %s)", s, strings.Join(trace.AllEventTypeStrings(), ", "))
+		}
+		out[et.String()] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func filterTraceEvents(events []state.TraceEvent, filter map[string]struct{}) []state.TraceEvent {
+	if len(filter) == 0 {
+		return events
+	}
+	out := make([]state.TraceEvent, 0, len(events))
+	for _, e := range events {
+		if _, ok := filter[trace.NormalizeStoredEventType(e.Type)]; ok {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func clipJSONForTable(s string, max int) string {

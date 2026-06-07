@@ -70,6 +70,7 @@ type TraceEvent struct {
 	Seq       int64
 	Timestamp time.Time
 	Type      string
+	ActorType string
 	StepID    string
 	DataJSON  string
 	TenantID  string

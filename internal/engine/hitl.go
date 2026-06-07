@@ -78,7 +78,7 @@ func (e *Executor) maybeInterruptForHitl(
 	}
 	if e.Trace != nil {
 		redacted := policy.RedactHitlArgs(gate.With, gate.Review.RedactKeys)
-		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventApprovalRequested, map[string]any{
+		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlRequestCreated, trace.ActorSystem, map[string]any{
 			"uses":             gate.Uses,
 			"with":             redacted,
 			"description":      gate.Review.Description,
@@ -86,8 +86,8 @@ func (e *Executor) maybeInterruptForHitl(
 			"allowedSwitchTo":  gate.Review.SwitchTargets,
 			"stepIndex":        stepIndex,
 		})
-		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunInterrupted, map[string]any{
-			"stepIndex": stepIndex, "stepId": step.ID, "reason": traceInterruptReasonHITL,
+		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, map[string]any{
+			"stepIndex": stepIndex, "stepId": step.ID, "reason": traceInterruptReasonHITL, "interrupted": true,
 		})
 	}
 	return true, ErrInterrupted
@@ -125,7 +125,7 @@ func (e *Executor) resolvePendingHitl(
 	if err != nil {
 		if decision.Kind == spec.HitlDecisionReject {
 			if e.Trace != nil {
-				_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventApprovalResolved, map[string]any{
+				_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlDecisionSubmitted, trace.ActorUser, map[string]any{
 					"decision": spec.HitlDecisionReject,
 					"actor":    decision.Actor,
 					"uses":     pending.Uses,
@@ -153,7 +153,8 @@ func (e *Executor) resolvePendingHitl(
 		traceData["switchTarget"] = decision.SwitchTarget
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventApprovalResolved, traceData)
+		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlDecisionSubmitted, trace.ActorUser, traceData)
+		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlResolutionApplied, trace.ActorSystem, traceData)
 	}
 	pctx2 := pctx
 	pctx2.ApprovedActions = append(append([]string(nil), pctx.ApprovedActions...), uses)
@@ -173,7 +174,7 @@ func (e *Executor) recordAutoApproveHitl(ctx context.Context, runID string, step
 		actor = policy.DefaultHitlActor
 	}
 	redacted := policy.RedactHitlArgs(gate.With, gate.Review.RedactKeys)
-	_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventApprovalRequested, map[string]any{
+	_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventHitlRequestCreated, trace.ActorSystem, map[string]any{
 		"uses":             gate.Uses,
 		"with":             redacted,
 		"description":      gate.Review.Description,
@@ -182,7 +183,14 @@ func (e *Executor) recordAutoApproveHitl(ctx context.Context, runID string, step
 		"stepIndex":        stepIndex,
 		"auto":             true,
 	})
-	_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventApprovalResolved, map[string]any{
+	_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventHitlDecisionSubmitted, trace.ActorAgent, map[string]any{
+		"decision":     spec.HitlDecisionApprove,
+		"actor":        actor,
+		"uses":         gate.Uses,
+		"resolvedUses": gate.Uses,
+		"auto":         true,
+	})
+	_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventHitlResolutionApplied, trace.ActorSystem, map[string]any{
 		"decision":     spec.HitlDecisionApprove,
 		"actor":        actor,
 		"uses":         gate.Uses,

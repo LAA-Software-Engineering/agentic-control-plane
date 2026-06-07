@@ -189,7 +189,7 @@ func TestRecorder_Append_redactsBeforeStorage(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rec.Append(ctx, runID, "s1", EventToolCalled, map[string]any{
+	if _, err := rec.Append(ctx, runID, "s1", EventToolSelection, ActorAgent, map[string]any{
 		"token": "abc",
 	}); err != nil {
 		t.Fatal(err)
@@ -231,7 +231,7 @@ func TestNewRecorderForGraph_Append_respectsMaxPayloadBytes(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rec.Append(ctx, runID, "", EventRunStarted, map[string]any{
+	if _, err := rec.Append(ctx, runID, "", EventRunStarted, ActorAgent, map[string]any{
 		"blob": strings.Repeat("z", 200),
 	}); err != nil {
 		t.Fatal(err)

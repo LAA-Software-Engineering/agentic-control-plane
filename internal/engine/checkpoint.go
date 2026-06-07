@@ -165,8 +165,8 @@ func (e *Executor) interruptRun(ctx context.Context, in RunInput, stepIndex int,
 		return fmt.Errorf("engine: mark run interrupted: %w", err)
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, in.RunID, stepID, trace.EventRunInterrupted, map[string]any{
-			"stepIndex": stepIndex, "stepId": stepID,
+		_, _ = e.Trace.Append(ctx, in.RunID, stepID, trace.EventRunError, trace.ActorSystem, map[string]any{
+			"stepIndex": stepIndex, "stepId": stepID, "interrupted": true,
 		})
 	}
 	return ErrInterrupted

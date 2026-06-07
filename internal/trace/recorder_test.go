@@ -37,11 +37,11 @@ func TestRecorder_Append_increasingSeqPerRunID(t *testing.T) {
 	rec := NewRecorder(st)
 	rec.Clock = func() time.Time { return fixed }
 
-	seq1, err := rec.Append(ctx, "run-a", "s1", EventStepStarted, map[string]any{"x": 1})
+	seq1, err := rec.Append(ctx, "run-a", "s1", EventToolSelection, ActorAgent, map[string]any{"x": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	seq2, err := rec.Append(ctx, "run-a", "s1", EventStepFinished, map[string]any{"ok": true})
+	seq2, err := rec.Append(ctx, "run-a", "s1", EventToolExecution, ActorAgent, map[string]any{"ok": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +57,9 @@ func TestRecorder_Append_increasingSeqPerRunID(t *testing.T) {
 	if len(events) != 2 || events[0].Seq != 1 || events[1].Seq != 2 {
 		t.Fatalf("events = %+v", events)
 	}
+	if events[0].Type != string(EventToolSelection) || events[0].ActorType != string(ActorAgent) {
+		t.Fatalf("first event = %+v", events[0])
+	}
 	if events[0].DataJSON != `{"x":1}` || events[1].DataJSON != `{"ok":true}` {
 		t.Fatalf("data json = %q, %q", events[0].DataJSON, events[1].DataJSON)
 	}
@@ -71,7 +74,7 @@ func TestRecorder_Append_missingRunFailsWithErrRunNotFound(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	rec := NewRecorder(st)
-	_, err = rec.Append(ctx, "missing-run", "", EventRunStarted, nil)
+	_, err = rec.Append(ctx, "missing-run", "", EventRunStarted, ActorAgent, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -80,5 +83,28 @@ func TestRecorder_Append_missingRunFailsWithErrRunNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing-run") {
 		t.Fatalf("expected clear error mentioning run id, got: %v", err)
+	}
+}
+
+func TestRecorder_Append_rejectsUnknownEventType(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "trace3.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	started := time.Now().UTC()
+	if err := st.StartRun(ctx, state.Run{
+		RunID: "r1", WorkflowName: "wf", Env: "dev", Status: "running",
+		StartedAt: started, InputJSON: `{}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecorder(st)
+	_, err = rec.Append(ctx, "r1", "", EventType("free_form"), ActorAgent, nil)
+	if err == nil {
+		t.Fatal("expected validation error")
 	}
 }

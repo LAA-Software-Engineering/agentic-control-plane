@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,10 +88,10 @@ func TestInvoke_persistsRunAndTraceInSQLite(t *testing.T) {
 	if len(events) < 3 {
 		t.Fatalf("want trace events, got %d", len(events))
 	}
-	if events[0].Type != trace.EventRunStarted {
+	if events[0].Type != string(trace.EventRunStarted) {
 		t.Fatalf("first event %q", events[0].Type)
 	}
-	if events[len(events)-1].Type != trace.EventRunFinished {
+	if events[len(events)-1].Type != string(trace.EventRunFinished) {
 		t.Fatalf("last event %q", events[len(events)-1].Type)
 	}
 }
@@ -233,7 +234,7 @@ func TestInvoke_prunesOldTraceRuns(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AppendTraceEvent(ctx, oldID, oldStart, trace.EventRunStarted, "", `{}`); err != nil {
+	if _, err := st.AppendTraceEvent(ctx, oldID, oldStart, string(trace.EventRunStarted), "agent", "", `{}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -322,20 +323,21 @@ func TestResume_afterInterrupt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var resumed, fetchStarts int
+	var resumed int
+	var fetchSelections int
 	for _, ev := range events {
-		if ev.Type == trace.EventRunResumed {
+		if ev.Type == string(trace.EventRunStarted) && strings.Contains(ev.DataJSON, `"resumed":true`) {
 			resumed++
 		}
-		if ev.StepID == "fetch" && ev.Type == trace.EventStepStarted {
-			fetchStarts++
+		if ev.StepID == "fetch" && ev.Type == string(trace.EventToolSelection) {
+			fetchSelections++
 		}
 	}
 	if resumed != 1 {
-		t.Fatalf("run.resumed count = %d", resumed)
+		t.Fatalf("run_started(resumed) count = %d", resumed)
 	}
-	if fetchStarts != 1 {
-		t.Fatalf("fetch step.started count = %d want 1", fetchStarts)
+	if fetchSelections != 1 {
+		t.Fatalf("fetch tool_selection count = %d want 1", fetchSelections)
 	}
 }
 
@@ -405,7 +407,7 @@ func TestResume_preservesAttribution(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, ev := range events {
-		if ev.Type == trace.EventRunResumed {
+		if ev.Type == string(trace.EventRunStarted) && strings.Contains(ev.DataJSON, `"resumed":true`) {
 			if ev.TenantID != "acme" || ev.ThreadID != "thread-original" || ev.ActorID != "starter-bot" {
 				t.Fatalf("resume trace attribution: %+v", ev)
 			}
