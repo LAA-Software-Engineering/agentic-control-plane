@@ -22,7 +22,7 @@ var ErrInterrupted = errors.New("engine: run interrupted")
 
 const (
 	checkpointPayloadVersion  = 1
-	maxCheckpointContextBytes = 4 << 20 // 4 MiB
+	maxCheckpointContextBytes = 4 << 20 // absolute load cap (anti-DoS); write path uses resolved limits (#117)
 	maxCheckpointSteps        = 256
 )
 
@@ -56,7 +56,7 @@ func marshalCheckpointPayload(ictx Context, totalCost float64) (string, error) {
 		return "", fmt.Errorf("engine: marshal checkpoint: %w", err)
 	}
 	if len(b) > maxCheckpointContextBytes {
-		return "", fmt.Errorf("engine: checkpoint context exceeds %d bytes", maxCheckpointContextBytes)
+		return "", fmt.Errorf("engine: checkpoint context exceeds absolute maximum %d bytes", maxCheckpointContextBytes)
 	}
 	return string(b), nil
 }
@@ -112,9 +112,12 @@ func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResou
 	return nil
 }
 
-func (e *Executor) saveCheckpoint(ctx context.Context, runID string, stepIndex int, stepID string, ictx Context, totalCost float64, status string) error {
+func (e *Executor) saveCheckpoint(ctx context.Context, wf *spec.WorkflowResource, runID string, stepIndex int, stepID string, ictx Context, totalCost float64, status string) error {
 	ctxJSON, err := marshalCheckpointPayload(ictx, totalCost)
 	if err != nil {
+		return err
+	}
+	if err := e.enforceCheckpointSize(ctx, wf, runID, stepID, ctxJSON); err != nil {
 		return err
 	}
 	return e.Store.SaveCheckpoint(ctx, state.RunCheckpoint{
@@ -152,13 +155,13 @@ func (e *Executor) loadResumeState(ctx context.Context, in RunInput) (Context, f
 	return ictx, totalCost, startIdx, nil
 }
 
-func (e *Executor) interruptRun(ctx context.Context, in RunInput, stepIndex int, stepID string, ictx Context, totalCost float64, runHandle *telemetry.RunHandle) error {
+func (e *Executor) interruptRun(ctx context.Context, wf *spec.WorkflowResource, in RunInput, stepIndex int, stepID string, ictx Context, totalCost float64, runHandle *telemetry.RunHandle) error {
 	if runHandle != nil {
 		runHandle.MarkInterrupted()
 		ref := runHandle.SpanRef()
 		ictx.OtelInterrupt = &ref
 	}
-	if err := e.saveCheckpoint(ctx, in.RunID, stepIndex, stepID, ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
+	if err := e.saveCheckpoint(ctx, wf, in.RunID, stepIndex, stepID, ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
 		return fmt.Errorf("engine: save interrupted checkpoint: %w", err)
 	}
 	if err := e.Store.UpdateRunStatus(ctx, in.RunID, state.RunStatusInterrupted); err != nil {

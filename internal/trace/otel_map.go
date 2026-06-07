@@ -15,7 +15,7 @@ func (e EventType) SpanName() string {
 		return telemetry.SpanApproval
 	case EventMemoryRead, EventMemoryWrite:
 		return telemetry.SpanAgentRun
-	case EventSystemError:
+	case EventSystemError, EventLimitHit:
 		return telemetry.SpanAgentRun
 	default:
 		return telemetry.SpanAgentRun
@@ -63,7 +63,7 @@ func (e EventType) TimelineIcon() string {
 		return "↙"
 	case EventMemoryWrite:
 		return "↗"
-	case EventSystemError:
+	case EventSystemError, EventLimitHit:
 		return "!"
 	default:
 		return "·"
@@ -83,7 +83,7 @@ func (e EventType) TimelineGroup() string {
 		return "hitl"
 	case EventMemoryRead, EventMemoryWrite:
 		return "memory"
-	case EventSystemError:
+	case EventSystemError, EventLimitHit:
 		return "system"
 	default:
 		return "other"

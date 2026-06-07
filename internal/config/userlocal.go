@@ -26,6 +26,7 @@ type UserLocalOverlay struct {
 	State     *spec.ProjectStateConfig     `yaml:"state,omitempty"`
 	Traces    *spec.ProjectTracesConfig    `yaml:"traces,omitempty"`
 	Telemetry *spec.ProjectTelemetryConfig `yaml:"telemetry,omitempty"`
+	Limits    *spec.ExecutionLimits        `yaml:"limits,omitempty"`
 }
 
 // DiscoverUserLocalPaths returns existing user-local files in merge order (lowest precedence first).
@@ -113,7 +114,7 @@ func formatUserLocalDecodeError(path string, err error) string {
 	return spec.FormatStrictYAMLError(path, err)
 }
 
-var userLocalYAMLTags = []string{"defaults", "providers", "state", "traces", "telemetry"}
+var userLocalYAMLTags = []string{"defaults", "providers", "state", "traces", "telemetry", "limits"}
 
 func parseUserLocalUnknownField(msg string) (field, typeName string, ok bool) {
 	for _, line := range strings.Split(msg, "\n") {
@@ -133,7 +134,7 @@ func MergeUserLocalOverlays(layers ...*UserLocalOverlay) *UserLocalOverlay {
 		}
 		mergeUserLocalInto(out, layer)
 	}
-	if out.Defaults == nil && out.Providers == nil && out.State == nil && out.Traces == nil && out.Telemetry == nil {
+	if out.Defaults == nil && out.Providers == nil && out.State == nil && out.Traces == nil && out.Telemetry == nil && out.Limits == nil {
 		return nil
 	}
 	return out
@@ -164,6 +165,9 @@ func mergeUserLocalInto(dst, src *UserLocalOverlay) {
 	if src.Telemetry != nil {
 		dst.Telemetry = mergeTelemetry(dst.Telemetry, src.Telemetry)
 	}
+	if src.Limits != nil {
+		dst.Limits = mergeLimits(dst.Limits, src.Limits)
+	}
 }
 
 // ApplyUserLocalUnder fills unset project-level fields from userLocal. Project values win.
@@ -193,6 +197,9 @@ func ApplyUserLocalUnder(project *spec.ProjectSpec, userLocal *UserLocalOverlay)
 	}
 	if userLocal.Telemetry != nil {
 		project.Telemetry = mergeTelemetryUnder(project.Telemetry, userLocal.Telemetry)
+	}
+	if userLocal.Limits != nil {
+		project.Limits = mergeLimitsUnder(project.Limits, userLocal.Limits)
 	}
 }
 
@@ -418,4 +425,54 @@ func mergeTelemetryUnder(dst, src *spec.ProjectTelemetryConfig) *spec.ProjectTel
 		out.ConsoleExport = true
 	}
 	return &out
+}
+
+func mergeLimits(dst, src *spec.ExecutionLimits) *spec.ExecutionLimits {
+	if src == nil {
+		return dst
+	}
+	if dst == nil {
+		cp := *src
+		spec.NormalizeExecutionLimits(&cp)
+		return &cp
+	}
+	merged := spec.MergeExecutionLimits(*dst, src)
+	return &merged
+}
+
+func mergeLimitsUnder(dst, src *spec.ExecutionLimits) *spec.ExecutionLimits {
+	if src == nil {
+		return dst
+	}
+	if dst == nil {
+		cp := *src
+		spec.NormalizeExecutionLimits(&cp)
+		return &cp
+	}
+	base := *dst
+	override := *src
+	// User-local fills unset project fields only (project wins when set).
+	if base.MaxToolInputBytes <= 0 && override.MaxToolInputBytes > 0 {
+		base.MaxToolInputBytes = override.MaxToolInputBytes
+	}
+	if base.MaxToolOutputBytes <= 0 && override.MaxToolOutputBytes > 0 {
+		base.MaxToolOutputBytes = override.MaxToolOutputBytes
+	}
+	if base.MaxCheckpointBytes <= 0 && override.MaxCheckpointBytes > 0 {
+		base.MaxCheckpointBytes = override.MaxCheckpointBytes
+	}
+	if base.MaxStateBytes <= 0 && override.MaxStateBytes > 0 {
+		base.MaxStateBytes = override.MaxStateBytes
+	}
+	if strings.TrimSpace(string(base.ToolInputExceedPolicy)) == "" && override.ToolInputExceedPolicy != "" {
+		base.ToolInputExceedPolicy = override.ToolInputExceedPolicy
+	}
+	if strings.TrimSpace(string(base.ToolOutputExceedPolicy)) == "" && override.ToolOutputExceedPolicy != "" {
+		base.ToolOutputExceedPolicy = override.ToolOutputExceedPolicy
+	}
+	if strings.TrimSpace(string(base.CheckpointExceedPolicy)) == "" && override.CheckpointExceedPolicy != "" {
+		base.CheckpointExceedPolicy = override.CheckpointExceedPolicy
+	}
+	spec.NormalizeExecutionLimits(&base)
+	return &base
 }

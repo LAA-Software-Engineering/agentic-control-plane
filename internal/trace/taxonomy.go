@@ -8,7 +8,7 @@ import (
 
 // TaxonomyVersion is bumped when the closed EventType or ActorType vocabulary changes.
 // Older SQLite databases continue to load rows with unknown type strings without error.
-const TaxonomyVersion = 1
+const TaxonomyVersion = 2
 
 // EventType is a closed, versioned audit/trace event identifier (issue #115).
 type EventType string
@@ -27,6 +27,7 @@ const (
 	EventMemoryRead            EventType = "memory_read"
 	EventMemoryWrite           EventType = "memory_write"
 	EventSystemError           EventType = "system_error"
+	EventLimitHit              EventType = "limit_hit"
 )
 
 // ActorType identifies who initiated a trace event (issue #115, pairs with actor_id from #111).
@@ -52,6 +53,7 @@ var allEventTypes = []EventType{
 	EventMemoryRead,
 	EventMemoryWrite,
 	EventSystemError,
+	EventLimitHit,
 }
 
 var knownEventTypes map[EventType]struct{}

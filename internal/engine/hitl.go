@@ -32,6 +32,7 @@ type HitlRunOptions struct {
 func (e *Executor) maybeInterruptForHitl(
 	ctx context.Context,
 	in RunInput,
+	wf *spec.WorkflowResource,
 	stepIndex int,
 	step spec.WorkflowStep,
 	with map[string]any,
@@ -70,7 +71,7 @@ func (e *Executor) maybeInterruptForHitl(
 		ref := runHandle.SpanRef()
 		ictx.OtelInterrupt = &ref
 	}
-	if err := e.saveCheckpoint(ctx, in.RunID, stepIndex, step.ID, ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
+	if err := e.saveCheckpoint(ctx, wf, in.RunID, stepIndex, step.ID, ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
 		return false, fmt.Errorf("engine: save hitl checkpoint: %w", err)
 	}
 	if err := e.Store.UpdateRunStatus(ctx, in.RunID, state.RunStatusInterrupted); err != nil {
