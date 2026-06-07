@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -22,6 +23,33 @@ func resumeEnvironmentName(run *state.Run, opts runtime.WorkflowRunOptions) (str
 		return "", fmt.Errorf("local: environment %q does not match run %q", cli, pinned)
 	}
 	return pinned, nil
+}
+
+// resolveConfigForResume picks the environment name used to resolve config before resume.
+func resolveConfigForResume(run *state.Run, cliEnv string) (string, error) {
+	if run == nil {
+		return strings.TrimSpace(cliEnv), nil
+	}
+	pinned := strings.TrimSpace(run.EnvironmentName)
+	cli := strings.TrimSpace(cliEnv)
+	if pinned == "" {
+		return cli, nil
+	}
+	if cli != "" && cli != pinned {
+		return "", fmt.Errorf("local: environment %q does not match run %q", cli, pinned)
+	}
+	return pinned, nil
+}
+
+// ResolvedConfigForRun resolves configuration for resume using the run's pinned environment.
+func ResolvedConfigForRun(run *state.Run, base config.ResolveOptions, cliEnv string) (*config.ResolvedConfig, error) {
+	env, err := resolveConfigForResume(run, cliEnv)
+	if err != nil {
+		return nil, err
+	}
+	opts := base
+	opts.Env = env
+	return config.Resolve(opts)
 }
 
 // validateResumeWorkflowSpec ensures the workflow definition has not changed since the run started.

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/catalog"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
 )
 
@@ -23,7 +24,7 @@ func ValidateProjectGraph(g *ProjectGraph, projectRoot string) error {
 
 	var errs []error
 	errs = append(errs, validateMetadataKeys(g)...)
-	errs = append(errs, validateMVPRuntimes(g)...)
+	errs = append(errs, validateRuntimes(g)...)
 	errs = append(errs, validateToolSpecs(g)...)
 	errs = append(errs, validatePolicySpecs(g)...)
 	errs = append(errs, validatePolicyPresets(g)...)
@@ -110,30 +111,33 @@ func metaName(v any) string {
 	}
 }
 
-// validateMVPRuntimes rejects non-local explicit runtimes (design doc §7.1, §16 MVP; issue #76).
-// Empty means implicit local; only "local" is allowed when set.
-func validateMVPRuntimes(g *ProjectGraph) []error {
+// validateRuntimes rejects unknown spec.runtime names via the runtime registry (issue #114).
+// Empty means implicit local; only registered names are allowed when set.
+func validateRuntimes(g *ProjectGraph) []error {
 	var errs []error
-	if g.Spec.Defaults != nil {
-		if r := strings.TrimSpace(g.Spec.Defaults.Runtime); r != "" && r != "local" {
-			errs = append(errs, fmt.Errorf("Project: defaults.runtime %q is not supported in MVP (use \"local\" or omit)", r))
+	check := func(prefix, name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
 		}
+		if !catalog.IsKnown(name) {
+			errs = append(errs, fmt.Errorf("%s %q is unknown (valid: %s)", prefix, name, strings.Join(catalog.KnownNames(), ", ")))
+		}
+	}
+	if g.Spec.Defaults != nil {
+		check("Project: defaults.runtime", g.Spec.Defaults.Runtime)
 	}
 	for name, ar := range g.Agents {
 		if ar == nil {
 			continue
 		}
-		if r := strings.TrimSpace(ar.Spec.Runtime); r != "" && r != "local" {
-			errs = append(errs, fmt.Errorf("Agent/%s: spec.runtime %q is not supported in MVP (use \"local\" or omit)", name, r))
-		}
+		check(fmt.Sprintf("Agent/%s: spec.runtime", name), ar.Spec.Runtime)
 	}
 	for name, wr := range g.Workflows {
 		if wr == nil {
 			continue
 		}
-		if r := strings.TrimSpace(wr.Spec.Runtime); r != "" && r != "local" {
-			errs = append(errs, fmt.Errorf("Workflow/%s: spec.runtime %q is not supported in MVP (use \"local\" or omit)", name, r))
-		}
+		check(fmt.Sprintf("Workflow/%s: spec.runtime", name), wr.Spec.Runtime)
 	}
 	return errs
 }

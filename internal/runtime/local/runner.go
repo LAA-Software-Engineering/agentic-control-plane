@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
@@ -20,35 +21,23 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
 )
 
-// Compile-time check that [Runtime] implements [runtime.WorkflowRunner].
-var _ runtime.WorkflowRunner = (*Runtime)(nil)
-
-// ExecuteWorkflow loads the project from [Runtime.ProjectRoot], applies optional environment overrides,
-// validates input JSON and workflow input schema before persisting the run, then invokes [engine.Executor].
-// When opts.Resume is true, the existing run row and latest checkpoint are rehydrated instead of StartRun.
-func (r *Runtime) ExecuteWorkflow(ctx context.Context, opts runtime.WorkflowRunOptions) (string, error) {
+// Invoke validates input, persists the run row, and executes the workflow engine.
+func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts runtime.InvokeOptions) (runtime.RunResult, error) {
 	if r == nil || r.Store == nil {
-		return "", fmt.Errorf("local: nil runtime or store")
+		return runtime.RunResult{}, fmt.Errorf("local: nil runtime or store")
 	}
-	if opts.Resume {
-		return r.resumeWorkflow(ctx, opts)
-	}
-	return r.startWorkflow(ctx, opts)
-}
-
-func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOptions) (string, error) {
-	prep, err := r.prepareProject(ctx, opts.EnvironmentName)
+	prep, err := r.prepareFromConfig(ctx, cfg)
 	if err != nil {
-		return "", err
+		return runtime.RunResult{}, err
 	}
 
 	wfName := strings.TrimSpace(opts.WorkflowName)
 	if wfName == "" {
-		return "", fmt.Errorf("local: empty workflow name")
+		return runtime.RunResult{}, fmt.Errorf("local: empty workflow name")
 	}
 	wf, ok := prep.graph.Workflows[wfName]
 	if !ok || wf == nil {
-		return "", fmt.Errorf("local: unknown workflow %q", wfName)
+		return runtime.RunResult{}, fmt.Errorf("local: unknown workflow %q", wfName)
 	}
 
 	var input map[string]any
@@ -56,16 +45,16 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 		input = map[string]any{}
 	} else {
 		if err := json.Unmarshal(opts.InputJSON, &input); err != nil {
-			return "", fmt.Errorf("local: invalid input JSON: %w", err)
+			return runtime.RunResult{}, fmt.Errorf("local: invalid input JSON: %w", err)
 		}
 	}
 	if err := engine.ValidateWorkflowInput(prep.root, wf, input); err != nil {
-		return "", err
+		return runtime.RunResult{}, err
 	}
 
 	wfHash, err := plan.WorkflowSpecHash(wf)
 	if err != nil {
-		return "", err
+		return runtime.RunResult{}, err
 	}
 
 	runID := strings.TrimSpace(opts.RunID)
@@ -75,7 +64,7 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 
 	inputBytes, err := json.Marshal(input)
 	if err != nil {
-		return "", fmt.Errorf("local: marshal input: %w", err)
+		return runtime.RunResult{}, fmt.Errorf("local: marshal input: %w", err)
 	}
 
 	envLabel := strings.TrimSpace(opts.Env)
@@ -95,7 +84,7 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 	}
 	if opts.RequireAttribution {
 		if err := state.RequireExplicitAttribution(attr); err != nil {
-			return runID, err
+			return runtime.RunResult{RunID: runID}, err
 		}
 	}
 	runRow := state.Run{
@@ -111,86 +100,96 @@ func (r *Runtime) startWorkflow(ctx context.Context, opts runtime.WorkflowRunOpt
 	}
 	state.ApplyAttribution(&runRow, attr)
 	if err := r.Store.StartRun(ctx, runRow); err != nil {
-		return runID, fmt.Errorf("local: start run: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: start run: %w", err)
 	}
 
 	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
 	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, map[string]any{
-		"workflow": wfName, "environment": opts.EnvironmentName,
+		"workflow": wfName, "environment": cfg.Environment(),
 	}); err != nil {
-		return runID, fmt.Errorf("local: trace run.started: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: trace run.started: %w", err)
 	}
 
-	opts.RunID = runID
-	opts.Resume = false
-	return r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, opts, state.AttributionFromRun(&runRow), rec)
+	runOpts := runtime.WorkflowRunOptions{
+		RunID:           runID,
+		WorkflowName:    wfName,
+		Env:             envLabel,
+		ApprovedActions: opts.ApprovedActions,
+		AutoApprove:     opts.AutoApprove,
+		HitlActor:       opts.HitlActor,
+	}
+	_, runErr := r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, runOpts, false, state.AttributionFromRun(&runRow), rec)
+	return runtime.RunResult{RunID: runID}, runErr
 }
 
-func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOptions) (string, error) {
+// Resume continues an existing run from its latest checkpoint.
+func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts runtime.ResumeOptions) (runtime.RunResult, error) {
+	if r == nil || r.Store == nil {
+		return runtime.RunResult{}, fmt.Errorf("local: nil runtime or store")
+	}
 	runID := strings.TrimSpace(opts.RunID)
 	if runID == "" {
-		return "", fmt.Errorf("local: resume requires run id")
+		return runtime.RunResult{}, fmt.Errorf("local: resume requires run id")
 	}
 
 	run, err := r.Store.GetRun(ctx, runID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return runID, fmt.Errorf("local: run %q not found", runID)
+			return runtime.RunResult{RunID: runID}, fmt.Errorf("local: run %q not found", runID)
 		}
-		return runID, fmt.Errorf("local: get run: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: get run: %w", err)
 	}
 	switch run.Status {
 	case state.RunStatusRunning, state.RunStatusInterrupted:
 	default:
-		return runID, fmt.Errorf("local: run %q status %q is not resumable", runID, run.Status)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: run %q status %q is not resumable", runID, run.Status)
 	}
 
 	if _, err := r.Store.GetLatestCheckpoint(ctx, runID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return runID, fmt.Errorf("local: run %q has no checkpoint", runID)
+			return runtime.RunResult{RunID: runID}, fmt.Errorf("local: run %q has no checkpoint", runID)
 		}
-		return runID, fmt.Errorf("local: load checkpoint: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: load checkpoint: %w", err)
 	}
 
-	envName, err := resumeEnvironmentName(run, opts)
-	if err != nil {
-		return runID, err
+	if err := validateResumeEnvironment(run, opts.EnvironmentName); err != nil {
+		return runtime.RunResult{RunID: runID}, err
 	}
 
-	prep, err := r.prepareProject(ctx, envName)
+	prep, err := r.prepareFromConfig(ctx, cfg)
 	if err != nil {
-		return runID, err
+		return runtime.RunResult{RunID: runID}, err
 	}
 
 	wfName := strings.TrimSpace(run.WorkflowName)
 	wf, ok := prep.graph.Workflows[wfName]
 	if !ok || wf == nil {
-		return runID, fmt.Errorf("local: unknown workflow %q", wfName)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: unknown workflow %q", wfName)
 	}
 	if err := validateResumeWorkflowSpec(run, wf); err != nil {
-		return runID, err
+		return runtime.RunResult{RunID: runID}, err
 	}
 
 	var input map[string]any
 	if err := json.Unmarshal([]byte(run.InputJSON), &input); err != nil {
-		return runID, fmt.Errorf("local: invalid stored input JSON: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: invalid stored input JSON: %w", err)
 	}
 	if input == nil {
 		input = map[string]any{}
 	}
 	if err := engine.ValidateWorkflowInput(prep.root, wf, input); err != nil {
-		return runID, err
+		return runtime.RunResult{RunID: runID}, err
 	}
 
 	if err := r.Store.UpdateRunStatus(ctx, runID, state.RunStatusRunning); err != nil {
-		return runID, fmt.Errorf("local: mark run running: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: mark run running: %w", err)
 	}
 
 	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
 	if _, err := rec.Append(ctx, runID, "", trace.EventRunResumed, map[string]any{
 		"workflow": wfName,
 	}); err != nil {
-		return runID, fmt.Errorf("local: trace run.resumed: %w", err)
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: trace run.resumed: %w", err)
 	}
 
 	envLabel := strings.TrimSpace(run.Env)
@@ -198,8 +197,62 @@ func (r *Runtime) resumeWorkflow(ctx context.Context, opts runtime.WorkflowRunOp
 		envLabel = "local"
 	}
 
-	opts.Resume = true
-	return r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, opts, state.AttributionFromRun(run), rec)
+	runOpts := runtime.WorkflowRunOptions{
+		RunID:           runID,
+		Env:             envLabel,
+		ApprovedActions: opts.ApprovedActions,
+		AutoApprove:     opts.AutoApprove,
+		HitlActor:       opts.HitlActor,
+		HitlDecision:    opts.HitlDecision,
+	}
+	_, runErr := r.executeEngine(ctx, prep, runID, wfName, envLabel, run.StartedAt, input, runOpts, true, state.AttributionFromRun(run), rec)
+	return runtime.RunResult{RunID: runID}, runErr
+}
+
+// ExecuteWorkflow dispatches to [Runtime.Invoke] or [Runtime.Resume] for legacy callers.
+func (r *Runtime) ExecuteWorkflow(ctx context.Context, cfg *config.ResolvedConfig, opts runtime.WorkflowRunOptions) (string, error) {
+	if opts.Resume {
+		result, err := r.Resume(ctx, cfg, runtime.ResumeOptions{
+			RunID:           opts.RunID,
+			EnvironmentName: opts.EnvironmentName,
+			ApprovedActions: opts.ApprovedActions,
+			AutoApprove:     opts.AutoApprove,
+			HitlActor:       opts.HitlActor,
+			HitlDecision:    opts.HitlDecision,
+			TenantID:        opts.TenantID,
+			ThreadID:        opts.ThreadID,
+			ActorID:         opts.ActorID,
+		})
+		return result.RunID, err
+	}
+	result, err := r.Invoke(ctx, cfg, runtime.InvokeOptions{
+		RunID:              opts.RunID,
+		WorkflowName:       opts.WorkflowName,
+		Env:                opts.Env,
+		EnvironmentName:    opts.EnvironmentName,
+		InputJSON:          opts.InputJSON,
+		ApprovedActions:    opts.ApprovedActions,
+		AutoApprove:        opts.AutoApprove,
+		HitlActor:          opts.HitlActor,
+		TenantID:           opts.TenantID,
+		ThreadID:           opts.ThreadID,
+		ActorID:            opts.ActorID,
+		ParentRunID:        opts.ParentRunID,
+		RequestID:          opts.RequestID,
+		IdempotencyKey:     opts.IdempotencyKey,
+		Source:             opts.Source,
+		RequireAttribution: opts.RequireAttribution,
+	})
+	return result.RunID, err
+}
+
+func validateResumeEnvironment(run *state.Run, cliEnv string) error {
+	pinned := strings.TrimSpace(run.EnvironmentName)
+	cli := strings.TrimSpace(cliEnv)
+	if pinned != "" && cli != "" && cli != pinned {
+		return fmt.Errorf("local: environment %q does not match run %q", cli, pinned)
+	}
+	return nil
 }
 
 func (r *Runtime) executeEngine(
@@ -209,6 +262,7 @@ func (r *Runtime) executeEngine(
 	started time.Time,
 	input map[string]any,
 	opts runtime.WorkflowRunOptions,
+	resume bool,
 	attr state.RunAttribution,
 	rec *trace.Recorder,
 ) (string, error) {
@@ -238,7 +292,7 @@ func (r *Runtime) executeEngine(
 		StartedAt:       started,
 		Input:           input,
 		ApprovedActions: opts.ApprovedActions,
-		Resume:          opts.Resume,
+		Resume:          resume,
 		Hitl:            hitl,
 		TenantID:        attr.TenantID,
 		ThreadID:        attr.ThreadID,

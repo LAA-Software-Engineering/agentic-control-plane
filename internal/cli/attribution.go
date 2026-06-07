@@ -50,6 +50,21 @@ func applyRunAttributionOpts(opts *runtime.WorkflowRunOptions, tenantID, threadI
 	opts.RequireAttribution = resolved.RequireAttribution
 }
 
+func applyRunAttributionInvokeOpts(opts *runtime.InvokeOptions, tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string, requireFlag bool) {
+	if opts == nil {
+		return
+	}
+	resolved := resolveRunAttributionFlags(tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireFlag)
+	opts.TenantID = resolved.TenantID
+	opts.ThreadID = resolved.ThreadID
+	opts.ActorID = resolved.ActorID
+	opts.ParentRunID = resolved.ParentRunID
+	opts.RequestID = resolved.RequestID
+	opts.IdempotencyKey = resolved.IdempotencyKey
+	opts.Source = resolved.Source
+	opts.RequireAttribution = resolved.RequireAttribution
+}
+
 // warnAttributionDefaults writes a one-line stderr warning when local attribution defaults apply.
 func warnAttributionDefaults(w io.Writer, attr state.RunAttribution) {
 	if w == nil || !state.UsesAttributionDefaults(attr) {

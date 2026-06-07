@@ -5,15 +5,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
@@ -30,7 +31,16 @@ func testRetentionProjRoot(t *testing.T) string {
 	return filepath.Join("testdata", "retention")
 }
 
-func TestExecuteWorkflow_persistsRunAndTraceInSQLite(t *testing.T) {
+func testResolvedConfig(t *testing.T, root, env string) *config.ResolvedConfig {
+	t.Helper()
+	rc, err := config.Resolve(config.ResolveOptions{ProjectRoot: root, Env: env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rc
+}
+
+func TestInvoke_persistsRunAndTraceInSQLite(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "localrun.db"))
 	if err != nil {
@@ -38,14 +48,15 @@ func TestExecuteWorkflow_persistsRunAndTraceInSQLite(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	rt := NewRuntime(testRunProjRoot(t), st)
+	root := testRunProjRoot(t)
+	rt := NewRuntime(st)
+	rc := testResolvedConfig(t, root, "staging")
 	runID := "run-integration-1"
-	_, err = rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
-		RunID:           runID,
-		WorkflowName:    "demo",
-		EnvironmentName: "staging",
-		Env:             "dev",
-		InputJSON:       []byte(`{"topic":"from-local-runtime"}`),
+	_, err = rt.Invoke(ctx, rc, runtime.InvokeOptions{
+		RunID:        runID,
+		WorkflowName: "demo",
+		Env:          "dev",
+		InputJSON:    []byte(`{"topic":"from-local-runtime"}`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +85,7 @@ func TestExecuteWorkflow_persistsRunAndTraceInSQLite(t *testing.T) {
 	}
 }
 
-func TestExecuteWorkflow_invalidInputJSON_noRunRow(t *testing.T) {
+func TestInvoke_invalidInputJSON_noRunRow(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "norun.db"))
 	if err != nil {
@@ -82,8 +93,10 @@ func TestExecuteWorkflow_invalidInputJSON_noRunRow(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	rt := NewRuntime(testRunProjRoot(t), st)
-	_, err = rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
+	root := testRunProjRoot(t)
+	rt := NewRuntime(st)
+	rc := testResolvedConfig(t, root, "")
+	_, err = rt.Invoke(ctx, rc, runtime.InvokeOptions{
 		RunID:        "should-not-exist",
 		WorkflowName: "demo",
 		InputJSON:    []byte(`{"topic":`),
@@ -98,7 +111,7 @@ func TestExecuteWorkflow_invalidInputJSON_noRunRow(t *testing.T) {
 	}
 }
 
-func TestExecuteWorkflow_invalidInputSchema_noRunRow(t *testing.T) {
+func TestInvoke_invalidInputSchema_noRunRow(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "norun2.db"))
 	if err != nil {
@@ -106,8 +119,10 @@ func TestExecuteWorkflow_invalidInputSchema_noRunRow(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	rt := NewRuntime(testRunProjRoot(t), st)
-	_, err = rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
+	root := testRunProjRoot(t)
+	rt := NewRuntime(st)
+	rc := testResolvedConfig(t, root, "")
+	_, err = rt.Invoke(ctx, rc, runtime.InvokeOptions{
 		RunID:        "schema-fail",
 		WorkflowName: "demo",
 		InputJSON:    []byte(`{"wrong":true}`),
@@ -119,6 +134,38 @@ func TestExecuteWorkflow_invalidInputSchema_noRunRow(t *testing.T) {
 	_, err = st.GetRun(ctx, "schema-fail")
 	if err == nil {
 		t.Fatal("expected no run row")
+	}
+}
+
+func TestInvoke_usesResolvedSnapshotNotDisk(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "snapshot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	root := testRunProjRoot(t)
+	rc := testResolvedConfig(t, root, "staging")
+	projectPath := filepath.Join(root, "project.yaml")
+	original, err := os.ReadFile(projectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.WriteFile(projectPath, original, 0o644) })
+	if err := os.WriteFile(projectPath, []byte("invalid: yaml: ["), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := NewRuntime(st)
+	runID := "snapshot-run"
+	if _, err := rt.Invoke(ctx, rc, runtime.InvokeOptions{
+		RunID:        runID,
+		WorkflowName: "demo",
+		Env:          "dev",
+		InputJSON:    []byte(`{"topic":"snapshot"}`),
+	}); err != nil {
+		t.Fatalf("invoke should use resolved snapshot, not disk: %v", err)
 	}
 }
 
@@ -137,7 +184,7 @@ func TestApplyEnvironment_mergesAgentConstraints(t *testing.T) {
 	}
 }
 
-func TestNewRunID_generatedWhenEmpty(t *testing.T) {
+func TestInvoke_generatedRunIDWhenEmpty(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "genid.db"))
 	if err != nil {
@@ -145,24 +192,26 @@ func TestNewRunID_generatedWhenEmpty(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	rt := NewRuntime(testRunProjRoot(t), st)
-	id, err := rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
+	root := testRunProjRoot(t)
+	rt := NewRuntime(st)
+	rc := testResolvedConfig(t, root, "")
+	result, err := rt.Invoke(ctx, rc, runtime.InvokeOptions{
 		WorkflowName: "demo",
 		InputJSON:    []byte(`{"topic":"x"}`),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id == "" {
+	if result.RunID == "" {
 		t.Fatal("empty run id")
 	}
-	_, err = st.GetRun(ctx, id)
+	_, err = st.GetRun(ctx, result.RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestExecuteWorkflow_prunesOldTraceRuns(t *testing.T) {
+func TestInvoke_prunesOldTraceRuns(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "retention.db"))
 	if err != nil {
@@ -183,16 +232,17 @@ func TestExecuteWorkflow_prunesOldTraceRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rt := NewRuntime(testRetentionProjRoot(t), st)
+	root := testRetentionProjRoot(t)
+	rt := NewRuntime(st)
 	rt.Now = func() time.Time { return fixed }
+	rc := testResolvedConfig(t, root, "staging")
 
 	newID := "fresh-run"
-	_, err = rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
-		RunID:           newID,
-		WorkflowName:    "demo",
-		EnvironmentName: "staging",
-		Env:             "dev",
-		InputJSON:       []byte(`{"topic":"p"}`),
+	_, err = rt.Invoke(ctx, rc, runtime.InvokeOptions{
+		RunID:        newID,
+		WorkflowName: "demo",
+		Env:          "dev",
+		InputJSON:    []byte(`{"topic":"p"}`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +256,7 @@ func TestExecuteWorkflow_prunesOldTraceRuns(t *testing.T) {
 	}
 }
 
-func TestExecuteWorkflow_resumeAfterInterrupt(t *testing.T) {
+func TestResume_afterInterrupt(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-local.db"))
 	if err != nil {
@@ -215,15 +265,8 @@ func TestExecuteWorkflow_resumeAfterInterrupt(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	root := testRunProjRoot(t)
-	graph, err := project.LoadProject(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	spec.NormalizeProjectGraph(graph)
-	graph, err = ApplyEnvironment(graph, "staging")
-	if err != nil {
-		t.Fatal(err)
-	}
+	rc := testResolvedConfig(t, root, "staging")
+	graph := rc.Graph()
 
 	runID := "resume-local-1"
 	started := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
@@ -231,6 +274,7 @@ func TestExecuteWorkflow_resumeAfterInterrupt(t *testing.T) {
 	if err := st.StartRun(ctx, state.Run{
 		RunID: runID, WorkflowName: "demo", Env: "dev", Status: "running",
 		StartedAt: started, InputJSON: string(inputJSON), TotalCostUSD: 0,
+		EnvironmentName: "staging",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -253,10 +297,10 @@ func TestExecuteWorkflow_resumeAfterInterrupt(t *testing.T) {
 		t.Fatalf("interrupt: %v", err)
 	}
 
-	rt := NewRuntime(root, st)
+	rt := NewRuntime(st)
 	rt.Now = func() time.Time { return started.Add(time.Hour) }
-	if _, err := rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
-		RunID: runID, Resume: true, EnvironmentName: "staging",
+	if _, err := rt.Resume(ctx, rc, runtime.ResumeOptions{
+		RunID: runID, EnvironmentName: "staging",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +334,7 @@ func TestExecuteWorkflow_resumeAfterInterrupt(t *testing.T) {
 	}
 }
 
-func TestExecuteWorkflow_resume_preservesAttribution(t *testing.T) {
+func TestResume_preservesAttribution(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-attr.db"))
 	if err != nil {
@@ -299,15 +343,8 @@ func TestExecuteWorkflow_resume_preservesAttribution(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	root := testRunProjRoot(t)
-	graph, err := project.LoadProject(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	spec.NormalizeProjectGraph(graph)
-	graph, err = ApplyEnvironment(graph, "staging")
-	if err != nil {
-		t.Fatal(err)
-	}
+	rc := testResolvedConfig(t, root, "staging")
+	graph := rc.Graph()
 
 	runID := "resume-attr-1"
 	started := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
@@ -317,6 +354,7 @@ func TestExecuteWorkflow_resume_preservesAttribution(t *testing.T) {
 		StartedAt: started, InputJSON: string(inputJSON), TotalCostUSD: 0,
 		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot",
 		RequestID: "req-original", Source: "cli",
+		EnvironmentName: "staging",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -340,10 +378,10 @@ func TestExecuteWorkflow_resume_preservesAttribution(t *testing.T) {
 		t.Fatalf("interrupt: %v", err)
 	}
 
-	rt := NewRuntime(root, st)
+	rt := NewRuntime(st)
 	rt.Now = func() time.Time { return started.Add(time.Hour) }
-	if _, err := rt.ExecuteWorkflow(ctx, runtime.WorkflowRunOptions{
-		RunID: runID, Resume: true, EnvironmentName: "staging",
+	if _, err := rt.Resume(ctx, rc, runtime.ResumeOptions{
+		RunID: runID, EnvironmentName: "staging",
 		TenantID: "other-tenant", ThreadID: "thread-override", ActorID: "other-actor",
 	}); err != nil {
 		t.Fatal(err)
@@ -367,5 +405,28 @@ func TestExecuteWorkflow_resume_preservesAttribution(t *testing.T) {
 				t.Fatalf("resume trace attribution: %+v", ev)
 			}
 		}
+	}
+}
+
+func TestHealth_nilStore(t *testing.T) {
+	var rt *Runtime
+	status := rt.Health(context.Background())
+	if status.State != runtime.HealthError {
+		t.Fatalf("state = %q", status.State)
+	}
+}
+
+func TestHealth_ok(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "health.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	rt := NewRuntime(st)
+	status := rt.Health(ctx)
+	if status.State != runtime.HealthOK {
+		t.Fatalf("state = %q details=%q", status.State, status.Details)
 	}
 }
