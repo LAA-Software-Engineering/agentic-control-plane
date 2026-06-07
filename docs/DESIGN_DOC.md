@@ -1114,9 +1114,10 @@ Verify tamper-evident hash chains over `trace_events`.
 ```bash
 agentctl audit verify
 agentctl audit verify --run <run-id>
+agentctl audit verify --limit 200
 ```
 
-Re-derives each stored `hash` and checks `prev_hash` linkage. Pre-migration rows without hashes are reported as **unchained** and do not fail verification. Exit **1** on chain break. See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
+Re-derives each stored `hash` and checks `prev_hash` linkage. Without `--run`, scans recent runs only (`--limit`, default 50, max 500). Pre-migration rows without hashes are reported as **unchained** and do not fail verification. Exit **1** on chain break. See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
 
 ### MVP
 

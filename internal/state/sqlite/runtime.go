@@ -142,32 +142,17 @@ SELECT tenant_id, thread_id, actor_id FROM runs WHERE run_id = ?
 		return 0, err
 	}
 
-	var prior []state.TraceEvent
-	rows, err := tx.QueryContext(ctx, `
-SELECT run_id, seq, timestamp, type, step_id, data_json, tenant_id, thread_id, actor_id, actor_type, prev_hash, hash
-FROM trace_events
-WHERE run_id = ?
-ORDER BY seq ASC
-`, runID)
-	if err != nil {
+	var lastChainedHash sql.NullString
+	err = tx.QueryRowContext(ctx, `
+SELECT hash FROM trace_events
+WHERE run_id = ? AND hash IS NOT NULL AND hash != ''
+ORDER BY seq DESC
+LIMIT 1
+`, runID).Scan(&lastChainedHash)
+	if err != nil && err != sql.ErrNoRows {
 		return 0, err
 	}
-	for rows.Next() {
-		ev, err := scanTraceEventRow(rows)
-		if err != nil {
-			rows.Close()
-			return 0, err
-		}
-		prior = append(prior, ev)
-	}
-	if err := rows.Close(); err != nil {
-		return 0, err
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
-	}
-
-	prevHash := audit.PrevHashForAppend(runID, prior)
+	prevHash := audit.PrevHashForChainTip(runID, lastChainedHash.String)
 	event := state.TraceEvent{
 		RunID:     runID,
 		Seq:       seq,

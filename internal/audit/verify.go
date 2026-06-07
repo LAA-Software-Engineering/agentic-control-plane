@@ -10,6 +10,14 @@ import (
 // ErrChainBroken indicates a hash or prev_hash mismatch in a run's trace chain.
 var ErrChainBroken = errors.New("audit: chain broken")
 
+// Broken-field values reported by [VerifyRunResult.BrokenField] and audit verify JSON output.
+const (
+	BrokenFieldPartialChain = "partial_chain"
+	BrokenFieldPrevHash     = "prev_hash"
+	BrokenFieldHash         = "hash"
+	BrokenFieldHashCompute  = "hash_compute"
+)
+
 // VerifyRunResult is the outcome of verifying one run's trace hash chain.
 type VerifyRunResult struct {
 	RunID       string
@@ -37,7 +45,7 @@ func VerifyRunChain(runID string, events []state.TraceEvent) VerifyRunResult {
 		}
 		if e.Hash == "" || e.PrevHash == "" {
 			res.BrokenSeq = e.Seq
-			res.BrokenField = "partial_chain"
+			res.BrokenField = BrokenFieldPartialChain
 			return res
 		}
 
@@ -48,19 +56,19 @@ func VerifyRunChain(runID string, events []state.TraceEvent) VerifyRunResult {
 		}
 		if e.PrevHash != expectedPrev {
 			res.BrokenSeq = e.Seq
-			res.BrokenField = "prev_hash"
+			res.BrokenField = BrokenFieldPrevHash
 			return res
 		}
 
 		got, err := EventHash(e, e.PrevHash)
 		if err != nil {
 			res.BrokenSeq = e.Seq
-			res.BrokenField = "hash_compute"
+			res.BrokenField = BrokenFieldHashCompute
 			return res
 		}
 		if got != e.Hash {
 			res.BrokenSeq = e.Seq
-			res.BrokenField = "hash"
+			res.BrokenField = BrokenFieldHash
 			return res
 		}
 		lastChainedHash = e.Hash

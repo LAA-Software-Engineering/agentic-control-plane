@@ -73,9 +73,13 @@ func EventHash(e state.TraceEvent, prevHash string) (string, error) {
 	return hashHex(input), nil
 }
 
-// IsChained reports whether e participates in the audit hash chain.
-func IsChained(e state.TraceEvent) bool {
-	return e.Hash != "" || e.PrevHash != ""
+// PrevHashForChainTip returns prev_hash for a new event when lastChainedHash is the newest
+// stored hash for the run (empty means no prior chained event — use genesis).
+func PrevHashForChainTip(runID, lastChainedHash string) string {
+	if lastChainedHash != "" {
+		return lastChainedHash
+	}
+	return GenesisHash(runID)
 }
 
 // PrevHashForAppend returns the prev_hash to link a new chained event after existing rows.

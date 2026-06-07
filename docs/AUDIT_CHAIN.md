@@ -27,11 +27,14 @@ Implementation: [`internal/audit`](../internal/audit).
 ## CLI
 
 ```bash
-# Verify all recent runs in the state DB
+# Verify recent runs in the state DB (default: 50 newest, same as agentctl logs)
 agentctl audit verify --project my-agent-system
 
-# Verify one run
+# Verify one run (full chain for that run regardless of --limit)
 agentctl audit verify --project my-agent-system --run <run-id>
+
+# Scan more runs (clamped to 500)
+agentctl audit verify --project my-agent-system --limit 200
 
 # JSON output (-o json)
 agentctl audit verify --project my-agent-system --run <run-id> -o json
@@ -69,6 +72,7 @@ Migration `007_trace_audit_chain.sql` adds nullable `prev_hash` and `hash` colum
 
 ## Operational notes
 
+- Without `--run`, verification scans only the **most recent runs** (`--limit`, default **50**, max **500**) ordered by `started_at`. For a full-database audit, raise `--limit` or verify runs individually with `--run`.
 - Run `audit verify` after backups/restores or manual DB edits in compliance workflows.
 - Concurrent appends within one process are serialized by SQLite transactions; each run maintains a single chain tip.
 - Future work (out of scope for #116): external signing, cross-run ledger, automatic verify in CI.

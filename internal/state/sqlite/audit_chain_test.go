@@ -172,6 +172,52 @@ SELECT prev_hash, hash FROM trace_events WHERE run_id = 'legacy-run' AND seq = 1
 	}
 }
 
+func TestAppendTraceEvent_chainsAfterMiddleUnchainedGap(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "gap.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	start := time.Date(2026, 6, 6, 10, 0, 0, 0, time.UTC)
+	startTestRun(t, ctx, st, "run-gap", start)
+	if _, err := st.AppendTraceEvent(ctx, "run-gap", start, "run_started", "agent", "", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	events, err := st.ListTraceEventsByRunID(ctx, "run-gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Hash == "" {
+		t.Fatalf("event[0]=%+v", events[0])
+	}
+	tip := events[0].Hash
+	ts := start.UTC().Format(time.RFC3339Nano)
+	if _, err := st.db.ExecContext(ctx, `
+INSERT INTO trace_events (run_id, seq, timestamp, type, data_json, tenant_id, thread_id, actor_id, actor_type)
+VALUES ('run-gap', 2, ?, 'tool_execution', '{}', 'tenant-1', 'thread-1', 'actor-1', 'agent')
+`, ts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AppendTraceEvent(ctx, "run-gap", start.Add(2*time.Second), "run_finished", "agent", "", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	events, err = st.ListTraceEventsByRunID(ctx, "run-gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("events=%d", len(events))
+	}
+	if events[2].PrevHash != tip {
+		t.Fatalf("seq3 prev=%q want tip %q", events[2].PrevHash, tip)
+	}
+	if err := audit.VerifyRunChainError("run-gap", events); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAuditVerify_detectsTamperedRow(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, filepath.Join(t.TempDir(), "tamper.db"))
@@ -194,7 +240,7 @@ func TestAuditVerify_detectsTamperedRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := audit.VerifyRunChain("run-t", events)
-	if res.Ok() || res.BrokenSeq != 1 || res.BrokenField != "hash" {
+	if res.Ok() || res.BrokenSeq != 1 || res.BrokenField != audit.BrokenFieldHash {
 		t.Fatalf("res=%+v", res)
 	}
 }

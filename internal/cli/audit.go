@@ -16,6 +16,7 @@ import (
 
 func newAuditCmd() *cobra.Command {
 	var runID string
+	var limit int
 
 	cmd := &cobra.Command{
 		Use:          "audit",
@@ -27,9 +28,12 @@ Each run's trace_events rows form a per-run chain: event hash covers canonical
 (redacted) fields plus the previous event hash. Pre-migration rows without hashes
 are reported as unchained and do not fail verification.
 
+Without --run, verifies recent runs only (default --limit 50, max 500).
+
 Examples:
   agentctl audit verify
   agentctl audit verify --run <run-id>
+  agentctl audit verify --limit 200
 
 Exit codes:
   0 — all checked chains valid (unchained rows allowed)
@@ -42,10 +46,11 @@ Exit codes:
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
-			return runAuditVerify(cmd, runID)
+			return runAuditVerify(cmd, runID, limit)
 		},
 	}
 	verify.Flags().StringVar(&runID, "run", "", "verify only this run id")
+	verify.Flags().IntVar(&limit, "limit", state.DefaultRunListLimit, "max runs to verify when --run is omitted")
 	cmd.AddCommand(verify)
 	return cmd
 }
@@ -60,7 +65,7 @@ type auditVerifyRecord struct {
 	BrokenAt  string `json:"brokenAt,omitempty"`
 }
 
-func runAuditVerify(cmd *cobra.Command, runID string) error {
+func runAuditVerify(cmd *cobra.Command, runID string, limit int) error {
 	ctx := context.Background()
 	g := Globals()
 	runID = strings.TrimSpace(runID)
@@ -90,7 +95,7 @@ func runAuditVerify(cmd *cobra.Command, runID string) error {
 		}
 		runIDs = []string{runID}
 	} else {
-		runs, err := st.ListRecentRuns(ctx, state.DefaultRunListLimit)
+		runs, err := st.ListRecentRuns(ctx, state.ClampRunListLimit(limit))
 		if err != nil {
 			return fmt.Errorf("audit verify: list runs: %w", err)
 		}

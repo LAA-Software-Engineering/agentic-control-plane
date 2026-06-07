@@ -152,6 +152,53 @@ func TestVerifyRunChain_unchainedIgnored(t *testing.T) {
 	}
 }
 
+func TestPrevHashForChainTip(t *testing.T) {
+	gen := GenesisHash("r1")
+	if got := PrevHashForChainTip("r1", ""); got != gen {
+		t.Fatalf("got %q want genesis", got)
+	}
+	if got := PrevHashForChainTip("r1", "abc"); got != "abc" {
+		t.Fatalf("got %q want abc", got)
+	}
+}
+
+func TestVerifyRunChain_chainedAfterMiddleUnchainedGap(t *testing.T) {
+	runID := "r1"
+	ts := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+	first := state.TraceEvent{
+		RunID: runID, Seq: 1, Timestamp: ts,
+		Type: "run_started", ActorType: "agent", DataJSON: `{}`,
+	}
+	prev := GenesisHash(runID)
+	h1, err := EventHash(first, prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.PrevHash = prev
+	first.Hash = h1
+
+	unchained := state.TraceEvent{
+		RunID: runID, Seq: 2, Timestamp: ts.Add(time.Second),
+		Type: "tool_execution", ActorType: "agent", DataJSON: `{}`,
+	}
+
+	third := state.TraceEvent{
+		RunID: runID, Seq: 3, Timestamp: ts.Add(2 * time.Second),
+		Type: "run_finished", ActorType: "agent", DataJSON: `{}`,
+	}
+	h3, err := EventHash(third, h1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third.PrevHash = h1
+	third.Hash = h3
+
+	res := VerifyRunChain(runID, []state.TraceEvent{first, unchained, third})
+	if !res.Ok() || res.Chained != 2 || res.Unchained != 1 {
+		t.Fatalf("res=%+v", res)
+	}
+}
+
 func TestVerifyRunChain_detectsTamperedHash(t *testing.T) {
 	runID := "r1"
 	ts := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
@@ -162,7 +209,7 @@ func TestVerifyRunChain_detectsTamperedHash(t *testing.T) {
 		Hash:     "deadbeef",
 	}
 	res := VerifyRunChain(runID, []state.TraceEvent{e})
-	if res.Ok() || res.BrokenSeq != 1 || res.BrokenField != "hash" {
+	if res.Ok() || res.BrokenSeq != 1 || res.BrokenField != BrokenFieldHash {
 		t.Fatalf("res=%+v", res)
 	}
 }
@@ -180,7 +227,7 @@ func TestVerifyRunChain_detectsWrongPrevHash(t *testing.T) {
 		{RunID: runID, Seq: 1, Timestamp: ts, Type: "run_started", DataJSON: `{}`},
 		e,
 	})
-	if res.Ok() || res.BrokenSeq != 2 || res.BrokenField != "prev_hash" {
+	if res.Ok() || res.BrokenSeq != 2 || res.BrokenField != BrokenFieldPrevHash {
 		t.Fatalf("res=%+v", res)
 	}
 }
@@ -192,7 +239,7 @@ func TestVerifyRunChain_detectsPartialChain(t *testing.T) {
 		Type: "run_started", PrevHash: GenesisHash(runID),
 	}
 	res := VerifyRunChain(runID, []state.TraceEvent{e})
-	if res.Ok() || res.BrokenField != "partial_chain" {
+	if res.Ok() || res.BrokenField != BrokenFieldPartialChain {
 		t.Fatalf("res=%+v", res)
 	}
 }
