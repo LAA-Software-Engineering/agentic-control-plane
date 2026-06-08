@@ -65,7 +65,7 @@ func listToolsHTTP(ctx context.Context, cfg *spec.ToolMCP, client *http.Client) 
 	if u == "" {
 		return nil, errors.New("mcp: http transport requires url")
 	}
-	tr, err := NewHTTPTransport(cfg.URL, cfg.Headers, client)
+	tr, err := NewHTTPTransport(u, cfg.Headers, client)
 	if err != nil {
 		return nil, err
 	}

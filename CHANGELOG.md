@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`spec.safety` on Tool resources** (issue #103): optional `trusted`, `sideEffects`, and `requiresApproval` fields. [NormalizeProjectGraph] materializes fail-closed defaults on load.
 - **Policy safety fallback**: when no `approvals.requiredFor` entry matches the exact `uses` string, [policy.Derive] consults resolved safety metadata. Unattended mutating tools require `--approve` (exit code **5**, `approval_required`).
 - **Plan risk hints** for tools that will require approval at run, including decision source (`explicit_policy_rule`, `safety_metadata`, `fail_closed_default`).
-- **MCP tool safety discovery** (issue #125): during config resolution, MCP `tools/list` descriptors supply `meta.mcp_flags` (`trusted`, `side_effects`, `requires_approval`) merged into `spec.safety` via [spec.SafetyFromMCPMeta] and [spec.MergeToolSafety]. Author-set YAML fields override MCP per field; discovery failures fall back to fail-closed defaults.
+- **MCP tool safety discovery** (issue #125): during config resolution, MCP `tools/list` descriptors supply `meta.mcp_flags` (`trusted`, `side_effects`, `requires_approval`) merged into `spec.safety` via [spec.SafetyFromMCPMeta] and [spec.MergeToolSafety]. Author-set YAML fields override MCP per field; discovery failures fall back to fail-closed defaults and emit validate-time warnings on [config.ResolvedConfig.MCPDiscoveryWarnings].
 
 ### Changed
 
@@ -40,3 +40,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
    ```
 2. For tools where you accept **tool-wide** unattended use but still gate specific operations, set `trusted: true` and list write operations under `Policy.spec.approvals.requiredFor` (exact `uses` strings).
 3. Do **not** set `trusted: true` unless you intend every operation on that tool to run without safety-derived approval; per-action gating remains `requiredFor` only (exact match at runtime).
+4. For **MCP tools** that rely on server-provided `meta.mcp_flags`, pin explicit `spec.safety` in YAML when you need stable `validate`/`plan`→`run` digests. Resolved-config digests include normalized tool safety; if MCP `tools/list` fails at `plan` time but succeeds at `run` time (or vice versa), effective safety and the digest can change even when project YAML is unchanged (exit **3** drift). `agentctl validate` surfaces non-fatal MCP discovery warnings when listing fails.

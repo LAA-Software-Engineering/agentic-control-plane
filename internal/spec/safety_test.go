@@ -136,6 +136,14 @@ func TestMergeMCPToolSafetyFlags_conservative(t *testing.T) {
 		t.Fatalf("partial trusted should stay unset: %+v", got)
 	}
 
+	got = MergeMCPToolSafetyFlags(
+		&ToolSafety{RequiresApproval: &f},
+		&ToolSafety{RequiresApproval: &tr},
+	)
+	if got == nil || got.RequiresApproval == nil || !*got.RequiresApproval {
+		t.Fatalf("requires approval wins: %+v", got)
+	}
+
 	if MergeMCPToolSafetyFlags(nil, nil) != nil {
 		t.Fatal("empty merge")
 	}

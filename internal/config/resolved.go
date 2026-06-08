@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
@@ -29,9 +28,6 @@ const DefaultStateDSN = ".agentic/state.db"
 
 const resolvedSnapshotRel = ".agentic/resolved-config.json"
 
-// mcpDiscoveryTimeout bounds MCP tools/list during config resolution; failures fall back to fail-closed defaults.
-const mcpDiscoveryTimeout = 10 * time.Second
-
 // ResolveOptions selects inputs for the configuration pipeline.
 type ResolveOptions struct {
 	ProjectRoot string
@@ -43,11 +39,12 @@ type ResolveOptions struct {
 // ResolvedConfig is a frozen snapshot of the fully resolved project configuration.
 // Graph returns a defensive copy; treat it as read-only.
 type ResolvedConfig struct {
-	graph     *spec.ProjectGraph
-	root      string
-	env       string
-	statePath string
-	digest    string
+	graph       *spec.ProjectGraph
+	root        string
+	env         string
+	statePath   string
+	digest      string
+	mcpWarnings []tools.MCPDiscoveryWarning
 }
 
 // Graph returns a defensive copy of the resolved, validated project graph.
@@ -94,6 +91,16 @@ func (r *ResolvedConfig) Digest() string {
 	return r.digest
 }
 
+// MCPDiscoveryWarnings returns non-fatal MCP tools/list failures from the last resolve pass.
+func (r *ResolvedConfig) MCPDiscoveryWarnings() []tools.MCPDiscoveryWarning {
+	if r == nil || len(r.mcpWarnings) == 0 {
+		return nil
+	}
+	out := make([]tools.MCPDiscoveryWarning, len(r.mcpWarnings))
+	copy(out, r.mcpWarnings)
+	return out
+}
+
 // Resolve loads, merges, normalizes, overlays, validates, and fingerprints the effective config.
 func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 	root, err := filepath.Abs(filepath.Clean(opts.ProjectRoot))
@@ -113,9 +120,7 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 
 	ApplyUserLocalUnder(&graph.Spec, userLocal)
 
-	ctx, cancel := context.WithTimeout(context.Background(), mcpDiscoveryTimeout)
-	defer cancel()
-	tools.ApplyMCPSafetyDiscovery(ctx, graph)
+	mcpWarnings := tools.ApplyMCPSafetyDiscovery(context.Background(), graph)
 	spec.NormalizeProjectGraph(graph)
 
 	graph, err = spec.ApplyEnvironment(graph, opts.Env)
@@ -144,11 +149,12 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 	}
 
 	return &ResolvedConfig{
-		graph:     frozen,
-		root:      root,
-		env:       env,
-		statePath: statePath,
-		digest:    digest,
+		graph:       frozen,
+		root:        root,
+		env:         env,
+		statePath:   statePath,
+		digest:      digest,
+		mcpWarnings: mcpWarnings,
 	}, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +47,7 @@ func runValidate(cmd *cobra.Command, args []string, strict bool) error {
 		}
 		return NewExitError(ExitValidationError, fmt.Errorf("validation failed: high-severity policy lint findings (--strict)"))
 	}
-	if err := writeValidateSuccess(cmd, graph, g, findings); err != nil {
+	if err := writeValidateSuccess(cmd, graph, g, findings, rc.MCPDiscoveryWarnings()); err != nil {
 		return err
 	}
 	if err := persistSnapshots(rc); err != nil {
@@ -55,7 +56,7 @@ func runValidate(cmd *cobra.Command, args []string, strict bool) error {
 	return nil
 }
 
-func writeValidateSuccess(cmd *cobra.Command, graph *spec.ProjectGraph, g *Global, findings []policy.LintFinding) error {
+func writeValidateSuccess(cmd *cobra.Command, graph *spec.ProjectGraph, g *Global, findings []policy.LintFinding, mcpWarnings []tools.MCPDiscoveryWarning) error {
 	out := cmd.OutOrStdout()
 	envLabel := g.Env
 	if envLabel == "" {
@@ -70,19 +71,21 @@ func writeValidateSuccess(cmd *cobra.Command, graph *spec.ProjectGraph, g *Globa
 	switch g.Output {
 	case render.FormatJSON:
 		payload := struct {
-			Project       string               `json:"project"`
-			Environment   string               `json:"environment"`
-			ResourceCount int                  `json:"resourceCount"`
-			Valid         bool                 `json:"valid"`
-			Message       string               `json:"message"`
-			PolicyLint    []policy.LintFinding `json:"policyLint,omitempty"`
+			Project              string                      `json:"project"`
+			Environment          string                      `json:"environment"`
+			ResourceCount        int                         `json:"resourceCount"`
+			Valid                bool                        `json:"valid"`
+			Message              string                      `json:"message"`
+			PolicyLint           []policy.LintFinding        `json:"policyLint,omitempty"`
+			MCPDiscoveryWarnings []tools.MCPDiscoveryWarning `json:"mcpDiscoveryWarnings,omitempty"`
 		}{
-			Project:       projName,
-			Environment:   envLabel,
-			ResourceCount: n,
-			Valid:         true,
-			Message:       "Validation successful",
-			PolicyLint:    findingsOrNil(findings),
+			Project:              projName,
+			Environment:          envLabel,
+			ResourceCount:        n,
+			Valid:                true,
+			Message:              "Validation successful",
+			PolicyLint:           findingsOrNil(findings),
+			MCPDiscoveryWarnings: mcpWarningsOrNil(mcpWarnings),
 		}
 		return render.WriteJSON(out, payload)
 	case render.FormatYAML:
@@ -95,6 +98,9 @@ func writeValidateSuccess(cmd *cobra.Command, graph *spec.ProjectGraph, g *Globa
 		}
 		if len(findings) > 0 {
 			body["policyLint"] = findings
+		}
+		if len(mcpWarnings) > 0 {
+			body["mcpDiscoveryWarnings"] = mcpWarnings
 		}
 		return render.WriteYAML(out, body)
 	default:
@@ -115,6 +121,9 @@ func writeValidateSuccess(cmd *cobra.Command, graph *spec.ProjectGraph, g *Globa
 			return err
 		}
 		if err := writeValidateLintTable(out, g, findings); err != nil {
+			return err
+		}
+		if err := writeValidateMCPDiscoveryWarnings(out, g, mcpWarnings); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintf(out, "\nValidation successful\n")
@@ -198,6 +207,32 @@ func findingsOrNil(findings []policy.LintFinding) []policy.LintFinding {
 		return nil
 	}
 	return findings
+}
+
+func mcpWarningsOrNil(warnings []tools.MCPDiscoveryWarning) []tools.MCPDiscoveryWarning {
+	if len(warnings) == 0 {
+		return nil
+	}
+	return warnings
+}
+
+func writeValidateMCPDiscoveryWarnings(out fmtWriter, g *Global, warnings []tools.MCPDiscoveryWarning) error {
+	if len(warnings) == 0 {
+		return nil
+	}
+	mark := "⚠"
+	if g != nil && g.NoColor {
+		mark = "*"
+	}
+	if _, err := fmt.Fprintf(out, "\nMCP discovery (%d warnings):\n", len(warnings)); err != nil {
+		return err
+	}
+	for _, w := range warnings {
+		if _, err := fmt.Fprintf(out, "%s %s\n", mark, tools.FormatMCPDiscoveryWarning(w)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func resourceCount(g *spec.ProjectGraph) int {

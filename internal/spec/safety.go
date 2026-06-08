@@ -3,6 +3,13 @@ package spec
 // MCPMetaFlagsKey is the MCP tool descriptor meta key for safety flags (issue #125).
 const MCPMetaFlagsKey = "mcp_flags"
 
+// MCP meta.mcp_flags field names (snake_case per MCP descriptor convention).
+const (
+	MCPMetaTrustedKey          = "trusted"
+	MCPMetaSideEffectsKey      = "side_effects"
+	MCPMetaRequiresApprovalKey = "requires_approval"
+)
+
 // Fail-closed defaults for tool safety (issue #103, WayFind-aligned).
 const (
 	defaultToolTrusted     = false
@@ -215,13 +222,13 @@ func SafetyFromMCPMeta(meta map[string]any) *ToolSafety {
 		return nil
 	}
 	var s ToolSafety
-	if v, ok := boolFromMeta(flags["trusted"]); ok {
+	if v, ok := boolFromMeta(flags[MCPMetaTrustedKey]); ok {
 		s.Trusted = &v
 	}
-	if v, ok := boolFromMeta(flags["side_effects"]); ok {
+	if v, ok := boolFromMeta(flags[MCPMetaSideEffectsKey]); ok {
 		s.SideEffects = &v
 	}
-	if v, ok := boolFromMeta(flags["requires_approval"]); ok {
+	if v, ok := boolFromMeta(flags[MCPMetaRequiresApprovalKey]); ok {
 		s.RequiresApproval = &v
 	}
 	if s.Trusted == nil && s.SideEffects == nil && s.RequiresApproval == nil {
