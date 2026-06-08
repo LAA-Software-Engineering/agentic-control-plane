@@ -48,6 +48,35 @@ func main() {
 					"content": []any{map[string]any{"type": "text", "text": string(b)}},
 				},
 			})
+		case "tools/list":
+			_ = enc.Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result": map[string]any{
+					"tools": []any{
+						map[string]any{
+							"name":        "read_file",
+							"description": "Read a file",
+							"meta": map[string]any{
+								"mcp_flags": map[string]any{
+									"trusted":      true,
+									"side_effects": false,
+								},
+							},
+						},
+						map[string]any{
+							"name": "write_file",
+							"meta": map[string]any{
+								"mcp_flags": map[string]any{
+									"trusted":           false,
+									"side_effects":      true,
+									"requires_approval": true,
+								},
+							},
+						},
+					},
+				},
+			})
 		default:
 			_ = enc.Encode(map[string]any{
 				"jsonrpc": "2.0",

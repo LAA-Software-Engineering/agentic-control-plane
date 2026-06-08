@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`spec.safety` on Tool resources** (issue #103): optional `trusted`, `sideEffects`, and `requiresApproval` fields. [NormalizeProjectGraph] materializes fail-closed defaults on load.
 - **Policy safety fallback**: when no `approvals.requiredFor` entry matches the exact `uses` string, [policy.Derive] consults resolved safety metadata. Unattended mutating tools require `--approve` (exit code **5**, `approval_required`).
 - **Plan risk hints** for tools that will require approval at run, including decision source (`explicit_policy_rule`, `safety_metadata`, `fail_closed_default`).
+- **MCP tool safety discovery** (issue #125): during config resolution, MCP `tools/list` descriptors supply `meta.mcp_flags` (`trusted`, `side_effects`, `requires_approval`) merged into `spec.safety` via [spec.SafetyFromMCPMeta] and [spec.MergeToolSafety]. Author-set YAML fields override MCP per field; discovery failures fall back to fail-closed defaults.
 
 ### Changed
 
@@ -39,7 +40,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
    ```
 2. For tools where you accept **tool-wide** unattended use but still gate specific operations, set `trusted: true` and list write operations under `Policy.spec.approvals.requiredFor` (exact `uses` strings).
 3. Do **not** set `trusted: true` unless you intend every operation on that tool to run without safety-derived approval; per-action gating remains `requiredFor` only (exact match at runtime).
-
-### Not yet wired
-
-- MCP discovery does **not** yet apply [spec.SafetyFromMCPMeta] / [spec.MergeToolSafety]; author-set `spec.safety` in YAML is the source of truth until MCP merge lands (tracked separately from #103).

@@ -6,6 +6,9 @@ import "strings"
 // fields, materializes Tool safety defaults (issue #103), expands built-in policy presets
 // (issue #104), and performs trivial string canonicalization (trim surrounding ASCII space).
 //
+// MCP tool safety from server meta.mcp_flags is merged earlier in the config pipeline via
+// [tools.ApplyMCPSafetyDiscovery] before this function runs (issue #125).
+//
 // Default application (§7.1 → effective config):
 //   - Agent.spec.model    ← defaults.model when the agent omits model (empty / whitespace-only).
 //   - Agent.spec.policy   ← defaults.policy when the agent omits policy.

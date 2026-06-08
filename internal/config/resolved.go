@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,10 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 )
 
 // ErrResolvedConfigDrift means the resolved config digest differs from the stored snapshot.
@@ -25,6 +28,9 @@ var ErrInvalidSnapshot = errors.New("resolved config snapshot is invalid or corr
 const DefaultStateDSN = ".agentic/state.db"
 
 const resolvedSnapshotRel = ".agentic/resolved-config.json"
+
+// mcpDiscoveryTimeout bounds MCP tools/list during config resolution; failures fall back to fail-closed defaults.
+const mcpDiscoveryTimeout = 10 * time.Second
 
 // ResolveOptions selects inputs for the configuration pipeline.
 type ResolveOptions struct {
@@ -106,6 +112,10 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 	}
 
 	ApplyUserLocalUnder(&graph.Spec, userLocal)
+
+	ctx, cancel := context.WithTimeout(context.Background(), mcpDiscoveryTimeout)
+	defer cancel()
+	tools.ApplyMCPSafetyDiscovery(ctx, graph)
 	spec.NormalizeProjectGraph(graph)
 
 	graph, err = spec.ApplyEnvironment(graph, opts.Env)
