@@ -46,7 +46,7 @@ func (e *Executor) maybeInterruptForHitl(
 		return false, nil
 	}
 	polSpec := policySpecFromEvaluator(pol)
-	gate, err := policy.BuildHitlGate(e.Graph, polSpec, policy.ToolCallContext{
+	gate, err := policy.BuildHitlGateWithEvaluator(e.Graph, pol, polSpec, policy.ToolCallContext{
 		Run: pctx, StepID: step.ID, Uses: strings.TrimSpace(step.Uses), With: with,
 	})
 	if err != nil {

@@ -235,6 +235,12 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 		}
 		return fmt.Errorf("run: resolved config snapshot: %w", err)
 	}
+	if err := assertPolicySnapshotMatches(rc); err != nil {
+		if errors.Is(err, policy.ErrPolicySnapshotDrift) {
+			return NewExitError(ExitPlanApplyConflict, err)
+		}
+		return fmt.Errorf("run: policy snapshot: %w", err)
+	}
 	env := rc.Environment()
 	dsn := rc.StatePath()
 
