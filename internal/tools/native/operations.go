@@ -34,10 +34,8 @@ var operationCatalog = map[string][]string{
 
 // OperationKnown reports whether operation is implemented by [Registry.Dispatch].
 func OperationKnown(operation string) bool {
-	for _, name := range DispatchOperations {
-		if name == operation {
-			return true
-		}
+	if _, ok := dispatchHandlers[operation]; ok {
+		return true
 	}
 	return spec.IsShellCommandOperation(operation)
 }

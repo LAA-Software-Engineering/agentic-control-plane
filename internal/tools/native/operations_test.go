@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -56,19 +57,6 @@ func TestRegistryDispatchMatchesCatalog(t *testing.T) {
 	}
 }
 
-func TestDispatchOperationsMatchHandlers(t *testing.T) {
-	t.Helper()
-	if len(DispatchOperations) != len(dispatchHandlers) {
-		t.Fatalf("len DispatchOperations=%d want len dispatchHandlers=%d",
-			len(DispatchOperations), len(dispatchHandlers))
-	}
-	for _, op := range DispatchOperations {
-		if _, ok := dispatchHandlers[op]; !ok {
-			t.Errorf("DispatchOperations %q missing from dispatchHandlers", op)
-		}
-	}
-}
-
 func TestRegistryDispatchUnknownOperation(t *testing.T) {
 	reg := NewRegistry()
 	_, _, err := reg.Dispatch(context.Background(), "not-a-real-op", nil)
@@ -87,5 +75,81 @@ func TestRegistryDispatchKnownOperationsNotUnknown(t *testing.T) {
 		if errors.Is(err, ErrUnknownOperation) {
 			t.Errorf("Dispatch(%q) returned ErrUnknownOperation; handler must be registered", op)
 		}
+	}
+}
+
+func TestRegistryDispatchPullRequestFetch(t *testing.T) {
+	reg := NewRegistry()
+	tests := []struct {
+		name    string
+		with    map[string]any
+		wantKey string
+		wantErr string
+	}{
+		{
+			name:    "valid JSON",
+			with:    map[string]any{"pr": `{"number":1,"title":"demo"}`},
+			wantKey: "pull_request",
+		},
+		{
+			name:    "missing pr",
+			with:    map[string]any{},
+			wantErr: "requires string field pr",
+		},
+		{
+			name:    "empty pr",
+			with:    map[string]any{"pr": "   "},
+			wantErr: "requires string field pr",
+		},
+		{
+			name:    "malformed JSON",
+			with:    map[string]any{"pr": `{not json`},
+			wantErr: "pull_request.fetch pr:",
+		},
+		{
+			name:    "non-string pr",
+			with:    map[string]any{"pr": 42},
+			wantErr: "requires string field pr",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, _, err := reg.Dispatch(context.Background(), "pull_request.fetch", tt.with)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %q, want substring %q", err.Error(), tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := out[tt.wantKey]; !ok {
+				t.Fatalf("output missing %q: %v", tt.wantKey, out)
+			}
+		})
+	}
+}
+
+func TestRegistryDispatchOfflineOperations(t *testing.T) {
+	reg := NewRegistry()
+
+	out, _, err := reg.Dispatch(context.Background(), "echo", map[string]any{"x": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if echo, ok := out["echo"].(map[string]any); !ok || echo["x"] != 1 {
+		t.Fatalf("echo output = %v", out)
+	}
+
+	out, _, err = reg.Dispatch(context.Background(), "identity", map[string]any{"value": "ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["value"] != "ok" || out["ok"] != true {
+		t.Fatalf("identity output = %v", out)
 	}
 }
