@@ -1,0 +1,8 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: shell
+spec:
+  type: native
+  safety:
+    sideEffects: true

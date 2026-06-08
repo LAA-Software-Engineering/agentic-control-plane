@@ -101,6 +101,23 @@ func TestGolden_plan_first_table(t *testing.T) {
 	assertGoldenOutput(t, "plan_first.table.golden.txt", out.String())
 }
 
+func TestGolden_plan_policy_compile_table(t *testing.T) {
+	root := t.TempDir()
+	copyPolicyCompileFixture(t, root)
+	db := filepath.Join(t.TempDir(), "golden-policy-compile.db")
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	assertGoldenOutput(t, "plan_policy_compile.table.golden.txt", out.String())
+}
+
 func TestGolden_plan_noop_after_apply_table(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

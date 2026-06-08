@@ -2,3 +2,5 @@ Environment: local
 State: <STATE>
 
 Plan: 0 to add, 0 to change, 0 to delete
+Effective policy (default):
+- Tool/helper decision=allow source=safety_metadata

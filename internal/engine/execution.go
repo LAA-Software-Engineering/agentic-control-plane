@@ -88,8 +88,10 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 		return e.failRun(ctx, in, err, 0)
 	}
 
-	polEng := policy.NewEngine(e.Graph)
-	wfPol := polEng.Evaluator(strings.TrimSpace(wf.Spec.Policy))
+	wfPol, err := compiledWorkflowEvaluator(e.ProjectRoot, e.Graph, strings.TrimSpace(wf.Spec.Policy))
+	if err != nil {
+		return e.failRun(ctx, in, err, 0)
+	}
 
 	ictx := Context{Input: in.Input, Steps: make(map[string]StepResult)}
 	var totalCost float64
@@ -198,7 +200,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 					return ierr
 				}
 				if in.Hitl.AutoApprove {
-					gate, gerr := policy.BuildHitlGate(e.Graph, policySpecFromEvaluator(wfPol), policy.ToolCallContext{
+					gate, gerr := policy.BuildHitlGateWithEvaluator(e.Graph, wfPol, policySpecFromEvaluator(wfPol), policy.ToolCallContext{
 						Run: pctx, StepID: step.ID, Uses: uses, With: with,
 					})
 					if gerr != nil {

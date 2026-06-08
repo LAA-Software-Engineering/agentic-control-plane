@@ -16,6 +16,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
@@ -26,35 +27,28 @@ import (
 
 func runProjRoot(t *testing.T) string {
 	t.Helper()
-	p := filepath.Join("..", "runtime", "local", "testdata", "runproj")
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = os.Remove(config.SnapshotPath(abs))
-	return abs
+	return clearSnapshotRoots(t, filepath.Join("..", "runtime", "local", "testdata", "runproj"))
 }
 
 func runPolicyRoot(t *testing.T) string {
 	t.Helper()
-	p := filepath.Join("testdata", "run_policy")
+	return clearSnapshotRoots(t, filepath.Join("testdata", "run_policy"))
+}
+
+func clearSnapshotRoots(t *testing.T, p string) string {
+	t.Helper()
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = os.Remove(config.SnapshotPath(abs))
+	_ = os.Remove(policy.SnapshotPath(abs))
 	return abs
 }
 
 func runSafetyRoot(t *testing.T) string {
 	t.Helper()
-	p := filepath.Join("testdata", "run_safety")
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = os.Remove(config.SnapshotPath(abs))
-	return abs
+	return clearSnapshotRoots(t, filepath.Join("testdata", "run_safety"))
 }
 
 func TestRun_demo_integration_succeeds(t *testing.T) {

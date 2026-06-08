@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -155,11 +156,15 @@ func uniqueStrings(in []string) []string {
 
 // ToolCallNeedsHitl reports whether call requires human approval and is not pre-approved.
 func ToolCallNeedsHitl(graph *spec.ProjectGraph, pol *spec.PolicySpec, call ToolCallContext) (bool, error) {
+	return ToolCallNeedsHitlWithEvaluator(NewEvaluator(graph, pol), call)
+}
+
+// ToolCallNeedsHitlWithEvaluator uses the same evaluator that will enforce the tool call at run time.
+func ToolCallNeedsHitlWithEvaluator(ev PolicyEvaluator, call ToolCallContext) (bool, error) {
 	if actionApproved(call.Uses, call.Run.ApprovedActions) {
 		return false, nil
 	}
-	ev := NewEvaluator(graph, pol)
-	if err := ev.CheckToolCall(nil, call); err == nil {
+	if err := ev.CheckToolCall(context.Background(), call); err == nil {
 		return false, nil
 	} else if d, ok := AsDenied(err); ok && d.Reason == ReasonApprovalRequired {
 		return true, nil
@@ -170,7 +175,12 @@ func ToolCallNeedsHitl(graph *spec.ProjectGraph, pol *spec.PolicySpec, call Tool
 
 // BuildHitlGate constructs a [HitlGate] when the call is approval-gated and not pre-approved.
 func BuildHitlGate(graph *spec.ProjectGraph, pol *spec.PolicySpec, call ToolCallContext) (*HitlGate, error) {
-	need, err := ToolCallNeedsHitl(graph, pol, call)
+	return BuildHitlGateWithEvaluator(graph, NewEvaluator(graph, pol), pol, call)
+}
+
+// BuildHitlGateWithEvaluator constructs a [HitlGate] using ev for approval detection (issue #118).
+func BuildHitlGateWithEvaluator(graph *spec.ProjectGraph, ev PolicyEvaluator, pol *spec.PolicySpec, call ToolCallContext) (*HitlGate, error) {
+	need, err := ToolCallNeedsHitlWithEvaluator(ev, call)
 	if err != nil {
 		return nil, err
 	}

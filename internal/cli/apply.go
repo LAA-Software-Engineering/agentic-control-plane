@@ -97,7 +97,7 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 		if err := writeApplyEmptyOutput(cmd, env, dsn, pl, rc, g); err != nil {
 			return err
 		}
-		return config.WriteSnapshot(rc)
+		return persistSnapshots(rc)
 	}
 
 	if g.Output != render.FormatTable {
@@ -137,7 +137,7 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 	if err := writeApplySuccessOutput(cmd, env, dsn, pl, rc, g, at); err != nil {
 		return err
 	}
-	return config.WriteSnapshot(rc)
+	return persistSnapshots(rc)
 }
 
 func readApplyConfirmation(r io.Reader) (bool, error) {

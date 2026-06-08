@@ -15,9 +15,9 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 )
 
-func copyPlanFixture(t *testing.T, dstDir string) {
+func copyFixtureDir(t *testing.T, dstDir, fixtureName string) {
 	t.Helper()
-	src := filepath.Join("testdata", "plan_project")
+	src := filepath.Join("testdata", fixtureName)
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +34,16 @@ func copyPlanFixture(t *testing.T, dstDir string) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func copyPlanFixture(t *testing.T, dstDir string) {
+	t.Helper()
+	copyFixtureDir(t, dstDir, "plan_project")
+}
+
+func copyPolicyCompileFixture(t *testing.T, dstDir string) {
+	t.Helper()
+	copyFixtureDir(t, dstDir, "plan_policy_compile")
 }
 
 func TestPlan_json_includesResolvedConfigDigest(t *testing.T) {
@@ -57,6 +67,34 @@ func TestPlan_json_includesResolvedConfigDigest(t *testing.T) {
 	d, ok := payload["resolvedConfigDigest"].(string)
 	if !ok || strings.TrimSpace(d) == "" {
 		t.Fatalf("resolvedConfigDigest missing or empty: %#v", payload["resolvedConfigDigest"])
+	}
+}
+
+func TestPlan_json_includesPolicyDigest(t *testing.T) {
+	root := t.TempDir()
+	copyPolicyCompileFixture(t, root)
+	db := filepath.Join(t.TempDir(), "plan-policy-json.db")
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\nbody=%s", err, out.String())
+	}
+	d, ok := payload["policyDigest"].(string)
+	if !ok || strings.TrimSpace(d) == "" {
+		t.Fatalf("policyDigest missing or empty: %#v", payload["policyDigest"])
+	}
+	effective, ok := payload["effectivePolicy"].([]any)
+	if !ok || len(effective) < 3 {
+		t.Fatalf("effectivePolicy missing entries: %#v", payload["effectivePolicy"])
 	}
 }
 

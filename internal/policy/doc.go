@@ -39,4 +39,12 @@
 // [Lint] runs at validate/plan time and returns structured findings (ungated sensitive tools, invalid
 // HITL switch targets, unknown edit args, weakened presets, and similar). High-severity findings can
 // fail validate when --strict is set.
+//
+// # Compiled policy snapshots (issue #118)
+//
+// [Compile] and [CompileReferenced] flatten preset base, explicit rules, and safety metadata into an
+// immutable [CompiledPolicy] with a content digest. [WriteSnapshotSet] persists the snapshot under
+// .agentic/policy-snapshot.json during validate/plan/apply; [AssertSnapshotMatchesCompiled] detects
+// plan→run drift. [NewCompiledEvaluator] evaluates tool calls against the snapshot plus residual
+// dynamic predicates (shell_safe command classification, exact requiredFor).
 package policy

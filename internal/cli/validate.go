@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -50,8 +49,8 @@ func runValidate(cmd *cobra.Command, args []string, strict bool) error {
 	if err := writeValidateSuccess(cmd, graph, g, findings); err != nil {
 		return err
 	}
-	if err := config.WriteSnapshot(rc); err != nil {
-		return fmt.Errorf("validate: write resolved config snapshot: %w", err)
+	if err := persistSnapshots(rc); err != nil {
+		return fmt.Errorf("validate: %w", err)
 	}
 	return nil
 }

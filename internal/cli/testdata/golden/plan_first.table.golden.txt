@@ -8,3 +8,5 @@ Plan: 3 to add, 0 to change, 0 to delete
 
 Risk delta:
 - New policy defines a cost ceiling (Policy/default).
+Effective policy (default):
+- Tool/helper decision=allow source=safety_metadata

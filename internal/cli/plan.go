@@ -10,6 +10,7 @@ import (
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
 	"github.com/spf13/cobra"
@@ -28,8 +29,10 @@ unless overridden by global --state.
 
 Environment for stored rows is taken from -e / --env when set, otherwise "local".
 
-Writes .agentic/resolved-config.json (digest of resolved graph + env + state path) for plan→run
-contract checks. JSON/YAML output includes resolvedConfigDigest alongside deploymentBaseline.
+Writes .agentic/resolved-config.json (digest of resolved graph + env + state path) and
+.agentic/policy-snapshot.json (compiled effective policy digest) for plan→run contract checks.
+JSON/YAML output includes resolvedConfigDigest, policyDigest, and effectivePolicy (project
+default policy only; workflows/agents may bind other policy names) alongside deploymentBaseline.
 
 Exit codes (section 11.2):
   0 — success
@@ -80,8 +83,8 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	if err := writePlanOutput(cmd, env, dsn, pl, rc, g); err != nil {
 		return err
 	}
-	if err := config.WriteSnapshot(rc); err != nil {
-		return fmt.Errorf("plan: write resolved config snapshot: %w", err)
+	if err := persistSnapshots(rc); err != nil {
+		return fmt.Errorf("plan: %w", err)
 	}
 	return nil
 }
@@ -97,8 +100,18 @@ func writePlanOutput(cmd *cobra.Command, env, dsn string, p *plan.Plan, rc *conf
 		if _, err := fmt.Fprintf(out, "Environment: %s\nState: %s\n\n", env, dsn); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(out, "%s\n", plan.FormatPlan(p))
-		return err
+		if _, err := fmt.Fprintf(out, "%s", plan.FormatPlan(p)); err != nil {
+			return err
+		}
+		if section := compiledPolicyPlanSection(rc); section != "" {
+			if _, err := fmt.Fprintf(out, "%s\n", section); err != nil {
+				return err
+			}
+		} else {
+			_, err := fmt.Fprintln(out)
+			return err
+		}
+		return nil
 	}
 }
 
@@ -158,7 +171,50 @@ func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map
 	if rc != nil && rc.Digest() != "" {
 		m["resolvedConfigDigest"] = rc.Digest()
 	}
+	if rc != nil {
+		if cp, digest, err := compiledPolicySummary(rc); err == nil && cp != nil {
+			m["policyDigest"] = digest
+			m["effectivePolicy"] = effectivePolicyJSON(cp)
+		}
+	}
 	return m
+}
+
+// compiledPolicySummary returns the snapshot-set digest and the compiled project-default policy.
+// Workflows and agents may reference other policy names; only the default is shown in plan output.
+func compiledPolicySummary(rc *config.ResolvedConfig) (*policy.CompiledPolicy, string, error) {
+	graph := rc.Graph()
+	policies, err := policy.CompileReferenced(graph)
+	if err != nil {
+		return nil, "", err
+	}
+	digest, err := policy.SnapshotSetDigest(policies)
+	if err != nil {
+		return nil, "", err
+	}
+	name := policy.DefaultPolicyName(graph)
+	return policies[name], digest, nil
+}
+
+func compiledPolicyPlanSection(rc *config.ResolvedConfig) string {
+	cp, _, err := compiledPolicySummary(rc)
+	if err != nil || cp == nil {
+		return ""
+	}
+	return plan.FormatEffectivePolicy(policy.DefaultPolicyName(rc.Graph()), cp)
+}
+
+func effectivePolicyJSON(cp *policy.CompiledPolicy) []map[string]string {
+	entries := cp.EffectivePolicyEntries()
+	out := make([]map[string]string, len(entries))
+	for i, e := range entries {
+		out[i] = map[string]string{
+			"tool":     e.Tool,
+			"decision": string(e.Decision),
+			"source":   string(e.Source),
+		}
+	}
+	return out
 }
 
 func riskStrings(p *plan.Plan) []string {
