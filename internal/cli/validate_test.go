@@ -203,3 +203,57 @@ func TestValidate_validateOk_strictPasses(t *testing.T) {
 		t.Fatalf("validate_ok should pass strict lint: %v", err)
 	}
 }
+
+func TestValidate_mcpDiscoveryWarning_advisory(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: mcp-warn
+spec:
+  imports:
+    - tools/
+  state:
+    backend: sqlite
+    dsn: .agentic/state.db
+`)
+	writeFile(t, filepath.Join(root, "tools", "mc.yaml"), `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: mc
+spec:
+  type: mcp
+  mcp:
+    transport: stdio
+    command: /nonexistent/mcp-binary-for-validate-test
+`)
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"-o", "json", "validate", "--project", root, "--no-color"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Valid                bool `json:"valid"`
+		MCPDiscoveryWarnings []struct {
+			Tool    string `json:"tool"`
+			Message string `json:"message"`
+		} `json:"mcpDiscoveryWarnings"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Valid {
+		t.Fatalf("validate should succeed: %s", out.String())
+	}
+	if len(payload.MCPDiscoveryWarnings) != 1 {
+		t.Fatalf("expected MCP discovery warning: %s", out.String())
+	}
+	if payload.MCPDiscoveryWarnings[0].Tool != "mc" {
+		t.Fatalf("tool: %+v", payload.MCPDiscoveryWarnings[0])
+	}
+}

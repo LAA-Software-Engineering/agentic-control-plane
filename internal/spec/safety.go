@@ -1,7 +1,14 @@
 package spec
 
-// MCP descriptor meta key for tool safety flags (not wired at discovery yet; see CHANGELOG).
+// MCPMetaFlagsKey is the MCP tool descriptor meta key for safety flags (issue #125).
 const MCPMetaFlagsKey = "mcp_flags"
+
+// MCP meta.mcp_flags field names (snake_case per MCP descriptor convention).
+const (
+	MCPMetaTrustedKey          = "trusted"
+	MCPMetaSideEffectsKey      = "side_effects"
+	MCPMetaRequiresApprovalKey = "requires_approval"
+)
 
 // Fail-closed defaults for tool safety (issue #103, WayFind-aligned).
 const (
@@ -67,7 +74,6 @@ func BoolPtr(b bool) *bool {
 }
 
 // MergeToolSafety combines author-set safety with MCP-discovered flags.
-// Not called from MCP discovery yet; see CHANGELOG [Unreleased] / issue #103 follow-up.
 // Precedence: author (base) wins over MCP for each field that base sets explicitly.
 func MergeToolSafety(author, mcp *ToolSafety) *ToolSafety {
 	if author == nil && mcp == nil {
@@ -96,8 +102,112 @@ func MergeToolSafety(author, mcp *ToolSafety) *ToolSafety {
 	return out
 }
 
+// MergeMCPToolSafetyFlags combines safety parsed from multiple MCP tool descriptors on one
+// server. The merge is conservative (fail-closed): any untrusted, side-effecting, or
+// approval-required descriptor makes the aggregate restrictive for that dimension.
+// Returns nil when no recognized flags are present in any descriptor.
+func MergeMCPToolSafetyFlags(flags ...*ToolSafety) *ToolSafety {
+	var parts []*ToolSafety
+	for _, f := range flags {
+		if f != nil {
+			parts = append(parts, f)
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	out := &ToolSafety{}
+	if v, ok := mergeBoolFieldConservative(parts, fieldTrusted); ok {
+		out.Trusted = &v
+	}
+	if v, ok := mergeBoolFieldConservative(parts, fieldSideEffects); ok {
+		out.SideEffects = &v
+	}
+	if v, ok := mergeBoolFieldConservative(parts, fieldRequiresApproval); ok {
+		out.RequiresApproval = &v
+	}
+	if out.Trusted == nil && out.SideEffects == nil && out.RequiresApproval == nil {
+		return nil
+	}
+	return out
+}
+
+type safetyField int
+
+const (
+	fieldTrusted safetyField = iota
+	fieldSideEffects
+	fieldRequiresApproval
+)
+
+func mergeBoolFieldConservative(parts []*ToolSafety, field safetyField) (bool, bool) {
+	setCount := 0
+	for _, p := range parts {
+		ptr := safetyFieldPtr(p, field)
+		if ptr == nil {
+			continue
+		}
+		setCount++
+		if restrictiveBool(*ptr, field) {
+			return restrictiveValue(field), true
+		}
+	}
+	if setCount == 0 {
+		return false, false
+	}
+	if setCount == len(parts) {
+		return permissiveValue(field), true
+	}
+	return false, false
+}
+
+func safetyFieldPtr(s *ToolSafety, field safetyField) *bool {
+	switch field {
+	case fieldTrusted:
+		return s.Trusted
+	case fieldSideEffects:
+		return s.SideEffects
+	case fieldRequiresApproval:
+		return s.RequiresApproval
+	default:
+		return nil
+	}
+}
+
+func restrictiveBool(v bool, field safetyField) bool {
+	switch field {
+	case fieldTrusted:
+		return !v
+	case fieldSideEffects, fieldRequiresApproval:
+		return v
+	default:
+		return false
+	}
+}
+
+func restrictiveValue(field safetyField) bool {
+	switch field {
+	case fieldTrusted:
+		return false
+	case fieldSideEffects, fieldRequiresApproval:
+		return true
+	default:
+		return false
+	}
+}
+
+func permissiveValue(field safetyField) bool {
+	switch field {
+	case fieldTrusted:
+		return true
+	case fieldSideEffects, fieldRequiresApproval:
+		return false
+	default:
+		return false
+	}
+}
+
 // SafetyFromMCPMeta maps MCP tool descriptor meta[MCPMetaFlagsKey] onto [ToolSafety].
-// Not called from MCP discovery yet; see CHANGELOG [Unreleased] / issue #103 follow-up.
 // Returns nil when meta is nil or carries no recognized flags.
 func SafetyFromMCPMeta(meta map[string]any) *ToolSafety {
 	if meta == nil {
@@ -112,13 +222,13 @@ func SafetyFromMCPMeta(meta map[string]any) *ToolSafety {
 		return nil
 	}
 	var s ToolSafety
-	if v, ok := boolFromMeta(flags["trusted"]); ok {
+	if v, ok := boolFromMeta(flags[MCPMetaTrustedKey]); ok {
 		s.Trusted = &v
 	}
-	if v, ok := boolFromMeta(flags["side_effects"]); ok {
+	if v, ok := boolFromMeta(flags[MCPMetaSideEffectsKey]); ok {
 		s.SideEffects = &v
 	}
-	if v, ok := boolFromMeta(flags["requires_approval"]); ok {
+	if v, ok := boolFromMeta(flags[MCPMetaRequiresApprovalKey]); ok {
 		s.RequiresApproval = &v
 	}
 	if s.Trusted == nil && s.SideEffects == nil && s.RequiresApproval == nil {

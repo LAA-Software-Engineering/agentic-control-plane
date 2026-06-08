@@ -99,6 +99,56 @@ func TestSafetyFromMCPMeta_nilAndMalformed(t *testing.T) {
 	}
 }
 
+func TestMergeMCPToolSafetyFlags_conservative(t *testing.T) {
+	t.Helper()
+	f := false
+	tr := true
+
+	got := MergeMCPToolSafetyFlags(
+		&ToolSafety{Trusted: &tr, SideEffects: &f},
+		&ToolSafety{Trusted: &tr, SideEffects: &f},
+	)
+	if got == nil || got.Trusted == nil || !*got.Trusted || got.SideEffects == nil || *got.SideEffects {
+		t.Fatalf("all permissive flags: %+v", got)
+	}
+
+	got = MergeMCPToolSafetyFlags(
+		&ToolSafety{Trusted: &tr},
+		&ToolSafety{Trusted: &f},
+	)
+	if got == nil || got.Trusted == nil || *got.Trusted {
+		t.Fatalf("untrusted wins: %+v", got)
+	}
+
+	got = MergeMCPToolSafetyFlags(
+		&ToolSafety{SideEffects: &f},
+		&ToolSafety{SideEffects: &tr},
+	)
+	if got == nil || got.SideEffects == nil || !*got.SideEffects {
+		t.Fatalf("side effects wins: %+v", got)
+	}
+
+	got = MergeMCPToolSafetyFlags(
+		&ToolSafety{Trusted: &tr},
+		&ToolSafety{},
+	)
+	if got != nil && got.Trusted != nil {
+		t.Fatalf("partial trusted should stay unset: %+v", got)
+	}
+
+	got = MergeMCPToolSafetyFlags(
+		&ToolSafety{RequiresApproval: &f},
+		&ToolSafety{RequiresApproval: &tr},
+	)
+	if got == nil || got.RequiresApproval == nil || !*got.RequiresApproval {
+		t.Fatalf("requires approval wins: %+v", got)
+	}
+
+	if MergeMCPToolSafetyFlags(nil, nil) != nil {
+		t.Fatal("empty merge")
+	}
+}
+
 func TestNormalizeToolSafety_idempotent(t *testing.T) {
 	sp := ToolSpec{}
 	NormalizeToolSafety(&sp)
