@@ -7,15 +7,16 @@ import (
 )
 
 // DispatchOperations lists operation names handled by [Registry.Dispatch] (excluding shell ops).
-// Keep in sync with the switch in registry.go and operationCatalog below.
-var DispatchOperations = []string{
-	"check_runs.list",
-	"echo",
-	"identity",
-	"pull_request.diff",
-	"pull_request.fetch",
-	"pull_request.get",
-	"pull_request.post_comment",
+// Derived from dispatchHandlers; keep operationCatalog in sync (see TestRegistryDispatchMatchesCatalog).
+var DispatchOperations = dispatchOperationNames()
+
+func dispatchOperationNames() []string {
+	names := make([]string, 0, len(dispatchHandlers))
+	for name := range dispatchHandlers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // operationCatalog maps dispatch operation names to known top-level args (nil = arbitrary).
@@ -33,10 +34,8 @@ var operationCatalog = map[string][]string{
 
 // OperationKnown reports whether operation is implemented by [Registry.Dispatch].
 func OperationKnown(operation string) bool {
-	for _, name := range DispatchOperations {
-		if name == operation {
-			return true
-		}
+	if _, ok := dispatchHandlers[operation]; ok {
+		return true
 	}
 	return spec.IsShellCommandOperation(operation)
 }
