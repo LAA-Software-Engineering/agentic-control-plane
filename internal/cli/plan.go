@@ -29,8 +29,10 @@ unless overridden by global --state.
 
 Environment for stored rows is taken from -e / --env when set, otherwise "local".
 
-Writes .agentic/resolved-config.json (digest of resolved graph + env + state path) for plan→run
-contract checks. JSON/YAML output includes resolvedConfigDigest alongside deploymentBaseline.
+Writes .agentic/resolved-config.json (digest of resolved graph + env + state path) and
+.agentic/policy-snapshot.json (compiled effective policy digest) for plan→run contract checks.
+JSON/YAML output includes resolvedConfigDigest, policyDigest, and effectivePolicy (project
+default policy only; workflows/agents may bind other policy names) alongside deploymentBaseline.
 
 Exit codes (section 11.2):
   0 — success
@@ -178,6 +180,8 @@ func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map
 	return m
 }
 
+// compiledPolicySummary returns the snapshot-set digest and the compiled project-default policy.
+// Workflows and agents may reference other policy names; only the default is shown in plan output.
 func compiledPolicySummary(rc *config.ResolvedConfig) (*policy.CompiledPolicy, string, error) {
 	graph := rc.Graph()
 	policies, err := policy.CompileReferenced(graph)

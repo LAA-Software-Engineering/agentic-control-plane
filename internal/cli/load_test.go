@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -145,6 +146,64 @@ spec:
 	}
 	if !errors.Is(err, config.ErrResolvedConfigDrift) {
 		t.Fatalf("want ErrResolvedConfigDrift, got %v", err)
+	}
+	if code := ExitCodeOf(NewExitError(ExitPlanApplyConflict, err)); code != ExitPlanApplyConflict {
+		t.Fatalf("exit code = %d, want %d", code, ExitPlanApplyConflict)
+	}
+}
+
+func TestRun_policySnapshotDrift_exit3(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: demo
+spec:
+  imports:
+    - ./policy.yaml
+  state:
+    backend: sqlite
+    dsn: .agentic/state.db
+`)
+	writeFile(t, filepath.Join(root, "policy.yaml"), `apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: default
+spec:
+  execution:
+    maxTotalCostUsd: 3
+`)
+
+	ResetGlobalsForTest()
+	global = Global{ProjectRoot: root}
+	rc, err := prepareResolvedConfig(&global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := persistSnapshots(rc); err != nil {
+		t.Fatal(err)
+	}
+
+	policyPath := filepath.Join(root, "policy.yaml")
+	b, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(b), "maxTotalCostUsd: 3", "maxTotalCostUsd: 10", 1)
+	if err := os.WriteFile(policyPath, []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rc2, err := prepareResolvedConfig(&global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = assertPolicySnapshotMatches(rc2)
+	if err == nil {
+		t.Fatal("expected policy drift")
+	}
+	if !errors.Is(err, policy.ErrPolicySnapshotDrift) {
+		t.Fatalf("want ErrPolicySnapshotDrift, got %v", err)
 	}
 	if code := ExitCodeOf(NewExitError(ExitPlanApplyConflict, err)); code != ExitPlanApplyConflict {
 		t.Fatalf("exit code = %d, want %d", code, ExitPlanApplyConflict)

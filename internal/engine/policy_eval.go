@@ -29,8 +29,7 @@ func compiledWorkflowEvaluator(projectRoot string, graph *spec.ProjectGraph, pol
 	}
 	cp, err := policy.Compile(graph, policyName)
 	if err != nil {
-		eng := policy.NewEngine(graph)
-		return eng.Evaluator(policyName), nil
+		return nil, fmt.Errorf("engine: compile policy %q: %w", policyName, err)
 	}
 	return policy.NewCompiledEvaluator(graph, cp), nil
 }

@@ -4,6 +4,7 @@ metadata:
   name: runproj
 spec:
   imports:
+    - ./policy.yaml
     - ./tools.yaml
     - ./agents.yaml
     - ./workflows.yaml

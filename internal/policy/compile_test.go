@@ -146,7 +146,7 @@ func TestCompile_digestChangesOnInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	if before.Digest == after.Digest {
-		t.Fatal("digest should change when tool safety changes")
+		t.Fatal("digest should change when requiredFor changes")
 	}
 }
 
@@ -223,6 +223,63 @@ func TestCompiledEvaluator_matchesLegacyShellSafe(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCompiledEvaluator_matchesLegacyStrictAndPermissive(t *testing.T) {
+	g := testGraphWithTools("helper")
+	g.Tools["helper"].Spec.Safety = &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}
+
+	for _, tc := range []struct {
+		name   string
+		preset string
+		call   ToolCallContext
+	}{
+		{
+			name:   "strict gates all tools",
+			preset: spec.PresetStrict,
+			call:   ToolCallContext{Uses: "tool.helper.echo"},
+		},
+		{
+			name:   "permissive allows side effects",
+			preset: spec.PresetPermissive,
+			call:   ToolCallContext{Uses: "tool.helper.echo"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pol, err := spec.BuildPreset(tc.preset)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pol.ResolvedPreset = tc.preset
+			g.Policies = map[string]*spec.PolicyResource{
+				tc.preset: {
+					Metadata: spec.Metadata{Name: tc.preset},
+					Spec:     pol,
+				},
+			}
+			cp, err := Compile(g, tc.preset)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertEvaluatorParity(t, NewEvaluator(g, &pol), NewCompiledEvaluator(g, cp), tc.call)
+		})
+	}
+}
+
+func assertEvaluatorParity(t *testing.T, legacy, compiled PolicyEvaluator, call ToolCallContext) {
+	t.Helper()
+	errLegacy := legacy.CheckToolCall(t.Context(), call)
+	errCompiled := compiled.CheckToolCall(t.Context(), call)
+	if (errLegacy == nil) != (errCompiled == nil) {
+		t.Fatalf("legacy=%v compiled=%v", errLegacy, errCompiled)
+	}
+	if errLegacy != nil && errCompiled != nil {
+		d1, ok1 := AsDenied(errLegacy)
+		d2, ok2 := AsDenied(errCompiled)
+		if !ok1 || !ok2 || d1.Reason != d2.Reason {
+			t.Fatalf("reasons differ: legacy=%v compiled=%v", errLegacy, errCompiled)
+		}
 	}
 }
 

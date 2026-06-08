@@ -71,5 +71,3 @@ func TestSnapshotPath_underAgenticDir(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
-
-func boolPtr(v bool) *bool { return &v }

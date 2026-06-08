@@ -94,7 +94,11 @@ func Compile(graph *spec.ProjectGraph, policyName string) (*CompiledPolicy, erro
 		PlanTools:  planTools,
 		Residual:   residual,
 	}
-	cp.Digest = digestCompiledPolicy(cp)
+	digest, err := digestCompiledPolicy(cp)
+	if err != nil {
+		return nil, fmt.Errorf("policy: digest compiled policy %q: %w", policyName, err)
+	}
+	cp.Digest = digest
 	return cp, nil
 }
 
@@ -233,9 +237,9 @@ type compiledDigestPayload struct {
 	Residual   ResidualPolicy                  `json:"residual"`
 }
 
-func digestCompiledPolicy(cp *CompiledPolicy) string {
+func digestCompiledPolicy(cp *CompiledPolicy) (string, error) {
 	if cp == nil {
-		return ""
+		return "", fmt.Errorf("policy: nil compiled policy")
 	}
 	payload := compiledDigestPayload{
 		PolicyName: cp.PolicyName,
@@ -245,10 +249,10 @@ func digestCompiledPolicy(cp *CompiledPolicy) string {
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("policy: marshal digest payload: %w", err)
 	}
 	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // EffectivePolicyEntries returns sorted per-tool rows for plan output (issue #118).

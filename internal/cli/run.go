@@ -67,15 +67,16 @@ Examples:
   agentctl run workflow/demo --input-file input.json
   agentctl run --resume run-abc123
 
-When .agentic/resolved-config.json exists (from a prior validate/plan/apply), run compares
-the resolved-config digest and fails with exit 3 if inputs changed (e.g. user-local overlay,
---state, or project YAML). Re-run validate or plan after changing config.
+When .agentic/resolved-config.json or .agentic/policy-snapshot.json exists (from a prior
+validate/plan/apply), run compares those digests and fails with exit 3 if inputs changed
+(e.g. user-local overlay, --state, project YAML, or policy YAML). Re-run validate or plan
+after changing config or policy.
 
 Exit codes (section 11.2):
   0 — success (including interrupted runs awaiting resume)
   1 — generic failure (e.g. cannot open SQLite, start run, trace)
   2 — validation failure (project, workflow ref, input, input-file)
-  3 — resolved-config drift (config changed since last validate/plan/apply; issue #112)
+  3 — resolved-config or policy snapshot drift (changed since last validate/plan/apply; issues #112, #118)
   4 — execution failure (step/engine error after the run row exists)
   5 — policy denial`,
 		Args: func(cmd *cobra.Command, args []string) error {

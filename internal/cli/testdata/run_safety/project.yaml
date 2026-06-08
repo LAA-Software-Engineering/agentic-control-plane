@@ -4,6 +4,7 @@ metadata:
   name: safetyproj
 spec:
   imports:
+    - ./policy.yaml
     - ./tools.yaml
     - ./workflow.yaml
   providers:

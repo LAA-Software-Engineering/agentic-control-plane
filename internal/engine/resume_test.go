@@ -49,6 +49,14 @@ func demoWorkflowGraph(t *testing.T) *spec.ProjectGraph {
 				},
 			},
 		},
+		Policies: map[string]*spec.PolicyResource{
+			"default": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindPolicy,
+				Metadata:   spec.Metadata{Name: "default"},
+				Spec:       spec.PolicySpec{},
+			},
+		},
 		Workflows: map[string]*spec.WorkflowResource{
 			"demo": {
 				APIVersion: spec.APIVersionV0,
