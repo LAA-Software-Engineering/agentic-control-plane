@@ -215,6 +215,9 @@ func TestOpenAIClient_Generate_usesChatCompletions(t *testing.T) {
 	if math.Abs(resp.Meta.CostUSD-want) > 1e-9 {
 		t.Fatalf("CostUSD got %v want %v", resp.Meta.CostUSD, want)
 	}
+	if resp.Meta.PromptTokens != 1000 || resp.Meta.CompletionTokens != 500 {
+		t.Fatalf("token usage got prompt=%d completion=%d", resp.Meta.PromptTokens, resp.Meta.CompletionTokens)
+	}
 }
 
 func TestOpenAIClient_Generate_unknownModel_zeroCost(t *testing.T) {
