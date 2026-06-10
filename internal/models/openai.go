@@ -112,7 +112,12 @@ func (c *OpenAIClient) Generate(ctx context.Context, req GenerateRequest) (Gener
 	cost := estimateOpenAIChatCostUSD(req.Model, pt, ct)
 	return GenerateResponse{
 		Content: out.Choices[0].Message.Content,
-		Meta:    GenerateMeta{DurationMs: time.Since(start).Milliseconds(), CostUSD: cost},
+		Meta: GenerateMeta{
+			DurationMs:       time.Since(start).Milliseconds(),
+			PromptTokens:     pt,
+			CompletionTokens: ct,
+			CostUSD:          cost,
+		},
 	}, nil
 }
 
