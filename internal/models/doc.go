@@ -20,5 +20,6 @@
 // can include native tool-call blocks before the results.
 //
 // [OpenAIClient] maps this contract to Chat Completions `tools` / `tool_calls` / `role: "tool"`
-// (issue #157). Anthropic mapping is issue #158.
+// (issue #157). It clears [GenerateResponse.ToolCalls] unless [GenerateResponse.StopReason] is
+// [StopReasonToolUse] (for example `length` or `content_filter`). Anthropic mapping is issue #158.
 package models
