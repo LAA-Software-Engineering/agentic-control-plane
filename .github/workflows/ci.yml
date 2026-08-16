@@ -28,11 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ["1.22.x"]
-        include:
-          # Extra Go patch line on Linux to catch regressions on newer toolchain.
-          - os: ubuntu-latest
-            go: "1.23.x"
+        go: ["1.25.x"]
 
     steps:
       - name: Checkout
@@ -77,9 +73,15 @@ jobs:
       # (".out" becomes a separate argument / package path).
       - name: Unit tests
         shell: bash
-        env:
-          GOTOOLCHAIN: go1.22.0+auto
         run: |
+          go test -v \
+            -race \
+            -count=1 \
+            -shuffle=on \
+            -timeout=10m \
+            ./...
+
+          tested_packages="$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | sed '/^$/d')"
           go test -v \
             -race \
             -count=1 \
@@ -87,16 +89,16 @@ jobs:
             -timeout=10m \
             -covermode=atomic \
             -coverprofile=coverage.out \
-            ./...
+            $tested_packages
 
       - name: Coverage summary
         if: runner.os == 'Linux'
         run: go tool cover -func=coverage.out | tail -n1
 
       - name: Upload coverage artifact
-        if: runner.os == 'Linux' && matrix.go == '1.22.x'
+        if: runner.os == 'Linux' && matrix.go == '1.25.x'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-linux-go122
+          name: coverage-linux-go125
           path: coverage.out
           if-no-files-found: error
