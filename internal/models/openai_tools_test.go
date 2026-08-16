@@ -57,7 +57,7 @@ func TestMapOpenAIStopReason(t *testing.T) {
 		{name: "empty with calls", finish: "", nCalls: 1, want: StopReasonToolUse},
 		{name: "empty no calls", finish: "", nCalls: 0, want: StopReasonEndTurn},
 		{name: "content_filter no calls", finish: "content_filter", want: "content_filter"},
-		{name: "content_filter with calls", finish: "content_filter", nCalls: 1, want: StopReasonToolUse},
+		{name: "content_filter with calls", finish: "content_filter", nCalls: 1, want: "content_filter"},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -221,6 +221,34 @@ func TestMapOpenAIMessages_contentAndToolResults(t *testing.T) {
 	}
 }
 
+func TestMapOpenAIMessages_rejectsNonAssistantToolCalls(t *testing.T) {
+	t.Parallel()
+	_, err := mapOpenAIMessages([]ChatMessage{
+		{Role: "user", ToolCalls: []ToolCall{{ID: "c1", Name: "x", Arguments: json.RawMessage(`{}`)}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "require assistant role") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestMapOpenAIMessages_emptyFollowUpRoleDefaultsUser(t *testing.T) {
+	t.Parallel()
+	msgs, err := mapOpenAIMessages([]ChatMessage{
+		{
+			Content: "continue",
+			ToolResults: []ToolResult{
+				{ToolCallID: "call_1", Content: "ok"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 || msgs[1].Role != "user" {
+		t.Fatalf("msgs %+v", msgs)
+	}
+}
+
 func TestMapOpenAIMessages_emptyToolCallID(t *testing.T) {
 	t.Parallel()
 	_, err := mapOpenAIMessages([]ChatMessage{
@@ -240,6 +268,19 @@ func TestEncodeOpenAIToolCalls_requiresIDAndName(t *testing.T) {
 	_, err = encodeOpenAIToolCalls([]ToolCall{{ID: "call_1"}})
 	if err == nil || !strings.Contains(err.Error(), "empty name") {
 		t.Fatalf("name err %v", err)
+	}
+}
+
+func TestEncodeOpenAIToolCalls_trimsIDAndName(t *testing.T) {
+	t.Parallel()
+	got, err := encodeOpenAIToolCalls([]ToolCall{
+		{ID: "  call_1  ", Name: "  get_weather  ", Arguments: json.RawMessage(`{}`)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].ID != "call_1" || got[0].Function.Name != "get_weather" {
+		t.Fatalf("got %+v", got[0])
 	}
 }
 
@@ -279,6 +320,39 @@ func TestParseOpenAIChatResponse_emptyArguments(t *testing.T) {
 	}
 	if stop != StopReasonToolUse || len(calls) != 1 || string(calls[0].Arguments) != "{}" {
 		t.Fatalf("stop=%q calls=%+v", stop, calls)
+	}
+}
+
+func TestParseOpenAIChatResponse_lengthWithTruncatedArguments(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"choices":[{"finish_reason":"length","message":{"content":null,"tool_calls":[{"id":"c1","function":{"name":"search","arguments":"{\"q\":\"go"}}]}}],"usage":{"prompt_tokens":10,"completion_tokens":4}}`)
+	content, calls, stop, pt, ct, err := parseOpenAIChatResponse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop != StopReasonMaxTokens {
+		t.Fatalf("stop %q", stop)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("calls %+v, want none on truncated args", calls)
+	}
+	if content != "" || pt != 10 || ct != 4 {
+		t.Fatalf("content=%q pt=%d ct=%d", content, pt, ct)
+	}
+}
+
+func TestParseOpenAIChatResponse_contentFilterWithToolCalls(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"choices":[{"finish_reason":"content_filter","message":{"tool_calls":[{"id":"c1","function":{"name":"search","arguments":"{}"}}]}}]}`)
+	_, calls, stop, _, _, err := parseOpenAIChatResponse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop != "content_filter" {
+		t.Fatalf("stop %q", stop)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls %+v", calls)
 	}
 }
 

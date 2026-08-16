@@ -283,6 +283,24 @@ func TestOpenAIClient_Generate_toolCalling(t *testing.T) {
 			},
 		},
 		{
+			name: "length_truncated_tool_call_args",
+			req: GenerateRequest{
+				Model:    "gpt-4o-mini",
+				Messages: []ChatMessage{{Role: "user", Content: "weather?"}},
+				Tools:    []ToolDef{weatherTool()},
+			},
+			inlineBody: `{"choices":[{"finish_reason":"length","message":{"content":null,"tool_calls":[{"id":"call_abc123","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Par"}}]}}],"usage":{"prompt_tokens":10,"completion_tokens":4}}`,
+			checkResp: func(t *testing.T, resp GenerateResponse) {
+				t.Helper()
+				if resp.StopReason != StopReasonMaxTokens {
+					t.Fatalf("StopReason %q", resp.StopReason)
+				}
+				if len(resp.ToolCalls) != 0 {
+					t.Fatalf("ToolCalls %#v, want none", resp.ToolCalls)
+				}
+			},
+		},
+		{
 			name: "stop_reason_with_tool_calls",
 			req: GenerateRequest{
 				Model:    "gpt-4o-mini",

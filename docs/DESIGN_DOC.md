@@ -1459,7 +1459,7 @@ Model contract (issue #156):
 * `ChatMessage` — `Role`, `Content`, optional `ToolCalls []ToolCall` to replay an assistant tool-use turn, optional `ToolResults []ToolResult` for returning tool output to the model.
 * `GenerateMeta` — `DurationMs`, `PromptTokens`, `CompletionTokens`, `CostUSD`.
 
-Provider adapters map these neutral shapes to OpenAI `tools` / `tool_calls` and Anthropic `tools` / `tool_use` / `tool_result`. The OpenAI client implements that mapping (issue #157): `ToolDef` → Chat Completions `tools`; any response with `tool_calls` (including compatible servers that send `finish_reason: stop`) → `StopReason: tool_use`; prior `ToolCalls` + `ToolResults` → assistant `tool_calls` then `role: "tool"` messages.
+Provider adapters map these neutral shapes to OpenAI `tools` / `tool_calls` and Anthropic `tools` / `tool_use` / `tool_result`. The OpenAI client implements that mapping (issue #157): `ToolDef` → Chat Completions `tools`; `tool_calls` or compatible `finish_reason: stop` with calls → `StopReason: tool_use`; `finish_reason: length` (including truncated `arguments`) → `max_tokens` without executing calls; `content_filter` is preserved even if `tool_calls` are present; prior `ToolCalls` + `ToolResults` → assistant `tool_calls` then `role: "tool"` messages.
 
 MVP:
 

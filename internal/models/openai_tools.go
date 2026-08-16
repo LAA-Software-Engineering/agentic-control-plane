@@ -101,28 +101,29 @@ func mapOpenAIMessages(msgs []ChatMessage) ([]openaiMessage, error) {
 				c := m.Content
 				content = &c
 			}
-			role := m.Role
-			if strings.TrimSpace(role) == "" {
-				role = "assistant"
+			role, err := openaiAssistantRole(m.Role)
+			if err != nil {
+				return nil, err
 			}
 			out = append(out, openaiMessage{Role: role, Content: content, ToolCalls: calls})
 		}
 		for _, r := range m.ToolResults {
-			if strings.TrimSpace(r.ToolCallID) == "" {
+			id := strings.TrimSpace(r.ToolCallID)
+			if id == "" {
 				return nil, fmt.Errorf("models: openai tool result missing tool_call_id")
 			}
 			c := r.Content
 			out = append(out, openaiMessage{
 				Role:       "tool",
 				Content:    &c,
-				ToolCallID: r.ToolCallID,
+				ToolCallID: id,
 			})
 		}
 		// Keep Role/Content when ToolResults is set (A1). OpenAI order is
 		// assistant tool_calls, then role=tool results, then any follow-up text.
 		if len(m.ToolCalls) == 0 && (len(m.ToolResults) == 0 || m.Content != "") {
 			c := m.Content
-			out = append(out, openaiMessage{Role: m.Role, Content: &c})
+			out = append(out, openaiMessage{Role: openaiTextRole(m.Role), Content: &c})
 		}
 	}
 	return out, nil
@@ -134,7 +135,8 @@ func mapOpenAITools(tools []ToolDef) ([]openaiTool, error) {
 	}
 	out := make([]openaiTool, 0, len(tools))
 	for _, t := range tools {
-		if strings.TrimSpace(t.Name) == "" {
+		name := strings.TrimSpace(t.Name)
+		if name == "" {
 			return nil, fmt.Errorf("models: openai tool definition missing name")
 		}
 		params, err := normalizeOpenAIToolParameters(t.Parameters)
@@ -144,7 +146,7 @@ func mapOpenAITools(tools []ToolDef) ([]openaiTool, error) {
 		out = append(out, openaiTool{
 			Type: "function",
 			Function: openaiFunction{
-				Name:        t.Name,
+				Name:        name,
 				Description: t.Description,
 				Parameters:  params,
 			},
@@ -182,27 +184,44 @@ func mapOpenAIToolChoice(choice string) (string, error) {
 	}
 }
 
+func openaiAssistantRole(role string) (string, error) {
+	role = strings.TrimSpace(role)
+	if role == "" || role == "assistant" {
+		return "assistant", nil
+	}
+	return "", fmt.Errorf("models: openai tool_calls require assistant role, got %q", role)
+}
+
+func openaiTextRole(role string) string {
+	if strings.TrimSpace(role) == "" {
+		return "user"
+	}
+	return role
+}
+
 func encodeOpenAIToolCalls(calls []ToolCall) ([]openaiToolCall, error) {
 	out := make([]openaiToolCall, 0, len(calls))
 	for _, c := range calls {
-		if strings.TrimSpace(c.ID) == "" {
+		id := strings.TrimSpace(c.ID)
+		name := strings.TrimSpace(c.Name)
+		if id == "" {
 			return nil, fmt.Errorf("models: openai tool call missing id")
 		}
-		if strings.TrimSpace(c.Name) == "" {
-			return nil, fmt.Errorf("models: openai tool call %q: empty name", c.ID)
+		if name == "" {
+			return nil, fmt.Errorf("models: openai tool call %q: empty name", id)
 		}
 		args := "{}"
 		if len(c.Arguments) > 0 {
 			if !json.Valid(c.Arguments) {
-				return nil, fmt.Errorf("models: openai tool call %q: arguments are not JSON", c.ID)
+				return nil, fmt.Errorf("models: openai tool call %q: arguments are not JSON", id)
 			}
 			args = string(c.Arguments)
 		}
 		out = append(out, openaiToolCall{
-			ID:   c.ID,
+			ID:   id,
 			Type: "function",
 			Function: openaiToolCallFunction{
-				Name:      c.Name,
+				Name:      name,
 				Arguments: args,
 			},
 		})
@@ -241,21 +260,20 @@ func parseOpenAIToolCalls(raw []openaiToolCall) ([]ToolCall, error) {
 }
 
 func mapOpenAIStopReason(finish string, nCalls int) string {
-	// Compatible servers often send finish_reason=stop together with tool_calls.
-	// Prefer tool_use whenever calls are present, except length (truncated).
-	if nCalls > 0 && finish != "length" {
-		return StopReasonToolUse
-	}
 	switch finish {
-	case "tool_calls":
-		return StopReasonToolUse
-	case "stop":
-		return StopReasonEndTurn
 	case "length":
 		return StopReasonMaxTokens
-	case "":
+	case "tool_calls":
+		return StopReasonToolUse
+	case "stop", "":
+		// Compatible servers often send finish_reason=stop with tool_calls.
+		if nCalls > 0 {
+			return StopReasonToolUse
+		}
 		return StopReasonEndTurn
 	default:
+		// Preserve safety stops (content_filter) and unknown reasons even if
+		// tool_calls are present — do not rewrite them to tool_use.
 		return finish
 	}
 }
@@ -274,7 +292,14 @@ func parseOpenAIChatResponse(body []byte) (content string, calls []ToolCall, sto
 	}
 	calls, err = parseOpenAIToolCalls(ch.Message.ToolCalls)
 	if err != nil {
-		return "", nil, "", 0, 0, err
+		// Token-cap and safety stops often include a truncated tool_calls
+		// block; surface the stop reason instead of a decode error.
+		if ch.FinishReason == "length" || ch.FinishReason == "content_filter" {
+			calls = nil
+			err = nil
+		} else {
+			return "", nil, "", 0, 0, err
+		}
 	}
 	if ch.FinishReason == "tool_calls" && len(calls) == 0 {
 		return "", nil, "", 0, 0, fmt.Errorf("models: openai returned tool_calls finish without calls")
