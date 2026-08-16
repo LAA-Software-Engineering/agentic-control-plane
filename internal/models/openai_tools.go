@@ -193,7 +193,8 @@ func openaiAssistantRole(role string) (string, error) {
 }
 
 func openaiTextRole(role string) string {
-	if strings.TrimSpace(role) == "" {
+	role = strings.TrimSpace(role)
+	if role == "" {
 		return "user"
 	}
 	return role
@@ -305,6 +306,10 @@ func parseOpenAIChatResponse(body []byte) (content string, calls []ToolCall, sto
 		return "", nil, "", 0, 0, fmt.Errorf("models: openai returned tool_calls finish without calls")
 	}
 	stop = mapOpenAIStopReason(ch.FinishReason, len(calls))
+	// ToolCalls are only actionable when StopReason is tool_use (see doc.go).
+	if stop != StopReasonToolUse {
+		calls = nil
+	}
 	if out.Usage != nil {
 		pt = out.Usage.PromptTokens
 		ct = out.Usage.CompletionTokens

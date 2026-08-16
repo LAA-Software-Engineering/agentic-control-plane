@@ -351,8 +351,36 @@ func TestParseOpenAIChatResponse_contentFilterWithToolCalls(t *testing.T) {
 	if stop != "content_filter" {
 		t.Fatalf("stop %q", stop)
 	}
-	if len(calls) != 1 {
-		t.Fatalf("calls %+v", calls)
+	if len(calls) != 0 {
+		t.Fatalf("calls %+v, want none when StopReason is not tool_use", calls)
+	}
+}
+
+func TestParseOpenAIChatResponse_lengthWithCompleteToolCalls(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"choices":[{"finish_reason":"length","message":{"tool_calls":[{"id":"c1","function":{"name":"search","arguments":"{\"q\":\"go\"}"}}]}}]}`)
+	_, calls, stop, _, _, err := parseOpenAIChatResponse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop != StopReasonMaxTokens {
+		t.Fatalf("stop %q", stop)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("calls %+v, want none on length", calls)
+	}
+}
+
+func TestOpenAITextRole_trims(t *testing.T) {
+	t.Parallel()
+	if got := openaiTextRole("  user  "); got != "user" {
+		t.Fatalf("got %q", got)
+	}
+	if got := openaiTextRole("  "); got != "user" {
+		t.Fatalf("whitespace got %q", got)
+	}
+	if got := openaiTextRole("assistant"); got != "assistant" {
+		t.Fatalf("assistant got %q", got)
 	}
 }
 
