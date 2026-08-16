@@ -15,5 +15,9 @@
 //
 // Tool results are returned to the model on [ChatMessage.ToolResults] (not a separate message role).
 // Each [ToolResult] references the originating [ToolCall.ID] in [ToolResult.ToolCallID].
-// Provider adapters map these neutral shapes to OpenAI tools/tool_calls and Anthropic tools/tool_use/tool_result.
+// Replay the assistant turn that requested tools on [ChatMessage.ToolCalls] so the next Generate
+// can include native tool-call blocks before the results.
+//
+// [OpenAIClient] maps this contract to Chat Completions `tools` / `tool_calls` / `role: "tool"`
+// (issue #157). Anthropic mapping is issue #158.
 package models

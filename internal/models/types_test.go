@@ -74,6 +74,16 @@ func TestChatMessage_JSONRoundTrip_withToolResults(t *testing.T) {
 	})
 }
 
+func TestChatMessage_JSONRoundTrip_withToolCalls(t *testing.T) {
+	t.Parallel()
+	assertJSONRoundTrip(t, ChatMessage{
+		Role: "assistant",
+		ToolCalls: []ToolCall{
+			{ID: "call_abc123", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Paris"}`)},
+		},
+	})
+}
+
 func TestGenerateRequest_JSONRoundTrip_minimal(t *testing.T) {
 	t.Parallel()
 	// Existing two-field call sites remain valid without tools or tool choice.
@@ -143,6 +153,7 @@ func TestJSONRoundTrip_emptyAndNilSlices(t *testing.T) {
 		{name: "empty meta", val: GenerateResponse{Meta: GenerateMeta{}}},
 		{name: "nil tool calls", val: GenerateResponse{ToolCalls: nil, Meta: GenerateMeta{DurationMs: 1}}},
 		{name: "nil tool results", val: ChatMessage{Role: "assistant", ToolResults: nil}},
+		{name: "nil message tool calls", val: ChatMessage{Role: "assistant", ToolCalls: nil}},
 	}
 
 	for _, tc := range cases {
@@ -205,6 +216,17 @@ func TestJSON_omittedOptionalSlicesDecodeAsNil(t *testing.T) {
 		t.Parallel()
 		var got GenerateResponse
 		if err := json.Unmarshal([]byte(`{"meta":{"duration_ms":1}}`), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.ToolCalls != nil {
+			t.Fatalf("tool_calls = %#v, want nil when omitted", got.ToolCalls)
+		}
+	})
+
+	t.Run("message", func(t *testing.T) {
+		t.Parallel()
+		var got ChatMessage
+		if err := json.Unmarshal([]byte(`{"role":"assistant"}`), &got); err != nil {
 			t.Fatal(err)
 		}
 		if got.ToolCalls != nil {

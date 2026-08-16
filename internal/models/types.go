@@ -41,8 +41,9 @@ type ToolCall struct {
 
 // ToolResult carries one tool execution result back to the model on a follow-up turn.
 // Attach results on [ChatMessage] via [ChatMessage.ToolResults]; keep [ChatMessage.Role] and
-// [ChatMessage.Content] for ordinary text turns. Providers map this field to their native
-// tool-result blocks in adapter code (issue #156).
+// [ChatMessage.Content] for ordinary text turns. Replay the originating assistant turn with
+// [ChatMessage.ToolCalls] so providers can emit native tool-call blocks before tool results
+// (issue #156, #157).
 type ToolResult struct {
 	ToolCallID string `json:"tool_call_id"`
 	Content    string `json:"content"`
@@ -52,6 +53,7 @@ type ToolResult struct {
 type ChatMessage struct {
 	Role        string       `json:"role"`
 	Content     string       `json:"content,omitempty"`
+	ToolCalls   []ToolCall   `json:"tool_calls,omitempty"`
 	ToolResults []ToolResult `json:"tool_results,omitempty"`
 }
 
