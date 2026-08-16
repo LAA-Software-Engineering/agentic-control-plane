@@ -3,7 +3,6 @@ package models
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,7 +14,8 @@ import (
 
 const defaultOpenAIBase = "https://api.openai.com/v1"
 
-// OpenAIClient is a minimal OpenAI-compatible chat client (design doc §12.2 F MVP).
+// OpenAIClient is an OpenAI-compatible Chat Completions client (design doc §12.2 F).
+// It maps the provider-neutral tool contract to `tools` / `tool_calls` / `role: "tool"` (issue #157).
 type OpenAIClient struct {
 	APIKey     string
 	BaseURL    string
@@ -52,20 +52,7 @@ func (c *OpenAIClient) Generate(ctx context.Context, req GenerateRequest) (Gener
 	}
 	start := time.Now()
 
-	type msg struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}
-	payload := struct {
-		Model    string `json:"model"`
-		Messages []msg  `json:"messages"`
-	}{
-		Model: req.Model,
-	}
-	for _, m := range req.Messages {
-		payload.Messages = append(payload.Messages, msg{Role: m.Role, Content: m.Content})
-	}
-	body, err := json.Marshal(payload)
+	body, err := buildOpenAIChatPayload(req)
 	if err != nil {
 		return GenerateResponse{}, err
 	}
@@ -87,31 +74,16 @@ func (c *OpenAIClient) Generate(ctx context.Context, req GenerateRequest) (Gener
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return GenerateResponse{}, fmt.Errorf("models: openai HTTP %d: %s", resp.StatusCode, truncateErrBody(b))
 	}
-	var out struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Usage *struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-		} `json:"usage"`
+	content, calls, stop, pt, ct, err := parseOpenAIChatResponse(b)
+	if err != nil {
+		return GenerateResponse{}, err
 	}
-	if err := json.Unmarshal(b, &out); err != nil {
-		return GenerateResponse{}, fmt.Errorf("models: decode openai response: %w", err)
-	}
-	if len(out.Choices) == 0 {
-		return GenerateResponse{}, fmt.Errorf("models: openai returned no choices")
-	}
-	var pt, ct int
-	if out.Usage != nil {
-		pt = out.Usage.PromptTokens
-		ct = out.Usage.CompletionTokens
-	}
+	// Token → USD uses the OpenAI table in openai_cost.go; B1 (#162) will generalize it.
 	cost := estimateOpenAIChatCostUSD(req.Model, pt, ct)
 	return GenerateResponse{
-		Content: out.Choices[0].Message.Content,
+		Content:    content,
+		ToolCalls:  calls,
+		StopReason: stop,
 		Meta: GenerateMeta{
 			DurationMs:       time.Since(start).Milliseconds(),
 			PromptTokens:     pt,

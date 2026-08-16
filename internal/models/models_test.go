@@ -210,6 +210,9 @@ func TestOpenAIClient_Generate_usesChatCompletions(t *testing.T) {
 	if resp.Content != "hello" {
 		t.Fatalf("content %q", resp.Content)
 	}
+	if resp.StopReason != StopReasonEndTurn {
+		t.Fatalf("StopReason %q", resp.StopReason)
+	}
 	// 1000/1e6*0.15 + 500/1e6*0.60 = 0.00045
 	want := 1000.0/1e6*0.15 + 500.0/1e6*0.60
 	if math.Abs(resp.Meta.CostUSD-want) > 1e-9 {

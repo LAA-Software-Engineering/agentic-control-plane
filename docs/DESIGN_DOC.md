@@ -1455,11 +1455,11 @@ type ModelClient interface {
 Model contract (issue #156):
 
 * `GenerateRequest` — `Model`, `Messages`, optional `Tools []ToolDef`, `ToolChoice` (`auto` | `none` | `required`; zero value = `auto`).
-* `GenerateResponse` — `Content`, optional `ToolCalls []ToolCall`, `StopReason` (`end_turn` | `tool_use` | `max_tokens`), `Meta`.
-* `ChatMessage` — `Role`, `Content`, optional `ToolResults []ToolResult` for returning tool output to the model.
+* `GenerateResponse` — `Content`, optional `ToolCalls []ToolCall`, `StopReason` (`end_turn` | `tool_use` | `max_tokens`; unknown provider values are passed through and must not be treated as `end_turn`), `Meta`.
+* `ChatMessage` — `Role`, `Content`, optional `ToolCalls []ToolCall` to replay an assistant tool-use turn, optional `ToolResults []ToolResult` for returning tool output to the model.
 * `GenerateMeta` — `DurationMs`, `PromptTokens`, `CompletionTokens`, `CostUSD`.
 
-Provider adapters map these neutral shapes to OpenAI `tools` / `tool_calls` and Anthropic `tools` / `tool_use` / `tool_result`.
+Provider adapters map these neutral shapes to OpenAI `tools` / `tool_calls` and Anthropic `tools` / `tool_use` / `tool_result`. The OpenAI client implements that mapping (issue #157): `ToolDef` → Chat Completions `tools`; `tool_calls` or compatible `finish_reason: stop` with calls → `StopReason: tool_use` and populated `ToolCalls`; `finish_reason: length` or `content_filter` (including truncated or complete `tool_calls` blocks) → `max_tokens` / `content_filter` with `ToolCalls` cleared — calls are only actionable when `StopReason` is `tool_use`; prior `ToolCalls` + `ToolResults` → assistant `tool_calls` then `role: "tool"` messages.
 
 MVP:
 
