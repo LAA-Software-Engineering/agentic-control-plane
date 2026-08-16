@@ -71,12 +71,18 @@ func buildOpenAIChatPayload(req GenerateRequest) ([]byte, error) {
 		Model:    req.Model,
 		Messages: msgs,
 	}
+	// tool_choice is only valid alongside tools; a stray ToolChoice on a
+	// plain completion is ignored so existing two-field call sites stay valid.
 	if len(req.Tools) > 0 {
 		choice, err := mapOpenAIToolChoice(req.ToolChoiceOrDefault())
 		if err != nil {
 			return nil, err
 		}
-		payload.Tools = mapOpenAITools(req.Tools)
+		tools, err := mapOpenAITools(req.Tools)
+		if err != nil {
+			return nil, err
+		}
+		payload.Tools = tools
 		payload.ToolChoice = choice
 	}
 	return json.Marshal(payload)
@@ -85,8 +91,7 @@ func buildOpenAIChatPayload(req GenerateRequest) ([]byte, error) {
 func mapOpenAIMessages(msgs []ChatMessage) ([]openaiMessage, error) {
 	out := make([]openaiMessage, 0, len(msgs))
 	for _, m := range msgs {
-		switch {
-		case len(m.ToolCalls) > 0:
+		if len(m.ToolCalls) > 0 {
 			calls, err := encodeOpenAIToolCalls(m.ToolCalls)
 			if err != nil {
 				return nil, err
@@ -101,11 +106,11 @@ func mapOpenAIMessages(msgs []ChatMessage) ([]openaiMessage, error) {
 				role = "assistant"
 			}
 			out = append(out, openaiMessage{Role: role, Content: content, ToolCalls: calls})
-		case len(m.ToolResults) == 0:
-			c := m.Content
-			out = append(out, openaiMessage{Role: m.Role, Content: &c})
 		}
 		for _, r := range m.ToolResults {
+			if strings.TrimSpace(r.ToolCallID) == "" {
+				return nil, fmt.Errorf("models: openai tool result missing tool_call_id")
+			}
 			c := r.Content
 			out = append(out, openaiMessage{
 				Role:       "tool",
@@ -113,19 +118,28 @@ func mapOpenAIMessages(msgs []ChatMessage) ([]openaiMessage, error) {
 				ToolCallID: r.ToolCallID,
 			})
 		}
+		// Keep Role/Content when ToolResults is set (A1). OpenAI order is
+		// assistant tool_calls, then role=tool results, then any follow-up text.
+		if len(m.ToolCalls) == 0 && (len(m.ToolResults) == 0 || m.Content != "") {
+			c := m.Content
+			out = append(out, openaiMessage{Role: m.Role, Content: &c})
+		}
 	}
 	return out, nil
 }
 
-func mapOpenAITools(tools []ToolDef) []openaiTool {
+func mapOpenAITools(tools []ToolDef) ([]openaiTool, error) {
 	if len(tools) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]openaiTool, 0, len(tools))
 	for _, t := range tools {
-		params := t.Parameters
-		if len(params) == 0 {
-			params = defaultOpenAIParameters
+		if strings.TrimSpace(t.Name) == "" {
+			return nil, fmt.Errorf("models: openai tool definition missing name")
+		}
+		params, err := normalizeOpenAIToolParameters(t.Parameters)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, openaiTool{
 			Type: "function",
@@ -136,7 +150,24 @@ func mapOpenAITools(tools []ToolDef) []openaiTool {
 			},
 		})
 	}
-	return out
+	return out, nil
+}
+
+func normalizeOpenAIToolParameters(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return defaultOpenAIParameters, nil
+	}
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("models: openai tool parameters are not JSON")
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, fmt.Errorf("models: openai tool parameters: %w", err)
+	}
+	if _, ok := v.(map[string]any); !ok {
+		return nil, fmt.Errorf("models: openai tool parameters must be a JSON object")
+	}
+	return raw, nil
 }
 
 func mapOpenAIToolChoice(choice string) (string, error) {
@@ -154,6 +185,12 @@ func mapOpenAIToolChoice(choice string) (string, error) {
 func encodeOpenAIToolCalls(calls []ToolCall) ([]openaiToolCall, error) {
 	out := make([]openaiToolCall, 0, len(calls))
 	for _, c := range calls {
+		if strings.TrimSpace(c.ID) == "" {
+			return nil, fmt.Errorf("models: openai tool call missing id")
+		}
+		if strings.TrimSpace(c.Name) == "" {
+			return nil, fmt.Errorf("models: openai tool call %q: empty name", c.ID)
+		}
 		args := "{}"
 		if len(c.Arguments) > 0 {
 			if !json.Valid(c.Arguments) {
@@ -177,22 +214,26 @@ func parseOpenAIToolCalls(raw []openaiToolCall) ([]ToolCall, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
-	var out []ToolCall
+	out := make([]ToolCall, 0, len(raw))
 	for _, tc := range raw {
-		if tc.Function.Name == "" {
-			continue
+		id := strings.TrimSpace(tc.ID)
+		name := strings.TrimSpace(tc.Function.Name)
+		if id == "" {
+			return nil, fmt.Errorf("models: openai tool call missing id")
+		}
+		if name == "" {
+			return nil, fmt.Errorf("models: openai tool call %q: empty function name", id)
 		}
 		args := strings.TrimSpace(tc.Function.Arguments)
+		if args == "" {
+			args = "{}"
+		}
 		if !json.Valid([]byte(args)) {
-			id := tc.ID
-			if id == "" {
-				id = tc.Function.Name
-			}
 			return nil, fmt.Errorf("models: openai tool call %q: arguments are not JSON", id)
 		}
 		out = append(out, ToolCall{
-			ID:        tc.ID,
-			Name:      tc.Function.Name,
+			ID:        id,
+			Name:      name,
 			Arguments: json.RawMessage(args),
 		})
 	}
@@ -200,6 +241,11 @@ func parseOpenAIToolCalls(raw []openaiToolCall) ([]ToolCall, error) {
 }
 
 func mapOpenAIStopReason(finish string, nCalls int) string {
+	// Compatible servers often send finish_reason=stop together with tool_calls.
+	// Prefer tool_use whenever calls are present, except length (truncated).
+	if nCalls > 0 && finish != "length" {
+		return StopReasonToolUse
+	}
 	switch finish {
 	case "tool_calls":
 		return StopReasonToolUse
@@ -208,9 +254,6 @@ func mapOpenAIStopReason(finish string, nCalls int) string {
 	case "length":
 		return StopReasonMaxTokens
 	case "":
-		if nCalls > 0 {
-			return StopReasonToolUse
-		}
 		return StopReasonEndTurn
 	default:
 		return finish

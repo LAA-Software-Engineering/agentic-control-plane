@@ -283,6 +283,90 @@ func TestOpenAIClient_Generate_toolCalling(t *testing.T) {
 			},
 		},
 		{
+			name: "stop_reason_with_tool_calls",
+			req: GenerateRequest{
+				Model:    "gpt-4o-mini",
+				Messages: []ChatMessage{{Role: "user", Content: "weather?"}},
+				Tools:    []ToolDef{weatherTool()},
+			},
+			inlineBody: `{"choices":[{"finish_reason":"stop","message":{"content":null,"tool_calls":[{"id":"call_abc123","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]}}],"usage":{"prompt_tokens":10,"completion_tokens":5}}`,
+			checkResp: func(t *testing.T, resp GenerateResponse) {
+				t.Helper()
+				if resp.StopReason != StopReasonToolUse {
+					t.Fatalf("StopReason %q", resp.StopReason)
+				}
+				if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Name != "get_weather" {
+					t.Fatalf("ToolCalls %#v", resp.ToolCalls)
+				}
+			},
+		},
+		{
+			name: "content_and_tool_results",
+			req: GenerateRequest{
+				Model: "gpt-4o-mini",
+				Messages: []ChatMessage{
+					{
+						Role: "assistant",
+						ToolCalls: []ToolCall{
+							{ID: "call_abc123", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Paris"}`)},
+						},
+					},
+					{
+						Role:    "user",
+						Content: "summarize that",
+						ToolResults: []ToolResult{
+							{ToolCallID: "call_abc123", Content: `{"temp_c":18}`},
+						},
+					},
+				},
+				Tools: []ToolDef{weatherTool()},
+			},
+			fixture: "chat_end_turn.json",
+			checkReq: func(t *testing.T, got captured) {
+				t.Helper()
+				if len(got.Messages) != 3 {
+					t.Fatalf("messages %+v", got.Messages)
+				}
+				if got.Messages[0].Role != "assistant" || len(got.Messages[0].ToolCalls) != 1 {
+					t.Fatalf("assistant %+v", got.Messages[0])
+				}
+				if got.Messages[1].Role != "tool" || got.Messages[1].ToolCallID != "call_abc123" {
+					t.Fatalf("tool %+v", got.Messages[1])
+				}
+				if got.Messages[2].Role != "user" {
+					t.Fatalf("follow-up %+v", got.Messages[2])
+				}
+				text, _ := got.Messages[2].Content.(string)
+				if text != "summarize that" {
+					t.Fatalf("follow-up content %#v", got.Messages[2].Content)
+				}
+			},
+		},
+		{
+			name: "empty_tool_call_id_before_http",
+			req: GenerateRequest{
+				Model: "gpt-4o-mini",
+				Messages: []ChatMessage{
+					{ToolResults: []ToolResult{{Content: "ok"}}},
+				},
+				Tools: []ToolDef{weatherTool()},
+			},
+			noHTTP:  true,
+			wantErr: "missing tool_call_id",
+		},
+		{
+			name: "empty_replay_id_before_http",
+			req: GenerateRequest{
+				Model: "gpt-4o-mini",
+				Messages: []ChatMessage{
+					{Role: "assistant", ToolCalls: []ToolCall{{Name: "get_weather"}}},
+				},
+				Tools: []ToolDef{weatherTool()},
+			},
+			noHTTP:  true,
+			wantErr: "missing id",
+		},
+		{
 			name: "invalid_arguments",
 			req: GenerateRequest{
 				Model:    "gpt-4o-mini",

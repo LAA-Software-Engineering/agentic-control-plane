@@ -44,20 +44,24 @@ func TestMapOpenAIToolChoice(t *testing.T) {
 func TestMapOpenAIStopReason(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
+		name   string
 		finish string
 		nCalls int
 		want   string
 	}{
-		{finish: "tool_calls", want: StopReasonToolUse},
-		{finish: "stop", want: StopReasonEndTurn},
-		{finish: "length", want: StopReasonMaxTokens},
-		{finish: "", nCalls: 1, want: StopReasonToolUse},
-		{finish: "", nCalls: 0, want: StopReasonEndTurn},
-		{finish: "content_filter", want: "content_filter"},
+		{name: "tool_calls", finish: "tool_calls", want: StopReasonToolUse},
+		{name: "stop no calls", finish: "stop", want: StopReasonEndTurn},
+		{name: "stop with calls", finish: "stop", nCalls: 1, want: StopReasonToolUse},
+		{name: "length no calls", finish: "length", want: StopReasonMaxTokens},
+		{name: "length with calls", finish: "length", nCalls: 1, want: StopReasonMaxTokens},
+		{name: "empty with calls", finish: "", nCalls: 1, want: StopReasonToolUse},
+		{name: "empty no calls", finish: "", nCalls: 0, want: StopReasonEndTurn},
+		{name: "content_filter no calls", finish: "content_filter", want: "content_filter"},
+		{name: "content_filter with calls", finish: "content_filter", nCalls: 1, want: StopReasonToolUse},
 	}
 	for _, tc := range tests {
 		tc := tc
-		t.Run(tc.finish+"/"+tc.want, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := mapOpenAIStopReason(tc.finish, tc.nCalls); got != tc.want {
 				t.Fatalf("got %q want %q", got, tc.want)
@@ -143,6 +147,18 @@ func TestBuildOpenAIChatPayload_emptyParametersDefault(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIChatPayload_rejectsNonObjectParameters(t *testing.T) {
+	t.Parallel()
+	_, err := buildOpenAIChatPayload(GenerateRequest{
+		Model:    "m",
+		Messages: []ChatMessage{{Role: "user", Content: "x"}},
+		Tools:    []ToolDef{{Name: "noop", Parameters: json.RawMessage(`[]`)}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "must be a JSON object") {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestMapOpenAIMessages_toolResultsRoundTrip(t *testing.T) {
 	t.Parallel()
 	msgs, err := mapOpenAIMessages([]ChatMessage{
@@ -180,6 +196,53 @@ func TestMapOpenAIMessages_toolResultsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMapOpenAIMessages_contentAndToolResults(t *testing.T) {
+	t.Parallel()
+	msgs, err := mapOpenAIMessages([]ChatMessage{
+		{
+			Role:    "user",
+			Content: "use that result",
+			ToolResults: []ToolResult{
+				{ToolCallID: "call_abc123", Content: `{"temp_c":18}`},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("len=%d msgs=%+v", len(msgs), msgs)
+	}
+	if msgs[0].Role != "tool" || msgs[0].ToolCallID != "call_abc123" {
+		t.Fatalf("tool first %+v", msgs[0])
+	}
+	if msgs[1].Role != "user" || msgs[1].Content == nil || *msgs[1].Content != "use that result" {
+		t.Fatalf("text after tools %+v", msgs[1])
+	}
+}
+
+func TestMapOpenAIMessages_emptyToolCallID(t *testing.T) {
+	t.Parallel()
+	_, err := mapOpenAIMessages([]ChatMessage{
+		{ToolResults: []ToolResult{{Content: "ok"}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing tool_call_id") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestEncodeOpenAIToolCalls_requiresIDAndName(t *testing.T) {
+	t.Parallel()
+	_, err := encodeOpenAIToolCalls([]ToolCall{{Name: "get_weather", Arguments: json.RawMessage(`{}`)}})
+	if err == nil || !strings.Contains(err.Error(), "missing id") {
+		t.Fatalf("id err %v", err)
+	}
+	_, err = encodeOpenAIToolCalls([]ToolCall{{ID: "call_1"}})
+	if err == nil || !strings.Contains(err.Error(), "empty name") {
+		t.Fatalf("name err %v", err)
+	}
+}
+
 func TestParseOpenAIChatResponse_toolCalls(t *testing.T) {
 	t.Parallel()
 	body := []byte(`{"choices":[{"finish_reason":"tool_calls","message":{"content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"search","arguments":"{\"q\":\"go\"}"}}]}}],"usage":{"prompt_tokens":2,"completion_tokens":3}}`)
@@ -195,6 +258,30 @@ func TestParseOpenAIChatResponse_toolCalls(t *testing.T) {
 	}
 }
 
+func TestParseOpenAIChatResponse_stopWithToolCalls(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"choices":[{"finish_reason":"stop","message":{"content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"search","arguments":"{\"q\":\"go\"}"}}]}}]}`)
+	_, calls, stop, _, _, err := parseOpenAIChatResponse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop != StopReasonToolUse || len(calls) != 1 {
+		t.Fatalf("stop=%q calls=%+v", stop, calls)
+	}
+}
+
+func TestParseOpenAIChatResponse_emptyArguments(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"id":"c1","function":{"name":"noop","arguments":""}}]}}]}`)
+	_, calls, stop, _, _, err := parseOpenAIChatResponse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop != StopReasonToolUse || len(calls) != 1 || string(calls[0].Arguments) != "{}" {
+		t.Fatalf("stop=%q calls=%+v", stop, calls)
+	}
+}
+
 func TestParseOpenAIChatResponse_invalidArguments(t *testing.T) {
 	t.Parallel()
 	_, _, _, _, _, err := parseOpenAIChatResponse([]byte(`{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"id":"call_bad","function":{"name":"x","arguments":"not-json"}}]}}]}`))
@@ -203,9 +290,17 @@ func TestParseOpenAIChatResponse_invalidArguments(t *testing.T) {
 	}
 }
 
+func TestParseOpenAIChatResponse_emptyFunctionName(t *testing.T) {
+	t.Parallel()
+	_, _, _, _, _, err := parseOpenAIChatResponse([]byte(`{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"id":"call_ok","function":{"name":"search","arguments":"{}"}},{"id":"call_bad","function":{"name":"","arguments":"{}"}}]}}]}`))
+	if err == nil || !strings.Contains(err.Error(), `tool call "call_bad": empty function name`) {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestParseOpenAIChatResponse_toolCallsFinishWithoutCalls(t *testing.T) {
 	t.Parallel()
-	_, _, _, _, _, err := parseOpenAIChatResponse([]byte(`{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"id":"x","function":{"name":"","arguments":"{}"}}]}}]}`))
+	_, _, _, _, _, err := parseOpenAIChatResponse([]byte(`{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[]}}]}`))
 	if err == nil || !strings.Contains(err.Error(), "tool_calls finish without calls") {
 		t.Fatalf("got %v", err)
 	}

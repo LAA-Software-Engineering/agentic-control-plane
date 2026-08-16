@@ -11,7 +11,8 @@
 //
 // [GenerateResponse] returns assistant [GenerateResponse.Content], optional [ToolCall] requests
 // when [GenerateResponse.StopReason] is [StopReasonToolUse], and [GenerateMeta] accounting.
-// Other stop reasons include [StopReasonEndTurn] and [StopReasonMaxTokens].
+// Other known stop reasons include [StopReasonEndTurn] and [StopReasonMaxTokens].
+// Unknown provider finish reasons are passed through; treat them as non-success, not as end_turn.
 //
 // Tool results are returned to the model on [ChatMessage.ToolResults] (not a separate message role).
 // Each [ToolResult] references the originating [ToolCall.ID] in [ToolResult.ToolCallID].
