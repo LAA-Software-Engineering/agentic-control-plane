@@ -428,7 +428,7 @@ func TestRun_resume_happyPath(t *testing.T) {
 	}
 
 	runID := "cli-resume-1"
-	started := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	started := time.Now().UTC().Add(-time.Hour)
 	if err := st.StartRun(ctx, state.Run{
 		RunID: runID, WorkflowName: "demo", Env: "dev", Status: state.RunStatusRunning,
 		StartedAt: started, InputJSON: `{"topic":"cli-resume"}`, TotalCostUSD: 0,
@@ -508,7 +508,7 @@ func TestRun_resume_conflictingEnvironment_exit2(t *testing.T) {
 	}
 
 	runID := "cli-resume-env-conflict"
-	started := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	started := time.Now().UTC().Add(-time.Hour)
 	if err := st.StartRun(ctx, state.Run{
 		RunID: runID, WorkflowName: "demo", Env: "dev", Status: state.RunStatusRunning,
 		StartedAt: started, InputJSON: `{"topic":"env-conflict"}`, TotalCostUSD: 0,

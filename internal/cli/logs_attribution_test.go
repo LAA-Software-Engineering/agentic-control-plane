@@ -24,7 +24,7 @@ func TestLogs_filterByTenantAndThread(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	start := time.Date(2026, 6, 4, 10, 0, 0, 0, time.UTC)
+	start := time.Now().UTC().Add(-time.Hour)
 	for _, r := range []state.Run{
 		{RunID: "match", WorkflowName: "wf", Env: "local", Status: "succeeded", StartedAt: start,
 			InputJSON: `{}`, TenantID: "acme", ThreadID: "session-1", ActorID: "u1", RequestID: "r1", Source: "cli"},
