@@ -6,29 +6,75 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/agentic-control-plane.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/agentic-control-plane)
 
-<img width="1082" height="625" alt="image" src="https://github.com/user-attachments/assets/bbcc8d7f-6031-4f65-b5c9-1d5cd6424e91" />
+**A statically analyzable, capability-oriented execution platform for nondeterministic programs.** Review the **authority granted** to agents as a plan diff — before they run.
 
+ACP bounds and diffs that grant. It does **not** verify what remote systems do with it.
 
-**Declarative YAML for agents, tools, workflows, and policies — with a Terraform-style plan/apply loop, local SQLite state, and execution traces.**
+<img width="1082" height="625" alt="agentctl CLI" src="https://github.com/user-attachments/assets/bbcc8d7f-6031-4f65-b5c9-1d5cd6424e91" />
 
-This is **not** another opaque agent framework. It is a **control plane**: you describe the *desired shape* of your agent system in versioned resources, then **validate**, **plan**, **apply**, **run**, and **inspect logs** the same way you would operate real infrastructure.
+## Architecture
+
+Source graph → `validate` / `plan` → SQLite desired state → `apply` → engine → tools + models → trace / logs / audit.
+
+```mermaid
+flowchart LR
+  Source[Source graph] --> VP["validate / plan"]
+  VP --> SQLite[(SQLite desired state)]
+  SQLite --> Apply[apply]
+  Apply --> Engine[engine]
+  Engine --> Tools[tools + models]
+  Engine --> Trace[trace / logs / audit]
+```
+
+Expanded diagram, plan-time bounds, and closed-world caveats: [`docs/architecture.md`](docs/architecture.md). Product spec: [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md).
+
+## The differentiator: plan-time bounds on authority
+
+This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. ACP's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). That full bound is **not shipped yet**.
+
+**Today** `agentctl plan` already diffs **permissions**, **approvals**, **models**, **budgets**, and **C1 risk items** against SQLite desired state:
+
+```text
+Plan: 0 to add, 3 to change, 0 to delete
+~ update Agent/reviewer
+    spec.model: "mock/gpt-4" -> "mock/gpt-4o"
+    spec.tools.1:  -> "github"
+~ update Policy/default
+    spec.approvals.requiredFor.0: "tool.helper.echo" -> "tool.github.issues.write"
+    spec.execution.maxTotalCostUsd: 3 -> 10
+~ update Tool/github
+    spec.permissions.allow.1:  -> "issues.write"
+
+Risk delta:
+high:
+- [high] approval_removal: Approval requirements removed for "tool.helper.echo" (Policy/default).
+- [high] budget_relaxation: Cost ceiling increased (Policy/default).
+- [high] permission_widening: New write-like tool permission "issues.write" added (Tool/github).
+- [high] tool_surface_change: Agent tools list gained write-like tool "github" (Agent/reviewer).
+medium:
+- [medium] model_change: Agent model changed (Agent/reviewer).
+```
+
+Specs today are YAML (interchange / compilation output). The long-term authoring surface is [`.agent`](docs/adr/002-language-frontend-and-ir-expressiveness.md) ([#200](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/200)); until then you still write YAML — lead on **capability**, not format.
+
+## Flagship: incident triage
+
+**Start here:** [`examples/incident-triage`](examples/incident-triage) — an offline agent that can page, read logs, and file a ticket, but **cannot restart a service** unless policy already requires `--approve tool.restart.restart`. Unapproved `agentctl run` exits **5**; with the grant it completes and `audit verify` passes.
+
+Other walkthroughs: policy-blocked PR review in [`examples/pr-review-demo`](examples/pr-review-demo/README.md) (no API keys); live GitHub read/write with a **mock** reviewer in [`examples/pr-review-github`](examples/pr-review-github/README.md); the same flow with OpenAI `gpt-4o-mini` plus GitHub Actions in [`examples/pr-review-github-actions`](examples/pr-review-github-actions/README.md) ([PR workflow](.github/workflows/agentctl-pr-review.yml); optional manual [`owner`/`repo`/`number`](.github/workflows/agentctl-pr-review-publish.yml)).
 
 ---
 
 ## Why this exists
 
-Most agent stacks today bury prompts, tool wiring, and permissions in application code. That makes it hard to answer basic operational questions: *Is this config valid? What changed? What are we about to deploy? What actually ran? Did policy allow it?*
+Most agent stacks bury prompts, tool wiring, and permissions in application code. That makes it hard to answer: *Is this config valid? What authority changed? What are we about to grant? What actually ran? Did policy allow it?*
 
-**Agentic Control Plane** pushes those concerns into **explicit YAML** (Kubernetes-like resources) and a small **Go CLI** (`agentctl`), so teams can:
+**Agentic Control Plane** is a small Go CLI (`agentctl`) plus a resource graph so teams can:
 
-- Review diffs and plans before changes land  
-- Track **deployment state** separately from **runtime traces**  
-- Enforce **policies** (budgets, approvals, tool rules) at execution time  
-- Stay **local-first** while the architecture leaves room for a future remote control plane  
-
-The full product vision, YAML spec v0, and architecture are documented in [**`docs/DESIGN_DOC.md`**](docs/DESIGN_DOC.md).
-
-**Featured walkthrough:** declarative PR review with a **policy-blocked** (simulated) GitHub comment — no API keys required — in [**`examples/pr-review-demo/README.md`**](examples/pr-review-demo/README.md). For the **live GitHub read/write path** with a **mock** reviewer (CI-friendly, no API keys), see [**`examples/pr-review-github/README.md`**](examples/pr-review-github/README.md). For the **same flow with OpenAI `gpt-4o-mini`** plus **GitHub Actions** (PR workflow posts a review comment), see [**`examples/pr-review-github-actions/README.md`**](examples/pr-review-github-actions/README.md) ( **[`.github/workflows/agentctl-pr-review.yml`](.github/workflows/agentctl-pr-review.yml)**; optional manual **`owner`/`repo`/`number`**: **[`.github/workflows/agentctl-pr-review-publish.yml`](.github/workflows/agentctl-pr-review-publish.yml)**).
+- Review **capability diffs** (`plan`) before changes land
+- Track **deployment state** separately from **runtime traces**
+- Enforce **policies** (budgets, approvals, tool rules) at execution time
+- Stay **local-first** while the architecture leaves room for a future remote control plane
 
 ---
 
@@ -114,7 +160,7 @@ agentctl inspect --web --project my-agent-system   # read-only local UI on http:
 
 ### Example `project.yaml`
 
-The project root is a **`Project`** resource: `apiVersion`, `kind`, `metadata.name`, and **`spec.imports`** listing other YAML files (policies, tools, workflows). After **`agentctl init my-agent-system`**, `my-agent-system/project.yaml` looks like this:
+Until [`.agent`](docs/adr/002-language-frontend-and-ir-expressiveness.md) lands, you author the resource graph in YAML (interchange / compilation output — not the long-term surface). The project root is a **`Project`** resource: `apiVersion`, `kind`, `metadata.name`, and **`spec.imports`** listing other YAML files (policies, tools, workflows). After **`agentctl init my-agent-system`**, `my-agent-system/project.yaml` looks like this:
 
 ```yaml
 apiVersion: agentic.dev/v0
