@@ -33,6 +33,8 @@ Writes .agentic/resolved-config.json (digest of resolved graph + env + state pat
 .agentic/policy-snapshot.json (compiled effective policy digest) for plan→run contract checks.
 JSON/YAML output includes resolvedConfigDigest, policyDigest, and effectivePolicy (project
 default policy only; workflows/agents may bind other policy names) alongside deploymentBaseline.
+Risk items are grouped by severity in table output and exposed as structured riskItems
+(with typed witness hops) in JSON/YAML; the string list "risk" remains for compatibility.
 
 Exit codes (section 11.2):
   0 — success
@@ -117,14 +119,14 @@ func writePlanOutput(cmd *cobra.Command, env, dsn string, p *plan.Plan, rc *conf
 
 func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map[string]any {
 	if p == nil {
-		return map[string]any{
+		m := map[string]any{
 			"environment": env,
 			"statePath":   dsn,
 			"summary":     map[string]any{"add": 0, "change": 0, "delete": 0},
 			"operations":  []map[string]any{},
-			"risk":        []string{},
-			"riskItems":   []plan.RiskItem{},
 		}
+		plan.AttachRiskExport(m, p)
+		return m
 	}
 	nC, nU, nD := planCounts(p)
 	ops := make([]map[string]any, 0, len(p.Operations))
@@ -151,9 +153,8 @@ func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map
 			"delete": nD,
 		},
 		"operations": ops,
-		"risk":       riskStrings(p),
-		"riskItems":  riskItems(p),
 	}
+	plan.AttachRiskExport(m, p)
 	if p != nil && len(p.Risk.Lint) > 0 {
 		entries := make([]map[string]any, len(p.Risk.Lint))
 		for i, f := range p.Risk.Lint {
@@ -217,20 +218,6 @@ func effectivePolicyJSON(cp *policy.CompiledPolicy) []map[string]string {
 		}
 	}
 	return out
-}
-
-func riskStrings(p *plan.Plan) []string {
-	if p == nil || len(p.Risk.Messages) == 0 {
-		return []string{}
-	}
-	return p.Risk.Messages
-}
-
-func riskItems(p *plan.Plan) []plan.RiskItem {
-	if p == nil || len(p.Risk.Items) == 0 {
-		return []plan.RiskItem{}
-	}
-	return p.Risk.Items
 }
 
 func writePlanJSON(w io.Writer, env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) error {

@@ -166,6 +166,9 @@ func TestRiskSummary_approvalRemovalAndCostIncrease_distinctItems(t *testing.T) 
 		t.Fatalf("want 1 approval + 1 cost budget item, got approval=%d budget=%d items=%#v", approval, budget, pl.Risk.Items)
 	}
 	labeled := FormatPlan(pl)
+	if !strings.Contains(labeled, "high:\n") {
+		t.Fatalf("plan output missing high severity group:\n%s", labeled)
+	}
 	if !strings.Contains(labeled, "[high] approval_removal:") || !strings.Contains(labeled, "[high] budget_relaxation:") {
 		t.Fatalf("plan output missing labeled items:\n%s", labeled)
 	}

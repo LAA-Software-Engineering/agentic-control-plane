@@ -13,6 +13,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/apply"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"gopkg.in/yaml.v3"
 )
 
 func copyFixtureDir(t *testing.T, dstDir, fixtureName string) {
@@ -227,6 +228,9 @@ func TestPlan_policyCostIncrease_riskDelta(t *testing.T) {
 	if !strings.Contains(s, "[high] budget_relaxation:") {
 		t.Fatalf("expected labeled budget_relaxation item in:\n%s", s)
 	}
+	if !strings.Contains(s, "high:\n") {
+		t.Fatalf("expected high severity group in:\n%s", s)
+	}
 }
 
 func applyProjectGraph(t *testing.T, root, db string) {
@@ -365,5 +369,47 @@ func TestPlan_json_riskItems_structuredAndStringList(t *testing.T) {
 	}
 	if cats["approval_removal"] < 1 || cats["budget_relaxation"] < 1 {
 		t.Fatalf("combined approval+budget not distinct: %#v", cats)
+	}
+}
+
+func TestPlan_yaml_riskItems_structuredAndStringList(t *testing.T) {
+	root := t.TempDir()
+	copyRiskCategoriesFixture(t, root)
+	db := filepath.Join(t.TempDir(), "plan-risk-yaml.db")
+	applyProjectGraph(t, root, db)
+	mutateRiskCategories(t, root)
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "yaml"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload plan.RiskExport
+	if err := yaml.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("yaml: %v\nbody=%s", err, out.String())
+	}
+	if len(payload.Risk) == 0 {
+		t.Fatalf("risk string list missing:\n%s", out.String())
+	}
+	if len(payload.RiskItems) == 0 {
+		t.Fatalf("riskItems missing:\n%s", out.String())
+	}
+	var sawWitness bool
+	cats := map[plan.RiskCategory]int{}
+	for _, it := range payload.RiskItems {
+		cats[it.Category]++
+		if len(it.Witness) > 0 && it.Witness[0].Kind != "" && it.Witness[0].Reachability != "" {
+			sawWitness = true
+		}
+	}
+	if !sawWitness {
+		t.Fatalf("yaml riskItems missing typed witness hops:\n%s", out.String())
+	}
+	if cats[plan.RiskCategoryApprovalRemoval] < 1 || cats[plan.RiskCategoryBudgetRelaxation] < 1 {
+		t.Fatalf("yaml combined approval+budget not distinct: %#v", cats)
 	}
 }
