@@ -118,6 +118,7 @@ func EffectCovers(declared, candidate string) bool {
 }
 
 // NormalizeToolEffects trims operation keys and effect identifiers and sorts unique effects.
+// EffectsPos is kept aligned with Effects (first occurrence wins; empty strings are dropped).
 func NormalizeToolEffects(spec *ToolSpec) {
 	if spec == nil || len(spec.Operations) == 0 {
 		return
@@ -125,8 +126,7 @@ func NormalizeToolEffects(spec *ToolSpec) {
 	out := make(map[string]ToolOperation, len(spec.Operations))
 	for k, op := range spec.Operations {
 		nk := strings.TrimSpace(k)
-		op.Effects = uniqueSortedEffects(op.Effects)
-		op.EffectsPos = nil
+		op.Effects, op.EffectsPos = uniqueSortedEffectsWithPos(op.Effects, op.EffectsPos)
 		out[nk] = op
 	}
 	spec.Operations = out
@@ -162,19 +162,51 @@ func toolDeclaresEffect(spec *ToolSpec, ident string) bool {
 }
 
 func uniqueSortedEffects(in []string) []string {
-	if len(in) == 0 {
-		return nil
+	out, _ := uniqueSortedEffectsWithPos(in, nil)
+	return out
+}
+
+// uniqueSortedEffectsWithPos unique-sorts trimmed effect identifiers and keeps pos aligned.
+// Empty strings after trim are dropped so whitespace is not a declared effect.
+// When pos is non-empty, the returned Pos slice has the same length as the returned effects
+// (first occurrence wins). When pos is empty, the returned Pos slice is nil.
+func uniqueSortedEffectsWithPos(effects []string, pos []Pos) ([]string, []Pos) {
+	type pair struct {
+		effect string
+		pos    Pos
 	}
-	seen := make(map[string]struct{}, len(in))
-	var out []string
-	for _, e := range in {
+	seen := make(map[string]struct{}, len(effects))
+	var pairs []pair
+	keepPos := len(pos) > 0
+	for i, e := range effects {
 		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
 		if _, ok := seen[e]; ok {
 			continue
 		}
 		seen[e] = struct{}{}
-		out = append(out, e)
+		p := pair{effect: e}
+		if keepPos && i < len(pos) {
+			p.pos = pos[i]
+		}
+		pairs = append(pairs, p)
 	}
-	sort.Strings(out)
-	return out
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].effect < pairs[j].effect })
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	out := make([]string, len(pairs))
+	for i, p := range pairs {
+		out[i] = p.effect
+	}
+	if !keepPos {
+		return out, nil
+	}
+	outPos := make([]Pos, len(pairs))
+	for i, p := range pairs {
+		outPos[i] = p.pos
+	}
+	return out, outPos
 }

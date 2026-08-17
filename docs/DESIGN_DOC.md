@@ -676,7 +676,8 @@ spec:
 ### Named effects on operations (issue #188)
 
 Per-operation **effects** are classes of consequence (ADR 002), distinct from grants
-(`tool.<name>.<operation>`). Identifiers are bare dotted names matching
+(`tool.<name>.<operation>`). Operation keys are ident-shaped (`read_pr`), not HTTP `GET /users`.
+Identifiers are bare dotted names matching
 `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*` — for example `github.read`, `external.visible`,
 `destructive`. Identifiers beginning with `tool.` are rejected so they cannot be confused
 with grants. Effects are opaque: membership and dotted-prefix matching only. The only

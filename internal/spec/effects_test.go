@@ -185,6 +185,50 @@ func TestValidateProjectGraph_toolWithoutOperationsStillOK(t *testing.T) {
 	}
 }
 
+func TestNormalizeToolEffects_stampedEffectsPosSurvivesUniqueSort(t *testing.T) {
+	const y = `
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: github
+spec:
+  type: native
+  operations:
+    merge_pr:
+      effects: [github.write, destructive]
+`
+	dec, err := ParseResourceFromBytes([]byte(y), "github.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := dec.Resource.(*ToolResource)
+	op := tr.Spec.Operations["merge_pr"]
+	if len(op.Effects) != 2 || op.Effects[0] != "github.write" || op.Effects[1] != "destructive" {
+		t.Fatalf("precondition YAML order: %#v", op.Effects)
+	}
+	if len(op.EffectsPos) != 2 || op.EffectsPos[0].IsZero() || op.EffectsPos[1].IsZero() {
+		t.Fatalf("precondition stamp: %#v", op.EffectsPos)
+	}
+	writePos, destPos := op.EffectsPos[0], op.EffectsPos[1]
+
+	// Duplicate + whitespace must drop, keeping the first stamped Pos for github.write.
+	op.Effects = append(op.Effects, "github.write", "  ")
+	op.EffectsPos = append(op.EffectsPos, Pos{File: "github.yaml", Line: 99}, Pos{File: "github.yaml", Line: 100})
+	tr.Spec.Operations["merge_pr"] = op
+
+	NormalizeToolEffects(&tr.Spec)
+	op = tr.Spec.Operations["merge_pr"]
+	if len(op.Effects) != 2 || op.Effects[0] != "destructive" || op.Effects[1] != "github.write" {
+		t.Fatalf("unique-sorted effects: %#v", op.Effects)
+	}
+	if len(op.EffectsPos) != 2 {
+		t.Fatalf("EffectsPos must stay aligned with Effects, got %#v", op.EffectsPos)
+	}
+	if op.EffectsPos[0] != destPos || op.EffectsPos[1] != writePos {
+		t.Fatalf("EffectsPos not paired through unique-sort: got %#v want dest=%#v write=%#v", op.EffectsPos, destPos, writePos)
+	}
+}
+
 func TestNormalizeToolSafety_destructiveDerivesSideEffects(t *testing.T) {
 	sp := ToolSpec{
 		Type: "native",
