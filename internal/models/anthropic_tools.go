@@ -108,7 +108,41 @@ func mapAnthropicMessages(msgs []ChatMessage) (system string, out []anthropic.Ch
 			out = append(out, anthropic.ChatMessage{Role: textRole, Content: m.Content})
 		}
 	}
+	out = mergeConsecutiveAnthropicMessages(out)
 	return strings.Join(sys, "\n\n"), out, nil
+}
+
+// mergeConsecutiveAnthropicMessages collapses adjacent same-role turns.
+// Anthropic requires user/assistant alternation; OpenAI-style consecutive
+// ToolResults (each a user message) would 400 if sent as-is.
+func mergeConsecutiveAnthropicMessages(msgs []anthropic.ChatMessage) []anthropic.ChatMessage {
+	if len(msgs) < 2 {
+		return msgs
+	}
+	out := []anthropic.ChatMessage{msgs[0]}
+	for _, m := range msgs[1:] {
+		prev := &out[len(out)-1]
+		if prev.Role != m.Role {
+			out = append(out, m)
+			continue
+		}
+		mergeAnthropicMessage(prev, m)
+	}
+	return out
+}
+
+func mergeAnthropicMessage(dst *anthropic.ChatMessage, src anthropic.ChatMessage) {
+	if len(dst.Blocks) == 0 && dst.Content != "" {
+		dst.Blocks = []anthropic.ContentBlock{{Type: "text", Text: dst.Content}}
+		dst.Content = ""
+	}
+	if len(src.Blocks) > 0 {
+		dst.Blocks = append(dst.Blocks, src.Blocks...)
+		return
+	}
+	if src.Content != "" {
+		dst.Blocks = append(dst.Blocks, anthropic.ContentBlock{Type: "text", Text: src.Content})
+	}
 }
 
 func mapAnthropicTools(tools []ToolDef) ([]anthropic.Tool, error) {

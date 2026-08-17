@@ -142,6 +142,18 @@ func TestParseResponse_emptyName(t *testing.T) {
 	}
 }
 
+func TestParseResponse_endTurnNoText(t *testing.T) {
+	t.Parallel()
+	_, err := parseResponse([]byte(`{"content":[],"stop_reason":"end_turn"}`))
+	if err == nil || !strings.Contains(err.Error(), "no text content in response") {
+		t.Fatalf("got %v", err)
+	}
+	_, err = parseResponse([]byte(`{"content":[{"type":"thinking","thinking":"hmm"}]}`))
+	if err == nil || !strings.Contains(err.Error(), "no text content in response") {
+		t.Fatalf("empty stop_reason got %v", err)
+	}
+}
+
 func TestParseResponse_toolUseStopWithoutBlocks(t *testing.T) {
 	t.Parallel()
 	_, err := parseResponse([]byte(`{"content":[],"stop_reason":"tool_use"}`))
@@ -170,6 +182,27 @@ func TestNormalizeInputObject_compactsPrettyJSON(t *testing.T) {
 	}
 	if string(got) != `{"city":"Paris"}` {
 		t.Fatalf("got %s", got)
+	}
+}
+
+func TestContentBlock_MarshalJSON_emptyToolResultContent(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(ContentBlock{Type: "tool_result", ToolUseID: "toolu_1", Content: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"content":""`) {
+		t.Fatalf("empty tool_result omitted content: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"tool_use_id":"toolu_1"`) {
+		t.Fatalf("tool_use_id missing: %s", raw)
+	}
+	text, err := json.Marshal(ContentBlock{Type: "text", Text: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(text), `"content"`) {
+		t.Fatalf("text block should omit content: %s", text)
 	}
 }
 

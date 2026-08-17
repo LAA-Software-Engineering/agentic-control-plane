@@ -154,6 +154,46 @@ func TestMapAnthropicMessages_toolResultsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMapAnthropicMessages_mergesConsecutiveToolResults(t *testing.T) {
+	t.Parallel()
+	_, msgs, err := mapAnthropicMessages([]ChatMessage{
+		{Role: "user", ToolResults: []ToolResult{{ToolCallID: "toolu_1", Content: "a"}}},
+		{Role: "user", ToolResults: []ToolResult{{ToolCallID: "toolu_2", Content: ""}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Role != "user" || len(msgs[0].Blocks) != 2 {
+		t.Fatalf("msgs %+v", msgs)
+	}
+	if msgs[0].Blocks[0].ToolUseID != "toolu_1" || msgs[0].Blocks[0].Content != "a" {
+		t.Fatalf("first %+v", msgs[0].Blocks[0])
+	}
+	if msgs[0].Blocks[1].ToolUseID != "toolu_2" || msgs[0].Blocks[1].Content != "" {
+		t.Fatalf("second %+v", msgs[0].Blocks[1])
+	}
+}
+
+func TestMapAnthropicMessages_mergesUserTextThenToolResults(t *testing.T) {
+	t.Parallel()
+	_, msgs, err := mapAnthropicMessages([]ChatMessage{
+		{Role: "user", Content: "also consider this"},
+		{Role: "user", ToolResults: []ToolResult{{ToolCallID: "toolu_1", Content: "ok"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Role != "user" || len(msgs[0].Blocks) != 2 {
+		t.Fatalf("msgs %+v", msgs)
+	}
+	if msgs[0].Blocks[0].Type != "text" || msgs[0].Blocks[0].Text != "also consider this" {
+		t.Fatalf("text %+v", msgs[0].Blocks[0])
+	}
+	if msgs[0].Blocks[1].Type != "tool_result" || msgs[0].Blocks[1].ToolUseID != "toolu_1" {
+		t.Fatalf("tool_result %+v", msgs[0].Blocks[1])
+	}
+}
+
 func TestMapAnthropicMessages_contentAndToolResults(t *testing.T) {
 	t.Parallel()
 	_, msgs, err := mapAnthropicMessages([]ChatMessage{

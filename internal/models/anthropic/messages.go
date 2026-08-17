@@ -71,6 +71,33 @@ type ContentBlock struct {
 	Content   string          `json:"content,omitempty"`
 }
 
+// MarshalJSON keeps tool_result.content present even when empty. Anthropic
+// requires that field; omitempty would drop a successful empty tool output.
+func (b ContentBlock) MarshalJSON() ([]byte, error) {
+	type wire struct {
+		Type      string          `json:"type"`
+		Text      string          `json:"text,omitempty"`
+		ID        string          `json:"id,omitempty"`
+		Name      string          `json:"name,omitempty"`
+		Input     json.RawMessage `json:"input,omitempty"`
+		ToolUseID string          `json:"tool_use_id,omitempty"`
+		Content   *string         `json:"content,omitempty"`
+	}
+	w := wire{
+		Type:      b.Type,
+		Text:      b.Text,
+		ID:        b.ID,
+		Name:      b.Name,
+		Input:     b.Input,
+		ToolUseID: b.ToolUseID,
+	}
+	if b.Type == "tool_result" {
+		c := b.Content
+		w.Content = &c
+	}
+	return json.Marshal(w)
+}
+
 // MarshalJSON encodes Content as a string or Blocks as a content-block array.
 func (m ChatMessage) MarshalJSON() ([]byte, error) {
 	role := strings.ToLower(strings.TrimSpace(m.Role))
@@ -184,6 +211,9 @@ func parseResponse(body []byte) (Response, error) {
 	}
 	if stop != stopToolUse {
 		calls = nil
+	}
+	if stop == stopEndTurn && text == "" {
+		return Response{}, fmt.Errorf("anthropic: no text content in response")
 	}
 
 	out := Response{Text: text, ToolCalls: calls, StopReason: stop}
