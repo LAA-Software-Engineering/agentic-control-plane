@@ -1,21 +1,173 @@
 package models
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+)
 
-// MockClient returns a fixed response for tests and offline agent steps (design doc §12.2 F MVP).
-type MockClient struct {
-	// Content is returned as GenerateResponse.Content verbatim (often JSON for structured output tests).
-	Content string
-	Meta    *GenerateMeta
+// MockTurn is one scripted Generate response for a tool-calling loop (issue #159).
+// StopReason defaults to [StopReasonToolUse] when ToolCalls is non-empty, otherwise [StopReasonEndTurn].
+type MockTurn struct {
+	Content    string
+	ToolCalls  []ToolCall
+	StopReason string
+	// Meta is per-call accounting (token counts, cost). When nil, [MockClient.Meta] or a small default is used.
+	Meta *GenerateMeta
+	// Err, when set, is returned from Generate instead of a response.
+	Err error
 }
 
-// Generate returns deterministic output without calling the network.
+// MockClient returns deterministic output for tests and offline agent steps (design doc §12.2 F MVP).
+//
+// When Script is empty, every Generate returns Content with Meta (legacy single-shot behavior)
+// and [StopReasonEndTurn]. When Script is set, each Generate consumes the next turn. After the
+// script is exhausted, Generate returns an error so extra loop iterations fail in tests.
+//
+// Each call records the request (including Tools) so tests can assert on what the loop sent.
+// [MockClient.Reset] clears the cursor and recorded requests when a test reuses one client.
+type MockClient struct {
+	Content string
+	Meta    *GenerateMeta
+	Script  []MockTurn
+
+	mu       sync.Mutex
+	call     int
+	requests []GenerateRequest
+}
+
+// Generate returns the next scripted turn, or the fixed Content when Script is empty.
 func (m *MockClient) Generate(ctx context.Context, req GenerateRequest) (GenerateResponse, error) {
 	_ = ctx
-	_ = req
-	meta := GenerateMeta{DurationMs: 1, CostUSD: 0.001}
-	if m.Meta != nil {
-		meta = *m.Meta
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.requests = append(m.requests, cloneGenerateRequest(req))
+
+	if len(m.Script) == 0 {
+		return GenerateResponse{
+			Content:    m.Content,
+			StopReason: StopReasonEndTurn,
+			Meta:       m.metaFor(nil),
+		}, nil
 	}
-	return GenerateResponse{Content: m.Content, Meta: meta}, nil
+	if m.call >= len(m.Script) {
+		return GenerateResponse{}, fmt.Errorf("models: mock script exhausted after %d call(s)", len(m.Script))
+	}
+	turn := m.Script[m.call]
+	m.call++
+	if turn.Err != nil {
+		return GenerateResponse{}, turn.Err
+	}
+	stop := turn.StopReason
+	if stop == "" {
+		if len(turn.ToolCalls) > 0 {
+			stop = StopReasonToolUse
+		} else {
+			stop = StopReasonEndTurn
+		}
+	}
+	return GenerateResponse{
+		Content:    turn.Content,
+		ToolCalls:  cloneToolCalls(turn.ToolCalls),
+		StopReason: stop,
+		Meta:       m.metaFor(turn.Meta),
+	}, nil
+}
+
+// Requests returns a copy of every GenerateRequest received, in call order.
+func (m *MockClient) Requests() []GenerateRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]GenerateRequest, len(m.requests))
+	for i, req := range m.requests {
+		out[i] = cloneGenerateRequest(req)
+	}
+	return out
+}
+
+// LastRequest returns the most recent GenerateRequest, or a zero value if Generate has not been called.
+func (m *MockClient) LastRequest() GenerateRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.requests) == 0 {
+		return GenerateRequest{}
+	}
+	return cloneGenerateRequest(m.requests[len(m.requests)-1])
+}
+
+// CallCount returns how many times Generate has been invoked.
+func (m *MockClient) CallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.requests)
+}
+
+// Reset clears recorded requests and the script cursor so one client can be reused across cases.
+// Content, Meta, and Script are left unchanged.
+func (m *MockClient) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.call = 0
+	m.requests = nil
+}
+
+func (m *MockClient) metaFor(turn *GenerateMeta) GenerateMeta {
+	if turn != nil {
+		return *turn
+	}
+	if m.Meta != nil {
+		return *m.Meta
+	}
+	return GenerateMeta{DurationMs: 1, CostUSD: 0.001}
+}
+
+func cloneGenerateRequest(req GenerateRequest) GenerateRequest {
+	out := req
+	if req.Messages != nil {
+		out.Messages = make([]ChatMessage, len(req.Messages))
+		copy(out.Messages, req.Messages)
+		for i, msg := range out.Messages {
+			out.Messages[i].ToolCalls = cloneToolCalls(msg.ToolCalls)
+			if msg.ToolResults != nil {
+				out.Messages[i].ToolResults = append([]ToolResult(nil), msg.ToolResults...)
+			}
+		}
+	}
+	out.Tools = cloneToolDefs(req.Tools)
+	return out
+}
+
+func cloneToolDefs(tools []ToolDef) []ToolDef {
+	if tools == nil {
+		return nil
+	}
+	out := make([]ToolDef, len(tools))
+	copy(out, tools)
+	for i := range out {
+		out[i].Parameters = cloneRawMessage(out[i].Parameters)
+	}
+	return out
+}
+
+func cloneToolCalls(calls []ToolCall) []ToolCall {
+	if calls == nil {
+		return nil
+	}
+	out := make([]ToolCall, len(calls))
+	copy(out, calls)
+	for i := range out {
+		out[i].Arguments = cloneRawMessage(out[i].Arguments)
+	}
+	return out
+}
+
+func cloneRawMessage(raw json.RawMessage) json.RawMessage {
+	if raw == nil {
+		return nil
+	}
+	out := make(json.RawMessage, len(raw))
+	copy(out, raw)
+	return out
 }

@@ -2,6 +2,10 @@
 //
 // [Registry] resolves namespace/model_id strings using Project.spec.providers.models.
 // Use [MockClient] for deterministic tests; [OpenAIClient] is the MVP OpenAI-compatible backend (§12.2 F).
+// [MockClient.Script] drives a tool-calling loop without a live provider: each Generate consumes
+// the next [MockTurn] (for example turn 1 → [StopReasonToolUse], turn 2 → final text/JSON).
+// Requests, including [GenerateRequest.Tools], are recorded for assertions; per-call token counts
+// go on [MockTurn.Meta]. Without Script, [MockClient] still returns a fixed [MockClient.Content].
 //
 // # Model contract (issue #156)
 //
