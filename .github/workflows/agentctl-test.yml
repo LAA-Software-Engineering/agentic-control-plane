@@ -1,0 +1,46 @@
+# Sample job: run fixture tests for examples/regression-test (issue #176).
+# No secrets. A new on: pull_request workflow may not run on the introducing PR
+# until it exists on main — the merge gate is test/integration/cli_flow_test.go.
+# See examples/regression-test/README.md and docs/TESTING.md.
+
+name: agentctl test
+
+on:
+  pull_request:
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "Makefile"
+      - "**/*.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  regression-test:
+    name: examples/regression-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+
+      - name: Build agentctl
+        run: go build -o agentctl ./cmd/agentctl
+
+      - name: agentctl test (safe policy)
+        run: ./agentctl test --project examples/regression-test --no-color

@@ -381,3 +381,5 @@ template also appends a **job summary** (`GITHUB_STEP_SUMMARY`), optional **Acti
 SQLite file, and an optional **`gh pr comment`** pointer job (skipped by default when disabled). In
 this repo the PR workflow is **`.github/workflows/agentctl-pr-review.yml`**; manual publish for an
 arbitrary **`owner` / `repo` / `number`** is **`.github/workflows/agentctl-pr-review-publish.yml`**.
+
+Fixture-style **`agentctl test`** (no API keys) is **[`examples/regression-test/`](../examples/regression-test/README.md)** with sample job **`.github/workflows/agentctl-test.yml`**. See **[`TESTING.md`](TESTING.md)**.

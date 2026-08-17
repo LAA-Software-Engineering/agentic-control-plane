@@ -60,5 +60,6 @@ Non-zero exit if any case fails.
 ## See also
 
 - **[`EXAMPLES.md`](EXAMPLES.md)** — project and workflow layout.
+- **[`examples/regression-test/`](../examples/regression-test/README.md)** — CI gate: `agentctl test` passes on a gated mock publish and fails after dropping `requiredFor` (issue #176). Sample job: [`.github/workflows/agentctl-test.yml`](../.github/workflows/agentctl-test.yml).
 - **`internal/testkit/`** — parser and runner.
 - **`internal/cli/testdata/wf_tests/`** — minimal example project with **`tests/demo.yaml`**.

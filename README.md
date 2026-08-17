@@ -326,7 +326,9 @@ The **recommended implementation phases** are outlined in **section 20** of [`do
 - **[`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md)** — hash-linked trace audit chain and `agentctl audit verify` (issue #116).  
 - **[`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md)** — tenant, thread, and actor fields on runs and traces (issue #111).  
 - **[`docs/OTEL.md`](docs/OTEL.md)** — optional OTLP trace export alongside SQLite (issue #108).  
+- **[`docs/TESTING.md`](docs/TESTING.md)** — `agentctl test` fixture format; CI gate walkthrough in [`examples/regression-test`](examples/regression-test).  
 - **[`examples/pr-review-demo/README.md`](examples/pr-review-demo/README.md)** — end-to-end demo: structured review output, traceable run, **approval-gated** write (`validate` → `plan` → `apply` → `run` → `logs`).
+- **[`examples/regression-test/README.md`](examples/regression-test/README.md)** — `agentctl test` is green on a gated publish and red after dropping `requiredFor` (issue #176).
 - **[`docs/EXAMPLES.md`](docs/EXAMPLES.md)** — copy-paste YAML and CLI examples (`init`, mock vs OpenAI, workflows, environment overlays).  
 - **[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)** — Contributor Covenant 2.1; participation expectations and reporting.  
 - **License:** [MIT](LICENSE)  
