@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -491,14 +492,109 @@ func TestRun_agentToolLoop_budgetCheckedEachTurn(t *testing.T) {
 	if mock.CallCount() != 2 {
 		t.Fatalf("generates %d, want 2 (deny after second turn)", mock.CallCount())
 	}
-	var sawDeny bool
+	var sawDeny, sawLimit, sawRunErr bool
 	for _, ev := range events {
-		if ev.Type == string(trace.EventSystemError) && strings.Contains(ev.DataJSON, policy.ReasonMaxCost) {
-			sawDeny = true
+		switch ev.Type {
+		case string(trace.EventSystemError):
+			if strings.Contains(ev.DataJSON, policy.ReasonMaxCost) {
+				sawDeny = true
+			}
+		case string(trace.EventLimitHit):
+			if strings.Contains(ev.DataJSON, `"kind":"max_cost"`) {
+				sawLimit = true
+				assertCostLimitHitPayload(t, ev, 0.04, 0.05)
+			}
+		case string(trace.EventRunError):
+			sawRunErr = true
+			data := eventData(t, ev)
+			if data["reason"] != policy.ReasonMaxCost {
+				t.Fatalf("run_error reason=%v want %s (%s)", data["reason"], policy.ReasonMaxCost, ev.DataJSON)
+			}
 		}
 	}
 	if !sawDeny {
 		t.Fatalf("expected system_error max_cost, events=%+v", events)
+	}
+	if !sawLimit {
+		t.Fatalf("expected limit_hit max_cost, events=%+v", events)
+	}
+	if !sawRunErr {
+		t.Fatalf("expected run_error, events=%+v", events)
+	}
+}
+
+func TestRun_agentNoTools_budgetAfterGenerate(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{Instructions: "Just answer."}, spec.PolicySpec{
+		Execution: &spec.PolicyExecution{MaxTotalCostUsd: 0.04},
+	})
+	mock := &models.MockClient{
+		Content: `{"summary":"plain"}`,
+		Meta:    &models.GenerateMeta{CostUSD: 0.05},
+	}
+	got, events, err := runAgentLoop(t, graph, mock, nil)
+	if err == nil {
+		t.Fatal("expected cost ceiling denial")
+	}
+	d, ok := policy.AsDenied(err)
+	if !ok || d.Reason != policy.ReasonMaxCost {
+		t.Fatalf("denied %+v err=%v", d, err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("status %q", got.Status)
+	}
+	if mock.CallCount() != 1 {
+		t.Fatalf("generates %d, want 1 (deny after the only turn)", mock.CallCount())
+	}
+	assertMaxCostTrace(t, events, 0.04, 0.05)
+}
+
+func TestRun_multiStep_priorStepCostBlocksNext(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{Instructions: "Just answer."}, spec.PolicySpec{
+		Execution: &spec.PolicyExecution{MaxTotalCostUsd: 0.04},
+	})
+	graph.Workflows["demo"].Spec.Steps = []spec.WorkflowStep{
+		{ID: "prep", Uses: "tool.helper.default", With: map[string]any{"x": 1}},
+		{ID: "act", Agent: "reviewer", With: map[string]any{"topic": "agents"}},
+	}
+	graph.Workflows["demo"].Spec.Output = &spec.WorkflowOutput{
+		Value: map[string]any{"ok": true},
+	}
+	mock := &models.MockClient{Content: `{"summary":"should not run"}`}
+	extra := &tools.MockExecutor{Resp: tools.ToolCallResponse{
+		Output: map[string]any{"ok": true},
+		Meta:   tools.ToolCallMeta{CostUSD: 0.05, DurationMs: 1},
+	}}
+	got, events, err := runAgentLoop(t, graph, mock, extra)
+	if err == nil {
+		t.Fatal("expected cost ceiling denial")
+	}
+	d, ok := policy.AsDenied(err)
+	if !ok || d.Reason != policy.ReasonMaxCost {
+		t.Fatalf("denied %+v err=%v", d, err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("status %q", got.Status)
+	}
+	if mock.CallCount() != 0 {
+		t.Fatalf("generates %d, want 0 (blocked before step 2)", mock.CallCount())
+	}
+	var sawLimit, sawRunErr bool
+	for _, ev := range events {
+		switch ev.Type {
+		case string(trace.EventLimitHit):
+			if strings.Contains(ev.DataJSON, `"kind":"max_cost"`) {
+				sawLimit = true
+				assertCostLimitHitPayload(t, ev, 0.04, 0.05)
+			}
+		case string(trace.EventRunError):
+			sawRunErr = true
+			if eventData(t, ev)["reason"] != policy.ReasonMaxCost {
+				t.Fatalf("run_error %s", ev.DataJSON)
+			}
+		}
+	}
+	if !sawLimit || !sawRunErr {
+		t.Fatalf("expected limit_hit+run_error, events=%+v", events)
 	}
 }
 
@@ -642,6 +738,51 @@ func assertAuditChain(t *testing.T, runID string, events []trace.Event) {
 	t.Helper()
 	if err := audit.VerifyRunChainError(runID, events); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertMaxCostTrace(t *testing.T, events []trace.Event, ceiling, accumulated float64) {
+	t.Helper()
+	var sawLimit, sawRunErr, sawDeny bool
+	for _, ev := range events {
+		switch ev.Type {
+		case string(trace.EventSystemError):
+			if strings.Contains(ev.DataJSON, policy.ReasonMaxCost) {
+				sawDeny = true
+			}
+		case string(trace.EventLimitHit):
+			if strings.Contains(ev.DataJSON, `"kind":"max_cost"`) {
+				sawLimit = true
+				assertCostLimitHitPayload(t, ev, ceiling, accumulated)
+			}
+		case string(trace.EventRunError):
+			sawRunErr = true
+			if eventData(t, ev)["reason"] != policy.ReasonMaxCost {
+				t.Fatalf("run_error %s", ev.DataJSON)
+			}
+		}
+	}
+	if !sawDeny || !sawLimit || !sawRunErr {
+		t.Fatalf("max_cost traces deny=%v limit=%v run_error=%v events=%+v", sawDeny, sawLimit, sawRunErr, events)
+	}
+}
+
+func assertCostLimitHitPayload(t *testing.T, ev trace.Event, ceiling, accumulated float64) {
+	t.Helper()
+	if ev.ActorType != string(trace.ActorSystem) {
+		t.Fatalf("limit_hit actor=%q want %s", ev.ActorType, trace.ActorSystem)
+	}
+	data := eventData(t, ev)
+	if data["kind"] != "max_cost" {
+		t.Fatalf("kind=%v (%s)", data["kind"], ev.DataJSON)
+	}
+	if _, ok := data["maxBytes"]; ok {
+		t.Fatalf("cost limit_hit must not use byte LimitHitTraceData: %s", ev.DataJSON)
+	}
+	gotCeil, _ := data["maxTotalCostUsd"].(float64)
+	gotAcc, _ := data["accumulatedUsd"].(float64)
+	if math.Abs(gotCeil-ceiling) > 1e-9 || math.Abs(gotAcc-accumulated) > 1e-9 {
+		t.Fatalf("ceiling=%v accumulated=%v want %v / %v (%s)", gotCeil, gotAcc, ceiling, accumulated, ev.DataJSON)
 	}
 }
 

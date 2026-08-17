@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -534,5 +535,24 @@ func TestRun_resume_conflictingEnvironment_exit2(t *testing.T) {
 	}
 	if ExitCodeOf(err) != ExitValidationError {
 		t.Fatalf("exit=%d want %d err=%v\n%s", ExitCodeOf(err), ExitValidationError, err, out.String())
+	}
+}
+
+func TestClassifyRunError_maxCostDeniedExit5(t *testing.T) {
+	d := &policy.DeniedError{
+		Reason:  policy.ReasonMaxCost,
+		Message: "policy: cost $0.0500 exceeds ceiling $0.0400",
+		Extra:   map[string]any{"maxTotalCostUsd": 0.04, "accumulatedUsd": 0.05},
+	}
+	wrapped := fmt.Errorf("engine: step %q: %w", "act", d)
+	got, ok := policy.AsDenied(wrapped)
+	if !ok || got.Reason != policy.ReasonMaxCost {
+		t.Fatalf("AsDenied=%v ok=%v (DeniedError must remain unwrapable)", got, ok)
+	}
+	if code := classifyRunError(wrapped); code != ExitPolicyDenied {
+		t.Fatalf("classifyRunError=%d want %d", code, ExitPolicyDenied)
+	}
+	if ExitCodeOf(NewExitError(classifyRunError(wrapped), wrapped)) != ExitPolicyDenied {
+		t.Fatalf("ExitCodeOf=%d want %d", ExitCodeOf(NewExitError(classifyRunError(wrapped), wrapped)), ExitPolicyDenied)
 	}
 }
