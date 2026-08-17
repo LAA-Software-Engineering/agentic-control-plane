@@ -21,6 +21,11 @@ func NewRegistry(g *spec.ProjectGraph) *Registry {
 	return &Registry{models: m}
 }
 
+// mockRegistryCostUSD is the per-Generate cost for provider type "mock" (issue #168).
+// Two turns at this price exceed examples/policy-denial-midrun's 0.03 ceiling; other
+// examples use maxTotalCostUsd: 5 and stay under budget.
+const mockRegistryCostUSD = 0.02
+
 // ClientFor resolves modelRef in the form "namespace/model_id" (e.g. "openai/gpt-4.1").
 // The returned modelID is the segment after the first slash and should be passed as GenerateRequest.Model.
 func (r *Registry) ClientFor(modelRef string) (client ModelClient, modelID string, err error) {
@@ -52,7 +57,7 @@ func (r *Registry) ClientFor(modelRef string) (client ModelClient, modelID strin
 	case "mock":
 		return &MockClient{
 			Content: `{"summary":"mock","findings":[{"severity":"high","file":"db/query.py","title":"Possible SQL injection","evidence":"User input is interpolated directly into SQL"}]}`,
-			Meta:    &GenerateMeta{DurationMs: 1, CostUSD: 0},
+			Meta:    &GenerateMeta{DurationMs: 1, CostUSD: mockRegistryCostUSD},
 		}, id, nil
 	case "anthropic":
 		cl, err := NewAnthropicClientFromConfig(cfg)

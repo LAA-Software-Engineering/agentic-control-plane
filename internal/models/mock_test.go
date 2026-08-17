@@ -134,7 +134,6 @@ func TestMockClient_legacyContentSetsEndTurn(t *testing.T) {
 	resp, err := cli.Generate(context.Background(), GenerateRequest{
 		Model:    "mock/test",
 		Messages: []ChatMessage{{Role: "user", Content: "run"}},
-		Tools:    []ToolDef{{Name: "unused"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -147,9 +146,6 @@ func TestMockClient_legacyContentSetsEndTurn(t *testing.T) {
 	}
 	if len(resp.ToolCalls) != 0 {
 		t.Fatalf("ToolCalls %+v", resp.ToolCalls)
-	}
-	if got := cli.LastRequest().Tools; len(got) != 1 || got[0].Name != "unused" {
-		t.Fatalf("echoed Tools %+v", got)
 	}
 }
 
@@ -229,6 +225,83 @@ func TestMockClient_scriptOverridesRestartHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	if resp.StopReason != StopReasonEndTurn || resp.Content != `{"summary":"scripted"}` {
+		t.Fatalf("script should win: %+v", resp)
+	}
+}
+
+func TestMockClient_emptyScriptNonRestartTool_twoTurnLoop(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cli := &MockClient{
+		Content: `{"summary":"after-helper"}`,
+		Meta:    &GenerateMeta{DurationMs: 2, CostUSD: 0.02},
+	}
+	tools := []ToolDef{{Name: "helper"}, {Name: "logs"}}
+
+	first, err := cli.Generate(ctx, GenerateRequest{Model: "mock/gpt-4", Tools: tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.StopReason != StopReasonToolUse {
+		t.Fatalf("turn 1 StopReason %q", first.StopReason)
+	}
+	if len(first.ToolCalls) != 1 || first.ToolCalls[0].Name != "helper" || first.ToolCalls[0].ID != "call_helper" {
+		t.Fatalf("turn 1 ToolCalls %+v", first.ToolCalls)
+	}
+	if first.Meta.CostUSD != 0.02 {
+		t.Fatalf("turn 1 CostUSD %v", first.Meta.CostUSD)
+	}
+
+	second, err := cli.Generate(ctx, GenerateRequest{Model: "mock/gpt-4", Tools: tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.StopReason != StopReasonEndTurn || second.Content != `{"summary":"after-helper"}` {
+		t.Fatalf("turn 2 %+v", second)
+	}
+	if second.Meta.CostUSD != 0.02 {
+		t.Fatalf("turn 2 CostUSD %v", second.Meta.CostUSD)
+	}
+
+	cli.Reset()
+	again, err := cli.Generate(ctx, GenerateRequest{Model: "mock/gpt-4", Tools: tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.StopReason != StopReasonToolUse || len(again.ToolCalls) != 1 || again.ToolCalls[0].Name != "helper" {
+		t.Fatalf("after Reset want helper tool_use, got %+v", again)
+	}
+}
+
+func TestMockClient_emptyScriptRestartBeatsHelperHook(t *testing.T) {
+	t.Parallel()
+	cli := &MockClient{Content: `{"summary":"nope"}`}
+	resp, err := cli.Generate(context.Background(), GenerateRequest{
+		Model: "mock/gpt-4",
+		Tools: []ToolDef{{Name: "helper"}, {Name: "restart"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StopReason != StopReasonToolUse || len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Name != "restart" {
+		t.Fatalf("restart hook must win: %+v", resp)
+	}
+}
+
+func TestMockClient_scriptOverridesHelperHook(t *testing.T) {
+	t.Parallel()
+	cli := &MockClient{
+		Content: "unused",
+		Script:  []MockTurn{{Content: `{"summary":"scripted-helper"}`}},
+	}
+	resp, err := cli.Generate(context.Background(), GenerateRequest{
+		Model: "mock/gpt-4",
+		Tools: []ToolDef{{Name: "helper"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StopReason != StopReasonEndTurn || resp.Content != `{"summary":"scripted-helper"}` {
 		t.Fatalf("script should win: %+v", resp)
 	}
 }

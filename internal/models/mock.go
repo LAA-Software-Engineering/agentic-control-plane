@@ -24,13 +24,17 @@ type MockTurn struct {
 // MockClient returns deterministic output for tests and offline agent steps (design doc §12.2 F MVP).
 //
 // When Script is empty, every Generate returns Content with Meta (legacy single-shot behavior)
-// and [StopReasonEndTurn], unless req.Tools includes a restart-like tool (issue #167): then the
-// first Generate returns [StopReasonToolUse] for that tool and the next returns status JSON.
+// and [StopReasonEndTurn], unless req.Tools is non-empty (issue #167 / #168):
+//   - If a restart-like tool is advertised, the first Generate returns [StopReasonToolUse] for
+//     that tool and the next returns incident status JSON.
+//   - Otherwise the first Generate returns [StopReasonToolUse] for the first non-restart tool
+//     and the next returns [MockClient.Content] (or a small JSON object).
+//
 // When Script is set, each Generate consumes the next turn. After the script is exhausted,
 // Generate returns an error so extra loop iterations fail in tests.
 //
 // Each call records the request (including Tools) so tests can assert on what the loop sent.
-// [MockClient.Reset] clears the cursor, recorded requests, and the restart hook when a test reuses one client.
+// [MockClient.Reset] clears the cursor, recorded requests, and empty-Script hooks when a test reuses one client.
 type MockClient struct {
 	Content string
 	Meta    *GenerateMeta
@@ -42,6 +46,8 @@ type MockClient struct {
 	// restartHookFired is set after the empty-Script restart tool_use so the follow-up
 	// Generate returns JSON Content (issue #167).
 	restartHookFired bool
+	// helperHookFired is set after the empty-Script non-restart tool_use (issue #168).
+	helperHookFired bool
 }
 
 // Generate returns the next scripted turn, or the fixed Content when Script is empty.
@@ -68,6 +74,29 @@ func (m *MockClient) Generate(ctx context.Context, req GenerateRequest) (Generat
 			}
 			return GenerateResponse{
 				Content:    mockRestartFollowUpJSON,
+				StopReason: StopReasonEndTurn,
+				Meta:       m.metaFor(req.Model, nil),
+			}, nil
+		}
+		if name := firstNonRestartToolName(req.Tools); name != "" {
+			if !m.helperHookFired {
+				m.helperHookFired = true
+				return GenerateResponse{
+					ToolCalls: []ToolCall{{
+						ID:        "call_helper",
+						Name:      name,
+						Arguments: json.RawMessage(`{}`),
+					}},
+					StopReason: StopReasonToolUse,
+					Meta:       m.metaFor(req.Model, nil),
+				}, nil
+			}
+			content := strings.TrimSpace(m.Content)
+			if content == "" {
+				content = mockHelperFollowUpJSON
+			}
+			return GenerateResponse{
+				Content:    content,
 				StopReason: StopReasonEndTurn,
 				Meta:       m.metaFor(req.Model, nil),
 			}, nil
@@ -130,7 +159,7 @@ func (m *MockClient) CallCount() int {
 	return len(m.requests)
 }
 
-// Reset clears recorded requests, the script cursor, and the empty-Script restart hook so one
+// Reset clears recorded requests, the script cursor, and empty-Script tool-loop hooks so one
 // client can be reused across cases. Content, Meta, and Script are left unchanged.
 func (m *MockClient) Reset() {
 	m.mu.Lock()
@@ -138,6 +167,7 @@ func (m *MockClient) Reset() {
 	m.call = 0
 	m.requests = nil
 	m.restartHookFired = false
+	m.helperHookFired = false
 }
 
 func (m *MockClient) metaFor(model string, turn *GenerateMeta) GenerateMeta {
@@ -223,6 +253,10 @@ func cloneRawMessage(raw json.RawMessage) json.RawMessage {
 // does not fail the incident-triage output schema.
 const mockRestartFollowUpJSON = `{"summary":"Restart requested after correlating pager alert with error logs.","severity":"high","action":"restart"}`
 
+// mockHelperFollowUpJSON is the second-turn Content after the empty-Script non-restart tool hook
+// when [MockClient.Content] is empty (issue #168).
+const mockHelperFollowUpJSON = `{"summary":"mock"}`
+
 // restartLikeToolName returns the first advertised tool whose name is "restart" or contains
 // "restart" (ASCII case-folding). Empty Script uses this to drive a gated remediation call.
 func restartLikeToolName(tools []ToolDef) string {
@@ -231,6 +265,18 @@ func restartLikeToolName(tools []ToolDef) string {
 		if n == "restart" || strings.Contains(n, "restart") {
 			return t.Name
 		}
+	}
+	return ""
+}
+
+// firstNonRestartToolName returns the first advertised tool that is not restart-like (issue #168).
+func firstNonRestartToolName(tools []ToolDef) string {
+	for _, t := range tools {
+		n := strings.TrimSpace(t.Name)
+		if n == "" || restartLikeToolName([]ToolDef{t}) != "" {
+			continue
+		}
+		return n
 	}
 	return ""
 }
