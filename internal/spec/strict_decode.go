@@ -38,7 +38,9 @@ func parseStrictResource[T any](data []byte, path string, wantKind string, wrap 
 		return nil, err
 	}
 
-	return &Decoded{Path: path, Resource: wrap(doc)}, nil
+	res := wrap(doc)
+	stampResourcePositions(path, data, res)
+	return &Decoded{Path: path, Resource: res}, nil
 }
 
 func validateStrictDoc(path, apiVersion, kind, wantKind string, md *Metadata) error {
@@ -67,10 +69,9 @@ func wrapStrictDecodeError(path string, err error) error {
 		return nil
 	}
 	msg := FormatStrictYAMLError(path, err)
-	line, col := yamlLocationHint(err)
 	return &LoadError{
-		Path: path, Line: line, Column: col,
-		Msg: msg, Err: joinStrictErr(err),
+		Path: path,
+		Msg:  msg, Err: joinStrictErr(err),
 	}
 }
 

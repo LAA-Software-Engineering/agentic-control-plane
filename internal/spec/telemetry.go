@@ -1,7 +1,6 @@
 package spec
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -28,15 +27,15 @@ func validateProjectTelemetry(g *ProjectGraph) []error {
 	var errs []error
 	prefix := "Project.spec.telemetry"
 	if strings.TrimSpace(t.ServiceName) == "" {
-		errs = append(errs, fmt.Errorf("%s: serviceName is required when enabled is true", prefix))
+		errs = append(errs, g.Pos.Errorf("%s: serviceName is required when enabled is true", prefix))
 	}
 	ep := strings.TrimSpace(t.Endpoint)
 	if ep == "" && !t.ConsoleExport {
-		errs = append(errs, fmt.Errorf("%s: endpoint or consoleExport must be set when enabled is true", prefix))
+		errs = append(errs, g.Pos.Errorf("%s: endpoint or consoleExport must be set when enabled is true", prefix))
 	}
 	if ep != "" && !strings.HasPrefix(ep, "env:") {
 		if !strings.HasPrefix(ep, "http://") && !strings.HasPrefix(ep, "https://") {
-			errs = append(errs, fmt.Errorf("%s: endpoint must be http(s) URL or env:VAR", prefix))
+			errs = append(errs, g.Pos.Errorf("%s: endpoint must be http(s) URL or env:VAR", prefix))
 		}
 	}
 	return errs

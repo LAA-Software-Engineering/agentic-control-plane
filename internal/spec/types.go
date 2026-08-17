@@ -37,6 +37,8 @@ type Resource[T any] struct {
 	Kind       string   `yaml:"kind" json:"kind"`
 	Metadata   Metadata `yaml:"metadata" json:"metadata"`
 	Spec       T        `yaml:"spec" json:"spec"`
+	// Pos is diagnostic source location (issue #187). Never identity; omitted from hashes.
+	Pos Pos `yaml:"-" json:"-"`
 }
 
 // MVP resource envelopes with concrete spec types.
@@ -52,6 +54,7 @@ type (
 // ProjectGraph is the merged in-memory view keyed by resource name (design doc §12.2).
 type ProjectGraph struct {
 	Meta         Metadata `yaml:"-" json:"-"`
+	Pos          Pos      `yaml:"-" json:"-"`
 	Spec         ProjectSpec
 	Agents       map[string]*AgentResource
 	Tools        map[string]*ToolResource

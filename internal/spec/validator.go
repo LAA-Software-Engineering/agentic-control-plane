@@ -48,7 +48,7 @@ func validateMetadataKeys(g *ProjectGraph) []error {
 				continue
 			}
 			if k != name {
-				errs = append(errs, fmt.Errorf("%s: map key %q does not match metadata.name %q", kind, k, name))
+				errs = append(errs, resourcePos(v).Errorf("%s: map key %q does not match metadata.name %q", kind, k, name))
 			}
 		}
 	}
@@ -116,29 +116,29 @@ func metaName(v any) string {
 // Empty means implicit local; only registered names are allowed when set.
 func validateRuntimes(g *ProjectGraph) []error {
 	var errs []error
-	check := func(prefix, name string) {
+	check := func(p Pos, prefix, name string) {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			return
 		}
 		if !catalog.IsKnown(name) {
-			errs = append(errs, fmt.Errorf("%s %q is unknown (valid: %s)", prefix, name, strings.Join(catalog.KnownNames(), ", ")))
+			errs = append(errs, p.Errorf("%s %q is unknown (valid: %s)", prefix, name, strings.Join(catalog.KnownNames(), ", ")))
 		}
 	}
 	if g.Spec.Defaults != nil {
-		check("Project: defaults.runtime", g.Spec.Defaults.Runtime)
+		check(g.Pos, "Project: defaults.runtime", g.Spec.Defaults.Runtime)
 	}
 	for name, ar := range g.Agents {
 		if ar == nil {
 			continue
 		}
-		check(fmt.Sprintf("Agent/%s: spec.runtime", name), ar.Spec.Runtime)
+		check(ar.Pos, fmt.Sprintf("Agent/%s: spec.runtime", name), ar.Spec.Runtime)
 	}
 	for name, wr := range g.Workflows {
 		if wr == nil {
 			continue
 		}
-		check(fmt.Sprintf("Workflow/%s: spec.runtime", name), wr.Spec.Runtime)
+		check(wr.Pos, fmt.Sprintf("Workflow/%s: spec.runtime", name), wr.Spec.Runtime)
 	}
 	return errs
 }
@@ -153,77 +153,77 @@ func validateToolSpecs(g *ProjectGraph) []error {
 		switch t {
 		case "mcp":
 			if tr.Spec.MCP == nil {
-				errs = append(errs, fmt.Errorf("Tool/%s: type mcp requires spec.mcp", name))
+				errs = append(errs, tr.Pos.Errorf("Tool/%s: type mcp requires spec.mcp", name))
 			} else {
-				errs = append(errs, validateToolMCP(name, tr.Spec.MCP)...)
+				errs = append(errs, validateToolMCP(tr.Pos, name, tr.Spec.MCP)...)
 			}
 		case "http":
 			if tr.Spec.HTTP == nil {
-				errs = append(errs, fmt.Errorf("Tool/%s: type http requires spec.http", name))
+				errs = append(errs, tr.Pos.Errorf("Tool/%s: type http requires spec.http", name))
 			}
 		case "native", "mock":
 			// MVP: no required transport block
 		case "":
-			errs = append(errs, fmt.Errorf("Tool/%s: spec.type is required", name))
+			errs = append(errs, tr.Pos.Errorf("Tool/%s: spec.type is required", name))
 		default:
-			errs = append(errs, fmt.Errorf("Tool/%s: unsupported spec.type %q", name, t))
+			errs = append(errs, tr.Pos.Errorf("Tool/%s: unsupported spec.type %q", name, t))
 		}
 		if tr.Spec.Permissions != nil {
 			for i, a := range tr.Spec.Permissions.Allow {
 				if strings.TrimSpace(a) == "" {
-					errs = append(errs, fmt.Errorf("Tool/%s: permissions.allow[%d] must be non-empty", name, i))
+					errs = append(errs, tr.Pos.Errorf("Tool/%s: permissions.allow[%d] must be non-empty", name, i))
 				}
 			}
 			for i, d := range tr.Spec.Permissions.Deny {
 				if strings.TrimSpace(d) == "" {
-					errs = append(errs, fmt.Errorf("Tool/%s: permissions.deny[%d] must be non-empty", name, i))
+					errs = append(errs, tr.Pos.Errorf("Tool/%s: permissions.deny[%d] must be non-empty", name, i))
 				}
 			}
 		}
 		if tr.Spec.Retry != nil && tr.Spec.Retry.MaxAttempts < 0 {
-			errs = append(errs, fmt.Errorf("Tool/%s: retry.maxAttempts must be non-negative", name))
+			errs = append(errs, tr.Pos.Errorf("Tool/%s: retry.maxAttempts must be non-negative", name))
 		}
-		errs = append(errs, validateToolSafety(name, tr.Spec.Safety)...)
+		errs = append(errs, validateToolSafety(tr.Pos, name, tr.Spec.Safety)...)
 	}
 	return errs
 }
 
-func validateToolSafety(toolName string, s *ToolSafety) []error {
+func validateToolSafety(p Pos, toolName string, s *ToolSafety) []error {
 	if s == nil {
 		return nil
 	}
 	var errs []error
 	prefix := fmt.Sprintf("Tool/%s: spec.safety", toolName)
 	if s.Trusted == nil && s.SideEffects == nil && s.RequiresApproval == nil {
-		errs = append(errs, fmt.Errorf("%s: at least one of trusted, sideEffects, requiresApproval must be set (or omit safety to use fail-closed defaults via normalize)", prefix))
+		errs = append(errs, p.Errorf("%s: at least one of trusted, sideEffects, requiresApproval must be set (or omit safety to use fail-closed defaults via normalize)", prefix))
 	}
 	return errs
 }
 
-func validateToolMCP(name string, m *ToolMCP) []error {
+func validateToolMCP(p Pos, name string, m *ToolMCP) []error {
 	var errs []error
 	trans := strings.ToLower(strings.TrimSpace(m.Transport))
 	if trans == "" {
-		errs = append(errs, fmt.Errorf("Tool/%s: spec.mcp.transport is required (stdio or http)", name))
+		errs = append(errs, p.Errorf("Tool/%s: spec.mcp.transport is required (stdio or http)", name))
 		return errs
 	}
 	switch trans {
 	case "stdio":
 		if strings.TrimSpace(m.URL) != "" {
-			errs = append(errs, fmt.Errorf("Tool/%s: mcp stdio transport must not set url", name))
+			errs = append(errs, p.Errorf("Tool/%s: mcp stdio transport must not set url", name))
 		}
 		if strings.TrimSpace(m.Command) == "" {
-			errs = append(errs, fmt.Errorf("Tool/%s: mcp stdio requires command", name))
+			errs = append(errs, p.Errorf("Tool/%s: mcp stdio requires command", name))
 		}
 	case "http":
 		if strings.TrimSpace(m.Command) != "" || len(m.Args) > 0 {
-			errs = append(errs, fmt.Errorf("Tool/%s: mcp http transport must not set command or args", name))
+			errs = append(errs, p.Errorf("Tool/%s: mcp http transport must not set command or args", name))
 		}
 		if strings.TrimSpace(m.URL) == "" {
-			errs = append(errs, fmt.Errorf("Tool/%s: mcp http transport requires url", name))
+			errs = append(errs, p.Errorf("Tool/%s: mcp http transport requires url", name))
 		}
 	default:
-		errs = append(errs, fmt.Errorf("Tool/%s: unsupported mcp.transport %q (stdio or http)", name, m.Transport))
+		errs = append(errs, p.Errorf("Tool/%s: unsupported mcp.transport %q (stdio or http)", name, m.Transport))
 	}
 	return errs
 }
@@ -236,35 +236,35 @@ func validatePolicySpecs(g *ProjectGraph) []error {
 		}
 		if ex := pr.Spec.Execution; ex != nil {
 			if ex.MaxWallClockSeconds < 0 {
-				errs = append(errs, fmt.Errorf("Policy/%s: execution.maxWallClockSeconds must be non-negative", name))
+				errs = append(errs, pr.Pos.Errorf("Policy/%s: execution.maxWallClockSeconds must be non-negative", name))
 			}
 			if ex.MaxTotalCostUsd < 0 {
-				errs = append(errs, fmt.Errorf("Policy/%s: execution.maxTotalCostUsd must be non-negative", name))
+				errs = append(errs, pr.Pos.Errorf("Policy/%s: execution.maxTotalCostUsd must be non-negative", name))
 			}
 		}
 		if ap := pr.Spec.Approvals; ap != nil {
 			if ApprovalRequireAllTools(ap) && ApprovalPermissive(ap) {
-				errs = append(errs, fmt.Errorf("Policy/%s: approvals.requireAllTools and approvals.permissive are mutually exclusive", name))
+				errs = append(errs, pr.Pos.Errorf("Policy/%s: approvals.requireAllTools and approvals.permissive are mutually exclusive", name))
 			}
 			seen := make(map[string]struct{})
 			for i, act := range ap.RequiredFor {
 				a := strings.TrimSpace(act)
 				if a == "" {
-					errs = append(errs, fmt.Errorf("Policy/%s: approvals.requiredFor[%d] must be non-empty", name, i))
+					errs = append(errs, pr.Pos.Errorf("Policy/%s: approvals.requiredFor[%d] must be non-empty", name, i))
 					continue
 				}
 				if _, dup := seen[a]; dup {
-					errs = append(errs, fmt.Errorf("Policy/%s: duplicate approvals.requiredFor entry %q", name, a))
+					errs = append(errs, pr.Pos.Errorf("Policy/%s: duplicate approvals.requiredFor entry %q", name, a))
 				}
 				seen[a] = struct{}{}
 			}
 		}
-		errs = append(errs, validateHitlPolicy(name, pr.Spec.Hitl, g)...)
+		errs = append(errs, validateHitlPolicy(pr.Pos, name, pr.Spec.Hitl, g)...)
 	}
 	return errs
 }
 
-func validateHitlPolicy(policyName string, hitl *HitlPolicy, g *ProjectGraph) []error {
+func validateHitlPolicy(p Pos, policyName string, hitl *HitlPolicy, g *ProjectGraph) []error {
 	if hitl == nil {
 		return nil
 	}
@@ -273,30 +273,30 @@ func validateHitlPolicy(policyName string, hitl *HitlPolicy, g *ProjectGraph) []
 	for toolName, iv := range hitl.InterruptOn {
 		tn := strings.TrimSpace(toolName)
 		if tn == "" {
-			errs = append(errs, fmt.Errorf("%s.interruptOn contains empty tool name", prefix))
+			errs = append(errs, p.Errorf("%s.interruptOn contains empty tool name", prefix))
 			continue
 		}
 		if g != nil && g.Tools != nil {
 			if _, ok := g.Tools[tn]; !ok {
-				errs = append(errs, fmt.Errorf("%s.interruptOn[%q]: no Tool/%s in project (interruptOn keys must match Tool metadata.name)", prefix, toolName, tn))
+				errs = append(errs, p.Errorf("%s.interruptOn[%q]: no Tool/%s in project (interruptOn keys must match Tool metadata.name)", prefix, toolName, tn))
 			}
 		}
 		if !iv.Enabled {
-			errs = append(errs, fmt.Errorf("%s.interruptOn[%q] must be true or a config object", prefix, toolName))
+			errs = append(errs, p.Errorf("%s.interruptOn[%q] must be true or a config object", prefix, toolName))
 			continue
 		}
 		if iv.Config != nil {
-			errs = append(errs, validateHitlInterruptConfig(prefix+".interruptOn["+toolName+"]", iv.Config, g)...)
+			errs = append(errs, validateHitlInterruptConfig(p, prefix+".interruptOn["+toolName+"]", iv.Config, g)...)
 		}
 	}
 	if hitl.ToolSwitchMap != nil {
 		for from, targets := range hitl.ToolSwitchMap {
 			if strings.TrimSpace(from) == "" {
-				errs = append(errs, fmt.Errorf("%s.toolSwitchMap contains empty source key", prefix))
+				errs = append(errs, p.Errorf("%s.toolSwitchMap contains empty source key", prefix))
 			}
 			for i, tgt := range targets {
 				if strings.TrimSpace(tgt) == "" {
-					errs = append(errs, fmt.Errorf("%s.toolSwitchMap[%q][%d] must be non-empty", prefix, from, i))
+					errs = append(errs, p.Errorf("%s.toolSwitchMap[%q][%d] must be non-empty", prefix, from, i))
 				}
 			}
 		}
@@ -304,7 +304,7 @@ func validateHitlPolicy(policyName string, hitl *HitlPolicy, g *ProjectGraph) []
 	return errs
 }
 
-func validateHitlInterruptConfig(prefix string, cfg *HitlInterruptConfig, g *ProjectGraph) []error {
+func validateHitlInterruptConfig(p Pos, prefix string, cfg *HitlInterruptConfig, g *ProjectGraph) []error {
 	if cfg == nil {
 		return nil
 	}
@@ -312,40 +312,40 @@ func validateHitlInterruptConfig(prefix string, cfg *HitlInterruptConfig, g *Pro
 	seenDecisions := make(map[HitlDecisionKind]struct{})
 	for i, d := range cfg.AllowedDecisions {
 		if !IsValidHitlDecisionKind(d) {
-			errs = append(errs, fmt.Errorf("%s.allowedDecisions[%d]: unknown decision %q", prefix, i, d))
+			errs = append(errs, p.Errorf("%s.allowedDecisions[%d]: unknown decision %q", prefix, i, d))
 			continue
 		}
 		if _, dup := seenDecisions[d]; dup {
-			errs = append(errs, fmt.Errorf("%s.allowedDecisions: duplicate %q", prefix, d))
+			errs = append(errs, p.Errorf("%s.allowedDecisions: duplicate %q", prefix, d))
 		}
 		seenDecisions[d] = struct{}{}
 	}
 	for i, tn := range cfg.AllowedEditTools {
 		tn = strings.TrimSpace(tn)
 		if tn == "" {
-			errs = append(errs, fmt.Errorf("%s.allowedEditTools[%d] must be non-empty", prefix, i))
+			errs = append(errs, p.Errorf("%s.allowedEditTools[%d] must be non-empty", prefix, i))
 			continue
 		}
 		if g != nil && g.Tools != nil {
 			if _, ok := g.Tools[tn]; !ok {
-				errs = append(errs, fmt.Errorf("%s.allowedEditTools[%q]: no Tool/%s in project", prefix, tn, tn))
+				errs = append(errs, p.Errorf("%s.allowedEditTools[%q]: no Tool/%s in project", prefix, tn, tn))
 			}
 		}
 	}
 	if overlap := intersectStringSets(cfg.AllowedEditArgs, cfg.DeniedEditArgs); len(overlap) > 0 {
-		errs = append(errs, fmt.Errorf("%s: allowedEditArgs and deniedEditArgs overlap: %v", prefix, overlap))
+		errs = append(errs, p.Errorf("%s: allowedEditArgs and deniedEditArgs overlap: %v", prefix, overlap))
 	}
 	if overlap := intersectStringSets(cfg.AllowedEditPaths, cfg.DeniedEditPaths); len(overlap) > 0 {
-		errs = append(errs, fmt.Errorf("%s: allowedEditPaths and deniedEditPaths overlap: %v", prefix, overlap))
+		errs = append(errs, p.Errorf("%s: allowedEditPaths and deniedEditPaths overlap: %v", prefix, overlap))
 	}
 	if cfg.SwitchMap != nil {
 		for from, targets := range cfg.SwitchMap {
 			if strings.TrimSpace(from) == "" {
-				errs = append(errs, fmt.Errorf("%s.switchMap contains empty source key", prefix))
+				errs = append(errs, p.Errorf("%s.switchMap contains empty source key", prefix))
 			}
 			for i, tgt := range targets {
 				if strings.TrimSpace(tgt) == "" {
-					errs = append(errs, fmt.Errorf("%s.switchMap[%q][%d] must be non-empty", prefix, from, i))
+					errs = append(errs, p.Errorf("%s.switchMap[%q][%d] must be non-empty", prefix, from, i))
 				}
 			}
 		}
@@ -376,7 +376,7 @@ func validatePolicyPresets(g *ProjectGraph) []error {
 	if g.Spec.Defaults != nil {
 		if p := strings.TrimSpace(g.Spec.Defaults.Policy); p != "" {
 			if _, ok := g.Policies[p]; !ok && !IsBuiltinPreset(p) {
-				errs = append(errs, fmt.Errorf("Project: defaults.policy %q is not a Policy resource or built-in preset (%s)",
+				errs = append(errs, g.Pos.Errorf("Project: defaults.policy %q is not a Policy resource or built-in preset (%s)",
 					p, strings.Join(BuiltinPresetNames(), ", ")))
 			}
 		}
@@ -386,7 +386,7 @@ func validatePolicyPresets(g *ProjectGraph) []error {
 			continue
 		}
 		if preset := strings.TrimSpace(pr.Spec.Preset); preset != "" && !IsBuiltinPreset(preset) {
-			errs = append(errs, fmt.Errorf("Policy/%s: unknown preset %q (valid: %s)",
+			errs = append(errs, pr.Pos.Errorf("Policy/%s: unknown preset %q (valid: %s)",
 				name, preset, strings.Join(BuiltinPresetNames(), ", ")))
 		}
 	}
@@ -401,10 +401,10 @@ func validateAgentSpecs(g *ProjectGraph) []error {
 		}
 		if c := ar.Spec.Constraints; c != nil {
 			if c.MaxIterations < 0 {
-				errs = append(errs, fmt.Errorf("Agent/%s: constraints.maxIterations must be non-negative", name))
+				errs = append(errs, ar.Pos.Errorf("Agent/%s: constraints.maxIterations must be non-negative", name))
 			}
 			if c.TimeoutSeconds < 0 {
-				errs = append(errs, fmt.Errorf("Agent/%s: constraints.timeoutSeconds must be non-negative", name))
+				errs = append(errs, ar.Pos.Errorf("Agent/%s: constraints.timeoutSeconds must be non-negative", name))
 			}
 		}
 		if _, err := ResolveAgentAdvertisedTools(ar, g.Tools); err != nil {
@@ -423,12 +423,12 @@ func validateEnvironmentOverrides(g *ProjectGraph) []error {
 		ov := er.Spec.Overrides
 		for an := range ov.Agents {
 			if _, ok := g.Agents[an]; !ok {
-				errs = append(errs, fmt.Errorf("Environment/%s: overrides.agents references unknown Agent/%s", envName, an))
+				errs = append(errs, er.Pos.Errorf("Environment/%s: overrides.agents references unknown Agent/%s", envName, an))
 			}
 		}
 		for pn := range ov.Policies {
 			if _, ok := g.Policies[pn]; !ok {
-				errs = append(errs, fmt.Errorf("Environment/%s: overrides.policies references unknown Policy/%s", envName, pn))
+				errs = append(errs, er.Pos.Errorf("Environment/%s: overrides.policies references unknown Policy/%s", envName, pn))
 			}
 		}
 	}
@@ -444,14 +444,14 @@ func validateSchemaFiles(g *ProjectGraph, projectRoot string) []error {
 		if ar.Spec.Input != nil {
 			if p := strings.TrimSpace(ar.Spec.Input.Schema); p != "" {
 				if err := schemaFileReadable(projectRoot, p); err != nil {
-					errs = append(errs, fmt.Errorf("Agent/%s input.schema: %w", name, err))
+					errs = append(errs, ar.Pos.Errorf("Agent/%s input.schema: %w", name, err))
 				}
 			}
 		}
 		if ar.Spec.Output != nil {
 			if p := strings.TrimSpace(ar.Spec.Output.Schema); p != "" {
 				if err := schemaFileReadable(projectRoot, p); err != nil {
-					errs = append(errs, fmt.Errorf("Agent/%s output.schema: %w", name, err))
+					errs = append(errs, ar.Pos.Errorf("Agent/%s output.schema: %w", name, err))
 				}
 			}
 		}
@@ -463,7 +463,7 @@ func validateSchemaFiles(g *ProjectGraph, projectRoot string) []error {
 		if wr.Spec.Input != nil {
 			if p := strings.TrimSpace(wr.Spec.Input.Schema); p != "" {
 				if err := schemaFileReadable(projectRoot, p); err != nil {
-					errs = append(errs, fmt.Errorf("Workflow/%s input.schema: %w", name, err))
+					errs = append(errs, wr.Pos.Errorf("Workflow/%s input.schema: %w", name, err))
 				}
 			}
 		}
@@ -480,4 +480,30 @@ func schemaFileReadable(projectRoot, ref string) error {
 		return fmt.Errorf("schema file %q: %w", abs, err)
 	}
 	return nil
+}
+
+func resourcePos(v any) Pos {
+	switch t := v.(type) {
+	case *AgentResource:
+		if t != nil {
+			return t.Pos
+		}
+	case *ToolResource:
+		if t != nil {
+			return t.Pos
+		}
+	case *WorkflowResource:
+		if t != nil {
+			return t.Pos
+		}
+	case *PolicyResource:
+		if t != nil {
+			return t.Pos
+		}
+	case *EnvironmentResource:
+		if t != nil {
+			return t.Pos
+		}
+	}
+	return Pos{}
 }

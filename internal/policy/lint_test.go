@@ -304,6 +304,37 @@ func TestHasHighSeverityLint(t *testing.T) {
 	}
 }
 
+func TestLint_attachesPolicyPos(t *testing.T) {
+	g := testGraphWithTools("delete_records")
+	g.Policies = map[string]*spec.PolicyResource{
+		"default": {
+			Metadata: spec.Metadata{Name: "default"},
+			Spec:     spec.PolicySpec{},
+			Pos:      spec.Pos{File: "policy.yaml", Line: 1, Column: 1},
+		},
+	}
+	spec.NormalizeProjectGraph(g)
+
+	findings := Lint(g)
+	var f LintFinding
+	for _, got := range findings {
+		if got.Rule == LintRuleUngatedSensitiveTool {
+			f = got
+			break
+		}
+	}
+	if f.Rule == "" {
+		t.Fatalf("expected ungated_sensitive_tool, got %#v", findings)
+	}
+	if f.Pos.File != "policy.yaml" || f.Pos.Line != 1 || f.Pos.Column != 1 {
+		t.Fatalf("Pos = %#v", f.Pos)
+	}
+	msg := FormatLintMessage(f)
+	if !strings.Contains(msg, "policy.yaml:1:1:") {
+		t.Fatalf("FormatLintMessage = %q", msg)
+	}
+}
+
 func containsLintRule(findings []LintFinding, rule LintRule) bool {
 	for _, f := range findings {
 		if f.Rule == rule {

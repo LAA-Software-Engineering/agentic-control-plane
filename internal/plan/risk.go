@@ -126,7 +126,10 @@ func mergePolicyLintRisk(g *spec.ProjectGraph, risk RiskSummary) RiskSummary {
 	for _, f := range findings {
 		reason := strings.TrimSpace(f.Message)
 		if reason == "" {
-			reason = policy.FormatLintMessage(f)
+			reason = string(f.Rule)
+		}
+		if loc := f.Pos.String(); loc != "" {
+			reason = loc + ": " + reason
 		}
 		name := strings.TrimSpace(f.Policy)
 		kind := RiskTargetPolicy

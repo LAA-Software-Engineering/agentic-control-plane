@@ -44,7 +44,7 @@ func TestLoadResourceFile_validKinds(t *testing.T) {
 			if got.Path != p {
 				t.Fatalf("Path = %q, want %q", got.Path, p)
 			}
-			if !reflect.DeepEqual(got.Resource, tc.doc) {
+			if !reflect.DeepEqual(stripResourcePos(got.Resource), tc.doc) {
 				t.Fatalf("resource mismatch\n got %#v\nwant %#v", got.Resource, tc.doc)
 			}
 		})
@@ -97,7 +97,9 @@ func TestLoadResourceFile_invalidYAML_wrapsPath(t *testing.T) {
 	if !strings.Contains(le.Error(), p) {
 		t.Fatalf("error string should contain path: %q", le.Error())
 	}
-	_ = le.Line // best-effort from yaml error text; message always includes path
+	if le.Line != 0 || le.Column != 0 {
+		t.Fatalf("syntax errors with no yaml.Node are Path-only, got line=%d col=%d", le.Line, le.Column)
+	}
 }
 
 func TestParseResourceFromBytes_multipleDocuments(t *testing.T) {
@@ -135,4 +137,28 @@ spec: {}
 	if !errors.Is(err, ErrUnknownKind) {
 		t.Fatalf("want ErrUnknownKind in chain, got %v", err)
 	}
+}
+
+func stripResourcePos(res any) any {
+	switch r := res.(type) {
+	case *ProjectResource:
+		r.Pos = Pos{}
+	case *AgentResource:
+		r.Pos = Pos{}
+		r.Spec.ToolsPos = nil
+	case *ToolResource:
+		r.Pos = Pos{}
+	case *WorkflowResource:
+		r.Pos = Pos{}
+		for i := range r.Spec.Steps {
+			r.Spec.Steps[i].Pos = Pos{}
+			r.Spec.Steps[i].UsesPos = Pos{}
+			r.Spec.Steps[i].AgentPos = Pos{}
+		}
+	case *PolicyResource:
+		r.Pos = Pos{}
+	case *EnvironmentResource:
+		r.Pos = Pos{}
+	}
+	return res
 }

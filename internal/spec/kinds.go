@@ -71,16 +71,18 @@ type ProjectTelemetryConfig struct {
 // --- Agent (design doc §7.2, MVP fields) ---
 
 type AgentSpec struct {
-	Description  string            `yaml:"description,omitempty" json:"description,omitempty"`
-	Model        string            `yaml:"model,omitempty" json:"model,omitempty"`
-	Runtime      string            `yaml:"runtime,omitempty" json:"runtime,omitempty"`
-	Instructions string            `yaml:"instructions,omitempty" json:"instructions,omitempty"`
-	Tools        []string          `yaml:"tools,omitempty" json:"tools,omitempty"`
-	Policy       string            `yaml:"policy,omitempty" json:"policy,omitempty"`
-	Memory       *AgentMemory      `yaml:"memory,omitempty" json:"memory,omitempty"`
-	Constraints  *AgentConstraints `yaml:"constraints,omitempty" json:"constraints,omitempty"`
-	Input        *AgentIO          `yaml:"input,omitempty" json:"input,omitempty"`
-	Output       *AgentIO          `yaml:"output,omitempty" json:"output,omitempty"`
+	Description  string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Model        string   `yaml:"model,omitempty" json:"model,omitempty"`
+	Runtime      string   `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Instructions string   `yaml:"instructions,omitempty" json:"instructions,omitempty"`
+	Tools        []string `yaml:"tools,omitempty" json:"tools,omitempty"`
+	// ToolsPos is diagnostic metadata aligned with Tools (issue #187). Not YAML/JSON identity.
+	ToolsPos    []Pos             `yaml:"-" json:"-"`
+	Policy      string            `yaml:"policy,omitempty" json:"policy,omitempty"`
+	Memory      *AgentMemory      `yaml:"memory,omitempty" json:"memory,omitempty"`
+	Constraints *AgentConstraints `yaml:"constraints,omitempty" json:"constraints,omitempty"`
+	Input       *AgentIO          `yaml:"input,omitempty" json:"input,omitempty"`
+	Output      *AgentIO          `yaml:"output,omitempty" json:"output,omitempty"`
 }
 
 type AgentMemory struct {
@@ -178,6 +180,10 @@ type WorkflowStep struct {
 	Uses  string         `yaml:"uses,omitempty" json:"uses,omitempty"`
 	Agent string         `yaml:"agent,omitempty" json:"agent,omitempty"`
 	With  map[string]any `yaml:"with,omitempty" json:"with,omitempty"`
+	// Pos, UsesPos, and AgentPos are diagnostic metadata only (issue #187).
+	Pos      Pos `yaml:"-" json:"-"`
+	UsesPos  Pos `yaml:"-" json:"-"`
+	AgentPos Pos `yaml:"-" json:"-"`
 }
 
 type WorkflowOutput struct {

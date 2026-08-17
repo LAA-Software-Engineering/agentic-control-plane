@@ -36,6 +36,7 @@ type LintFinding struct {
 	Message  string       `json:"message"`
 	Policy   string       `json:"policy,omitempty"`
 	Tool     string       `json:"tool,omitempty"`
+	Pos      spec.Pos     `json:"pos,omitempty"`
 }
 
 // Lint runs static policy checks on a normalized, validated project graph.
@@ -54,8 +55,31 @@ func Lint(graph *spec.ProjectGraph) []LintFinding {
 	out = append(out, lintPresetWeakened(graph)...)
 	out = append(out, lintHitlSwitchTargets(graph)...)
 	out = append(out, lintHitlEditArgs(graph)...)
+	attachLintPositions(graph, out)
 	sortLintFindings(out)
 	return out
+}
+
+func attachLintPositions(graph *spec.ProjectGraph, findings []LintFinding) {
+	if graph == nil {
+		return
+	}
+	for i := range findings {
+		if !findings[i].Pos.IsZero() {
+			continue
+		}
+		if name := strings.TrimSpace(findings[i].Policy); name != "" {
+			if pr, ok := graph.Policies[name]; ok && pr != nil {
+				findings[i].Pos = pr.Pos
+				continue
+			}
+		}
+		if name := strings.TrimSpace(findings[i].Tool); name != "" {
+			if tr, ok := graph.Tools[name]; ok && tr != nil {
+				findings[i].Pos = tr.Pos
+			}
+		}
+	}
 }
 
 // HasHighSeverityLint reports whether findings contain high-severity items.
@@ -72,9 +96,13 @@ func HasHighSeverityLint(findings []LintFinding) bool {
 func FormatLintMessage(f LintFinding) string {
 	msg := strings.TrimSpace(f.Message)
 	if msg == "" {
-		return fmt.Sprintf("[%s] %s", f.Severity, f.Rule)
+		msg = string(f.Rule)
 	}
-	return fmt.Sprintf("[%s] %s", f.Severity, msg)
+	prefix := fmt.Sprintf("[%s] ", f.Severity)
+	if loc := f.Pos.String(); loc != "" {
+		return prefix + loc + ": " + msg
+	}
+	return prefix + msg
 }
 
 func sortLintFindings(in []LintFinding) {
