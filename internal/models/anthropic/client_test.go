@@ -57,17 +57,24 @@ func TestClient_Generate_messagesAPI(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{APIKey: "sk-ant-test", BaseURL: srv.URL, HTTPClient: srv.Client()}
-	text, inT, outT, _, err := c.Generate(context.Background(), "claude-sonnet-4-20250514", "Be brief.", []ChatMessage{
-		{Role: "user", Content: `{"q":1}`},
+	resp, err := c.Generate(context.Background(), Request{
+		Model:  "claude-sonnet-4-20250514",
+		System: "Be brief.",
+		Messages: []ChatMessage{
+			{Role: "user", Content: `{"q":1}`},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text != `{"ok":true}` {
-		t.Fatalf("text %q", text)
+	if resp.Text != `{"ok":true}` {
+		t.Fatalf("text %q", resp.Text)
 	}
-	if inT != 10 || outT != 20 {
-		t.Fatalf("usage in=%d out=%d", inT, outT)
+	if resp.InputTokens != 10 || resp.OutputTokens != 20 {
+		t.Fatalf("usage in=%d out=%d", resp.InputTokens, resp.OutputTokens)
+	}
+	if resp.StopReason != stopEndTurn {
+		t.Fatalf("stop %q", resp.StopReason)
 	}
 }
 
@@ -79,12 +86,15 @@ func TestClient_Generate_concatTextBlocks(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{APIKey: "k", BaseURL: srv.URL, HTTPClient: srv.Client()}
-	text, _, _, _, err := c.Generate(context.Background(), "m", "", []ChatMessage{{Role: "user", Content: "x"}})
+	resp, err := c.Generate(context.Background(), Request{
+		Model:    "m",
+		Messages: []ChatMessage{{Role: "user", Content: "x"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text != "ab" {
-		t.Fatalf("got %q", text)
+	if resp.Text != "ab" {
+		t.Fatalf("got %q", resp.Text)
 	}
 }
 
@@ -96,8 +106,45 @@ func TestClient_Generate_HTTPError(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{APIKey: "bad", BaseURL: srv.URL, HTTPClient: srv.Client()}
-	_, _, _, _, err := c.Generate(context.Background(), "m", "", []ChatMessage{{Role: "user", Content: "x"}})
+	_, err := c.Generate(context.Background(), Request{
+		Model:    "m",
+		Messages: []ChatMessage{{Role: "user", Content: "x"}},
+	})
 	if err == nil || !strings.Contains(err.Error(), "HTTP 401") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestClient_Generate_omitsToolsWhenEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := got["tools"]; ok {
+			t.Fatalf("tools present: %v", got["tools"])
+		}
+		if _, ok := got["tool_choice"]; ok {
+			t.Fatalf("tool_choice present: %v", got["tool_choice"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{APIKey: "k", BaseURL: srv.URL, HTTPClient: srv.Client()}
+	resp, err := c.Generate(context.Background(), Request{
+		Model:    "m",
+		Messages: []ChatMessage{{Role: "user", Content: "x"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Text != "ok" {
+		t.Fatalf("text %q", resp.Text)
 	}
 }

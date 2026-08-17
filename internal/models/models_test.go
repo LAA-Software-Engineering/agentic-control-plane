@@ -179,6 +179,9 @@ func TestAnthropicClient_Generate_mapsSystemAndUser(t *testing.T) {
 	if resp.Content != `{"k":1}` {
 		t.Fatalf("content %q", resp.Content)
 	}
+	if resp.StopReason != StopReasonEndTurn {
+		t.Fatalf("StopReason %q", resp.StopReason)
+	}
 }
 
 func TestOpenAIClient_Generate_usesChatCompletions(t *testing.T) {

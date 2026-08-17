@@ -1,0 +1,30 @@
+{
+  "id": "msg_tool_2",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-20250514",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_1",
+      "name": "get_weather",
+      "input": {
+        "city": "Paris"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_2",
+      "name": "get_time",
+      "input": {
+        "tz": "Europe/Paris"
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 90,
+    "output_tokens": 24
+  }
+}
