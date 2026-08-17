@@ -9,10 +9,10 @@ Plan: 5 to add, 0 to change, 0 to delete
 + create Tool/shell
 
 Risk delta:
-- New policy defines approval requirements (Policy/default).
-- Tool/helper will require approval at run (decision=requireApproval, source=explicit_policy_rule).
-- Tool/shell will require approval at run (decision=requireApproval, source=explicit_policy_rule).
-- [high] Policy/default: sensitive Tool/shell has no explicit approval rule (requiredFor or requireAllTools)
+- [high] lint: Policy/default: sensitive Tool/shell has no explicit approval rule (requiredFor or requireAllTools)
+- [medium] safety: Tool/helper will require approval at run (decision=requireApproval, source=explicit_policy_rule).
+- [medium] safety: Tool/shell will require approval at run (decision=requireApproval, source=explicit_policy_rule).
+- [low] safety: New policy defines approval requirements (Policy/default).
 Effective policy (default):
 - Tool/helper decision=requireApproval source=explicit_policy_rule
 - Tool/reader decision=allow source=safety_metadata

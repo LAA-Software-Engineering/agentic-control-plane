@@ -123,6 +123,7 @@ func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map
 			"summary":     map[string]any{"add": 0, "change": 0, "delete": 0},
 			"operations":  []map[string]any{},
 			"risk":        []string{},
+			"riskItems":   []plan.RiskItem{},
 		}
 	}
 	nC, nU, nD := planCounts(p)
@@ -151,6 +152,7 @@ func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map
 		},
 		"operations": ops,
 		"risk":       riskStrings(p),
+		"riskItems":  riskItems(p),
 	}
 	if p != nil && len(p.Risk.Lint) > 0 {
 		entries := make([]map[string]any, len(p.Risk.Lint))
@@ -222,6 +224,13 @@ func riskStrings(p *plan.Plan) []string {
 		return []string{}
 	}
 	return p.Risk.Messages
+}
+
+func riskItems(p *plan.Plan) []plan.RiskItem {
+	if p == nil || len(p.Risk.Items) == 0 {
+		return []plan.RiskItem{}
+	}
+	return p.Risk.Items
 }
 
 func writePlanJSON(w io.Writer, env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) error {

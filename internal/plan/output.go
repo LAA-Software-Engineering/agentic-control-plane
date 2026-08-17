@@ -36,11 +36,21 @@ func FormatPlan(p *Plan) string {
 			fmt.Fprintf(&b, "- delete %s\n", op.Target.String())
 		}
 	}
-	if len(p.Risk.Messages) > 0 {
+	if len(p.Risk.Items) > 0 {
+		b.WriteString("\nRisk delta:\n")
+		for _, it := range p.Risk.Items {
+			fmt.Fprintf(&b, "- %s\n", FormatRiskItem(it))
+		}
+	} else if len(p.Risk.Messages) > 0 {
 		b.WriteString("\nRisk delta:\n")
 		for _, m := range p.Risk.Messages {
 			fmt.Fprintf(&b, "- %s\n", m)
 		}
 	}
 	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// FormatRiskItem renders one labeled risk line: [severity] category: reason.
+func FormatRiskItem(it RiskItem) string {
+	return fmt.Sprintf("[%s] %s: %s", it.Severity, it.Category, it.Reason)
 }

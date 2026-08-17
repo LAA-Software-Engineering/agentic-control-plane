@@ -1,0 +1,25 @@
+Environment: local
+State: <STATE>
+
+Plan: 0 to add, 3 to change, 0 to delete
+~ update Agent/reviewer
+    spec.model: "mock/gpt-4" -> "mock/gpt-4o"
+    spec.tools.1:  -> "github"
+~ update Policy/default
+    spec.approvals.requiredFor.0: "tool.helper.echo" -> "tool.github.issues.write"
+    spec.approvals.requiredFor.1: "tool.github.issues.write" -> 
+    spec.execution.maxTotalCostUsd: 3 -> 10
+    spec.execution.maxWallClockSeconds: 60 -> 120
+~ update Tool/github
+    spec.permissions.allow.1:  -> "issues.write"
+
+Risk delta:
+- [high] approval_removal: Approval requirements removed for "tool.helper.echo" (Policy/default).
+- [high] budget_relaxation: Cost ceiling increased (Policy/default).
+- [high] budget_relaxation: Wall-clock ceiling increased (Policy/default).
+- [high] permission_widening: New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
+- [high] tool_surface_change: Agent tools list gained write-like tool "github" (Agent/reviewer).
+- [medium] model_change: Agent model changed (Agent/reviewer).
+Effective policy (default):
+- Tool/github decision=requireApproval source=explicit_policy_rule
+- Tool/helper decision=allow source=safety_metadata

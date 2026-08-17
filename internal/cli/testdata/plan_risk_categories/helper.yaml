@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: helper
+spec:
+  type: native
+  safety:
+    trusted: true
+    sideEffects: false

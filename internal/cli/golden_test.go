@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -152,4 +153,54 @@ func TestGolden_plan_noop_after_apply_table(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGoldenOutput(t, "plan_noop.table.golden.txt", out.String())
+}
+
+func TestGolden_plan_risk_categories_table(t *testing.T) {
+	root := t.TempDir()
+	copyRiskCategoriesFixture(t, root)
+	db := filepath.Join(t.TempDir(), "golden-plan-risk.db")
+	applyProjectGraph(t, root, db)
+	mutateRiskCategories(t, root)
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	assertGoldenOutput(t, "plan_risk_categories.table.golden.txt", out.String())
+}
+
+func TestGolden_plan_risk_categories_json_risk(t *testing.T) {
+	root := t.TempDir()
+	copyRiskCategoriesFixture(t, root)
+	db := filepath.Join(t.TempDir(), "golden-plan-risk-json.db")
+	applyProjectGraph(t, root, db)
+	mutateRiskCategories(t, root)
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\nbody=%s", err, out.String())
+	}
+	subset := map[string]any{
+		"risk":      payload["risk"],
+		"riskItems": payload["riskItems"],
+	}
+	b, err := json.MarshalIndent(subset, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGoldenOutput(t, "plan_risk_categories.json.golden.txt", string(b)+"\n")
 }
