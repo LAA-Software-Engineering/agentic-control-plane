@@ -6,5 +6,6 @@
 // Structured [RiskItem] values carry category, severity, target, and an optional [WitnessHop]
 // path (static or autonomous edges) so later effect-delta work (issue #191) can attach
 // Workflow→step→Agent→tool.operation witnesses without a parallel rendering path.
-// [RiskSummary.Messages] is the reason text of Items for existing string consumers.
+// Table output groups items by severity; JSON/YAML share [ExportRisk] / [AttachRiskExport]
+// ([RiskSummary.Messages] remains the reason text of Items for existing string consumers).
 package plan

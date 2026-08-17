@@ -14,6 +14,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/apply"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"gopkg.in/yaml.v3"
 )
 
 // GO_UPDATE_GOLDEN=1 rewrites golden files under testdata/golden (design doc §17.3, issue #31).
@@ -203,4 +204,37 @@ func TestGolden_plan_risk_categories_json_risk(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGoldenOutput(t, "plan_risk_categories.json.golden.txt", string(b)+"\n")
+}
+
+func TestGolden_plan_risk_categories_yaml_risk(t *testing.T) {
+	root := t.TempDir()
+	copyRiskCategoriesFixture(t, root)
+	db := filepath.Join(t.TempDir(), "golden-plan-risk-yaml.db")
+	applyProjectGraph(t, root, db)
+	mutateRiskCategories(t, root)
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "yaml"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload plan.RiskExport
+	if err := yaml.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("yaml: %v\nbody=%s", err, out.String())
+	}
+	if len(payload.RiskItems) == 0 {
+		t.Fatalf("yaml missing riskItems:\n%s", out.String())
+	}
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(payload); err != nil {
+		t.Fatal(err)
+	}
+	_ = enc.Close()
+	assertGoldenOutput(t, "plan_risk_categories.yaml.golden.txt", buf.String())
 }

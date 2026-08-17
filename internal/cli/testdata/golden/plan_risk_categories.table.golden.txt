@@ -14,11 +14,13 @@ Plan: 0 to add, 3 to change, 0 to delete
     spec.permissions.allow.1:  -> "issues.write"
 
 Risk delta:
+high:
 - [high] approval_removal: Approval requirements removed for "tool.helper.echo" (Policy/default).
 - [high] budget_relaxation: Cost ceiling increased (Policy/default).
 - [high] budget_relaxation: Wall-clock ceiling increased (Policy/default).
 - [high] permission_widening: New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
 - [high] tool_surface_change: Agent tools list gained write-like tool "github" (Agent/reviewer).
+medium:
 - [medium] model_change: Agent model changed (Agent/reviewer).
 Effective policy (default):
 - Tool/github decision=requireApproval source=explicit_policy_rule

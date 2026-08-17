@@ -1,0 +1,68 @@
+risk:
+  - Approval requirements removed for "tool.helper.echo" (Policy/default).
+  - Cost ceiling increased (Policy/default).
+  - Wall-clock ceiling increased (Policy/default).
+  - New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
+  - Agent tools list gained write-like tool "github" (Agent/reviewer).
+  - Agent model changed (Agent/reviewer).
+riskItems:
+  - category: approval_removal
+    severity: high
+    reason: Approval requirements removed for "tool.helper.echo" (Policy/default).
+    target:
+      kind: policy
+      name: default
+    witness:
+      - kind: policy
+        name: default
+        reachability: static
+  - category: budget_relaxation
+    severity: high
+    reason: Cost ceiling increased (Policy/default).
+    target:
+      kind: policy
+      name: default
+    witness:
+      - kind: policy
+        name: default
+        reachability: static
+  - category: budget_relaxation
+    severity: high
+    reason: Wall-clock ceiling increased (Policy/default).
+    target:
+      kind: policy
+      name: default
+    witness:
+      - kind: policy
+        name: default
+        reachability: static
+  - category: permission_widening
+    severity: high
+    reason: New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
+    target:
+      kind: tool
+      name: github
+    witness:
+      - kind: tool
+        name: github
+        reachability: static
+  - category: tool_surface_change
+    severity: high
+    reason: Agent tools list gained write-like tool "github" (Agent/reviewer).
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+  - category: model_change
+    severity: medium
+    reason: Agent model changed (Agent/reviewer).
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
