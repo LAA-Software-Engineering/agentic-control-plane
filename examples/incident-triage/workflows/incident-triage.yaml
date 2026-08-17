@@ -1,0 +1,21 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: incident-triage
+spec:
+  description: |
+    Offline flagship: an agent reads a fixture alert, may query mock logs / open a mock
+    issue, then attempts a service restart. Restart is gated by policy unless you pass
+    --approve for the exact uses string tool.restart.restart. Inner agent tools do not
+    HITL; an unapproved restart fails closed (exit 5).
+  policy: gated-remediation
+  input:
+    schema: ./schemas/alert-input.json
+  steps:
+    - id: triage
+      agent: responder
+      with:
+        alert: ${input.alert}
+  output:
+    value:
+      status: ${steps.triage.output}

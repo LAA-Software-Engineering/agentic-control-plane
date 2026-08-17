@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["alert"],
+  "properties": {
+    "alert": {
+      "type": "object",
+      "required": ["id", "service", "severity", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "service": { "type": "string" },
+        "severity": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

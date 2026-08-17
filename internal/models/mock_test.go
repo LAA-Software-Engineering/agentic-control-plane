@@ -153,6 +153,86 @@ func TestMockClient_legacyContentSetsEndTurn(t *testing.T) {
 	}
 }
 
+func TestMockClient_emptyScriptRestartTool_firstTurnToolUse(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cli := &MockClient{Content: `{"summary":"registry-pr-review-json"}`}
+	tools := []ToolDef{
+		{Name: "pager"},
+		{Name: "restart"},
+	}
+
+	first, err := cli.Generate(ctx, GenerateRequest{Model: "mock/gpt-4", Tools: tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.StopReason != StopReasonToolUse {
+		t.Fatalf("turn 1 StopReason %q", first.StopReason)
+	}
+	if len(first.ToolCalls) != 1 || first.ToolCalls[0].Name != "restart" || first.ToolCalls[0].ID != "call_restart" {
+		t.Fatalf("turn 1 ToolCalls %+v", first.ToolCalls)
+	}
+	if string(first.ToolCalls[0].Arguments) != `{}` {
+		t.Fatalf("turn 1 arguments %s", first.ToolCalls[0].Arguments)
+	}
+
+	second, err := cli.Generate(ctx, GenerateRequest{Model: "mock/gpt-4", Tools: tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.StopReason != StopReasonEndTurn {
+		t.Fatalf("turn 2 StopReason %q", second.StopReason)
+	}
+	if second.Content != mockRestartFollowUpJSON {
+		t.Fatalf("turn 2 Content %q", second.Content)
+	}
+	if len(second.ToolCalls) != 0 {
+		t.Fatalf("turn 2 ToolCalls %+v", second.ToolCalls)
+	}
+
+	cli.Reset()
+	again, err := cli.Generate(ctx, GenerateRequest{Model: "mock/gpt-4", Tools: tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.StopReason != StopReasonToolUse || len(again.ToolCalls) != 1 {
+		t.Fatalf("after Reset want tool_use, got %+v", again)
+	}
+}
+
+func TestMockClient_emptyScript_nameContainsRestart(t *testing.T) {
+	t.Parallel()
+	cli := &MockClient{Content: "unused"}
+	resp, err := cli.Generate(context.Background(), GenerateRequest{
+		Model: "mock/gpt-4",
+		Tools: []ToolDef{{Name: "service_restart"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StopReason != StopReasonToolUse || len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Name != "service_restart" {
+		t.Fatalf("resp %+v", resp)
+	}
+}
+
+func TestMockClient_scriptOverridesRestartHook(t *testing.T) {
+	t.Parallel()
+	cli := &MockClient{
+		Content: "unused",
+		Script:  []MockTurn{{Content: `{"summary":"scripted"}`}},
+	}
+	resp, err := cli.Generate(context.Background(), GenerateRequest{
+		Model: "mock/gpt-4",
+		Tools: []ToolDef{{Name: "restart"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StopReason != StopReasonEndTurn || resp.Content != `{"summary":"scripted"}` {
+		t.Fatalf("script should win: %+v", resp)
+	}
+}
+
 func TestMockClient_cloneDoesNotAliasRawMessage(t *testing.T) {
 	t.Parallel()
 	params := json.RawMessage(`{"type":"object"}`)

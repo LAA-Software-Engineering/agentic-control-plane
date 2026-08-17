@@ -258,6 +258,107 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("run output:\n%s", out)
 		}
 	})
+
+	// examples/incident-triage: agent-loop restart is fail-closed (exit 5) without --approve.
+	t.Run("incident_triage_denied_then_approved", func(t *testing.T) {
+		root := repoRoot(t)
+		demo := filepath.Join(root, "examples", "incident-triage")
+		input := filepath.Join(demo, "fixtures", "sample-alert.json")
+		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+			t.Fatalf("demo project: %v", err)
+		}
+		db := filepath.Join(t.TempDir(), "incident-triage.db")
+
+		out, err := runCLI(t, "validate", "--project", demo, "--no-color")
+		if err != nil {
+			t.Fatalf("validate: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Validation successful") {
+			t.Fatalf("validate:\n%s", out)
+		}
+
+		out, err = runCLI(t, "plan", "--project", demo, "--state", db)
+		if err != nil {
+			t.Fatalf("plan: %v\n%s", err, out)
+		}
+		out, err = runCLI(t, "apply", "--project", demo, "--state", db, "--auto-approve")
+		if err != nil {
+			t.Fatalf("apply: %v\n%s", err, out)
+		}
+
+		out, err = runCLI(t,
+			"run", "workflow/incident-triage",
+			"--project", demo,
+			"--state", db,
+			"--input-file", input,
+		)
+		if cli.ExitCodeOf(err) != cli.ExitPolicyDenied {
+			t.Fatalf("denied run exit=%d err=%v\n%s", cli.ExitCodeOf(err), err, out)
+		}
+		if !strings.Contains(out, "approval_required") && !strings.Contains(out, "Policy blocked") {
+			t.Fatalf("expected policy denial copy:\n%s", out)
+		}
+		if !strings.Contains(out, "tool.restart.restart") {
+			t.Fatalf("expected gated uses string:\n%s", out)
+		}
+		runID := extractRunID(out)
+		if runID == "" {
+			t.Fatalf("no run id in:\n%s", out)
+		}
+
+		out, err = runCLI(t, "logs", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("logs: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, string(trace.EventSystemError)) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventSystemError, out)
+		}
+		if !strings.Contains(out, "approval_required") {
+			t.Fatalf("logs missing approval_required:\n%s", out)
+		}
+
+		out, err = runCLI(t, "audit", "verify", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("audit verify denied run: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "OK") {
+			t.Fatalf("audit verify:\n%s", out)
+		}
+
+		out, err = runCLI(t,
+			"run", "workflow/incident-triage",
+			"--project", demo,
+			"--state", db,
+			"--input-file", input,
+			"--approve", "tool.restart.restart",
+		)
+		if err != nil {
+			t.Fatalf("approved run: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Status: succeeded") {
+			t.Fatalf("approved run output:\n%s", out)
+		}
+		approvedID := extractRunID(out)
+		if approvedID == "" || approvedID == runID {
+			t.Fatalf("expected new run id, got %q (denied %q)\n%s", approvedID, runID, out)
+		}
+
+		out, err = runCLI(t, "logs", "--project", demo, "--state", db, "--run", approvedID)
+		if err != nil {
+			t.Fatalf("approved logs: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, string(trace.EventToolSelection)) {
+			t.Fatalf("approved logs missing %q:\n%s", trace.EventToolSelection, out)
+		}
+
+		out, err = runCLI(t, "audit", "verify", "--project", demo, "--state", db, "--run", approvedID)
+		if err != nil {
+			t.Fatalf("audit verify approved run: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "OK") {
+			t.Fatalf("audit verify approved:\n%s", out)
+		}
+	})
 }
 
 // TestCLI_ValidatePrReviewGithubActionsProject ensures the OpenAI (gpt-4o-mini) + Actions example graph loads.
