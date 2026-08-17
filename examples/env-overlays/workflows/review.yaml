@@ -1,0 +1,19 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: review
+spec:
+  description: |
+    Offline demo: one agent reviews a ticket. Environment overlays change the model,
+    execution ceilings, and prod approval gates. Run only with -e dev (mock).
+  policy: default
+  input:
+    schema: ./schemas/ticket-input.json
+  steps:
+    - id: review
+      agent: reviewer
+      with:
+        ticket: ${input.ticket}
+  output:
+    value:
+      review: ${steps.review.output}

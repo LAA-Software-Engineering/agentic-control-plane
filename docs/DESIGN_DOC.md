@@ -838,11 +838,17 @@ spec:
       default:
         execution:
           maxTotalCostUsd: 10.00
+        approvals:
+          requiredFor:
+            - tool.notify.default
 ```
 
 ### MVP
 
-* agent and policy overrides only
+* agent overrides (`model`, `constraints`)
+* policy execution overrides (`maxTotalCostUsd`, `maxWallClockSeconds`, `requireStructuredOutput`)
+* policy `approvals.requiredFor` overlay (union onto the named Policy; issue #171)
+* no Tool.allow / HTTP endpoint overlays
 
 ### End goal
 

@@ -153,12 +153,12 @@ func writeApplyEmptyOutput(cmd *cobra.Command, env, dsn string, pl *plan.Plan, r
 	out := cmd.OutOrStdout()
 	switch g.Output {
 	case render.FormatJSON:
-		m := planJSONModel(env, dsn, pl, rc)
+		m := planJSONModel(env, env, dsn, pl, rc)
 		m["applied"] = false
 		m["message"] = "no changes"
 		return render.WriteJSON(out, m)
 	case render.FormatYAML:
-		m := planJSONModel(env, dsn, pl, rc)
+		m := planJSONModel(env, env, dsn, pl, rc)
 		m["applied"] = false
 		m["message"] = "no changes"
 		return render.WriteYAML(out, m)
@@ -173,12 +173,12 @@ func writeApplySuccessOutput(cmd *cobra.Command, env, dsn string, pl *plan.Plan,
 	c, u, d := planCounts(pl)
 	switch g.Output {
 	case render.FormatJSON:
-		m := planJSONModel(env, dsn, pl, rc)
+		m := planJSONModel(env, env, dsn, pl, rc)
 		m["applied"] = true
 		m["appliedAt"] = at.Format(time.RFC3339Nano)
 		return render.WriteJSON(out, m)
 	case render.FormatYAML:
-		m := planJSONModel(env, dsn, pl, rc)
+		m := planJSONModel(env, env, dsn, pl, rc)
 		m["applied"] = true
 		m["appliedAt"] = at.Format(time.RFC3339Nano)
 		return render.WriteYAML(out, m)

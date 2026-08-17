@@ -571,6 +571,51 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("audit verify:\n%s", out)
 		}
 	})
+
+	t.Run("env_overlays_plan_prod_model_change", func(t *testing.T) {
+		root := repoRoot(t)
+		demo := filepath.Join(root, "examples", "env-overlays")
+		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+			t.Fatalf("demo project: %v", err)
+		}
+		db := filepath.Join(t.TempDir(), "env-overlays.db")
+
+		for _, env := range []string{"dev", "staging", "prod"} {
+			out, err := runCLI(t, "validate", "--project", demo, "-e", env, "--no-color")
+			if err != nil {
+				t.Fatalf("validate -e %s: %v\n%s", env, err, out)
+			}
+			if !strings.Contains(out, "Validation successful") {
+				t.Fatalf("validate -e %s:\n%s", env, out)
+			}
+		}
+
+		out, err := runCLI(t, "plan", "--project", demo, "-e", "dev", "--state", db)
+		if err != nil {
+			t.Fatalf("plan -e dev: %v\n%s", err, out)
+		}
+		out, err = runCLI(t, "apply", "--project", demo, "-e", "dev", "--state", db, "--auto-approve")
+		if err != nil {
+			t.Fatalf("apply -e dev: %v\n%s", err, out)
+		}
+
+		out, err = runCLI(t, "plan", "--project", demo, "-e", "prod", "--from-env", "dev", "--state", db)
+		if err != nil {
+			t.Fatalf("plan -e prod --from-env dev: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "model_change") {
+			t.Fatalf("plan missing model_change:\n%s", out)
+		}
+		if !strings.Contains(out, "spec.model") {
+			t.Fatalf("plan missing spec.model diff:\n%s", out)
+		}
+		if !strings.Contains(out, "mock/gpt-4") || !strings.Contains(out, "openai/gpt-4o") {
+			t.Fatalf("plan missing model field values:\n%s", out)
+		}
+		if !strings.Contains(out, "Applied environment: dev") {
+			t.Fatalf("plan missing applied env line:\n%s", out)
+		}
+	})
 }
 
 func copyFile(t *testing.T, src, dst string) {

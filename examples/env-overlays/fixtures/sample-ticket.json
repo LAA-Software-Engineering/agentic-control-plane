@@ -1,0 +1,7 @@
+{
+  "ticket": {
+    "id": "TCK-171",
+    "title": "Promote env overlays",
+    "body": "Show plan -e prod risk against an applied mock baseline."
+  }
+}
