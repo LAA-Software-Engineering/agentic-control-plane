@@ -322,6 +322,7 @@ The **recommended implementation phases** are outlined in **section 20** of [`do
 ## Documentation
 
 - **[`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md)** — design document v0 (problem statement, spec, CLI, engine, state model, testing strategy, MVP vs end state, section 23 recommendation).  
+- **[`docs/AGENT_LOOP.md`](docs/AGENT_LOOP.md)** — bounded agent tool-calling loop: grants, advertised uses, `maxIterations`, policy on every inner call, traces, HITL vs exit **5** (issues #160 / #161 / #175).  
 - **[`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md)** — hash-linked trace audit chain and `agentctl audit verify` (issue #116).  
 - **[`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md)** — tenant, thread, and actor fields on runs and traces (issue #111).  
 - **[`docs/OTEL.md`](docs/OTEL.md)** — optional OTLP trace export alongside SQLite (issue #108).  
