@@ -24,11 +24,13 @@ type MockTurn struct {
 // MockClient returns deterministic output for tests and offline agent steps (design doc §12.2 F MVP).
 //
 // When Script is empty, every Generate returns Content with Meta (legacy single-shot behavior)
-// and [StopReasonEndTurn]. When Script is set, each Generate consumes the next turn. After the
-// script is exhausted, Generate returns an error so extra loop iterations fail in tests.
+// and [StopReasonEndTurn], unless req.Tools includes a restart-like tool (issue #167): then the
+// first Generate returns [StopReasonToolUse] for that tool and the next returns status JSON.
+// When Script is set, each Generate consumes the next turn. After the script is exhausted,
+// Generate returns an error so extra loop iterations fail in tests.
 //
 // Each call records the request (including Tools) so tests can assert on what the loop sent.
-// [MockClient.Reset] clears the cursor and recorded requests when a test reuses one client.
+// [MockClient.Reset] clears the cursor, recorded requests, and the restart hook when a test reuses one client.
 type MockClient struct {
 	Content string
 	Meta    *GenerateMeta
@@ -37,6 +39,9 @@ type MockClient struct {
 	mu       sync.Mutex
 	call     int
 	requests []GenerateRequest
+	// restartHookFired is set after the empty-Script restart tool_use so the follow-up
+	// Generate returns JSON Content (issue #167).
+	restartHookFired bool
 }
 
 // Generate returns the next scripted turn, or the fixed Content when Script is empty.
@@ -48,6 +53,25 @@ func (m *MockClient) Generate(ctx context.Context, req GenerateRequest) (Generat
 	m.requests = append(m.requests, cloneGenerateRequest(req))
 
 	if len(m.Script) == 0 {
+		if name := restartLikeToolName(req.Tools); name != "" {
+			if !m.restartHookFired {
+				m.restartHookFired = true
+				return GenerateResponse{
+					ToolCalls: []ToolCall{{
+						ID:        "call_restart",
+						Name:      name,
+						Arguments: json.RawMessage(`{}`),
+					}},
+					StopReason: StopReasonToolUse,
+					Meta:       m.metaFor(req.Model, nil),
+				}, nil
+			}
+			return GenerateResponse{
+				Content:    mockRestartFollowUpJSON,
+				StopReason: StopReasonEndTurn,
+				Meta:       m.metaFor(req.Model, nil),
+			}, nil
+		}
 		return GenerateResponse{
 			Content:    m.Content,
 			StopReason: StopReasonEndTurn,
@@ -106,13 +130,14 @@ func (m *MockClient) CallCount() int {
 	return len(m.requests)
 }
 
-// Reset clears recorded requests and the script cursor so one client can be reused across cases.
-// Content, Meta, and Script are left unchanged.
+// Reset clears recorded requests, the script cursor, and the empty-Script restart hook so one
+// client can be reused across cases. Content, Meta, and Script are left unchanged.
 func (m *MockClient) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.call = 0
 	m.requests = nil
+	m.restartHookFired = false
 }
 
 func (m *MockClient) metaFor(model string, turn *GenerateMeta) GenerateMeta {
@@ -191,4 +216,21 @@ func cloneRawMessage(raw json.RawMessage) json.RawMessage {
 	out := make(json.RawMessage, len(raw))
 	copy(out, raw)
 	return out
+}
+
+// mockRestartFollowUpJSON is the second-turn Content after the empty-Script restart hook
+// (issue #167). It is independent of [MockClient.Content] so Registry's PR-review JSON
+// does not fail the incident-triage output schema.
+const mockRestartFollowUpJSON = `{"summary":"Restart requested after correlating pager alert with error logs.","severity":"high","action":"restart"}`
+
+// restartLikeToolName returns the first advertised tool whose name is "restart" or contains
+// "restart" (ASCII case-folding). Empty Script uses this to drive a gated remediation call.
+func restartLikeToolName(tools []ToolDef) string {
+	for _, t := range tools {
+		n := strings.ToLower(strings.TrimSpace(t.Name))
+		if n == "restart" || strings.Contains(n, "restart") {
+			return t.Name
+		}
+	}
+	return ""
 }

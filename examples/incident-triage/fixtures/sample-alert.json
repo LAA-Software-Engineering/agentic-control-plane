@@ -1,0 +1,9 @@
+{
+  "alert": {
+    "id": "INC-1042",
+    "service": "checkout-api",
+    "severity": "high",
+    "title": "Elevated 5xx on checkout-api",
+    "message": "Error rate 18% over 5 minutes; instance i-0abc appears wedged."
+  }
+}
