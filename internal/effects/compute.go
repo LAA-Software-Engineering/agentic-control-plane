@@ -209,7 +209,7 @@ func finish(g *spec.ProjectGraph, rootKind HopKind, rootName string, reached []r
 	}
 
 	var effects []Effect
-	seenIdent := map[string]struct{}{}
+	seenIdent := map[string]int{}
 	for _, key := range order {
 		r := first[key]
 		if r.unknown {
@@ -236,14 +236,19 @@ func finish(g *spec.ProjectGraph, rootKind HopKind, rootName string, reached []r
 			continue
 		}
 		for _, ident := range re.Effects {
-			if _, ok := seenIdent[ident]; ok {
+			if i, ok := seenIdent[ident]; ok {
+				effects[i].occurrences = appendOccurrence(effects[i].occurrences, r.uses, r.witness)
 				continue
 			}
-			seenIdent[ident] = struct{}{}
+			seenIdent[ident] = len(effects)
 			effects = append(effects, Effect{
 				Ident:   ident,
 				Uses:    r.uses,
 				Witness: r.witness,
+				occurrences: []effectOccurrence{{
+					uses:    r.uses,
+					witness: r.witness,
+				}},
 			})
 		}
 	}
@@ -327,6 +332,15 @@ func unknownMessage(tool, op, uses string, tsp *spec.ToolSpec) string {
 		return fmt.Sprintf("Tool/%s: no declared effects (fail-closed unknown; no policy permits this tool unless it opts in)", name)
 	}
 	return fmt.Sprintf("Tool/%s: operation %q has no declared effects (fail-closed unknown; no policy permits this operation unless it opts in)", name, op)
+}
+
+func appendOccurrence(dst []effectOccurrence, uses string, witness []Hop) []effectOccurrence {
+	for _, o := range dst {
+		if o.uses == uses {
+			return dst
+		}
+	}
+	return append(dst, effectOccurrence{uses: uses, witness: witness})
 }
 
 func appendHop(prefix []Hop, h Hop) []Hop {

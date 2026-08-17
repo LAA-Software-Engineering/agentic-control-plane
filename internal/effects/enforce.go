@@ -133,14 +133,19 @@ func checkBound(g *spec.ProjectGraph, b Bound, policyName string, pol *spec.Poli
 			})
 			continue
 		}
-		if inPermit && !inApproval && witnessingRequiresApproval(g, pol, e.Uses) {
+		// permitWithApproval is stricter: the same ident in both lists is
+		// approval-gated; unattended permit must not win.
+		if inApproval {
+			continue
+		}
+		if occ, ok := firstOccurrenceRequiringApproval(g, pol, e); ok {
 			errs = append(errs, &Violation{
 				Policy:      policyName,
 				RootKind:    b.RootKind,
 				RootName:    b.RootName,
 				Ident:       e.Ident,
-				Uses:        e.Uses,
-				Witness:     e.Witness,
+				Uses:        occ.uses,
+				Witness:     occ.witness,
 				Permits:     displayPermits(permit, withApproval),
 				RuleApplied: "requiresApproval",
 			})
@@ -179,6 +184,19 @@ func displayPermits(permit, withApproval []string) string {
 		return "(none)"
 	}
 	return strings.Join(parts, ", ")
+}
+
+func firstOccurrenceRequiringApproval(g *spec.ProjectGraph, pol *spec.PolicySpec, e Effect) (effectOccurrence, bool) {
+	occs := e.occurrences
+	if len(occs) == 0 && strings.TrimSpace(e.Uses) != "" {
+		occs = []effectOccurrence{{uses: e.Uses, witness: e.Witness}}
+	}
+	for _, occ := range occs {
+		if witnessingRequiresApproval(g, pol, occ.uses) {
+			return occ, true
+		}
+	}
+	return effectOccurrence{}, false
 }
 
 func witnessingRequiresApproval(g *spec.ProjectGraph, pol *spec.PolicySpec, uses string) bool {

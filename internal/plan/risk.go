@@ -540,11 +540,18 @@ func policyApprovals(p *policySpecRisk) []string {
 }
 
 func addEffectPermitWidening(sink *riskSink, name string, target RiskTarget, wit []WitnessHop, oldPol, newPol *policySpecRisk) {
-	oldSet := policyEffectPermits(oldPol)
-	for _, ident := range policyEffectPermits(newPol) {
-		if effectIdentCovered(oldSet, ident) {
-			continue
+	oldUnattended := policyUnattendedEffectPermits(oldPol)
+	oldAllowed := policyAnyEffectPermits(oldPol)
+	flagged := map[string]struct{}{}
+	flag := func(ident string) {
+		ident = strings.TrimSpace(ident)
+		if ident == "" {
+			return
 		}
+		if _, ok := flagged[ident]; ok {
+			return
+		}
+		flagged[ident] = struct{}{}
 		sink.add(RiskItem{
 			Category: RiskCategoryEffectPermitWidening,
 			Severity: RiskSeverityHigh,
@@ -553,15 +560,44 @@ func addEffectPermitWidening(sink *riskSink, name string, target RiskTarget, wit
 			Witness:  wit,
 		})
 	}
+	// Unattended permit not already covered by an old unattended permit
+	// (includes promoting an ident from permitWithApproval to permit).
+	for _, ident := range policyUnattendedEffectPermits(newPol) {
+		if effectIdentCovered(oldUnattended, ident) {
+			continue
+		}
+		flag(ident)
+	}
+	// Newly allowed at all (either list) vs the old union.
+	for _, ident := range policyAnyEffectPermits(newPol) {
+		if effectIdentCovered(oldAllowed, ident) {
+			continue
+		}
+		flag(ident)
+	}
 }
 
-func policyEffectPermits(p *policySpecRisk) []string {
+func policyAnyEffectPermits(p *policySpecRisk) []string {
 	if p == nil || p.Effects == nil {
 		return nil
 	}
 	var out []string
 	out = append(out, p.Effects.Permit...)
 	out = append(out, p.Effects.PermitWithApproval...)
+	return out
+}
+
+func policyUnattendedEffectPermits(p *policySpecRisk) []string {
+	if p == nil || p.Effects == nil {
+		return nil
+	}
+	var out []string
+	for _, ident := range p.Effects.Permit {
+		if effectIdentCovered(p.Effects.PermitWithApproval, ident) {
+			continue
+		}
+		out = append(out, ident)
+	}
 	return out
 }
 

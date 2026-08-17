@@ -43,6 +43,15 @@ type Effect struct {
 	// Witness is at least one path Workflow → step → Agent → tool.operation
 	// (agent-only roots omit workflow/step hops).
 	Witness []Hop `json:"witness,omitempty" yaml:"witness,omitempty"`
+	// occurrences is every reachable op that declares Ident. [Check] uses this
+	// so requiresApproval is not limited to the first-witness Uses.
+	occurrences []effectOccurrence
+}
+
+// effectOccurrence is one reachable tool operation that contributes Ident.
+type effectOccurrence struct {
+	uses    string
+	witness []Hop
 }
 
 // Unreachable is a declared effect (or fail-closed unknown) on a tool operation

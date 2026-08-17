@@ -856,8 +856,8 @@ dotted rules as tool operation effects (#188); a `tool.` prefix is rejected.
 Once any Tool declares `spec.operations` effects, a Policy with no `effects.permit` /
 `permitWithApproval` block **permits nothing** (fail-closed; the error names the Policy).
 Projects with no declared tool effects skip this check so existing examples still validate.
-Enforcement is `internal/effects.Check` at validate/plan (exit **2**), not runtime
-`CheckToolCall`. #204 pin is not shipped.
+Enforcement is `internal/effects.Check` at validate/plan command paths (exit **2**), not
+shared `config.Resolve` and not runtime `CheckToolCall`. #204 pin is not shipped.
 
 ### End goal
 
@@ -990,7 +990,7 @@ my-agent-system/
 * action identifiers syntactically valid
 * approval actions unique
 * `spec.effects.permit` / `permitWithApproval` identifiers match `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*` and must not begin with `tool.`
-* after graph validate, `effects.Check` fails (exit 2) when a workflow bound contains an effect not covered by that policy’s permit lists — skipped when no Tool declares `spec.operations` effects
+* validate and plan (after graph validate, not shared `config.Resolve`) run `effects.Check`; exit 2 when a workflow bound contains an effect not covered by that policy’s permit lists — skipped when no Tool declares `spec.operations` effects
 
 ---
 
@@ -1664,12 +1664,14 @@ do not print the full bound table (#191).
 
 [`internal/effects.Check`](../internal/effects) (issue #190) compares each **workflow**
 bound (including autonomous agent grants) against that workflow’s `Policy.spec.effects`.
-Unpermitted effects fail validate and plan with exit **2** and a witness path that tags
-`AUTONOMOUS` on agent-selection edges. Unknown reachable operations fail closed (the
-message names the tool). A policy with no permit block permits nothing once any tool
-declares operations; if no tool declares operations, Check is skipped. `permit` vs
-`requiresApproval` / `approvals.requiredFor`: the stricter rule wins and the error says
-which applied. Runtime `CheckToolCall` is unchanged. #204 is not shipped.
+It runs from the validate and plan command paths after graph validate, not from
+`config.Resolve`. Unpermitted effects fail validate and plan with exit **2** and a witness
+path that tags `AUTONOMOUS` on agent-selection edges. Unknown reachable operations fail
+closed (the message names the tool). A policy with no permit block permits nothing once
+any tool declares operations; if no tool declares operations, Check is skipped. `permit`
+vs `requiresApproval` / `approvals.requiredFor`: the stricter rule wins (any reachable op
+for an ident; `permitWithApproval` when the same ident is in both lists) and the error
+says which applied. Runtime `CheckToolCall` is unchanged. #204 is not shipped.
 
 The bound is a sound **upper** set of named effects the root may perform, over both
 deterministic and autonomous paths. Two edge kinds are preserved on each witness hop:

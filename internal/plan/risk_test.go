@@ -152,6 +152,49 @@ func TestRiskSummary_effectPermitWidening(t *testing.T) {
 	}
 }
 
+func TestRiskSummary_effectPermitWidening_unattendedPromotion(t *testing.T) {
+	oldG := graphWithPolicyBudget(3, 0, nil)
+	oldG.Policies["default"].Spec.Effects = &spec.PolicyEffects{PermitWithApproval: []string{"github.write"}}
+	applied := appliedFromDesired(t, "dev", oldG)
+	newG := graphWithPolicyBudget(3, 0, nil)
+	newG.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github.write"}}
+
+	p := NewPlanner(&fakeDeploy{list: applied})
+	pl, err := p.ComputePlan(context.Background(), "dev", newG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasRiskCategory(pl, RiskCategoryEffectPermitWidening) {
+		t.Fatalf("promoting permitWithApproval to unattended permit must be effect_permit_widening, got %#v", pl.Risk.Items)
+	}
+	var n int
+	for _, it := range pl.Risk.Items {
+		if it.Category != RiskCategoryEffectPermitWidening {
+			continue
+		}
+		n++
+		if !strings.Contains(it.Reason, "github.write") {
+			t.Fatalf("reason should name promoted ident: %#v", it)
+		}
+	}
+	if n != 1 {
+		t.Fatalf("want 1 widening item, got %d: %#v", n, pl.Risk.Items)
+	}
+
+	dual := graphWithPolicyBudget(3, 0, nil)
+	dual.Policies["default"].Spec.Effects = &spec.PolicyEffects{
+		Permit:             []string{"github.write"},
+		PermitWithApproval: []string{"github.write"},
+	}
+	plDual, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", dual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasRiskCategory(plDual, RiskCategoryEffectPermitWidening) {
+		t.Fatalf("dual-list stays approval-gated, not unattended widening: %#v", plDual.Risk.Items)
+	}
+}
+
 func TestRiskSummary_newWriteLikeToolPermissions(t *testing.T) {
 	oldG := graphWithTool([]string{"contents.read"})
 	applied := appliedFromDesired(t, "dev", oldG)

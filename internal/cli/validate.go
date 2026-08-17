@@ -39,6 +39,9 @@ func runValidate(cmd *cobra.Command, args []string, strict bool) error {
 		return NewExitError(ExitValidationError, err)
 	}
 	graph := rc.Graph()
+	if err := checkEffectBounds(graph); err != nil {
+		return err
+	}
 
 	findings := policy.Lint(graph)
 	if strict && policy.HasHighSeverityLint(findings) {

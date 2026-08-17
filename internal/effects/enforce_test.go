@@ -195,6 +195,105 @@ func TestCheck_stricterRequiresApprovalWins(t *testing.T) {
 	}
 }
 
+func TestCheck_dualListPermitWithApprovalWins(t *testing.T) {
+	t.Parallel()
+	g := graph(
+		map[string]*spec.ToolResource{
+			"github": {
+				Metadata: spec.Metadata{Name: "github"},
+				Spec: spec.ToolSpec{
+					Type: "native",
+					Safety: &spec.ToolSafety{
+						RequiresApproval: spec.BoolPtr(true),
+					},
+					Operations: map[string]spec.ToolOperation{
+						"merge_pr": {Effects: []string{"github.write"}},
+					},
+				},
+			},
+		},
+		nil,
+		workflow("ship", stepUses("merge", "tool.github.merge_pr")),
+	)
+	g.Policies = map[string]*spec.PolicyResource{
+		"guarded": {
+			Metadata: spec.Metadata{Name: "guarded"},
+			Spec: spec.PolicySpec{
+				Effects: &spec.PolicyEffects{
+					Permit:             []string{"github.write"},
+					PermitWithApproval: []string{"github.write"},
+				},
+			},
+		},
+	}
+	g.Workflows["ship"].Spec.Policy = "guarded"
+	if err := Check(g); err != nil {
+		t.Fatalf("same ident in both lists is approval-gated; unattended permit must not win: %v", err)
+	}
+
+	g.Policies["guarded"].Spec.Effects.PermitWithApproval = nil
+	err := Check(g)
+	if err == nil {
+		t.Fatal("permit-only (unattended) must lose to requiresApproval")
+	}
+	if !strings.Contains(err.Error(), "stricter rule applied (requiresApproval)") {
+		t.Fatalf("stricter: %v", err)
+	}
+}
+
+func TestCheck_anyReachableOpRequiresApprovalWins(t *testing.T) {
+	t.Parallel()
+	g := graph(
+		map[string]*spec.ToolResource{
+			"github": {
+				Metadata: spec.Metadata{Name: "github"},
+				Spec: spec.ToolSpec{
+					Type: "native",
+					Safety: &spec.ToolSafety{
+						Trusted:     spec.BoolPtr(true),
+						SideEffects: spec.BoolPtr(false),
+					},
+					Operations: map[string]spec.ToolOperation{
+						"post_comment": {Effects: []string{"github.write"}},
+						"merge_pr":     {Effects: []string{"github.write"}},
+					},
+				},
+			},
+		},
+		nil,
+		workflow("ship",
+			stepUses("comment", "tool.github.post_comment"),
+			stepUses("merge", "tool.github.merge_pr"),
+		),
+	)
+	g.Policies = map[string]*spec.PolicyResource{
+		"guarded": {
+			Metadata: spec.Metadata{Name: "guarded"},
+			Spec: spec.PolicySpec{
+				Approvals: &spec.PolicyApprovals{RequiredFor: []string{"tool.github.merge_pr"}},
+				Effects:   &spec.PolicyEffects{Permit: []string{"github.write"}},
+			},
+		},
+	}
+	g.Workflows["ship"].Spec.Policy = "guarded"
+	err := Check(g)
+	if err == nil {
+		t.Fatal("first-witness post_comment must not hide merge_pr requiredFor")
+	}
+	if !strings.Contains(err.Error(), "stricter rule applied (requiresApproval)") {
+		t.Fatalf("stricter: %v", err)
+	}
+	if !strings.Contains(err.Error(), "tool.github.merge_pr") {
+		t.Fatalf("must name the approval-gated uses: %v", err)
+	}
+
+	g.Policies["guarded"].Spec.Effects.Permit = nil
+	g.Policies["guarded"].Spec.Effects.PermitWithApproval = []string{"github.write"}
+	if err := Check(g); err != nil {
+		t.Fatalf("permitWithApproval covers any-op approval: %v", err)
+	}
+}
+
 func TestCheck_staticUsesPermitted(t *testing.T) {
 	t.Parallel()
 	g := graph(
