@@ -42,6 +42,7 @@ func NormalizeProjectGraph(g *ProjectGraph) {
 		if tr == nil {
 			continue
 		}
+		NormalizeToolEffects(&tr.Spec)
 		NormalizeToolSafety(&tr.Spec)
 	}
 	ExpandPresetsInGraph(g)

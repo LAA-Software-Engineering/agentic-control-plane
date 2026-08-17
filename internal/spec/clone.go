@@ -56,6 +56,7 @@ func preserveDerivedGraphFields(src, dst *ProjectGraph) {
 			continue
 		}
 		tr.Pos = srcTr.Pos
+		copyToolDiagnosticPos(srcTr, tr)
 	}
 	for name, wr := range dst.Workflows {
 		srcWr, ok := src.Workflows[name]
@@ -94,5 +95,22 @@ func copyPolicyDiagnosticPos(src, dst *PolicyResource) {
 		for k, p := range src.Spec.Hitl.InterruptOnPos {
 			dst.Spec.Hitl.InterruptOnPos[k] = p
 		}
+	}
+}
+
+func copyToolDiagnosticPos(src, dst *ToolResource) {
+	if src == nil || dst == nil || len(src.Spec.Operations) == 0 || len(dst.Spec.Operations) == 0 {
+		return
+	}
+	for name, dstOp := range dst.Spec.Operations {
+		srcOp, ok := src.Spec.Operations[name]
+		if !ok {
+			continue
+		}
+		dstOp.Pos = srcOp.Pos
+		if len(srcOp.EffectsPos) > 0 {
+			dstOp.EffectsPos = append([]Pos(nil), srcOp.EffectsPos...)
+		}
+		dst.Spec.Operations[name] = dstOp
 	}
 }

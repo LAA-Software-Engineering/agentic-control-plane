@@ -59,6 +59,14 @@ func NormalizeToolSafety(spec *ToolSpec) {
 	if spec == nil {
 		return
 	}
+	if toolDeclaresEffect(spec, EffectDestructive) {
+		if spec.Safety == nil {
+			spec.Safety = &ToolSafety{}
+		}
+		if spec.Safety.SideEffects == nil {
+			spec.Safety.SideEffects = BoolPtr(true)
+		}
+	}
 	resolved := ResolveToolSafety(spec.Safety)
 	spec.Safety = &ToolSafety{
 		Trusted:          BoolPtr(resolved.Trusted),

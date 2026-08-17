@@ -148,6 +148,11 @@ func stripResourcePos(res any) any {
 		r.Spec.ToolsPos = nil
 	case *ToolResource:
 		r.Pos = Pos{}
+		for k, op := range r.Spec.Operations {
+			op.Pos = Pos{}
+			op.EffectsPos = nil
+			r.Spec.Operations[k] = op
+		}
 	case *WorkflowResource:
 		r.Pos = Pos{}
 		for i := range r.Spec.Steps {

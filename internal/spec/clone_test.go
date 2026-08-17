@@ -84,6 +84,24 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 				},
 			},
 		},
+		Tools: map[string]*ToolResource{
+			"helper": {
+				APIVersion: APIVersionV0,
+				Kind:       KindTool,
+				Metadata:   Metadata{Name: "helper"},
+				Pos:        Pos{File: "helper.yaml", Line: 1, Column: 1},
+				Spec: ToolSpec{
+					Type: "native",
+					Operations: map[string]ToolOperation{
+						"echo": {
+							Effects:    []string{"github.read"},
+							Pos:        Pos{File: "helper.yaml", Line: 8, Column: 3},
+							EffectsPos: []Pos{{File: "helper.yaml", Line: 9, Column: 16}},
+						},
+					},
+				},
+			},
+		},
 	}
 	cl, err := CloneProjectGraph(g)
 	if err != nil {
@@ -108,6 +126,10 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 	}
 	if pol.Spec.Hitl == nil || pol.Spec.Hitl.InterruptOnPos["helper"].Line != 12 {
 		t.Fatalf("InterruptOnPos dropped: %#v", pol.Spec.Hitl)
+	}
+	op := cl.Tools["helper"].Spec.Operations["echo"]
+	if op.Pos.Line != 8 || len(op.EffectsPos) != 1 || op.EffectsPos[0].Line != 9 {
+		t.Fatalf("tool operation Pos dropped: %#v", op)
 	}
 	cl.Agents["a"].Pos.Line = 99
 	if g.Agents["a"].Pos.Line != 1 {

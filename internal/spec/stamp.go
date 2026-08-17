@@ -23,6 +23,7 @@ func stampResourcePositions(file string, data []byte, res any) {
 		stampAgentTools(file, yamlMapValue(m, "spec"), &r.Spec)
 	case *ToolResource:
 		r.Pos = p
+		stampToolOperations(file, yamlMapValue(m, "spec"), &r.Spec)
 	case *WorkflowResource:
 		r.Pos = p
 		stampWorkflowSteps(file, yamlMapValue(m, "spec"), &r.Spec)
@@ -78,6 +79,39 @@ func stampAgentTools(file string, specNode *yaml.Node, s *AgentSpec) {
 			break
 		}
 		s.ToolsPos[i] = posFromNode(file, item)
+	}
+}
+
+func stampToolOperations(file string, specNode *yaml.Node, s *ToolSpec) {
+	if s == nil || len(s.Operations) == 0 {
+		return
+	}
+	ops := yamlMapValue(specNode, "operations")
+	if ops == nil || ops.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(ops.Content); i += 2 {
+		key := ops.Content[i]
+		val := ops.Content[i+1]
+		if key == nil {
+			continue
+		}
+		op, ok := s.Operations[key.Value]
+		if !ok {
+			continue
+		}
+		op.Pos = posFromNode(file, key)
+		effects := yamlMapValue(val, "effects")
+		if effects != nil && effects.Kind == yaml.SequenceNode {
+			op.EffectsPos = make([]Pos, len(op.Effects))
+			for j, item := range effects.Content {
+				if j >= len(op.EffectsPos) {
+					break
+				}
+				op.EffectsPos[j] = posFromNode(file, item)
+			}
+		}
+		s.Operations[key.Value] = op
 	}
 }
 

@@ -111,8 +111,19 @@ type ToolSpec struct {
 	Retry       *ToolRetry       `yaml:"retry,omitempty" json:"retry,omitempty"`
 	// Safety carries blast-radius metadata for fail-closed policy derivation (issue #103).
 	Safety *ToolSafety `yaml:"safety,omitempty" json:"safety,omitempty"`
+	// Operations declares per-operation named effects (issue #188, ADR 002). Additive to Safety.
+	Operations map[string]ToolOperation `yaml:"operations,omitempty" json:"operations,omitempty"`
 	// Limits optionally overrides project execution byte limits for this tool (issue #117).
 	Limits *ExecutionLimits `yaml:"limits,omitempty" json:"limits,omitempty"`
+}
+
+// ToolOperation is one named operation on a Tool and the effects it may produce.
+type ToolOperation struct {
+	Effects []string `yaml:"effects,omitempty" json:"effects,omitempty"`
+	// Pos is the YAML map-key location of this operation (issue #187). Not identity.
+	Pos Pos `yaml:"-" json:"-"`
+	// EffectsPos is diagnostic metadata aligned with Effects (issue #187).
+	EffectsPos []Pos `yaml:"-" json:"-"`
 }
 
 // ToolSafety describes trust and side effects for policy fallback when no explicit Policy rule matches.
