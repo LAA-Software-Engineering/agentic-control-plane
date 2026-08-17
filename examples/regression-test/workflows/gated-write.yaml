@@ -1,0 +1,20 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: gated-write
+spec:
+  description: |
+    Offline CI fixture: an agent tool loop calls a mutating mock publish. Policy
+    requiredFor gates tool.publish.default. Inner agent tools do not HITL; an
+    unapproved call fails closed (exit 5). agentctl test does not pass --approve.
+  policy: gated-publish
+  input:
+    schema: ./schemas/article-input.json
+  steps:
+    - id: write
+      agent: writer
+      with:
+        article: ${input.article}
+  output:
+    value:
+      status: ${steps.write.output}

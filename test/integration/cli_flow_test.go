@@ -51,6 +51,57 @@ func extractRunID(out string) string {
 	return ""
 }
 
+func copyExampleTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return os.MkdirAll(dst, 0o755)
+		}
+		if d.Name() == ".agentic" && d.IsDir() {
+			return filepath.SkipDir
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, b, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func replaceFile(t *testing.T, path, old, new string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(b)
+	if strings.Contains(body, "\r\n") {
+		old = strings.ReplaceAll(old, "\n", "\r\n")
+		new = strings.ReplaceAll(new, "\n", "\r\n")
+	}
+	updated := strings.Replace(body, old, new, 1)
+	if updated == body {
+		t.Fatalf("replace %q not found in %s", old, path)
+	}
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestCLI_ExampleMVPFlow exercises init → validate → plan → apply → run → logs in-process (§22, issue #32).
 func TestCLI_ExampleMVPFlow(t *testing.T) {
 	t.Run("init_validate_plan_apply_run_logs", func(t *testing.T) {
@@ -426,6 +477,54 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		}
 		if !strings.Contains(out, "OK") {
 			t.Fatalf("audit verify:\n%s", out)
+		}
+	})
+
+	// examples/regression-test: agentctl test is green on requiredFor, red after dropping the gate.
+	t.Run("regression_test_unsafe_policy_fails_fixture", func(t *testing.T) {
+		root := repoRoot(t)
+		src := filepath.Join(root, "examples", "regression-test")
+		if _, err := os.Stat(filepath.Join(src, "project.yaml")); err != nil {
+			t.Fatalf("demo project: %v", err)
+		}
+
+		out, err := runCLI(t, "validate", "--project", src, "--no-color")
+		if err != nil {
+			t.Fatalf("validate repo copy: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Validation successful") {
+			t.Fatalf("validate:\n%s", out)
+		}
+
+		dst := filepath.Join(t.TempDir(), "regression-test")
+		copyExampleTree(t, src, dst)
+
+		out, err = runCLI(t, "test", "--project", dst, "--no-color")
+		if err != nil {
+			t.Fatalf("safe test: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "unauthorized-publish-denied") {
+			t.Fatalf("safe test missing case:\n%s", out)
+		}
+		if !strings.Contains(out, "1 passed, 0 failed") {
+			t.Fatalf("safe test expected pass:\n%s", out)
+		}
+
+		replaceFile(t, filepath.Join(dst, "policies", "gated-publish.yaml"),
+			"      - tool.publish.default\n", "")
+
+		out, err = runCLI(t, "test", "--project", dst, "--no-color")
+		if err == nil {
+			t.Fatalf("unsafe test expected failure:\n%s", out)
+		}
+		if cli.ExitCodeOf(err) != cli.ExitGenericFailure {
+			t.Fatalf("unsafe test exit=%d err=%v\n%s", cli.ExitCodeOf(err), err, out)
+		}
+		if !strings.Contains(out, "0 passed, 1 failed") {
+			t.Fatalf("unsafe test missing failure summary:\n%s", out)
+		}
+		if !strings.Contains(out, "expected workflow to fail") {
+			t.Fatalf("unsafe test missing expectError detail:\n%s", out)
 		}
 	})
 

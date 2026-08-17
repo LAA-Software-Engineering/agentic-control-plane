@@ -1,0 +1,7 @@
+# Fixture: unauthorized publish must fail (exit 5). Dropping requiredFor makes this case fail.
+workflow: gated-write
+cases:
+  - name: unauthorized-publish-denied
+    input:
+      article: weekly-notes
+    expectError: true

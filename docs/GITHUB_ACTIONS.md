@@ -95,6 +95,12 @@ comment. **`upsert: true`** is an alias for **`replace`**.
 
 ---
 
+## Fixture tests (`agentctl test`)
+
+Offline policy-regression fixtures (no secrets): copy **[`examples/regression-test/`](../examples/regression-test/README.md)** and the sample job **`.github/workflows/agentctl-test.yml`**. See **[`TESTING.md`](TESTING.md)**. A **new** `on: pull_request` workflow may not run until it exists on **`main`**; keep a Go integration test as the merge gate if you introduce the workflow in the same PR.
+
+---
+
 ## Installing `agentctl` in Actions
 
 The template supports exactly two values for **`AGENTCTL_INSTALL`**. Any other value fails the workflow early with a clear error.
