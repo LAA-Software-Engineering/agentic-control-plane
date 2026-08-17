@@ -1,0 +1,18 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: policy-denial-midrun
+spec:
+  imports:
+    - ./policies/tight-budget.yaml
+    - ./tools/helper.yaml
+    - ./agents/burner.yaml
+    - ./workflows/burn.yaml
+  defaults:
+    policy: tight-budget
+    model: mock/gpt-4
+    runtime: local
+  providers:
+    models:
+      mock:
+        type: mock

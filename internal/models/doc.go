@@ -7,10 +7,12 @@
 // Requests, including [GenerateRequest.Tools], are recorded for assertions; per-call token counts
 // go on [MockTurn.Meta]. When tokens are set and CostUSD is 0, CostUSD is filled from the same
 // B1 price table as live adapters (issue #164); an explicit non-zero CostUSD is kept. Without
-// Script, [MockClient] still returns a fixed [MockClient.Content], except when [GenerateRequest.Tools]
-// includes a restart-like tool (name is "restart" or contains "restart"): the first Generate
-// returns [StopReasonToolUse] for that tool and the next returns a small status JSON object
-// (issue #167, examples/incident-triage). Agents without a restart tool stay single-shot Content.
+// Script, [MockClient] still returns a fixed [MockClient.Content], except when
+// [GenerateRequest.Tools] is non-empty: a restart-like tool name drives the #167
+// tool_use then status JSON; otherwise the first advertised non-restart tool is
+// called once and the next Generate returns Content (issue #168). Agents with no
+// tools stay single-shot Content. Each empty-Script Generate uses [MockClient.Meta]
+// (Registry mock sets CostUSD 0.02).
 //
 // # Model contract (issue #156)
 //

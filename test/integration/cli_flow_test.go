@@ -359,6 +359,72 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("audit verify approved:\n%s", out)
 		}
 	})
+
+	t.Run("policy_denial_midrun_limit_hit", func(t *testing.T) {
+		root := repoRoot(t)
+		demo := filepath.Join(root, "examples", "policy-denial-midrun")
+		input := filepath.Join(demo, "fixtures", "sample-input.json")
+		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+			t.Fatalf("demo project: %v", err)
+		}
+		db := filepath.Join(t.TempDir(), "policy-denial-midrun.db")
+
+		out, err := runCLI(t, "validate", "--project", demo, "--no-color")
+		if err != nil {
+			t.Fatalf("validate: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Validation successful") {
+			t.Fatalf("validate:\n%s", out)
+		}
+
+		out, err = runCLI(t, "plan", "--project", demo, "--state", db)
+		if err != nil {
+			t.Fatalf("plan: %v\n%s", err, out)
+		}
+		out, err = runCLI(t, "apply", "--project", demo, "--state", db, "--auto-approve")
+		if err != nil {
+			t.Fatalf("apply: %v\n%s", err, out)
+		}
+
+		out, err = runCLI(t,
+			"run", "workflow/burn",
+			"--project", demo,
+			"--state", db,
+			"--input-file", input,
+		)
+		if cli.ExitCodeOf(err) != cli.ExitPolicyDenied {
+			t.Fatalf("run exit=%d err=%v\n%s", cli.ExitCodeOf(err), err, out)
+		}
+		if strings.Contains(out, "interrupted") || strings.Contains(out, "hitl") {
+			t.Fatalf("must not HITL/interrupt:\n%s", out)
+		}
+		runID := extractRunID(out)
+		if runID == "" {
+			t.Fatalf("no run id in:\n%s", out)
+		}
+
+		out, err = runCLI(t, "logs", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("logs: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, string(trace.EventLimitHit)) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventLimitHit, out)
+		}
+		if !strings.Contains(out, "max_cost") {
+			t.Fatalf("logs missing max_cost:\n%s", out)
+		}
+		if strings.Contains(out, string(trace.EventHitlRequestCreated)) {
+			t.Fatalf("logs must not contain HITL:\n%s", out)
+		}
+
+		out, err = runCLI(t, "audit", "verify", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("audit verify: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "OK") {
+			t.Fatalf("audit verify:\n%s", out)
+		}
+	})
 }
 
 // TestCLI_ValidatePrReviewGithubActionsProject ensures the OpenAI (gpt-4o-mini) + Actions example graph loads.
