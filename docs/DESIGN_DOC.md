@@ -1475,7 +1475,7 @@ MVP:
 
 * OpenAI-compatible
 * Anthropic optional
-* mock provider for tests (`MockClient.Script` sequences `tool_use` then final text for CI loops; issue #159)
+* mock provider for tests
 
 ---
 
@@ -1860,7 +1860,7 @@ Workflow-level tests via YAML fixtures.
 ### Models
 
 * at least one provider
-* mock provider for tests
+* mock provider for tests (`MockClient.Script` sequences `tool_use` then final text for CI loops; issue #159)
 
 ### CLI
 

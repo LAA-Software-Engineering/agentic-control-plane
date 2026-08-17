@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 )
@@ -25,6 +26,7 @@ type MockTurn struct {
 // script is exhausted, Generate returns an error so extra loop iterations fail in tests.
 //
 // Each call records the request (including Tools) so tests can assert on what the loop sent.
+// [MockClient.Reset] clears the cursor and recorded requests when a test reuses one client.
 type MockClient struct {
 	Content string
 	Meta    *GenerateMeta
@@ -68,7 +70,7 @@ func (m *MockClient) Generate(ctx context.Context, req GenerateRequest) (Generat
 	}
 	return GenerateResponse{
 		Content:    turn.Content,
-		ToolCalls:  append([]ToolCall(nil), turn.ToolCalls...),
+		ToolCalls:  cloneToolCalls(turn.ToolCalls),
 		StopReason: stop,
 		Meta:       m.metaFor(turn.Meta),
 	}, nil
@@ -102,6 +104,15 @@ func (m *MockClient) CallCount() int {
 	return len(m.requests)
 }
 
+// Reset clears recorded requests and the script cursor so one client can be reused across cases.
+// Content, Meta, and Script are left unchanged.
+func (m *MockClient) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.call = 0
+	m.requests = nil
+}
+
 func (m *MockClient) metaFor(turn *GenerateMeta) GenerateMeta {
 	if turn != nil {
 		return *turn
@@ -118,16 +129,45 @@ func cloneGenerateRequest(req GenerateRequest) GenerateRequest {
 		out.Messages = make([]ChatMessage, len(req.Messages))
 		copy(out.Messages, req.Messages)
 		for i, msg := range out.Messages {
-			if msg.ToolCalls != nil {
-				out.Messages[i].ToolCalls = append([]ToolCall(nil), msg.ToolCalls...)
-			}
+			out.Messages[i].ToolCalls = cloneToolCalls(msg.ToolCalls)
 			if msg.ToolResults != nil {
 				out.Messages[i].ToolResults = append([]ToolResult(nil), msg.ToolResults...)
 			}
 		}
 	}
-	if req.Tools != nil {
-		out.Tools = append([]ToolDef(nil), req.Tools...)
+	out.Tools = cloneToolDefs(req.Tools)
+	return out
+}
+
+func cloneToolDefs(tools []ToolDef) []ToolDef {
+	if tools == nil {
+		return nil
 	}
+	out := make([]ToolDef, len(tools))
+	copy(out, tools)
+	for i := range out {
+		out[i].Parameters = cloneRawMessage(out[i].Parameters)
+	}
+	return out
+}
+
+func cloneToolCalls(calls []ToolCall) []ToolCall {
+	if calls == nil {
+		return nil
+	}
+	out := make([]ToolCall, len(calls))
+	copy(out, calls)
+	for i := range out {
+		out[i].Arguments = cloneRawMessage(out[i].Arguments)
+	}
+	return out
+}
+
+func cloneRawMessage(raw json.RawMessage) json.RawMessage {
+	if raw == nil {
+		return nil
+	}
+	out := make(json.RawMessage, len(raw))
+	copy(out, raw)
 	return out
 }

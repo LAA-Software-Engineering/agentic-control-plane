@@ -153,6 +153,70 @@ func TestMockClient_legacyContentSetsEndTurn(t *testing.T) {
 	}
 }
 
+func TestMockClient_cloneDoesNotAliasRawMessage(t *testing.T) {
+	t.Parallel()
+	params := json.RawMessage(`{"type":"object"}`)
+	args := json.RawMessage(`{"q":"go"}`)
+	cli := &MockClient{Content: "ok"}
+	_, err := cli.Generate(context.Background(), GenerateRequest{
+		Model: "mock/alias",
+		Messages: []ChatMessage{{
+			Role: "assistant",
+			ToolCalls: []ToolCall{{
+				ID:        "c1",
+				Name:      "search",
+				Arguments: args,
+			}},
+		}},
+		Tools: []ToolDef{{Name: "search", Parameters: params}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	params[0] = 'X'
+	args[0] = 'X'
+	got := cli.LastRequest()
+	if string(got.Tools[0].Parameters) != `{"type":"object"}` {
+		t.Fatalf("Parameters aliased: %s", got.Tools[0].Parameters)
+	}
+	if string(got.Messages[0].ToolCalls[0].Arguments) != `{"q":"go"}` {
+		t.Fatalf("Arguments aliased: %s", got.Messages[0].ToolCalls[0].Arguments)
+	}
+	reqs := cli.Requests()
+	if string(reqs[0].Tools[0].Parameters) != `{"type":"object"}` {
+		t.Fatalf("Requests Parameters aliased: %s", reqs[0].Tools[0].Parameters)
+	}
+}
+
+func TestMockClient_Reset(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cli := &MockClient{
+		Script: []MockTurn{{Content: "a"}, {Content: "b"}},
+	}
+	first, err := cli.Generate(ctx, GenerateRequest{Model: "m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Content != "a" || cli.CallCount() != 1 {
+		t.Fatalf("before reset content=%q count=%d", first.Content, cli.CallCount())
+	}
+	cli.Reset()
+	if cli.CallCount() != 0 || cli.LastRequest().Model != "" {
+		t.Fatalf("after reset count=%d last=%+v", cli.CallCount(), cli.LastRequest())
+	}
+	again, err := cli.Generate(ctx, GenerateRequest{Model: "m2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Content != "a" {
+		t.Fatalf("after reset expected first script turn, got %q", again.Content)
+	}
+	if cli.LastRequest().Model != "m2" || cli.CallCount() != 1 {
+		t.Fatalf("replay last=%+v count=%d", cli.LastRequest(), cli.CallCount())
+	}
+}
+
 func TestMockClient_honorsExplicitStopReasonAndErr(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("provider down")
