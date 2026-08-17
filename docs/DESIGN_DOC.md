@@ -85,6 +85,10 @@ This project is **not**:
 * an attempt to standardize chain-of-thought
 * a replacement for every orchestration framework
 * a magic auto-agent builder
+* a general-purpose programming language for agents — see
+  [ADR 002](adr/002-language-frontend-and-ir-expressiveness.md) for the bounded exception
+  (conditionals and loops arrive as a `.agent` frontend compiling to this resource model, never
+  as expression fields in YAML)
 
 This project does **not** try to define:
 
@@ -743,14 +747,20 @@ spec:
 
 ### End goal additions
 
-* conditional steps
-* loops
-* fan-out/fan-in
-* scheduled triggers
-* event triggers
-* human approval steps
-* parallel branches
-* subworkflows
+Each bullet is ruled on in [ADR 002](adr/002-language-frontend-and-ir-expressiveness.md).
+Graph structure lands in this YAML/IR model; computation lands in the `.agent` frontend and
+must never become an expression field on `WorkflowStep`.
+
+| Addition | Surface |
+|----------|---------|
+| parallel branches | YAML / IR |
+| subworkflows | YAML / IR |
+| human approval steps | YAML / IR |
+| scheduled triggers | YAML / IR |
+| event triggers | YAML / IR |
+| fan-out/fan-in | static fan-out is YAML / IR; dynamic fan-out over a runtime collection is a loop and belongs to the frontend |
+| conditional steps | `.agent` frontend |
+| loops | `.agent` frontend |
 
 ---
 
@@ -1976,6 +1986,31 @@ Control plane.
 * remote runners
 * drift detection
 * team auth
+
+## Phase 5
+
+Effects and IR expressiveness. See [ADR 002](adr/002-language-frontend-and-ir-expressiveness.md).
+
+* source positions as first-class IR data (prerequisite; see
+  [ADR 003](adr/003-yaml-as-compilation-output.md))
+* declared effects on tool operations
+* transitive effect bounds over the project graph, including autonomous agent tool selection
+* effect enforcement against Policy at validate/plan time
+* parallel branches and fan-in
+* subworkflows
+* typed step outputs flowing through interpolation
+* workflow-level human approval steps
+
+## Phase 6
+
+Language frontend. See [ADR 002](adr/002-language-frontend-and-ir-expressiveness.md) and
+[ADR 003](adr/003-yaml-as-compilation-output.md).
+
+* `.agent` lexer, parser, typed AST
+* lowering to the resource model with source maps
+* type and effect checking, including the checked `effects` clause
+* conditional steps and loops
+* YAML demoted to compilation output and interchange (`agentctl export`)
 
 ---
 
