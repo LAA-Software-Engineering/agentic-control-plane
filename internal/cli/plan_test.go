@@ -267,12 +267,36 @@ func replaceFile(t *testing.T, path, old, new string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated := strings.Replace(string(b), old, new, 1)
-	if updated == string(b) {
+	body := string(b)
+	// Git checkout on Windows may yield CRLF fixtures; needles in tests are LF-only.
+	if strings.Contains(body, "\r\n") {
+		old = strings.ReplaceAll(old, "\n", "\r\n")
+		new = strings.ReplaceAll(new, "\n", "\r\n")
+	}
+	updated := strings.Replace(body, old, new, 1)
+	if updated == body {
 		t.Fatalf("replace %q not found in %s", old, path)
 	}
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReplaceFile_crlfNewlines(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "policy.yaml")
+	crlf := "approvals:\r\n  requiredFor:\r\n      - tool.helper.echo\r\n      - tool.github.issues.write\r\n"
+	if err := os.WriteFile(path, []byte(crlf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	replaceFile(t, path, "      - tool.helper.echo\n", "")
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "approvals:\r\n  requiredFor:\r\n      - tool.github.issues.write\r\n"
+	if string(got) != want {
+		t.Fatalf("got %q want %q", got, want)
 	}
 }
 
