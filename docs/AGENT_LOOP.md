@@ -24,7 +24,7 @@ A grant is a **concrete operation** (`tool.<name>.<operation>`), not a Tool reso
 
 An agent's action space is the union of its granted operations' declared effects. Widening the grant list expands the action space of a nondeterministic component — why [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191) will report a new **autonomous** effect at higher severity than a new **static** one.
 
-The plan-time effect bound (#189 / #191) is **not shipped**. Today `agentctl plan` diffs C1 risk including `tool_surface_change`. ACP does not verify what remote systems do with a granted operation.
+Issue #189 computes the effect bound in [`internal/effects`](../internal/effects) over the desired graph (static `uses:` plus these grants). `agentctl plan` does not print bounds or deltas yet (#191). ACP does not verify what remote systems do with a granted operation.
 
 ### Closed world (#204)
 
