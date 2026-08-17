@@ -21,5 +21,11 @@
 //
 // [OpenAIClient] maps this contract to Chat Completions `tools` / `tool_calls` / `role: "tool"`
 // (issue #157). It clears [GenerateResponse.ToolCalls] unless [GenerateResponse.StopReason] is
-// [StopReasonToolUse] (for example `length` or `content_filter`). Anthropic mapping is issue #158.
+// [StopReasonToolUse] (for example `length` or `content_filter`).
+//
+// The Anthropic adapter maps the same contract to Messages API `tools` / `tool_use` / `tool_result`
+// (issue #158). `ToolChoiceRequired` becomes `tool_choice.type=any`. Follow-up `ToolResults` are
+// user `tool_result` blocks (Anthropic has no `role: "tool"` and requires user/assistant
+// alternation, so extra [ChatMessage.Content] on a result turn stays in that same user message).
+// Token usage comes from `usage.input_tokens` / `usage.output_tokens`; cost stays 0.
 package models

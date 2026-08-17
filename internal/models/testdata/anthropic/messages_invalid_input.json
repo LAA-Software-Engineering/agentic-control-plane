@@ -1,0 +1,16 @@
+{
+  "id": "msg_bad_args",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-20250514",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_bad",
+      "name": "get_weather",
+      "input": "not-an-object"
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null
+}
