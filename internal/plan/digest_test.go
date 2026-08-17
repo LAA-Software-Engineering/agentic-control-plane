@@ -78,3 +78,105 @@ func TestResolvedGraphDigest_changesWithLimits(t *testing.T) {
 		t.Fatal("digest should change when spec.limits is added")
 	}
 }
+
+func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
+	wf := &spec.WorkflowResource{
+		APIVersion: spec.APIVersionV0,
+		Kind:       spec.KindWorkflow,
+		Metadata:   spec.Metadata{Name: "demo"},
+		Spec: spec.WorkflowSpec{
+			Steps: []spec.WorkflowStep{{ID: "a", Uses: "tool.x.y"}},
+		},
+	}
+	agent := &spec.AgentResource{
+		APIVersion: spec.APIVersionV0,
+		Kind:       spec.KindAgent,
+		Metadata:   spec.Metadata{Name: "bot"},
+		Spec:       spec.AgentSpec{Model: "mock/gpt-4", Tools: []string{"x"}},
+	}
+	g := &spec.ProjectGraph{
+		Meta: spec.Metadata{Name: "demo"},
+		Spec: spec.ProjectSpec{},
+		Agents: map[string]*spec.AgentResource{
+			"bot": agent,
+		},
+		Workflows: map[string]*spec.WorkflowResource{
+			"demo": wf,
+		},
+		Policies: map[string]*spec.PolicyResource{
+			"default": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindPolicy,
+				Metadata:   spec.Metadata{Name: "default"},
+				Spec: spec.PolicySpec{
+					Approvals: &spec.PolicyApprovals{
+						RequiredFor: []string{"tool.x.y"},
+					},
+					Hitl: &spec.HitlPolicy{
+						InterruptOn: map[string]spec.HitlInterruptValue{
+							"x": {Enabled: true},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	d1, err := ResolvedGraphDigest(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j1, err := canonicalResourceJSON(wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h1, err := WorkflowSpecHash(wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	agent.Pos = spec.Pos{File: "agent.yaml", Line: 1, Column: 1}
+	agent.Spec.ToolsPos = []spec.Pos{{File: "agent.yaml", Line: 12, Column: 5}}
+	wf.Pos = spec.Pos{File: "workflow.yaml", Line: 1, Column: 1}
+	wf.Spec.Steps[0].Pos = spec.Pos{File: "workflow.yaml", Line: 8, Column: 5}
+	wf.Spec.Steps[0].UsesPos = spec.Pos{File: "workflow.yaml", Line: 9, Column: 13}
+	g.Pos = spec.Pos{File: "project.yaml", Line: 1, Column: 1}
+	pol := g.Policies["default"]
+	pol.Pos = spec.Pos{File: "policy.yaml", Line: 1, Column: 1}
+	pol.Spec.Approvals.RequiredForPos = []spec.Pos{{File: "policy.yaml", Line: 8, Column: 7}}
+	pol.Spec.Hitl.InterruptOnPos = map[string]spec.Pos{
+		"x": {File: "policy.yaml", Line: 11, Column: 5},
+	}
+
+	d2, err := ResolvedGraphDigest(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j2, err := canonicalResourceJSON(wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := WorkflowSpecHash(wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d1 != d2 {
+		t.Fatalf("ResolvedGraphDigest changed after Pos mutation: %s vs %s", d1, d2)
+	}
+	if string(j1) != string(j2) {
+		t.Fatalf("canonicalResourceJSON changed after Pos mutation:\n%s\n%s", j1, j2)
+	}
+	if h1 != h2 {
+		t.Fatalf("WorkflowSpecHash changed after Pos mutation: %s vs %s", h1, h2)
+	}
+
+	wf.Spec.Steps[0].Pos.Line = 99
+	wf.Spec.Steps[0].UsesPos.Column = 42
+	d3, err := ResolvedGraphDigest(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d3 != d1 {
+		t.Fatal("mutating Line/Column must not dirty ResolvedGraphDigest")
+	}
+}

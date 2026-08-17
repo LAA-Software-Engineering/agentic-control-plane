@@ -39,9 +39,11 @@ func LoadProject(root string) (*spec.ProjectGraph, error) {
 	if !ok || dec.Kind() != spec.KindProject {
 		return nil, fmt.Errorf("%s: expected kind Project, got %q", projPath, dec.Kind())
 	}
+	relocateLoaded(rootAbs, projPath, pr)
 
 	g := &spec.ProjectGraph{
 		Meta:         pr.Metadata,
+		Pos:          pr.Pos,
 		Spec:         pr.Spec,
 		Agents:       make(map[string]*spec.AgentResource),
 		Tools:        make(map[string]*spec.ToolResource),
@@ -67,6 +69,7 @@ func LoadProject(root string) (*spec.ProjectGraph, error) {
 		if err != nil {
 			return nil, err
 		}
+		relocateLoaded(rootAbs, path, d.Resource)
 		if err := mergeDecoded(g, d, path, seen); err != nil {
 			return nil, err
 		}
@@ -221,4 +224,12 @@ func mergeDecoded(g *spec.ProjectGraph, d *spec.Decoded, path string, seen map[r
 		return fmt.Errorf("%s: unsupported kind %q", path, kind)
 	}
 	return nil
+}
+
+func relocateLoaded(rootAbs, path string, res any) {
+	file := path
+	if rel, err := filepath.Rel(rootAbs, path); err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
+		file = filepath.ToSlash(rel)
+	}
+	spec.RelocateFile(res, file)
 }

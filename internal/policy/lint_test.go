@@ -96,6 +96,40 @@ func TestLint_unknownRequiredForRef(t *testing.T) {
 	}
 }
 
+func TestLint_unknownRequiredForRef_itemPos(t *testing.T) {
+	g := testGraphWithTools("helper")
+	item := spec.Pos{File: "policy.yaml", Line: 8, Column: 7}
+	g.Policies = map[string]*spec.PolicyResource{
+		"default": {
+			Metadata: spec.Metadata{Name: "default"},
+			Pos:      spec.Pos{File: "policy.yaml", Line: 1, Column: 1},
+			Spec: spec.PolicySpec{
+				Approvals: &spec.PolicyApprovals{
+					RequiredFor:    []string{"tool.missing.op"},
+					RequiredForPos: []spec.Pos{item},
+				},
+			},
+		},
+	}
+	findings := Lint(g)
+	var f LintFinding
+	for _, got := range findings {
+		if got.Rule == LintRuleUnknownRequiredForRef {
+			f = got
+			break
+		}
+	}
+	if f.Rule == "" {
+		t.Fatalf("got %#v", findings)
+	}
+	if f.Pos != item {
+		t.Fatalf("Pos = %#v, want item %#v", f.Pos, item)
+	}
+	if !strings.Contains(FormatLintMessage(f), "policy.yaml:8:7:") {
+		t.Fatalf("FormatLintMessage = %q", FormatLintMessage(f))
+	}
+}
+
 func TestLint_invalidSwitchTarget(t *testing.T) {
 	t.Helper()
 	g := testGraphWithTools("deploy")
@@ -103,10 +137,14 @@ func TestLint_invalidSwitchTarget(t *testing.T) {
 	g.Policies = map[string]*spec.PolicyResource{
 		"default": {
 			Metadata: spec.Metadata{Name: "default"},
+			Pos:      spec.Pos{File: "policy.yaml", Line: 1, Column: 1},
 			Spec: spec.PolicySpec{
 				Hitl: &spec.HitlPolicy{
 					InterruptOn: map[string]spec.HitlInterruptValue{
 						"deploy": {Enabled: true},
+					},
+					InterruptOnPos: map[string]spec.Pos{
+						"deploy": {File: "policy.yaml", Line: 8, Column: 7},
 					},
 					ToolSwitchMap: map[string][]string{
 						"deploy_to_production": {"nonexistent_operation"},
@@ -118,6 +156,14 @@ func TestLint_invalidSwitchTarget(t *testing.T) {
 	findings := Lint(g)
 	if !containsLintRule(findings, LintRuleInvalidSwitchTarget) {
 		t.Fatalf("got %#v", findings)
+	}
+	for _, f := range findings {
+		if f.Rule != LintRuleInvalidSwitchTarget {
+			continue
+		}
+		if f.Pos.Line != 8 || f.Pos.Column != 7 {
+			t.Fatalf("switch finding Pos = %#v, want interruptOn key", f.Pos)
+		}
 	}
 }
 
@@ -257,17 +303,29 @@ func TestLint_unreachableRequiredFor(t *testing.T) {
 	g.Policies = map[string]*spec.PolicyResource{
 		"default": {
 			Metadata: spec.Metadata{Name: "default"},
+			Pos:      spec.Pos{File: "policy.yaml", Line: 1, Column: 1},
 			Spec: spec.PolicySpec{
 				Approvals: &spec.PolicyApprovals{
 					RequireAllTools: &requireAll,
 					RequiredFor:     []string{"tool.helper.echo"},
+					RequiredForPos:  []spec.Pos{{File: "policy.yaml", Line: 9, Column: 7}},
 				},
 			},
 		},
 	}
 	findings := Lint(g)
-	if !containsLintRule(findings, LintRuleUnreachableRequiredFor) {
+	var f LintFinding
+	for _, got := range findings {
+		if got.Rule == LintRuleUnreachableRequiredFor {
+			f = got
+			break
+		}
+	}
+	if f.Rule == "" {
 		t.Fatalf("got %#v", findings)
+	}
+	if f.Pos.Line != 9 || f.Pos.Column != 7 {
+		t.Fatalf("Pos = %#v, want requiredFor item", f.Pos)
 	}
 }
 
@@ -301,6 +359,37 @@ func TestHasHighSeverityLint(t *testing.T) {
 	}
 	if HasHighSeverityLint([]LintFinding{{Severity: LintSeverityLow}}) {
 		t.Fatal("expected false")
+	}
+}
+
+func TestLint_attachesPolicyPos(t *testing.T) {
+	g := testGraphWithTools("delete_records")
+	g.Policies = map[string]*spec.PolicyResource{
+		"default": {
+			Metadata: spec.Metadata{Name: "default"},
+			Spec:     spec.PolicySpec{},
+			Pos:      spec.Pos{File: "policy.yaml", Line: 1, Column: 1},
+		},
+	}
+	spec.NormalizeProjectGraph(g)
+
+	findings := Lint(g)
+	var f LintFinding
+	for _, got := range findings {
+		if got.Rule == LintRuleUngatedSensitiveTool {
+			f = got
+			break
+		}
+	}
+	if f.Rule == "" {
+		t.Fatalf("expected ungated_sensitive_tool, got %#v", findings)
+	}
+	if f.Pos.File != "policy.yaml" || f.Pos.Line != 1 || f.Pos.Column != 1 {
+		t.Fatalf("Pos = %#v", f.Pos)
+	}
+	msg := FormatLintMessage(f)
+	if !strings.Contains(msg, "policy.yaml:1:1:") {
+		t.Fatalf("FormatLintMessage = %q", msg)
 	}
 }
 

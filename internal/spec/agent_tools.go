@@ -25,37 +25,41 @@ func ResolveAgentAdvertisedTools(agent *AgentResource, tools map[string]*ToolRes
 	}
 	agentName := agent.Metadata.Name
 	if tools == nil {
-		return nil, fmt.Errorf("Agent/%s: declares tools but the project graph has none", agentName)
+		return nil, agent.Pos.Errorf("Agent/%s: declares tools but the project graph has none", agentName)
 	}
 	var out []AdvertisedAgentTool
 	usesByName := make(map[string]string, len(agent.Spec.Tools))
-	for _, raw := range agent.Spec.Tools {
+	for i, raw := range agent.Spec.Tools {
 		entry := strings.TrimSpace(raw)
 		if entry == "" {
 			continue
 		}
+		pos := agent.Pos
+		if i < len(agent.Spec.ToolsPos) && !agent.Spec.ToolsPos[i].IsZero() {
+			pos = agent.Spec.ToolsPos[i]
+		}
 		name, pinned, err := parseAgentToolEntry(entry)
 		if err != nil {
-			return nil, fmt.Errorf("Agent/%s: %w", agentName, err)
+			return nil, pos.Errorf("Agent/%s: %w", agentName, err)
 		}
 		tr, ok := tools[name]
 		if !ok || tr == nil {
-			return nil, fmt.Errorf("Agent/%s: declares unknown tool %q", agentName, name)
+			return nil, pos.Errorf("Agent/%s: declares unknown tool %q", agentName, name)
 		}
 		uses := pinned
 		if uses == "" {
 			uses, err = advertisedAgentUses(name, tr)
 			if err != nil {
-				return nil, fmt.Errorf("Agent/%s: %w", agentName, err)
+				return nil, pos.Errorf("Agent/%s: %w", agentName, err)
 			}
 		} else if err := validatePinnedAgentUses(name, uses, tr); err != nil {
-			return nil, fmt.Errorf("Agent/%s: %w", agentName, err)
+			return nil, pos.Errorf("Agent/%s: %w", agentName, err)
 		}
 		if prev, dup := usesByName[name]; dup {
 			if prev == uses {
 				continue
 			}
-			return nil, fmt.Errorf("Agent/%s: declares tool %q twice with different operations (%s vs %s)", agentName, name, prev, uses)
+			return nil, pos.Errorf("Agent/%s: declares tool %q twice with different operations (%s vs %s)", agentName, name, prev, uses)
 		}
 		usesByName[name] = uses
 		out = append(out, AdvertisedAgentTool{Name: name, Uses: uses})

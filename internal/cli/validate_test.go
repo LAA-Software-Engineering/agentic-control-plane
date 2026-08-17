@@ -56,6 +56,29 @@ func TestValidate_successJSON(t *testing.T) {
 	}
 }
 
+func TestValidate_unknownAgent_reportsPos(t *testing.T) {
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "--project", testdataPath(t, "validate_unknown_agent"), "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("got code %d err %v", ExitCodeOf(err), err)
+	}
+	msg := err.Error() + out.String()
+	if !strings.Contains(msg, "workflow.yaml:9:") {
+		t.Fatalf("want file:line:col from post-load resolve, got %q", msg)
+	}
+	if !strings.Contains(msg, "Workflow/demo references missing Agent/missing-bot") {
+		t.Fatalf("want missing agent diagnostic, got %q", msg)
+	}
+}
+
 func TestValidate_badFixture_exit2(t *testing.T) {
 	ResetGlobalsForTest()
 	cmd := NewRootCmd()

@@ -63,15 +63,10 @@ positioning, not to loader capability.
 
 ### 3. Source positions become first-class IR data — and this is a prerequisite, not part of the language work
 
-Today [`internal/spec/errors.go:44`](../../internal/spec/errors.go) recovers line numbers by
-regex-scraping the yaml.v3 error string:
-
-```go
-var yamlLineHint = regexp.MustCompile(`line (\d+)`)
-```
-
-`LoadError` carries `Path`/`Line`/`Column`, but only at load time and only by that mechanism.
-Nothing downstream — normalize, validate, plan, policy — carries a position at all.
+`spec.Pos` (`File`, `Line`, `Column`) is first-class IR metadata on `Resource[T]`, `WorkflowStep`,
+and tool/agent references (`AgentSpec.ToolsPos`, `WorkflowStep.AgentPos` / `UsesPos`). Decode
+stamps `yaml.Node` Line/Column; syntax errors with no Node stay Path-only. The former
+`yamlLineHint` regexp scrape of yaml.v3 error text is gone.
 
 Once `.agent` is the authoring surface, every diagnostic must point at `reviewer.agent:12:5`,
 including diagnostics produced deep in the policy engine. An effect-bound violation
@@ -85,11 +80,12 @@ added fields and passes is a wide refactor. It is therefore sequenced **first**,
 effect system.
 
 **Positions are diagnostic metadata only — never identity.** They must not participate in
-fingerprints, digests, workflow hashes, or generated resource names. Deriving a lowered step's
-identity from its source coordinates would make an unrelated edit ten lines above it produce a
-delete-and-recreate pair in `plan`, for a workflow that did not semantically change. Identity
-comes from structural position in the program (enclosing workflow, binding name, AST child path);
-location comes from `Pos`. The two must stay separable.
+fingerprints, digests, workflow hashes, or generated resource names. IR Pos fields use
+`json:"-" yaml:"-"` so `canonicalResourceJSON` / SpecHash / `ResolvedGraphDigest` ignore them.
+Deriving a lowered step's identity from its source coordinates would make an unrelated edit
+ten lines above it produce a delete-and-recreate pair in `plan`, for a workflow that did not
+semantically change. Identity comes from structural position in the program (enclosing workflow,
+binding name, AST child path); location comes from `Pos`. The two must stay separable.
 
 ## Consequences
 

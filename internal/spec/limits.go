@@ -191,14 +191,14 @@ func validateExecutionLimitsGraph(g *ProjectGraph) []error {
 	}
 	var errs []error
 	if err := ValidateExecutionLimits(g.Spec.Limits); err != nil {
-		errs = append(errs, fmt.Errorf("Project: spec.limits: %w", err))
+		errs = append(errs, g.Pos.Errorf("Project: spec.limits: %w", err))
 	}
 	for name, wr := range g.Workflows {
 		if wr == nil || wr.Spec.Limits == nil {
 			continue
 		}
 		if err := ValidateExecutionLimits(wr.Spec.Limits); err != nil {
-			errs = append(errs, fmt.Errorf("Workflow/%s: spec.limits: %w", name, err))
+			errs = append(errs, wr.Pos.Errorf("Workflow/%s: spec.limits: %w", name, err))
 		}
 	}
 	for name, tr := range g.Tools {
@@ -206,7 +206,7 @@ func validateExecutionLimitsGraph(g *ProjectGraph) []error {
 			continue
 		}
 		if err := ValidateExecutionLimits(tr.Spec.Limits); err != nil {
-			errs = append(errs, fmt.Errorf("Tool/%s: spec.limits: %w", name, err))
+			errs = append(errs, tr.Pos.Errorf("Tool/%s: spec.limits: %w", name, err))
 		}
 	}
 	return errs

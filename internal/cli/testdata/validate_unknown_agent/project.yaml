@@ -1,0 +1,15 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: validate-unknown-agent
+spec:
+  imports:
+    - ./policy.yaml
+    - ./workflow.yaml
+  defaults:
+    policy: default
+    model: mock/gpt-4
+  providers:
+    models:
+      mock:
+        type: mock

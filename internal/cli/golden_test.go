@@ -86,6 +86,23 @@ func TestGolden_validate_lint_sensitive_table(t *testing.T) {
 	assertGoldenOutput(t, "validate_lint_sensitive.table.golden.txt", out.String())
 }
 
+func TestGolden_validate_unknown_agent_table(t *testing.T) {
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "--project", testdataPath(t, "validate_unknown_agent"), "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d err=%v\n%s", ExitCodeOf(err), err, out.String())
+	}
+	assertGoldenOutput(t, "validate_unknown_agent.table.golden.txt", err.Error()+"\n")
+}
+
 func TestGolden_plan_first_table(t *testing.T) {
 	root := t.TempDir()
 	copyPlanFixture(t, root)
