@@ -1021,9 +1021,8 @@ Plan: 2 to add, 1 to change, 0 to delete
     maxTotalCostUsd: 3.00 -> 10.00
 
 Risk delta:
-- cost ceiling increased
-- approval scope unchanged
-- no new write permissions
+- [high] budget_relaxation: Cost ceiling increased (Policy/default).
+- [high] approval_removal: Approval requirements removed for "tool.helper.echo" (Policy/default).
 ```
 
 ### MVP
@@ -1340,10 +1339,15 @@ type Operation struct {
 
 ### MVP risk summary
 
-* new write permissions
-* removed approvals
-* model changes
-* cost cap changes
+Structured `RiskItem` list (category, severity, reason, target, witness path; issue #165):
+
+* permission widening — new `tool.permissions.allow` entries (write-like is high)
+* approval removal — entries removed from `policy.approvals.requiredFor`
+* budget relaxation — `maxTotalCostUsd` / `maxWallClockSeconds` increased
+* model changes — agent `model` provider or id
+* tool surface change — tools added to an agent's `tools` list
+
+C1 witness hops are resource-level (static). Effect-bound Workflow→step→Agent→tool.operation hops land in #191 on the same `Witness` field. `RiskSummary.Messages` remains the item reasons for string consumers; JSON keeps `"risk": []string` and adds `"riskItems"`.
 
 ### End goal risk summary
 
