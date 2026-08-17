@@ -334,6 +334,8 @@ Optional: add **`spec.output.schema`** on the agent (path relative to the projec
 
 Declare an **`Environment`** resource and pass **`-e` / `--env`** to `validate`, `plan`, or `apply` when you want overrides (for example stricter or looser policy limits).
 
+A checked-in **dev / staging / prod** overlay project lives under [**`examples/env-overlays/`**](../examples/env-overlays/README.md): `validate -e <env>`, `apply -e dev`, then `plan -e prod --from-env dev` for the promotion **risk delta**.
+
 **`environments/staging.yaml`**
 
 ```yaml

@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Environment
+metadata:
+  name: dev
+spec:
+  overrides:
+    agents:
+      reviewer:
+        model: mock/gpt-4

@@ -241,4 +241,7 @@ type AgentOverride struct {
 
 type PolicyOverride struct {
 	Execution *PolicyExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
+	// Approvals merges extra requiredFor entries onto the named Policy (issue #171).
+	// Overlay entries are unioned with the base list; empty overlay requiredFor is a no-op.
+	Approvals *PolicyApprovals `yaml:"approvals,omitempty" json:"approvals,omitempty"`
 }

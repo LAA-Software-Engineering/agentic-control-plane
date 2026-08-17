@@ -17,7 +17,8 @@ import (
 )
 
 func newPlanCmd() *cobra.Command {
-	return &cobra.Command{
+	var fromEnv string
+	cmd := &cobra.Command{
 		Use:          "plan",
 		Short:        "Show desired vs applied deployment diff",
 		SilenceUsage: true,
@@ -28,6 +29,8 @@ The state database defaults to .agentic/state.db under --project, or project.spe
 unless overridden by global --state.
 
 Environment for stored rows is taken from -e / --env when set, otherwise "local".
+Use --from-env to diff the -e overlay against applied rows from another environment
+(for example apply -e dev, then plan -e prod --from-env dev to preview promotion).
 
 Writes .agentic/resolved-config.json (digest of resolved graph + env + state path) and
 .agentic/policy-snapshot.json (compiled effective policy digest) for plan→run contract checks.
@@ -41,8 +44,13 @@ Exit codes (section 11.2):
   1 — generic failure (e.g. cannot open SQLite)
   2 — validation failure (invalid project)
   3 — plan/apply conflict when applying a stale plan (deployment store changed; issue #78)`,
-		RunE: runPlan,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			return runPlan(cmd, fromEnv)
+		},
 	}
+	cmd.Flags().StringVar(&fromEnv, "from-env", "", "compare desired graph against applied rows from this environment instead of -e")
+	return cmd
 }
 
 func planEnvironment(g *Global) string {
@@ -55,8 +63,7 @@ func planEnvironment(g *Global) string {
 	return "local"
 }
 
-func runPlan(cmd *cobra.Command, args []string) error {
-	_ = args
+func runPlan(cmd *cobra.Command, fromEnv string) error {
 	ctx := context.Background()
 	g := Globals()
 
@@ -66,6 +73,10 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	}
 	graph := rc.Graph()
 	env := rc.Environment()
+	appliedEnv := env
+	if s := strings.TrimSpace(fromEnv); s != "" {
+		appliedEnv = s
+	}
 	dsn := rc.StatePath()
 	if err := os.MkdirAll(filepath.Dir(dsn), 0o755); err != nil {
 		return fmt.Errorf("plan: create state directory: %w", err)
@@ -77,12 +88,12 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = st.Close() }()
 
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, env, graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, appliedEnv, graph)
 	if err != nil {
 		return fmt.Errorf("plan: compute: %w", err)
 	}
 
-	if err := writePlanOutput(cmd, env, dsn, pl, rc, g); err != nil {
+	if err := writePlanOutput(cmd, env, appliedEnv, dsn, pl, rc, g); err != nil {
 		return err
 	}
 	if err := persistSnapshots(rc); err != nil {
@@ -91,15 +102,23 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func writePlanOutput(cmd *cobra.Command, env, dsn string, p *plan.Plan, rc *config.ResolvedConfig, g *Global) error {
+func writePlanOutput(cmd *cobra.Command, env, appliedEnv, dsn string, p *plan.Plan, rc *config.ResolvedConfig, g *Global) error {
 	out := cmd.OutOrStdout()
 	switch g.Output {
 	case render.FormatJSON:
-		return writePlanJSON(out, env, dsn, p, rc)
+		return writePlanJSON(out, env, appliedEnv, dsn, p, rc)
 	case render.FormatYAML:
-		return render.WriteYAML(out, planJSONModel(env, dsn, p, rc))
+		return render.WriteYAML(out, planJSONModel(env, appliedEnv, dsn, p, rc))
 	default:
-		if _, err := fmt.Fprintf(out, "Environment: %s\nState: %s\n\n", env, dsn); err != nil {
+		if _, err := fmt.Fprintf(out, "Environment: %s\nState: %s\n", env, dsn); err != nil {
+			return err
+		}
+		if appliedEnv != env {
+			if _, err := fmt.Fprintf(out, "Applied environment: %s\n", appliedEnv); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprint(out, "\n"); err != nil {
 			return err
 		}
 		if _, err := fmt.Fprintf(out, "%s", plan.FormatPlan(p)); err != nil {
@@ -117,13 +136,16 @@ func writePlanOutput(cmd *cobra.Command, env, dsn string, p *plan.Plan, rc *conf
 	}
 }
 
-func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map[string]any {
+func planJSONModel(env, appliedEnv, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map[string]any {
 	if p == nil {
 		m := map[string]any{
 			"environment": env,
 			"statePath":   dsn,
 			"summary":     map[string]any{"add": 0, "change": 0, "delete": 0},
 			"operations":  []map[string]any{},
+		}
+		if appliedEnv != "" && appliedEnv != env {
+			m["appliedEnvironment"] = appliedEnv
 		}
 		plan.AttachRiskExport(m, p)
 		return m
@@ -153,6 +175,9 @@ func planJSONModel(env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) map
 			"delete": nD,
 		},
 		"operations": ops,
+	}
+	if appliedEnv != "" && appliedEnv != env {
+		m["appliedEnvironment"] = appliedEnv
 	}
 	plan.AttachRiskExport(m, p)
 	if p != nil && len(p.Risk.Lint) > 0 {
@@ -220,8 +245,8 @@ func effectivePolicyJSON(cp *policy.CompiledPolicy) []map[string]string {
 	return out
 }
 
-func writePlanJSON(w io.Writer, env, dsn string, p *plan.Plan, rc *config.ResolvedConfig) error {
-	return render.WriteJSON(w, planJSONModel(env, dsn, p, rc))
+func writePlanJSON(w io.Writer, env, appliedEnv, dsn string, p *plan.Plan, rc *config.ResolvedConfig) error {
+	return render.WriteJSON(w, planJSONModel(env, appliedEnv, dsn, p, rc))
 }
 
 func planCounts(p *plan.Plan) (create, update, delete int) {

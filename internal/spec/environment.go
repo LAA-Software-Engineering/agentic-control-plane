@@ -90,23 +90,51 @@ func mergeAgentOverride(agentSpec *AgentSpec, ovr AgentOverride) {
 }
 
 func mergePolicyOverride(pol *PolicySpec, ovr PolicyOverride) {
-	if ovr.Execution == nil {
+	if ovr.Execution != nil {
+		base := pol.Execution
+		if base == nil {
+			base = &PolicyExecution{}
+		}
+		merged := *base
+		pe := ovr.Execution
+		if pe.MaxWallClockSeconds != 0 {
+			merged.MaxWallClockSeconds = pe.MaxWallClockSeconds
+		}
+		if pe.MaxTotalCostUsd > 0 {
+			merged.MaxTotalCostUsd = pe.MaxTotalCostUsd
+		}
+		if pe.RequireStructuredOutput {
+			merged.RequireStructuredOutput = true
+		}
+		pol.Execution = &merged
+	}
+	if ovr.Approvals == nil || len(ovr.Approvals.RequiredFor) == 0 {
 		return
 	}
-	base := pol.Execution
-	if base == nil {
-		base = &PolicyExecution{}
+	merged := PolicyApprovals{}
+	if pol.Approvals != nil {
+		merged = *pol.Approvals
+		if len(pol.Approvals.RequiredFor) > 0 {
+			merged.RequiredFor = append([]string(nil), pol.Approvals.RequiredFor...)
+		}
 	}
-	merged := *base
-	pe := ovr.Execution
-	if pe.MaxWallClockSeconds != 0 {
-		merged.MaxWallClockSeconds = pe.MaxWallClockSeconds
+	merged.RequiredFor = unionRequiredFor(merged.RequiredFor, ovr.Approvals.RequiredFor)
+	pol.Approvals = &merged
+}
+
+func unionRequiredFor(base, extra []string) []string {
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, s := range append(append([]string{}, base...), extra...) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
 	}
-	if pe.MaxTotalCostUsd > 0 {
-		merged.MaxTotalCostUsd = pe.MaxTotalCostUsd
-	}
-	if pe.RequireStructuredOutput {
-		merged.RequireStructuredOutput = true
-	}
-	pol.Execution = &merged
+	return out
 }
