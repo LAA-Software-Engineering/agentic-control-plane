@@ -74,10 +74,12 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 	if e.Trace != nil {
 		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolSelection, trace.ActorAgent, toolSelectionData(uses, withArgs))
 	}
+	started := e.now()
 	if e.Tools == nil {
 		err := fmt.Errorf("engine: nil tool executor")
-		e.appendToolExecution(ctx, runID, step.ID, uses, tools.ToolCallMeta{}, err)
-		return nil, tools.ToolCallMeta{}, err
+		meta := tools.ToolCallMeta{DurationMs: e.now().Sub(started).Milliseconds()}
+		e.appendToolExecution(ctx, runID, step.ID, uses, meta, err)
+		return nil, meta, err
 	}
 	toolCtx := ctx
 	var endTool func(error)
@@ -88,7 +90,6 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 			Trusted: safety.Trusted, SideEffects: safety.SideEffects, RequiresApproval: safety.RequiresApproval,
 		})
 	}
-	started := e.now()
 	resp, err := e.Tools.Call(toolCtx, tools.ToolCallRequest{Uses: uses, With: withArgs})
 	if endTool != nil {
 		endTool(err)
@@ -371,6 +372,11 @@ func toolSelectionData(uses string, args map[string]any) map[string]any {
 	return data
 }
 
+// toolCallFailedReason is the stable tool_execution error value. Raw Error() strings are not
+// persisted: HTTP/native/MCP failures often embed URLs, bodies, or secrets, and
+// PrepareEventData only redacts known *keys*.
+const toolCallFailedReason = "tool_call_failed"
+
 func toolExecutionData(uses string, meta tools.ToolCallMeta, callErr error) map[string]any {
 	data := map[string]any{
 		"uses":       uses,
@@ -382,7 +388,7 @@ func toolExecutionData(uses string, meta tools.ToolCallMeta, callErr error) map[
 		data["tool"] = name
 	}
 	if callErr != nil {
-		data["error"] = callErr.Error()
+		data["error"] = toolCallFailedReason
 	}
 	return data
 }

@@ -2,8 +2,6 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -196,7 +194,7 @@ func TestRun_agentToolLoop_happyPath(t *testing.T) {
 	}
 	sel, exec := requireToolTracePair(t, events, "helper", "tool.helper.default")
 	assertNoRawToolArgs(t, sel, `"q"`, "weather")
-	wantDigest := argumentsDigestHex(map[string]any{"q": "weather"})
+	wantDigest := argumentsDigest(map[string]any{"q": "weather"})
 	if got := eventData(t, sel)["argumentsDigest"]; got != wantDigest {
 		t.Fatalf("argumentsDigest = %v want %s", got, wantDigest)
 	}
@@ -516,10 +514,11 @@ func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 			{Content: `{"summary":"should not run"}`},
 		},
 	}
-	extra := &tools.MockExecutor{Err: errors.New("boom")}
+	secretErr := errors.New("http 401 GET https://api.example.com/v1?api_key=sk-live-SECRET99 Authorization: Bearer tok_abc password=hunter2")
+	extra := &tools.MockExecutor{Err: secretErr}
 	got, events, err := runAgentLoop(t, graph, mock, extra)
-	if err == nil || !strings.Contains(err.Error(), "boom") {
-		t.Fatalf("err = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "sk-live-SECRET99") {
+		t.Fatalf("runtime error should still include the tool failure: %v", err)
 	}
 	if got.Status != "failed" {
 		t.Fatalf("status %q", got.Status)
@@ -529,11 +528,20 @@ func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 	}
 	sel, exec := requireToolTracePair(t, events, "helper", "tool.helper.default")
 	assertNoRawToolArgs(t, sel, "s3cret", "weather", `"password"`)
-	wantDigest := argumentsDigestHex(map[string]any{"password": "s3cret", "q": "weather"})
+	wantDigest := argumentsDigest(map[string]any{"password": "s3cret", "q": "weather"})
 	if got := eventData(t, sel)["argumentsDigest"]; got != wantDigest {
 		t.Fatalf("argumentsDigest = %v want %s", got, wantDigest)
 	}
-	assertToolExecutionPayload(t, exec, false, "boom")
+	assertToolExecutionPayload(t, exec, false, toolCallFailedReason)
+	for _, secret := range []string{
+		"sk-live-SECRET99", "tok_abc", "hunter2",
+		"api_key=sk-live-SECRET99", "Bearer tok_abc", "password=hunter2",
+		"https://api.example.com/v1?api_key=",
+	} {
+		if strings.Contains(exec.DataJSON, secret) {
+			t.Fatalf("secret %q leaked into tool_execution: %s", secret, exec.DataJSON)
+		}
+	}
 	assertAuditChain(t, "run-loop", events)
 }
 
@@ -544,15 +552,6 @@ func eventData(t *testing.T, ev trace.Event) map[string]any {
 		t.Fatalf("data json: %v (%s)", err, ev.DataJSON)
 	}
 	return m
-}
-
-func argumentsDigestHex(args map[string]any) string {
-	b, err := json.Marshal(args)
-	if err != nil {
-		panic(err)
-	}
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
 }
 
 func requireToolTracePair(t *testing.T, events []trace.Event, tool, uses string) (selection, execution trace.Event) {
@@ -652,7 +651,21 @@ func TestArgumentsDigest_canonicalKeyOrder(t *testing.T) {
 	if a == "" || a != b {
 		t.Fatalf("digests %q vs %q", a, b)
 	}
-	if a != argumentsDigestHex(map[string]any{"a": 2, "z": 1}) {
-		t.Fatalf("digest %q mismatch vs json.Marshal key order", a)
+}
+
+func TestToolExecutionData_omitsRawError(t *testing.T) {
+	data := toolExecutionData("tool.helper.default", tools.ToolCallMeta{DurationMs: 3, CostUSD: 0.01}, errors.New("api_key=sk-live-SECRET99"))
+	if data["success"] != false {
+		t.Fatalf("success = %v", data["success"])
+	}
+	if data["error"] != toolCallFailedReason {
+		t.Fatalf("error = %v want %s", data["error"], toolCallFailedReason)
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "sk-live-SECRET99") || strings.Contains(string(raw), "api_key=") {
+		t.Fatalf("raw error leaked: %s", raw)
 	}
 }

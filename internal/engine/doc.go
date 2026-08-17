@@ -18,7 +18,8 @@
 // turn fails without executing those calls. HITL interrupt does not run inside the loop: inner uses
 // must be pre-approved (`--approve` / ApprovedActions) or CheckToolCall fails closed. Agents with no
 // tools remain a single completion. Inner tool calls share workflow-step tracing: `tool_selection`
-// (tool name + arguments digest, not raw args) then `tool_execution` (duration, cost, success/error)
-// after the tool returns, including Call failures (issue #161). Policy denial still records
+// (tool name + arguments digest, not raw args) then `tool_execution` (duration, cost, success,
+// and a stable `tool_call_failed` reason — not the raw Error() string) after the tool returns,
+// including Call failures (issue #161). Policy denial still records
 // `system_error` without invoking the tool.
 package engine
