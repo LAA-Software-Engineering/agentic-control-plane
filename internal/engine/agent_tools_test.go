@@ -130,4 +130,30 @@ func TestAdvertisedAgentTools(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("got %v", err)
 	}
+
+	e.Graph.Tools["api"] = &spec.ToolResource{Metadata: spec.Metadata{Name: "api"}, Spec: spec.ToolSpec{Type: "http"}}
+	_, _, err = e.advertisedAgentTools(&spec.AgentResource{
+		Metadata: spec.Metadata{Name: "reviewer"},
+		Spec:     spec.AgentSpec{Tools: []string{"api"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "no default operation") {
+		t.Fatalf("bare http tool err %v", err)
+	}
+	defs, uses, err = e.advertisedAgentTools(&spec.AgentResource{
+		Metadata: spec.Metadata{Name: "reviewer"},
+		Spec:     spec.AgentSpec{Tools: []string{"tool.api.get.users"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) != 1 || defs[0].Name != "api" || uses["api"] != "tool.api.get.users" {
+		t.Fatalf("pinned http defs=%+v uses=%+v", defs, uses)
+	}
+	_, _, err = e.advertisedAgentTools(&spec.AgentResource{
+		Metadata: spec.Metadata{Name: "reviewer"},
+		Spec:     spec.AgentSpec{Tools: []string{"shell", "tool.shell.command.run"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "different operations") {
+		t.Fatalf("conflicting ops err %v", err)
+	}
 }

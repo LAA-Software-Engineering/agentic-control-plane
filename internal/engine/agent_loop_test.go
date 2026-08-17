@@ -363,3 +363,47 @@ func TestRun_agentToolLoop_maxIterationsDoesNotExecuteLastToolUse(t *testing.T) 
 		t.Fatalf("expected limit_hit max_iterations, events=%+v", events)
 	}
 }
+
+func TestRun_agentToolLoop_pinnedUses(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"tool.helper.echo"}}, spec.PolicySpec{})
+	mock := &models.MockClient{
+		Script: []models.MockTurn{
+			{ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}}},
+			{Content: `{"summary":"pinned"}`},
+		},
+	}
+	got, _, err := runAgentLoop(t, graph, mock, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "succeeded" {
+		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
+	}
+	second := mock.Requests()[1]
+	var sawResult bool
+	for _, msg := range second.Messages {
+		for _, r := range msg.ToolResults {
+			if r.ToolCallID == "c1" && strings.Contains(r.Content, "tool.helper.echo") {
+				sawResult = true
+			}
+		}
+	}
+	if !sawResult {
+		t.Fatalf("expected pinned uses in tool_result, messages=%+v", second.Messages)
+	}
+}
+
+func TestRun_agentToolLoop_httpRequiresPinnedUses(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"api"}}, spec.PolicySpec{})
+	graph.Tools["api"] = &spec.ToolResource{
+		APIVersion: spec.APIVersionV0,
+		Kind:       spec.KindTool,
+		Metadata:   spec.Metadata{Name: "api"},
+		Spec:       spec.ToolSpec{Type: "http"},
+	}
+	mock := &models.MockClient{Content: `{"summary":"nope"}`}
+	_, _, err := runAgentLoop(t, graph, mock, nil)
+	if err == nil || !strings.Contains(err.Error(), "no default operation") {
+		t.Fatalf("err = %v", err)
+	}
+}

@@ -10,7 +10,7 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 )
 
-// defaultAgentToolOperation is used when the tool type has no native single-op mapping (mock/mcp/http).
+// defaultAgentToolOperation is used when the tool type has no native single-op mapping (mock/mcp).
 const defaultAgentToolOperation = "default"
 
 // nativeAgentToolOperation is the MVP advertised op for type=native (Dispatch always has echo).
@@ -28,18 +28,31 @@ func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []model
 	defs = make([]models.ToolDef, 0, len(agent.Spec.Tools))
 	usesByName = make(map[string]string, len(agent.Spec.Tools))
 	for _, raw := range agent.Spec.Tools {
-		name := strings.TrimSpace(raw)
-		if name == "" {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
 			continue
 		}
-		if _, dup := usesByName[name]; dup {
-			continue
+		name, pinned, err := parseAgentToolEntry(entry)
+		if err != nil {
+			return nil, nil, fmt.Errorf("engine: agent %q: %w", agent.Metadata.Name, err)
 		}
 		tr, ok := e.Graph.Tools[name]
 		if !ok || tr == nil {
 			return nil, nil, fmt.Errorf("engine: agent %q declares unknown tool %q", agent.Metadata.Name, name)
 		}
-		uses := advertisedAgentUses(name, tr)
+		uses := pinned
+		if uses == "" {
+			uses, err = advertisedAgentUses(name, tr)
+			if err != nil {
+				return nil, nil, fmt.Errorf("engine: agent %q: %w", agent.Metadata.Name, err)
+			}
+		}
+		if prev, dup := usesByName[name]; dup {
+			if prev == uses {
+				continue
+			}
+			return nil, nil, fmt.Errorf("engine: agent %q declares tool %q twice with different operations (%s vs %s)", agent.Metadata.Name, name, prev, uses)
+		}
 		usesByName[name] = uses
 		desc := strings.TrimSpace(tr.Spec.Type)
 		if desc != "" {
@@ -56,24 +69,45 @@ func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []model
 	return defs, usesByName, nil
 }
 
-func advertisedAgentOperation(tr *spec.ToolResource) string {
+// parseAgentToolEntry accepts a Tool metadata name or a pinned uses string
+// tool.<name>.<operation>. Bare tool.<name> (no operation) is treated as the name.
+func parseAgentToolEntry(entry string) (toolName, pinnedUses string, err error) {
+	if tn, op, perr := tools.ParseUses(entry); perr == nil {
+		return tn, "tool." + tn + "." + op, nil
+	}
+	if strings.HasPrefix(entry, "tool.") {
+		if name, ok := spec.ParseToolUses(entry); ok {
+			return name, "", nil
+		}
+		return "", "", fmt.Errorf("invalid tool entry %q (want <name> or tool.<name>.<operation>)", entry)
+	}
+	return entry, "", nil
+}
+
+func advertisedAgentOperation(toolName string, tr *spec.ToolResource) (string, error) {
 	if tr == nil {
-		return defaultAgentToolOperation
+		return defaultAgentToolOperation, nil
 	}
 	switch strings.ToLower(strings.TrimSpace(tr.Spec.Type)) {
 	case "native":
 		// Native catalog ops are named (echo, identity, command.run, …). Agents
 		// that list the tool by metadata name get echo only — never command.run.
-		return nativeAgentToolOperation
+		return nativeAgentToolOperation, nil
+	case "http":
+		// httptool.parseOperation maps an unknown op to GET /<op>, so "default"
+		// would become GET /default. Require an explicit method.path in YAML.
+		return "", fmt.Errorf("tool %q is type http; list tool.%s.<method.path> in spec.tools (HTTP has no default operation)", toolName, toolName)
 	default:
-		// mock/mcp accept a synthetic default op. HTTP interprets "default" as
-		// GET /default; prefer a workflow uses step with an explicit method.path.
-		return defaultAgentToolOperation
+		return defaultAgentToolOperation, nil
 	}
 }
 
-func advertisedAgentUses(toolName string, tr *spec.ToolResource) string {
-	return "tool." + toolName + "." + advertisedAgentOperation(tr)
+func advertisedAgentUses(toolName string, tr *spec.ToolResource) (string, error) {
+	op, err := advertisedAgentOperation(toolName, tr)
+	if err != nil {
+		return "", err
+	}
+	return "tool." + toolName + "." + op, nil
 }
 
 // resolveAgentToolCall maps a model tool name onto the single advertised uses string.

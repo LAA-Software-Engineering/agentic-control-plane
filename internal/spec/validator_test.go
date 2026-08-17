@@ -92,6 +92,28 @@ func TestValidateProjectGraph_workflowStepNeitherAgentNorUses(t *testing.T) {
 	}
 }
 
+func TestValidateProjectGraph_agentToolUsesString(t *testing.T) {
+	g := &ProjectGraph{
+		Agents: map[string]*AgentResource{
+			"a": {
+				Kind:     KindAgent,
+				Metadata: Metadata{Name: "a"},
+				Spec:     AgentSpec{Tools: []string{"tool.helper.echo", "helper"}},
+			},
+		},
+		Tools: map[string]*ToolResource{
+			"helper": {
+				Kind:     KindTool,
+				Metadata: Metadata{Name: "helper"},
+				Spec:     ToolSpec{Type: "mock"},
+			},
+		},
+	}
+	if err := ValidateProjectGraph(g, t.TempDir()); err != nil {
+		t.Fatalf("uses-string tool ref should resolve: %v", err)
+	}
+}
+
 func TestValidateProjectGraph_agentMissingTool(t *testing.T) {
 	g := &ProjectGraph{
 		Agents: map[string]*AgentResource{
