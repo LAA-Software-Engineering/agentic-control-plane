@@ -48,6 +48,30 @@ func TestEstimateTokenCostUSD_priceTable(t *testing.T) {
 			want:       7.00, // 2*1.00 + 5.00
 		},
 		{
+			name:       "newer version bump does not inherit shorter key",
+			provider:   costProviderAnthropic,
+			model:      "claude-sonnet-4-5-20250929",
+			prompt:     1_000_000,
+			completion: 1_000_000,
+			want:       0,
+		},
+		{
+			name:       "dotted newer version does not inherit shorter key",
+			provider:   costProviderAnthropic,
+			model:      "claude-sonnet-4.5",
+			prompt:     1_000_000,
+			completion: 1_000_000,
+			want:       0,
+		},
+		{
+			name:       "openai mini dated snapshot does not use gpt-4o rates",
+			provider:   costProviderOpenAI,
+			model:      "gpt-4o-mini-2024-07-18",
+			prompt:     1_000_000,
+			completion: 0,
+			want:       0.15,
+		},
+		{
 			name:       "unknown model is zero",
 			provider:   costProviderOpenAI,
 			model:      "unknown-model-xyz",
@@ -79,6 +103,32 @@ func TestEstimateTokenCostUSD_priceTable(t *testing.T) {
 			if math.Abs(got-tc.want) > cent {
 				t.Fatalf("estimateTokenCostUSD(%q, %q, %d, %d) = %v, want %v (cent precision)",
 					tc.provider, tc.model, tc.prompt, tc.completion, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestModelMatchesRateKey(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		model, key string
+		want       bool
+	}{
+		{model: "claude-sonnet-4", key: "claude-sonnet-4", want: true},
+		{model: "claude-sonnet-4-20250514", key: "claude-sonnet-4", want: true},
+		{model: "gpt-4o-2024-08-06", key: "gpt-4o", want: true},
+		{model: "gpt-4o-mini-2024-07-18", key: "gpt-4o-mini", want: true},
+		{model: "gpt-4o-mini-2024-07-18", key: "gpt-4o", want: false},
+		{model: "claude-sonnet-4-5-20250929", key: "claude-sonnet-4", want: false},
+		{model: "claude-sonnet-4.5", key: "claude-sonnet-4", want: false},
+		{model: "claude-sonnet-4-preview", key: "claude-sonnet-4", want: false},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.model+"/"+tc.key, func(t *testing.T) {
+			t.Parallel()
+			if got := modelMatchesRateKey(tc.model, tc.key); got != tc.want {
+				t.Fatalf("modelMatchesRateKey(%q, %q) = %v, want %v", tc.model, tc.key, got, tc.want)
 			}
 		})
 	}
