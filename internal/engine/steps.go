@@ -102,7 +102,7 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 	return out, resp.Meta, nil
 }
 
-func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, agent *spec.AgentResource) (map[string]any, models.GenerateMeta, error) {
+func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, wf *spec.WorkflowResource, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, agent *spec.AgentResource) (map[string]any, models.GenerateMeta, error) {
 	if agent == nil {
 		return nil, models.GenerateMeta{}, fmt.Errorf("engine: nil agent resource")
 	}
@@ -128,8 +128,137 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		{Role: "user", Content: string(payload)},
 	}
 
+	toolDefs, err := e.agentToolDefs(agent)
+	if err != nil {
+		return nil, models.GenerateMeta{}, err
+	}
+	if len(toolDefs) == 0 {
+		return e.finishAgentTurn(ctx, ctx2, runHandle, pol, cli, modelRef, modelID, runID, step, agent, models.GenerateRequest{
+			Model:    modelID,
+			Messages: messages,
+		})
+	}
+	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs)
+}
+
+func (e *Executor) runAgentToolLoop(
+	ctx, ctx2 context.Context,
+	runHandle *telemetry.RunHandle,
+	pol policy.PolicyEvaluator,
+	wf *spec.WorkflowResource,
+	cli models.ModelClient,
+	modelRef, modelID, runID string,
+	step spec.WorkflowStep,
+	pctx policy.RunContext,
+	agent *spec.AgentResource,
+	messages []models.ChatMessage,
+	toolDefs []models.ToolDef,
+) (map[string]any, models.GenerateMeta, error) {
+	declared := declaredAgentTools(agent)
+	maxIter := agentMaxIterations(agent)
+	var acc models.GenerateMeta
+	loopPctx := pctx
+
+	for i := 1; i <= maxIter; i++ {
+		req := models.GenerateRequest{
+			Model:      modelID,
+			Messages:   messages,
+			Tools:      toolDefs,
+			ToolChoice: models.ToolChoiceAuto,
+		}
+		resp, err := e.generateAgentTurn(ctx, ctx2, runHandle, cli, modelRef, runID, step, req)
+		if err != nil {
+			return nil, acc, err
+		}
+		addGenerateMeta(&acc, resp.Meta)
+		loopPctx.AccumulatedCostUSD = pctx.AccumulatedCostUSD + acc.CostUSD
+
+		switch resp.StopReason {
+		case models.StopReasonEndTurn, "":
+			// Empty stop is treated as end_turn only when the model did not request tools.
+			if resp.StopReason == "" && len(resp.ToolCalls) > 0 {
+				resp.StopReason = models.StopReasonToolUse
+			} else {
+				return e.completeAgentOutput(ctx, pol, agent, step, resp.Content, acc)
+			}
+		}
+		if resp.StopReason != models.StopReasonToolUse {
+			return nil, acc, fmt.Errorf("engine: agent %q stop reason %q is not end_turn or tool_use", agent.Metadata.Name, resp.StopReason)
+		}
+		if len(resp.ToolCalls) == 0 {
+			return nil, acc, fmt.Errorf("engine: agent %q returned tool_use without tool calls", agent.Metadata.Name)
+		}
+		if i == maxIter {
+			if e.Trace != nil {
+				_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventLimitHit, trace.ActorSystem, map[string]any{
+					"kind":        "max_iterations",
+					"max":         maxIter,
+					"iterations":  i,
+					"stepId":      step.ID,
+					"agent":       step.Agent,
+					"stopReason":  resp.StopReason,
+					"toolCallIds": toolCallIDs(resp.ToolCalls),
+				})
+			}
+			return nil, acc, fmt.Errorf("engine: agent %q reached maxIterations (%d)", agent.Metadata.Name, maxIter)
+		}
+
+		results := make([]models.ToolResult, 0, len(resp.ToolCalls))
+		for _, call := range resp.ToolCalls {
+			uses, err := resolveAgentToolCall(call.Name, declared)
+			if err != nil {
+				return nil, acc, err
+			}
+			args, err := parseToolCallArgs(call.Arguments)
+			if err != nil {
+				return nil, acc, fmt.Errorf("engine: tool call %q: %w", call.Name, err)
+			}
+			out, tmeta, err := e.runToolStep(ctx, runHandle, pol, wf, runID, step, args, loopPctx, uses, args)
+			if err != nil {
+				return nil, acc, err
+			}
+			addToolMeta(&acc, tmeta)
+			loopPctx.AccumulatedCostUSD = pctx.AccumulatedCostUSD + acc.CostUSD
+			results = append(results, models.ToolResult{
+				ToolCallID: call.ID,
+				Content:    encodeToolResultContent(out),
+			})
+		}
+		messages = append(messages,
+			models.ChatMessage{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls},
+			models.ChatMessage{Role: "user", ToolResults: results},
+		)
+	}
+	return nil, acc, fmt.Errorf("engine: agent %q reached maxIterations (%d)", agent.Metadata.Name, maxIter)
+}
+
+func (e *Executor) finishAgentTurn(
+	ctx, ctx2 context.Context,
+	runHandle *telemetry.RunHandle,
+	pol policy.PolicyEvaluator,
+	cli models.ModelClient,
+	modelRef, modelID, runID string,
+	step spec.WorkflowStep,
+	agent *spec.AgentResource,
+	req models.GenerateRequest,
+) (map[string]any, models.GenerateMeta, error) {
+	resp, err := e.generateAgentTurn(ctx, ctx2, runHandle, cli, modelRef, runID, step, req)
+	if err != nil {
+		return nil, models.GenerateMeta{}, err
+	}
+	return e.completeAgentOutput(ctx, pol, agent, step, resp.Content, resp.Meta)
+}
+
+func (e *Executor) generateAgentTurn(
+	ctx, ctx2 context.Context,
+	runHandle *telemetry.RunHandle,
+	cli models.ModelClient,
+	modelRef, runID string,
+	step spec.WorkflowStep,
+	req models.GenerateRequest,
+) (models.GenerateResponse, error) {
 	var resp models.GenerateResponse
-	err = withAgentRetry(ctx2, func() error {
+	err := withAgentRetry(ctx2, func() error {
 		callCtx := ctx2
 		var endModel func(error)
 		if runHandle != nil {
@@ -137,7 +266,7 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 				RunID: runID, StepID: step.ID, AgentName: step.Agent, ModelRef: modelRef,
 			})
 		}
-		r, genErr := cli.Generate(callCtx, models.GenerateRequest{Model: modelID, Messages: messages})
+		r, genErr := cli.Generate(callCtx, req)
 		if endModel != nil {
 			endModel(genErr)
 		}
@@ -148,23 +277,36 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		return nil
 	})
 	if err != nil {
-		return nil, models.GenerateMeta{}, err
+		return models.GenerateResponse{}, err
 	}
 	if e.Trace != nil {
 		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventLLMCompletion, trace.ActorAgent, map[string]any{
 			"agent": step.Agent, "model": modelRef, "costUsd": resp.Meta.CostUSD,
 		})
 	}
-	if err := validateAgentOutput(e.ProjectRoot, agent, resp.Content); err != nil {
-		return nil, resp.Meta, err
+	return resp, nil
+}
+
+func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {
+	if err := validateAgentOutput(e.ProjectRoot, agent, content); err != nil {
+		return nil, meta, err
 	}
-	out, err := parseAgentJSONObject(resp.Content)
+	out, err := parseAgentJSONObject(content)
 	if err != nil {
-		return nil, resp.Meta, err
+		return nil, meta, err
 	}
-	structured := true
-	if err := pol.CheckStep(ctx, policy.StepContext{StepID: step.ID, OutputIsStructured: structured}); err != nil {
-		return nil, resp.Meta, err
+	if err := pol.CheckStep(ctx, policy.StepContext{StepID: step.ID, OutputIsStructured: true}); err != nil {
+		return nil, meta, err
 	}
-	return out, resp.Meta, nil
+	return out, meta, nil
+}
+
+func toolCallIDs(calls []models.ToolCall) []string {
+	out := make([]string, 0, len(calls))
+	for _, c := range calls {
+		if id := strings.TrimSpace(c.ID); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }

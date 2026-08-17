@@ -1439,7 +1439,7 @@ Responsibilities:
 
    * resolve interpolations
    * enforce policy
-   * execute tool or agent
+   * execute tool or agent (agent steps with `spec.tools` run a bounded Generate / `tool_use` / `tool_result` loop; `policy.CheckToolCall` runs before every tool execution; the loop stops on `end_turn` or `constraints.maxIterations`, default 8, hard cap 32)
    * validate output if configured
    * record trace
 5. compute workflow output
@@ -1455,6 +1455,8 @@ Responsibilities:
 * attach tools
 * invoke provider
 * return structured output
+
+The engine implements the bounded tool-calling loop (issue #160). Each agent-declared Tool resource is advertised as one `ToolDef` (name = Tool metadata.name, permissive object schema, default operation `default` → `tool.<name>.default`). `ToolChoice` is `auto`. On `StopReason: tool_use`, each `ToolCall` is mapped to a uses string, checked with `CheckToolCall`, then executed via `Tools.Call`. Results are appended as `ChatMessage.ToolResults` (with the assistant `ToolCalls` replayed) and the loop continues. Agents that declare no tools stay a single `Generate` with no `Tools` field. Loop cost (model + tool) accumulates into the step `GenerateMeta` for budget checks. A `maxIterations` cutoff emits `limit_hit` (`kind: max_iterations`) and fails the step. Policy denial uses the existing `DeniedError` path (CLI exit **5**).
 
 Abstraction:
 
