@@ -217,6 +217,77 @@ func TestMockClient_Reset(t *testing.T) {
 	}
 }
 
+func TestMockClient_estimatesCostFromTokenUsage(t *testing.T) {
+	t.Parallel()
+	const model = "gpt-4o-mini"
+	turns := []GenerateMeta{
+		{PromptTokens: 1_000_000, CompletionTokens: 0},
+		{PromptTokens: 0, CompletionTokens: 500_000},
+		{PromptTokens: 100_000, CompletionTokens: 50_000},
+	}
+	script := make([]MockTurn, len(turns))
+	var wantSum float64
+	for i, meta := range turns {
+		m := meta
+		script[i] = MockTurn{Content: string(rune('a' + i)), Meta: &m}
+		wantSum += estimateOpenAIChatCostUSD(model, meta.PromptTokens, meta.CompletionTokens)
+	}
+	if wantSum <= 0 {
+		t.Fatal("expected non-zero B1 sum for gpt-4o-mini")
+	}
+	cli := &MockClient{Script: script}
+	ctx := context.Background()
+	var gotSum float64
+	for i, meta := range turns {
+		resp, err := cli.Generate(ctx, GenerateRequest{Model: model})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := estimateOpenAIChatCostUSD(model, meta.PromptTokens, meta.CompletionTokens)
+		if resp.Meta.PromptTokens != meta.PromptTokens || resp.Meta.CompletionTokens != meta.CompletionTokens {
+			t.Fatalf("turn %d tokens %+v", i+1, resp.Meta)
+		}
+		if resp.Meta.CostUSD != want {
+			t.Fatalf("turn %d CostUSD %v want %v", i+1, resp.Meta.CostUSD, want)
+		}
+		gotSum += resp.Meta.CostUSD
+	}
+	if gotSum != wantSum {
+		t.Fatalf("accumulated CostUSD %v want %v", gotSum, wantSum)
+	}
+}
+
+func TestMockClient_explicitCostUSDNotOverwritten(t *testing.T) {
+	t.Parallel()
+	cli := &MockClient{
+		Script: []MockTurn{{
+			Content: "ok",
+			Meta:    &GenerateMeta{PromptTokens: 1_000_000, CompletionTokens: 0, CostUSD: 0.02},
+		}},
+	}
+	resp, err := cli.Generate(context.Background(), GenerateRequest{Model: "gpt-4o-mini"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Meta.CostUSD != 0.02 {
+		t.Fatalf("CostUSD %v, want injected 0.02 (not B1 estimate)", resp.Meta.CostUSD)
+	}
+}
+
+func TestMockClient_unknownModelTokenCostStaysZero(t *testing.T) {
+	t.Parallel()
+	cli := &MockClient{
+		Meta: &GenerateMeta{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
+	}
+	resp, err := cli.Generate(context.Background(), GenerateRequest{Model: "gpt-4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Meta.CostUSD != 0 {
+		t.Fatalf("CostUSD %v, want 0 for unpriced gpt-4", resp.Meta.CostUSD)
+	}
+}
+
 func TestMockClient_honorsExplicitStopReasonAndErr(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("provider down")

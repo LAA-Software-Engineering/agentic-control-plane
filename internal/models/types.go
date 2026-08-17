@@ -83,9 +83,9 @@ type GenerateResponse struct {
 }
 
 // GenerateMeta holds duration, token usage, and cost accounting (§13.2 style).
-// CostUSD is 0 for the mock client unless injected. For OpenAI and Anthropic it is a rough
-// estimate from usage × published per-million token rates when the model is recognized
-// (see tokenUSDPerMillion in cost.go). Unknown model ids stay at 0.
+// For OpenAI, Anthropic, and the mock client, CostUSD is a rough estimate from usage ×
+// published per-million token rates when the model is recognized (see tokenUSDPerMillion
+// in cost.go). The mock leaves an explicit non-zero CostUSD unchanged. Unknown model ids stay at 0.
 type GenerateMeta struct {
 	DurationMs       int64   `json:"duration_ms"`
 	PromptTokens     int     `json:"prompt_tokens,omitempty"`
