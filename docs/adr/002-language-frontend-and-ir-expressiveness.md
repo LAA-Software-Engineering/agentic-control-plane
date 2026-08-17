@@ -254,11 +254,14 @@ Three consequences that must hold or the split is meaningless:
   resume is picked up silently — `workflow_spec_hash` covers the workflow alone. Each additional
   pinned dimension would be another column and another way to miss one.
 
-  [`config.ResolvedConfig`](../../internal/config/resolved.go) is already the right shape: it
-  holds the whole resolved `ProjectGraph` and exposes a `Digest()` over graph, environment, and
-  state path. The change is evolutionary — from **one current snapshot** at
-  `.agentic/resolved-config.json` (#112) to **retained, content-addressed snapshots** that runs
-  reference — plus the execution IR as an artifact under it. Tracked as #207.
+  [`config.ResolvedConfig`](../../internal/config/resolved.go) is the right *abstraction* already
+  — it holds the whole resolved `ProjectGraph` and exposes a `Digest()` — but it is not yet a
+  persisted artifact: `.agentic/resolved-config.json` stores only `{digest, environment}` for
+  plan→run contract checks (#112). #207 must therefore add a canonical serializable resolved-graph
+  artifact, immutable retention, content addressing, and the run→snapshot reference. The snapshot
+  digest must also be defined independently of `ResolvedConfig.Digest()`, which mixes in the
+  absolute `statePath` — where the database happens to live is not part of a program's executable
+  configuration. Tracked as #207.
 
   Resulting invariant:
 
