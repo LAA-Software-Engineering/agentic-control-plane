@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -60,6 +62,8 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 		return nil, tools.ToolCallMeta{}, err
 	}
 	if err := pol.CheckToolCall(ctx, policy.ToolCallContext{Run: pctx, StepID: step.ID, Uses: uses, With: withArgs}); err != nil {
+		// Fail-closed: the tool is never invoked, so we skip tool_selection/tool_execution and
+		// record system_error instead (same as workflow uses: steps).
 		if e.Trace != nil {
 			if d, ok := policy.AsDenied(err); ok {
 				_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventSystemError, trace.ActorSystem, d.TraceData())
@@ -68,10 +72,14 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 		return nil, tools.ToolCallMeta{}, err
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolSelection, trace.ActorAgent, map[string]any{"uses": uses})
+		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolSelection, trace.ActorAgent, toolSelectionData(uses, withArgs))
 	}
+	started := e.now()
 	if e.Tools == nil {
-		return nil, tools.ToolCallMeta{}, fmt.Errorf("engine: nil tool executor")
+		err := fmt.Errorf("engine: nil tool executor")
+		meta := tools.ToolCallMeta{DurationMs: e.now().Sub(started).Milliseconds()}
+		e.appendToolExecution(ctx, runID, step.ID, uses, meta, err)
+		return nil, meta, err
 	}
 	toolCtx := ctx
 	var endTool func(error)
@@ -86,20 +94,23 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 	if endTool != nil {
 		endTool(err)
 	}
+	meta := resp.Meta
+	if meta.DurationMs == 0 {
+		meta.DurationMs = e.now().Sub(started).Milliseconds()
+	}
 	if err != nil {
-		return nil, tools.ToolCallMeta{}, err
+		e.appendToolExecution(ctx, runID, step.ID, uses, meta, err)
+		return nil, meta, err
 	}
-	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolExecution, trace.ActorAgent, map[string]any{"uses": uses, "costUsd": resp.Meta.CostUSD})
-	}
+	e.appendToolExecution(ctx, runID, step.ID, uses, meta, nil)
 	out, err := e.enforceToolOutput(ctx, wf, runID, step.ID, uses, resp.Output)
 	if err != nil {
-		return nil, resp.Meta, err
+		return nil, meta, err
 	}
 	if err := pol.CheckStep(ctx, policy.StepContext{StepID: step.ID, OutputIsStructured: true}); err != nil {
-		return nil, resp.Meta, err
+		return nil, meta, err
 	}
-	return out, resp.Meta, nil
+	return out, meta, nil
 }
 
 func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, wf *spec.WorkflowResource, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, agent *spec.AgentResource) (map[string]any, models.GenerateMeta, error) {
@@ -339,4 +350,66 @@ func toolCallIDs(calls []models.ToolCall) []string {
 		}
 	}
 	return out
+}
+
+func (e *Executor) appendToolExecution(ctx context.Context, runID, stepID, uses string, meta tools.ToolCallMeta, callErr error) {
+	if e == nil || e.Trace == nil {
+		return
+	}
+	_, _ = e.Trace.Append(ctx, runID, stepID, trace.EventToolExecution, trace.ActorAgent, toolExecutionData(uses, meta, callErr))
+}
+
+// toolSelectionData is the tool_selection payload for workflow uses: steps and agent-loop inner calls.
+// argumentsDigest is SHA-256 over canonical JSON so raw arguments (which may contain secrets) are not stored.
+func toolSelectionData(uses string, args map[string]any) map[string]any {
+	data := map[string]any{
+		"uses":            uses,
+		"argumentsDigest": argumentsDigest(args),
+	}
+	if name := toolNameFromUses(uses); name != "" {
+		data["tool"] = name
+	}
+	return data
+}
+
+// toolCallFailedReason is the stable tool_execution error value. Raw Error() strings are not
+// persisted: HTTP/native/MCP failures often embed URLs, bodies, or secrets, and
+// PrepareEventData only redacts known *keys*.
+const toolCallFailedReason = "tool_call_failed"
+
+func toolExecutionData(uses string, meta tools.ToolCallMeta, callErr error) map[string]any {
+	data := map[string]any{
+		"uses":       uses,
+		"durationMs": meta.DurationMs,
+		"costUsd":    meta.CostUSD,
+		"success":    callErr == nil,
+	}
+	if name := toolNameFromUses(uses); name != "" {
+		data["tool"] = name
+	}
+	if callErr != nil {
+		data["error"] = toolCallFailedReason
+	}
+	return data
+}
+
+func toolNameFromUses(uses string) string {
+	name, _, err := tools.ParseUses(uses)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
+func argumentsDigest(args map[string]any) string {
+	if args == nil {
+		args = map[string]any{}
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%v", args)))
+		return hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
