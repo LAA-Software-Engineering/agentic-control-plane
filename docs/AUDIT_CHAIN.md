@@ -79,6 +79,7 @@ Migration `007_trace_audit_chain.sql` adds nullable `prev_hash` and `hash` colum
 
 ## Related docs
 
+- [`examples/audit-tamper/`](../examples/audit-tamper/README.md) — plant a `data_json` edit and watch `audit verify` fail (issue #169)
 - [Run attribution](./ATTRIBUTION.md) — tenant/thread/actor fields included in the hash
 - Trace redaction (issue #110) — payloads are sanitized before hashing
 - Closed event taxonomy (issue #115) — stable `type` / `actor_type` in the canonical form

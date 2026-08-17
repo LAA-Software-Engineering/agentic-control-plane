@@ -1,0 +1,20 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: note
+spec:
+  description: |
+    Offline demo: a single mock agent turn records a hash-linked trace. After the run
+    succeeds, planting an edit in trace_events.data_json (without updating hash) makes
+    agentctl audit verify fail with exit 1.
+  policy: cheap-ceiling
+  input:
+    schema: ./schemas/note-input.json
+  steps:
+    - id: write
+      agent: scribe
+      with:
+        topic: ${input.topic}
+  output:
+    value:
+      note: ${steps.write.output}

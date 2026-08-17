@@ -3,9 +3,11 @@ package integration_test
 
 import (
 	"bytes"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/cli"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	_ "modernc.org/sqlite"
 )
 
 // repoRoot returns the agentic-control-plane module root (directory containing go.mod).
@@ -425,6 +428,133 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("audit verify:\n%s", out)
 		}
 	})
+
+	t.Run("audit_tamper_verify_detects_edit", func(t *testing.T) {
+		root := repoRoot(t)
+		demo := filepath.Join(root, "examples", "audit-tamper")
+		input := filepath.Join(demo, "fixtures", "sample-input.json")
+		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+			t.Fatalf("demo project: %v", err)
+		}
+		db := filepath.Join(t.TempDir(), "audit-tamper.db")
+
+		out, err := runCLI(t, "validate", "--project", demo, "--no-color")
+		if err != nil {
+			t.Fatalf("validate: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Validation successful") {
+			t.Fatalf("validate:\n%s", out)
+		}
+
+		out, err = runCLI(t, "plan", "--project", demo, "--state", db)
+		if err != nil {
+			t.Fatalf("plan: %v\n%s", err, out)
+		}
+		out, err = runCLI(t, "apply", "--project", demo, "--state", db, "--auto-approve")
+		if err != nil {
+			t.Fatalf("apply: %v\n%s", err, out)
+		}
+
+		out, err = runCLI(t,
+			"run", "workflow/note",
+			"--project", demo,
+			"--state", db,
+			"--input-file", input,
+		)
+		if err != nil {
+			t.Fatalf("run: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Status: succeeded") {
+			t.Fatalf("run output:\n%s", out)
+		}
+		runID := extractRunID(out)
+		if runID == "" {
+			t.Fatalf("no run id in:\n%s", out)
+		}
+
+		out, err = runCLI(t, "audit", "verify", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("audit verify pre-edit: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "OK") {
+			t.Fatalf("audit verify pre-edit:\n%s", out)
+		}
+
+		scriptCopy := filepath.Join(t.TempDir(), "audit-tamper-script.db")
+		copyFile(t, db, scriptCopy)
+
+		tamperTraceDataJSON(t, db, runID)
+		out, err = runCLI(t, "audit", "verify", "--project", demo, "--state", db, "--run", runID)
+		if cli.ExitCodeOf(err) != cli.ExitGenericFailure {
+			t.Fatalf("audit verify post-sql exit=%d err=%v\n%s", cli.ExitCodeOf(err), err, out)
+		}
+		if !strings.Contains(out, "BROKEN") {
+			t.Fatalf("audit verify post-sql missing BROKEN:\n%s", out)
+		}
+
+		if runTamperHelper(t, demo, scriptCopy, runID) {
+			out, err = runCLI(t, "audit", "verify", "--project", demo, "--state", scriptCopy, "--run", runID)
+			if cli.ExitCodeOf(err) != cli.ExitGenericFailure {
+				t.Fatalf("audit verify post-script exit=%d err=%v\n%s", cli.ExitCodeOf(err), err, out)
+			}
+			if !strings.Contains(out, "BROKEN") {
+				t.Fatalf("audit verify post-script missing BROKEN:\n%s", out)
+			}
+		}
+	})
+}
+
+func copyFile(t *testing.T, src, dst string) {
+	t.Helper()
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read %s: %v", src, err)
+	}
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		t.Fatalf("write %s: %v", dst, err)
+	}
+}
+
+func tamperTraceDataJSON(t *testing.T, db, runID string) {
+	t.Helper()
+	raw, err := sql.Open("sqlite", db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = raw.Close() }()
+	res, err := raw.Exec(
+		`UPDATE trace_events SET data_json = '{"tampered":true}' WHERE run_id = ? AND seq = (SELECT MIN(seq) FROM trace_events WHERE run_id = ?)`,
+		runID, runID,
+	)
+	if err != nil {
+		t.Fatalf("tamper data_json: %v", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("tamper data_json: rows affected=%d want 1", n)
+	}
+}
+
+func runTamperHelper(t *testing.T, demo, db, runID string) bool {
+	t.Helper()
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Log("skip helper script: bash not on PATH")
+		return false
+	}
+	script := filepath.Join(demo, "scripts", "tamper-trace.sh")
+	cmd := exec.Command(bash, script, "--state", db, "--run", runID)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("tamper-trace.sh: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "hash unchanged") {
+		t.Fatalf("tamper-trace.sh output:\n%s", out)
+	}
+	return true
 }
 
 // TestCLI_ValidatePrReviewGithubActionsProject ensures the OpenAI (gpt-4o-mini) + Actions example graph loads.
