@@ -151,6 +151,13 @@ func TestAdvertisedAgentTools(t *testing.T) {
 	}
 	_, _, err = e.advertisedAgentTools(&spec.AgentResource{
 		Metadata: spec.Metadata{Name: "reviewer"},
+		Spec:     spec.AgentSpec{Tools: []string{"tool.api.default"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "no default operation") {
+		t.Fatalf("pinned http default err %v", err)
+	}
+	_, _, err = e.advertisedAgentTools(&spec.AgentResource{
+		Metadata: spec.Metadata{Name: "reviewer"},
 		Spec:     spec.AgentSpec{Tools: []string{"shell", "tool.shell.command.run"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "different operations") {

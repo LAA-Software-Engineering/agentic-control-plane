@@ -175,7 +175,10 @@ func (e *Executor) runAgentToolLoop(
 			return nil, acc, err
 		}
 		addGenerateMeta(&acc, resp.Meta)
-		loopPctx.AccumulatedCostUSD = pctx.AccumulatedCostUSD + acc.CostUSD
+		loopPctx, err = e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, acc)
+		if err != nil {
+			return nil, acc, err
+		}
 
 		switch resp.StopReason {
 		case models.StopReasonEndTurn, "":
@@ -217,12 +220,15 @@ func (e *Executor) runAgentToolLoop(
 			if err != nil {
 				return nil, acc, fmt.Errorf("engine: tool call %q: %w", call.Name, err)
 			}
-			out, tmeta, err := e.runToolStep(ctx, runHandle, pol, wf, runID, step, args, loopPctx, uses, args)
+			out, tmeta, err := e.runToolStep(ctx2, runHandle, pol, wf, runID, step, args, loopPctx, uses, args)
 			if err != nil {
 				return nil, acc, err
 			}
 			addToolMeta(&acc, tmeta)
-			loopPctx.AccumulatedCostUSD = pctx.AccumulatedCostUSD + acc.CostUSD
+			loopPctx, err = e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, acc)
+			if err != nil {
+				return nil, acc, err
+			}
 			results = append(results, models.ToolResult{
 				ToolCallID: call.ID,
 				Content:    encodeToolResultContent(out),
@@ -289,6 +295,26 @@ func (e *Executor) generateAgentTurn(
 		})
 	}
 	return resp, nil
+}
+
+func (e *Executor) checkAgentLoopRun(ctx context.Context, pol policy.PolicyEvaluator, runID, stepID string, base policy.RunContext, acc models.GenerateMeta) (policy.RunContext, error) {
+	loop := base
+	loop.AccumulatedCostUSD = base.AccumulatedCostUSD + acc.CostUSD
+	if !base.StartedAt.IsZero() {
+		loop.Elapsed = e.now().Sub(base.StartedAt)
+	}
+	if pol == nil {
+		return loop, nil
+	}
+	if err := pol.CheckRun(ctx, loop); err != nil {
+		if e.Trace != nil {
+			if d, ok := policy.AsDenied(err); ok {
+				_, _ = e.Trace.Append(ctx, runID, stepID, trace.EventSystemError, trace.ActorSystem, d.TraceData())
+			}
+		}
+		return loop, err
+	}
+	return loop, nil
 }
 
 func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {

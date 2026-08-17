@@ -407,3 +407,87 @@ func TestRun_agentToolLoop_httpRequiresPinnedUses(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestRun_agentToolLoop_httpPinnedDefaultRejected(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"tool.api.default"}}, spec.PolicySpec{})
+	graph.Tools["api"] = &spec.ToolResource{
+		APIVersion: spec.APIVersionV0,
+		Kind:       spec.KindTool,
+		Metadata:   spec.Metadata{Name: "api"},
+		Spec:       spec.ToolSpec{Type: "http"},
+	}
+	mock := &models.MockClient{Content: `{"summary":"nope"}`}
+	_, _, err := runAgentLoop(t, graph, mock, nil)
+	if err == nil || !strings.Contains(err.Error(), "no default operation") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRun_agentToolLoop_toolCallHonorsTimeout(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{
+		Tools:       []string{"helper"},
+		Constraints: &spec.AgentConstraints{TimeoutSeconds: 9},
+	}, spec.PolicySpec{})
+	mock := &models.MockClient{
+		Script: []models.MockTurn{
+			{ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}}},
+			{Content: `{"summary":"ok"}`},
+		},
+	}
+	var sawDeadline bool
+	extra := &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
+		_, sawDeadline = ctx.Deadline()
+		return tools.ToolCallResponse{Output: map[string]any{"used": req.Uses}}, nil
+	}}
+	got, _, err := runAgentLoop(t, graph, mock, extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "succeeded" {
+		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
+	}
+	if !sawDeadline {
+		t.Fatal("inner tool call context must inherit constraints.timeoutSeconds")
+	}
+}
+
+func TestRun_agentToolLoop_budgetCheckedEachTurn(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"helper"}}, spec.PolicySpec{
+		Execution: &spec.PolicyExecution{MaxTotalCostUsd: 0.04},
+	})
+	mock := &models.MockClient{
+		Script: []models.MockTurn{
+			{
+				ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}},
+				Meta:      &models.GenerateMeta{CostUSD: 0.02},
+			},
+			{
+				Content: `{"summary":"over"}`,
+				Meta:    &models.GenerateMeta{CostUSD: 0.03},
+			},
+		},
+	}
+	got, events, err := runAgentLoop(t, graph, mock, nil)
+	if err == nil {
+		t.Fatal("expected cost ceiling denial")
+	}
+	d, ok := policy.AsDenied(err)
+	if !ok || d.Reason != policy.ReasonMaxCost {
+		t.Fatalf("denied %+v err=%v", d, err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("status %q", got.Status)
+	}
+	if mock.CallCount() != 2 {
+		t.Fatalf("generates %d, want 2 (deny after second turn)", mock.CallCount())
+	}
+	var sawDeny bool
+	for _, ev := range events {
+		if ev.Type == string(trace.EventSystemError) && strings.Contains(ev.DataJSON, policy.ReasonMaxCost) {
+			sawDeny = true
+		}
+	}
+	if !sawDeny {
+		t.Fatalf("expected system_error max_cost, events=%+v", events)
+	}
+}
