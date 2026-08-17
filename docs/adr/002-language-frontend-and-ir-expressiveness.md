@@ -242,9 +242,15 @@ Three consequences that must hold or the split is meaningless:
   resource projection alone cannot reconstruct `Branch`/`Loop`. The compiled execution IR is a
   deployment artifact, stored alongside the resource state, following the existing
   `.agentic/resolved-config.json` snapshot pattern (#112).
-- **Runs pin the execution IR digest.** `runs` already pins `workflow_spec_hash` and
-  `environment_name` for safe resume (#105). The execution IR digest needs the same treatment, or
-  `run --resume` could continue an in-flight run against a differently-lowered program.
+- **Runs pin the execution IR digest — and the artifact it names must be retained.** `runs`
+  already pins `workflow_spec_hash` and `environment_name` for safe resume (#105), but a pinned
+  digest only lets the system *detect* change; it cannot reproduce what ran.
+  [`validateResumeWorkflowSpec`](../../internal/runtime/local/resume_validate.go) refuses resume
+  on a hash mismatch, and `ResolvedConfigForRun` re-resolves from *current* config with only the
+  environment name pinned — so today an in-flight run can observe control-plane changes that
+  `workflow_spec_hash` does not cover. Deployment artifacts must therefore be **immutable and
+  content-addressed**, with a new `apply` changing what *new* runs receive without mutating what
+  existing runs reference. Tracked as #207.
 
 This does not require separate Go type hierarchies on day one, but the projection relationship is
 normative and the boundary should be visible in package structure.
@@ -299,7 +305,19 @@ in the system (#191).
 
 A resumed run enforces the manifest **pinned at run start**, not whatever is currently deployed.
 Otherwise an `apply` landing mid-run silently changes the authority of an in-flight
-nondeterministic agent, which is the precise failure this whole section exists to prevent.
+nondeterministic agent, which is the precise failure this whole section exists to prevent. The
+resulting invariant:
+
+> An in-flight nondeterministic program cannot acquire new authority merely because the control
+> plane changed underneath it.
+
+This requires retained artifacts, not just pinned digests (#207) — and it is not true today.
+
+**Accepted trade-off.** A run resumed against a superseded manifest is executing something that is
+no longer desired state. That is the right default, because the alternative strands
+approval-gated work: under a refuse-on-drift rule, any unrelated `apply` would permanently kill a
+run suspended at a HITL gate. But the divergence must be *visible* — `inspect` and `logs` should
+show that a run is executing a superseded artifact rather than presenting it as current.
 
 ### The bound is over the callable set, not over callable behavior
 
