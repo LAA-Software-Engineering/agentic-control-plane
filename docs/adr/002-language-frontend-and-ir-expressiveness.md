@@ -242,15 +242,31 @@ Three consequences that must hold or the split is meaningless:
   resource projection alone cannot reconstruct `Branch`/`Loop`. The compiled execution IR is a
   deployment artifact, stored alongside the resource state, following the existing
   `.agentic/resolved-config.json` snapshot pattern (#112).
-- **Runs pin the execution IR digest — and the artifact it names must be retained.** `runs`
-  already pins `workflow_spec_hash` and `environment_name` for safe resume (#105), but a pinned
-  digest only lets the system *detect* change; it cannot reproduce what ran.
-  [`validateResumeWorkflowSpec`](../../internal/runtime/local/resume_validate.go) refuses resume
-  on a hash mismatch, and `ResolvedConfigForRun` re-resolves from *current* config with only the
-  environment name pinned — so today an in-flight run can observe control-plane changes that
-  `workflow_spec_hash` does not cover. Deployment artifacts must therefore be **immutable and
-  content-addressed**, with a new `apply` changing what *new* runs receive without mutating what
-  existing runs reference. Tracked as #207.
+- **A run pins one immutable deployment snapshot for its entire lifetime.** The execution IR is
+  one artifact under that snapshot, not a separately pinned thing. A pinned digest only lets the
+  system *detect* change; it cannot reproduce what ran, so the artifacts must be retained,
+  content-addressed, and never mutated by a later `apply`.
+
+  The primitive is the **snapshot**, not a growing set of digest columns on `runs`. Pinning the
+  execution IR and capability manifest individually would not fix the bug that motivates this:
+  [`ResolvedConfigForRun`](../../internal/runtime/local/resume_validate.go) re-resolves from
+  *current* config with only the environment name pinned, so a policy edit between suspend and
+  resume is picked up silently — `workflow_spec_hash` covers the workflow alone. Each additional
+  pinned dimension would be another column and another way to miss one.
+
+  [`config.ResolvedConfig`](../../internal/config/resolved.go) is the right *abstraction* already
+  — it holds the whole resolved `ProjectGraph` and exposes a `Digest()` — but it is not yet a
+  persisted artifact: `.agentic/resolved-config.json` stores only `{digest, environment}` for
+  plan→run contract checks (#112). #207 must therefore add a canonical serializable resolved-graph
+  artifact, immutable retention, content addressing, and the run→snapshot reference. The snapshot
+  digest must also be defined independently of `ResolvedConfig.Digest()`, which mixes in the
+  absolute `statePath` — where the database happens to live is not part of a program's executable
+  configuration. Tracked as #207.
+
+  Resulting invariant:
+
+  > A run executes against exactly one immutable resolved deployment snapshot for its entire
+  > lifetime.
 
 This does not require separate Go type hierarchies on day one, but the projection relationship is
 normative and the boundary should be visible in package structure.
@@ -311,7 +327,13 @@ resulting invariant:
 > An in-flight nondeterministic program cannot acquire new authority merely because the control
 > plane changed underneath it.
 
-This requires retained artifacts, not just pinned digests (#207) — and it is not true today.
+This requires a retained, run-pinned deployment snapshot, not just pinned digests (#207) — and it
+is not true today.
+
+**Reproducibility has the same kind of limit as soundness.** A snapshot reproduces the
+*configuration* a run executed under — graph, policy, manifest, lowered program. It does not
+reproduce the *execution*: model weights, sampling nondeterminism, and remote API behavior are
+outside it. Claim configuration reproducibility and authority provenance; do not claim replay.
 
 **Accepted trade-off.** A run resumed against a superseded manifest is executing something that is
 no longer desired state. That is the right default, because the alternative strands

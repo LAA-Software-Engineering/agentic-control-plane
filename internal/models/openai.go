@@ -78,7 +78,6 @@ func (c *OpenAIClient) Generate(ctx context.Context, req GenerateRequest) (Gener
 	if err != nil {
 		return GenerateResponse{}, err
 	}
-	// Token → USD uses the OpenAI table in openai_cost.go; B1 (#162) will generalize it.
 	cost := estimateOpenAIChatCostUSD(req.Model, pt, ct)
 	return GenerateResponse{
 		Content:    content,
