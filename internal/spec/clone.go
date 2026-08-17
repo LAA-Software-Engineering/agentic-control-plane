@@ -38,7 +38,7 @@ func preserveDerivedGraphFields(src, dst *ProjectGraph) {
 			continue
 		}
 		pol.Spec.ResolvedPreset = srcPol.Spec.ResolvedPreset
-		pol.Pos = srcPol.Pos
+		copyPolicyDiagnosticPos(srcPol, pol)
 	}
 	for name, ar := range dst.Agents {
 		srcAr, ok := src.Agents[name]
@@ -78,5 +78,21 @@ func preserveDerivedGraphFields(src, dst *ProjectGraph) {
 			continue
 		}
 		er.Pos = srcEr.Pos
+	}
+}
+
+func copyPolicyDiagnosticPos(src, dst *PolicyResource) {
+	if src == nil || dst == nil {
+		return
+	}
+	dst.Pos = src.Pos
+	if src.Spec.Approvals != nil && dst.Spec.Approvals != nil && len(src.Spec.Approvals.RequiredForPos) > 0 {
+		dst.Spec.Approvals.RequiredForPos = append([]Pos(nil), src.Spec.Approvals.RequiredForPos...)
+	}
+	if src.Spec.Hitl != nil && dst.Spec.Hitl != nil && src.Spec.Hitl.InterruptOnPos != nil {
+		dst.Spec.Hitl.InterruptOnPos = make(map[string]Pos, len(src.Spec.Hitl.InterruptOnPos))
+		for k, p := range src.Spec.Hitl.InterruptOnPos {
+			dst.Spec.Hitl.InterruptOnPos[k] = p
+		}
 	}
 }

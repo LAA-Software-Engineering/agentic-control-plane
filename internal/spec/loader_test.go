@@ -157,6 +157,12 @@ func stripResourcePos(res any) any {
 		}
 	case *PolicyResource:
 		r.Pos = Pos{}
+		if r.Spec.Approvals != nil {
+			r.Spec.Approvals.RequiredForPos = nil
+		}
+		if r.Spec.Hitl != nil {
+			r.Spec.Hitl.InterruptOnPos = nil
+		}
 	case *EnvironmentResource:
 		r.Pos = Pos{}
 	}

@@ -139,8 +139,38 @@ func mergePolicyApprovals(base, overlay *PolicyApprovals) *PolicyApprovals {
 		presetRequiredForSlice(base),
 		presetRequiredForSlice(overlay),
 	)
+	out.RequiredForPos = mergeRequiredForPos(base, overlay, out.RequiredFor)
 	if out.RequiredFor == nil && out.RequireAllTools == nil && out.Permissive == nil {
 		return nil
+	}
+	return out
+}
+
+func mergeRequiredForPos(base, overlay *PolicyApprovals, merged []string) []Pos {
+	if len(merged) == 0 {
+		return nil
+	}
+	byEntry := make(map[string]Pos)
+	collect := func(a *PolicyApprovals) {
+		if a == nil {
+			return
+		}
+		for i, r := range a.RequiredFor {
+			r = strings.TrimSpace(r)
+			if r == "" || i >= len(a.RequiredForPos) || a.RequiredForPos[i].IsZero() {
+				continue
+			}
+			byEntry[r] = a.RequiredForPos[i]
+		}
+	}
+	collect(base)
+	collect(overlay)
+	if len(byEntry) == 0 {
+		return nil
+	}
+	out := make([]Pos, len(merged))
+	for i, r := range merged {
+		out[i] = byEntry[strings.TrimSpace(r)]
 	}
 	return out
 }
@@ -275,6 +305,9 @@ func clonePolicyApprovals(in *PolicyApprovals) *PolicyApprovals {
 	cp := *in
 	if in.RequiredFor != nil {
 		cp.RequiredFor = append([]string(nil), in.RequiredFor...)
+	}
+	if in.RequiredForPos != nil {
+		cp.RequiredForPos = append([]Pos(nil), in.RequiredForPos...)
 	}
 	if in.RequireAllTools != nil {
 		v := *in.RequireAllTools

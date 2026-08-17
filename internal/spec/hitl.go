@@ -37,6 +37,8 @@ type HitlPolicy struct {
 	// InterruptOn maps Tool metadata.name to true (defaults) or per-tool review config.
 	// Does not gate tools by itself; see [HitlPolicy] package comment.
 	InterruptOn map[string]HitlInterruptValue `yaml:"interruptOn,omitempty" json:"interruptOn,omitempty"`
+	// InterruptOnPos is diagnostic metadata for interruptOn keys (issue #187).
+	InterruptOnPos map[string]Pos `yaml:"-" json:"-"`
 	// DescriptionPrefix prefixes every approval prompt (default [DefaultHitlDescriptionPrefix]).
 	DescriptionPrefix string `yaml:"descriptionPrefix,omitempty" json:"descriptionPrefix,omitempty"`
 	// ToolSwitchMap maps source operation to allowed target operations for switch decisions.

@@ -69,3 +69,41 @@ func TestValidateProjectGraph_unknownAgentReportsPos(t *testing.T) {
 		t.Fatalf("MissingRefError.Pos = %#v, want %#v", mr.Pos, wr.Spec.Steps[0].AgentPos)
 	}
 }
+
+const policyItemPosYAML = `apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: default
+spec:
+  approvals:
+    requiredFor:
+      - tool.missing.op
+  hitl:
+    interruptOn:
+      deploy: true
+`
+
+func TestStampResourcePositions_policyRequiredForAndInterruptOn(t *testing.T) {
+	dec, err := ParseResourceFromBytes([]byte(policyItemPosYAML), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr, ok := dec.Resource.(*PolicyResource)
+	if !ok || pr == nil {
+		t.Fatalf("got %T", dec.Resource)
+	}
+	if pr.Spec.Approvals == nil || len(pr.Spec.Approvals.RequiredForPos) != 1 {
+		t.Fatalf("RequiredForPos = %#v", pr.Spec.Approvals)
+	}
+	rp := pr.Spec.Approvals.RequiredForPos[0]
+	if rp.File != "policy.yaml" || rp.Line != 8 {
+		t.Fatalf("requiredFor item Pos = %#v, want policy.yaml line 8", rp)
+	}
+	if pr.Spec.Hitl == nil {
+		t.Fatal("expected hitl")
+	}
+	ip := pr.Spec.Hitl.InterruptOnPos["deploy"]
+	if ip.File != "policy.yaml" || ip.Line != 11 {
+		t.Fatalf("interruptOn key Pos = %#v, want policy.yaml line 11", ip)
+	}
+}

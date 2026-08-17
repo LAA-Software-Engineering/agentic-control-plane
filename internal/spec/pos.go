@@ -62,6 +62,17 @@ func RelocateFile(res any, file string) {
 		}
 	case *PolicyResource:
 		relocatePos(&r.Pos, file)
+		if r.Spec.Approvals != nil {
+			for i := range r.Spec.Approvals.RequiredForPos {
+				relocatePos(&r.Spec.Approvals.RequiredForPos[i], file)
+			}
+		}
+		if r.Spec.Hitl != nil {
+			for k, p := range r.Spec.Hitl.InterruptOnPos {
+				relocatePos(&p, file)
+				r.Spec.Hitl.InterruptOnPos[k] = p
+			}
+		}
 	case *EnvironmentResource:
 		relocatePos(&r.Pos, file)
 	}

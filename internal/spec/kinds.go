@@ -218,6 +218,8 @@ type PolicyTools struct {
 
 type PolicyApprovals struct {
 	RequiredFor []string `yaml:"requiredFor,omitempty" json:"requiredFor,omitempty"`
+	// RequiredForPos is diagnostic metadata aligned with RequiredFor (issue #187).
+	RequiredForPos []Pos `yaml:"-" json:"-"`
 	// RequireAllTools gates every tool call when true (strict preset). Pointer preserves tri-state merge.
 	RequireAllTools *bool `yaml:"requireAllTools,omitempty" json:"requireAllTools,omitempty"`
 	// Permissive skips tool-call approval when true (permissive preset). Pointer preserves tri-state merge.

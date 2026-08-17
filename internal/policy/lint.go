@@ -68,11 +68,19 @@ func attachLintPositions(graph *spec.ProjectGraph, findings []LintFinding) {
 		if !findings[i].Pos.IsZero() {
 			continue
 		}
+		var pr *spec.PolicyResource
 		if name := strings.TrimSpace(findings[i].Policy); name != "" {
-			if pr, ok := graph.Policies[name]; ok && pr != nil {
-				findings[i].Pos = pr.Pos
-				continue
+			if p, ok := graph.Policies[name]; ok {
+				pr = p
 			}
+		}
+		if p := lintItemPos(pr, findings[i]); !p.IsZero() {
+			findings[i].Pos = p
+			continue
+		}
+		if pr != nil {
+			findings[i].Pos = pr.Pos
+			continue
 		}
 		if name := strings.TrimSpace(findings[i].Tool); name != "" {
 			if tr, ok := graph.Tools[name]; ok && tr != nil {
@@ -80,6 +88,83 @@ func attachLintPositions(graph *spec.ProjectGraph, findings []LintFinding) {
 			}
 		}
 	}
+}
+
+// lintItemPos returns a concrete YAML node position for findings that name a
+// requiredFor entry or interruptOn key. Zero means fall back to the resource Pos.
+func lintItemPos(pr *spec.PolicyResource, f LintFinding) spec.Pos {
+	if pr == nil {
+		return spec.Pos{}
+	}
+	switch f.Rule {
+	case LintRuleUnknownRequiredForRef:
+		return requiredForPosByTool(pr, f.Tool)
+	case LintRuleUnreachableRequiredFor:
+		return requiredForPosByEntry(pr, requiredForEntryFromMessage(f.Message))
+	case LintRuleInvalidSwitchTarget, LintRuleUnknownEditArg:
+		return interruptOnKeyPos(pr, f.Tool)
+	default:
+		return spec.Pos{}
+	}
+}
+
+func requiredForPosByTool(pr *spec.PolicyResource, toolName string) spec.Pos {
+	if pr == nil || pr.Spec.Approvals == nil {
+		return spec.Pos{}
+	}
+	want := strings.TrimSpace(toolName)
+	if want == "" {
+		return spec.Pos{}
+	}
+	for i, entry := range pr.Spec.Approvals.RequiredFor {
+		if toolNameFromRequiredFor(entry) != want {
+			continue
+		}
+		if i < len(pr.Spec.Approvals.RequiredForPos) {
+			return pr.Spec.Approvals.RequiredForPos[i]
+		}
+	}
+	return spec.Pos{}
+}
+
+func requiredForPosByEntry(pr *spec.PolicyResource, entry string) spec.Pos {
+	if pr == nil || pr.Spec.Approvals == nil {
+		return spec.Pos{}
+	}
+	want := strings.TrimSpace(entry)
+	if want == "" {
+		return spec.Pos{}
+	}
+	for i, r := range pr.Spec.Approvals.RequiredFor {
+		if strings.TrimSpace(r) != want {
+			continue
+		}
+		if i < len(pr.Spec.Approvals.RequiredForPos) {
+			return pr.Spec.Approvals.RequiredForPos[i]
+		}
+	}
+	return spec.Pos{}
+}
+
+func requiredForEntryFromMessage(msg string) string {
+	const marker = `approvals.requiredFor "`
+	i := strings.Index(msg, marker)
+	if i < 0 {
+		return ""
+	}
+	rest := msg[i+len(marker):]
+	j := strings.IndexByte(rest, '"')
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+func interruptOnKeyPos(pr *spec.PolicyResource, toolName string) spec.Pos {
+	if pr == nil || pr.Spec.Hitl == nil || pr.Spec.Hitl.InterruptOnPos == nil {
+		return spec.Pos{}
+	}
+	return pr.Spec.Hitl.InterruptOnPos[strings.TrimSpace(toolName)]
 }
 
 // HasHighSeverityLint reports whether findings contain high-severity items.

@@ -28,6 +28,7 @@ func stampResourcePositions(file string, data []byte, res any) {
 		stampWorkflowSteps(file, yamlMapValue(m, "spec"), &r.Spec)
 	case *PolicyResource:
 		r.Pos = p
+		stampPolicySpec(file, yamlMapValue(m, "spec"), &r.Spec)
 	case *EnvironmentResource:
 		r.Pos = p
 	}
@@ -98,6 +99,37 @@ func stampWorkflowSteps(file string, specNode *yaml.Node, w *WorkflowSpec) {
 		}
 		if v := yamlMapValue(item, "uses"); v != nil {
 			w.Steps[i].UsesPos = posFromNode(file, v)
+		}
+	}
+}
+
+func stampPolicySpec(file string, specNode *yaml.Node, s *PolicySpec) {
+	if s == nil {
+		return
+	}
+	if s.Approvals != nil {
+		req := yamlMapValue(yamlMapValue(specNode, "approvals"), "requiredFor")
+		if req != nil && req.Kind == yaml.SequenceNode {
+			s.Approvals.RequiredForPos = make([]Pos, len(s.Approvals.RequiredFor))
+			for i, item := range req.Content {
+				if i >= len(s.Approvals.RequiredForPos) {
+					break
+				}
+				s.Approvals.RequiredForPos[i] = posFromNode(file, item)
+			}
+		}
+	}
+	if s.Hitl != nil {
+		on := yamlMapValue(yamlMapValue(specNode, "hitl"), "interruptOn")
+		if on != nil && on.Kind == yaml.MappingNode {
+			s.Hitl.InterruptOnPos = make(map[string]Pos, len(on.Content)/2)
+			for i := 0; i+1 < len(on.Content); i += 2 {
+				key := on.Content[i]
+				if key == nil {
+					continue
+				}
+				s.Hitl.InterruptOnPos[key.Value] = posFromNode(file, key)
+			}
 		}
 	}
 }

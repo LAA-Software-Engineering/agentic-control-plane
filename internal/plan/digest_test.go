@@ -103,6 +103,23 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 		Workflows: map[string]*spec.WorkflowResource{
 			"demo": wf,
 		},
+		Policies: map[string]*spec.PolicyResource{
+			"default": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindPolicy,
+				Metadata:   spec.Metadata{Name: "default"},
+				Spec: spec.PolicySpec{
+					Approvals: &spec.PolicyApprovals{
+						RequiredFor: []string{"tool.x.y"},
+					},
+					Hitl: &spec.HitlPolicy{
+						InterruptOn: map[string]spec.HitlInterruptValue{
+							"x": {Enabled: true},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	d1, err := ResolvedGraphDigest(g)
@@ -124,6 +141,12 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 	wf.Spec.Steps[0].Pos = spec.Pos{File: "workflow.yaml", Line: 8, Column: 5}
 	wf.Spec.Steps[0].UsesPos = spec.Pos{File: "workflow.yaml", Line: 9, Column: 13}
 	g.Pos = spec.Pos{File: "project.yaml", Line: 1, Column: 1}
+	pol := g.Policies["default"]
+	pol.Pos = spec.Pos{File: "policy.yaml", Line: 1, Column: 1}
+	pol.Spec.Approvals.RequiredForPos = []spec.Pos{{File: "policy.yaml", Line: 8, Column: 7}}
+	pol.Spec.Hitl.InterruptOnPos = map[string]spec.Pos{
+		"x": {File: "policy.yaml", Line: 11, Column: 5},
+	}
 
 	d2, err := ResolvedGraphDigest(g)
 	if err != nil {

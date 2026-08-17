@@ -62,6 +62,28 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 				},
 			},
 		},
+		Policies: map[string]*PolicyResource{
+			"default": {
+				APIVersion: APIVersionV0,
+				Kind:       KindPolicy,
+				Metadata:   Metadata{Name: "default"},
+				Pos:        Pos{File: "policy.yaml", Line: 1, Column: 1},
+				Spec: PolicySpec{
+					Approvals: &PolicyApprovals{
+						RequiredFor:    []string{"tool.helper.echo"},
+						RequiredForPos: []Pos{{File: "policy.yaml", Line: 8, Column: 7}},
+					},
+					Hitl: &HitlPolicy{
+						InterruptOn: map[string]HitlInterruptValue{
+							"helper": {Enabled: true},
+						},
+						InterruptOnPos: map[string]Pos{
+							"helper": {File: "policy.yaml", Line: 12, Column: 5},
+						},
+					},
+				},
+			},
+		},
 	}
 	cl, err := CloneProjectGraph(g)
 	if err != nil {
@@ -79,6 +101,13 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 	st := cl.Workflows["w"].Spec.Steps[0]
 	if st.AgentPos.Line != 9 || st.Pos.Line != 8 {
 		t.Fatalf("step pos dropped: %#v", st)
+	}
+	pol := cl.Policies["default"]
+	if pol.Spec.Approvals == nil || len(pol.Spec.Approvals.RequiredForPos) != 1 || pol.Spec.Approvals.RequiredForPos[0].Line != 8 {
+		t.Fatalf("RequiredForPos dropped: %#v", pol.Spec.Approvals)
+	}
+	if pol.Spec.Hitl == nil || pol.Spec.Hitl.InterruptOnPos["helper"].Line != 12 {
+		t.Fatalf("InterruptOnPos dropped: %#v", pol.Spec.Hitl)
 	}
 	cl.Agents["a"].Pos.Line = 99
 	if g.Agents["a"].Pos.Line != 1 {
