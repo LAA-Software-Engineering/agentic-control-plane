@@ -1,15 +1,16 @@
 # HITL resume (pause, approve, checkpoint)
 
-This example is the distinctive **human-in-the-loop resume** demo. A mock agent drafts a summary, then a **workflow `uses:`** publish step is gated by policy. The run **interrupts** (exit **0**, `Status: interrupted`), persists a **checkpoint**, and continues after `agentctl run --resume <id> --decision approve`.
+This example is the distinctive **human-in-the-loop resume** demo. A mock agent drafts a summary, then a **workflow `uses:`** publish step is gated by policy. The run **interrupts** (exit **0**, `Status: interrupted`), persists a **checkpoint**, and continues on the **same** run after `agentctl run --resume <id> --decision approve`.
 
-This is **not** agent-loop fail-closed exit **5** (`examples/incident-triage`) and **not** a denied `uses:` without HITL (`examples/pr-review-demo`).
+`examples/pr-review-demo` also **interrupts** unapproved workflow `uses:` (exit **0**, `hitl_request_created`); you continue with a **new** run plus `--approve`. `examples/incident-triage` is the fail-closed inner agent-loop path (exit **5**).
 
 ## What it demonstrates
 
-- **Workflow `uses:` HITL** — `maybeInterruptForHitl` pauses before `tool.publish.default` because `approvals.requiredFor` lists that uses string **and** `hitl.interruptOn.publish` is set.
+- **Workflow `uses:` HITL** — `approvals.requiredFor` (or tool safety) is what **gates** `tool.publish.default`. `hitl.interruptOn.publish` only **configures** the review (allowed decisions, prompt text). `maybeInterruptForHitl` then pauses instead of failing the step.
 - **Checkpoint** — the interrupted run stores pending HITL state. Resume skips the completed **draft** agent step (no second Generate).
 - **Audit chain** — `hitl_request_created`, then on resume `hitl_decision_submitted` / `hitl_resolution_applied` and `tool_execution`. `audit verify --run` stays **OK**.
 - **No agent tools** — `drafter` has no `spec.tools`, so the mock stays single-shot (no D1/D2 empty-Script loops). Ceiling **$5** covers the **$0.02** Generate.
+- **`--auto-approve` skips the pause** — `agentctl run ... --auto-approve` (or `AGENTCTL_AUTO_APPROVE=1`) does not interrupt; this walkthrough omits it so the checkpoint path is visible.
 
 ## Project layout
 
@@ -50,6 +51,7 @@ agentctl run workflow/publish \
 
 - Exit code **0**, status **interrupted**.
 - Copy the printed **Run ID**.
+- Passing **`--auto-approve`** on this first run would skip the pause and complete in one shot.
 
 ```bash
 agentctl logs --project examples/hitl-resume --state /tmp/hitl-resume.db --run <run-id>
@@ -77,8 +79,8 @@ agentctl audit verify --project examples/hitl-resume --state /tmp/hitl-resume.db
 
 | | This demo | `examples/pr-review-demo` | `examples/incident-triage` |
 |--|-----------|---------------------------|----------------------------|
-| Gate | Workflow `uses:` + HITL | Workflow `uses:` without `hitl:` | Inner agent tool |
-| Unapproved | **interrupted**, exit **0** | **failed**, exit **5** | **failed**, exit **5** |
-| Continue | `--resume --decision approve` | New run with `--approve` | New run with `--approve` |
+| Gate | Workflow `uses:` (`requiredFor` + HITL review) | Workflow `uses:` (`requiredFor`; also interrupts) | Inner agent tool |
+| Unapproved | **interrupted**, exit **0** (`hitl_request_created`) | **interrupted**, exit **0** (`hitl_request_created`) | **failed**, exit **5** |
+| Continue | **`--resume --decision approve`** on the **same** run (checkpoint skips `draft`) | **New** run with `--approve` | New run with `--approve` |
 
 For the hash chain, see [`docs/AUDIT_CHAIN.md`](../../docs/AUDIT_CHAIN.md).
