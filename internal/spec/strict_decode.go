@@ -152,6 +152,7 @@ func lookupStrictType(typeName string) reflect.Type {
 		"AgentConstraints":    reflect.TypeOf(AgentConstraints{}),
 		"PolicyExecution":     reflect.TypeOf(PolicyExecution{}),
 		"ToolSafety":          reflect.TypeOf(ToolSafety{}),
+		"ToolOperation":       reflect.TypeOf(ToolOperation{}),
 		"HitlPolicy":          reflect.TypeOf(HitlPolicy{}),
 	}
 	return registry[short]

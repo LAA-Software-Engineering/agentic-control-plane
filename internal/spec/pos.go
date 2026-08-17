@@ -53,6 +53,13 @@ func RelocateFile(res any, file string) {
 		}
 	case *ToolResource:
 		relocatePos(&r.Pos, file)
+		for k, op := range r.Spec.Operations {
+			relocatePos(&op.Pos, file)
+			for i := range op.EffectsPos {
+				relocatePos(&op.EffectsPos[i], file)
+			}
+			r.Spec.Operations[k] = op
+		}
 	case *WorkflowResource:
 		relocatePos(&r.Pos, file)
 		for i := range r.Spec.Steps {

@@ -184,6 +184,7 @@ func validateToolSpecs(g *ProjectGraph) []error {
 			errs = append(errs, tr.Pos.Errorf("Tool/%s: retry.maxAttempts must be non-negative", name))
 		}
 		errs = append(errs, validateToolSafety(tr.Pos, name, tr.Spec.Safety)...)
+		errs = append(errs, validateToolOperations(tr.Pos, name, &tr.Spec)...)
 	}
 	return errs
 }
@@ -196,6 +197,32 @@ func validateToolSafety(p Pos, toolName string, s *ToolSafety) []error {
 	prefix := fmt.Sprintf("Tool/%s: spec.safety", toolName)
 	if s.Trusted == nil && s.SideEffects == nil && s.RequiresApproval == nil {
 		errs = append(errs, p.Errorf("%s: at least one of trusted, sideEffects, requiresApproval must be set (or omit safety to use fail-closed defaults via normalize)", prefix))
+	}
+	return errs
+}
+
+func validateToolOperations(p Pos, toolName string, spec *ToolSpec) []error {
+	if spec == nil || len(spec.Operations) == 0 {
+		return nil
+	}
+	var errs []error
+	for opName, op := range spec.Operations {
+		opPos := p
+		if !op.Pos.IsZero() {
+			opPos = op.Pos
+		}
+		if err := ValidateOperationName(opName); err != nil {
+			errs = append(errs, opPos.Errorf("Tool/%s: spec.operations: %w", toolName, err))
+		}
+		for i, e := range op.Effects {
+			ePos := opPos
+			if i < len(op.EffectsPos) && !op.EffectsPos[i].IsZero() {
+				ePos = op.EffectsPos[i]
+			}
+			if err := ValidateEffectIdent(e); err != nil {
+				errs = append(errs, ePos.Errorf("Tool/%s: spec.operations[%q].effects[%d]: %w", toolName, opName, i, err))
+			}
+		}
 	}
 	return errs
 }

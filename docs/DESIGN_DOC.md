@@ -673,6 +673,33 @@ spec:
     backoff: fixed
 ```
 
+### Named effects on operations (issue #188)
+
+Per-operation **effects** are classes of consequence (ADR 002), distinct from grants
+(`tool.<name>.<operation>`). Identifiers are bare dotted names matching
+`[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*` — for example `github.read`, `external.visible`,
+`destructive`. Identifiers beginning with `tool.` are rejected so they cannot be confused
+with grants. Effects are opaque: membership and dotted-prefix matching only. The only
+reserved name is **`destructive`**, which may set `spec.safety.sideEffects: true` when the
+author omitted that field. Author-set `sideEffects` wins.
+
+```yaml
+spec:
+  type: native
+  operations:
+    read_pr:
+      effects: [github.read]
+    post_comment:
+      effects: [github.write, external.visible]
+    merge_pr:
+      effects: [github.write, destructive]
+```
+
+A tool with **no** declared effects is fail-closed in the **effect resolver**
+(`[ResolveToolEffects]`): it carries an unknown effect that no policy permits unless the
+tool opts in. That is **not** a runtime `CheckToolCall` change — existing ToolSafety + Policy
+gating is unchanged until #190. `spec.operations` is additive to `spec.safety`.
+
 ### MVP tool types
 
 * `mcp`
@@ -913,9 +940,13 @@ my-agent-system/
 
 ## 9.3 Tool validation
 
-* exactly one transport block for selected `type`
+* exactly one transport block for the selected `type`
 * permission actions must be valid strings
 * retry values must be non-negative
+* `spec.operations` keys and `effects` identifiers match `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*`
+* effect identifiers must not begin with `tool.`
+* empty effect identifiers are rejected
+* omitting `spec.operations` is valid YAML (fail-closed in the effect resolver, not a validate error)
 
 ## 9.4 Workflow validation
 

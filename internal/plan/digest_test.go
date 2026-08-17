@@ -120,6 +120,19 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 				},
 			},
 		},
+		Tools: map[string]*spec.ToolResource{
+			"x": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindTool,
+				Metadata:   spec.Metadata{Name: "x"},
+				Spec: spec.ToolSpec{
+					Type: "native",
+					Operations: map[string]spec.ToolOperation{
+						"y": {Effects: []string{"github.read"}},
+					},
+				},
+			},
+		},
 	}
 
 	d1, err := ResolvedGraphDigest(g)
@@ -147,6 +160,12 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 	pol.Spec.Hitl.InterruptOnPos = map[string]spec.Pos{
 		"x": {File: "policy.yaml", Line: 11, Column: 5},
 	}
+	tool := g.Tools["x"]
+	op := tool.Spec.Operations["y"]
+	op.Pos = spec.Pos{File: "tool.yaml", Line: 10, Column: 3}
+	op.EffectsPos = []spec.Pos{{File: "tool.yaml", Line: 11, Column: 16}}
+	tool.Spec.Operations["y"] = op
+	tool.Pos = spec.Pos{File: "tool.yaml", Line: 1, Column: 1}
 
 	d2, err := ResolvedGraphDigest(g)
 	if err != nil {
