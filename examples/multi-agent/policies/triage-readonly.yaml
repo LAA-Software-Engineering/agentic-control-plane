@@ -1,0 +1,11 @@
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: triage-readonly
+spec:
+  execution:
+    maxWallClockSeconds: 300
+    maxTotalCostUsd: 5
+  approvals:
+    requiredFor:
+      - tool.patch.default

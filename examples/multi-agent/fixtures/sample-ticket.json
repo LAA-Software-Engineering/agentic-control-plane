@@ -1,0 +1,7 @@
+{
+  "ticket": {
+    "id": "TCK-170",
+    "title": "Possible SQL interpolation in query builder",
+    "body": "User input appears to be concatenated into SQL in db/query.py."
+  }
+}

@@ -1,0 +1,21 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: multi-agent
+spec:
+  imports:
+    - ./policies/triage-readonly.yaml
+    - ./policies/apply-fix.yaml
+    - ./tools/lookup.yaml
+    - ./tools/patch.yaml
+    - ./agents/triager.yaml
+    - ./agents/fixer.yaml
+    - ./workflows/handoff.yaml
+  defaults:
+    policy: apply-fix
+    model: mock/gpt-4
+    runtime: local
+  providers:
+    models:
+      mock:
+        type: mock

@@ -502,6 +502,75 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("multi_agent_handoff_both_agents", func(t *testing.T) {
+		root := repoRoot(t)
+		demo := filepath.Join(root, "examples", "multi-agent")
+		input := filepath.Join(demo, "fixtures", "sample-ticket.json")
+		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+			t.Fatalf("demo project: %v", err)
+		}
+		db := filepath.Join(t.TempDir(), "multi-agent.db")
+
+		out, err := runCLI(t, "validate", "--project", demo, "--no-color")
+		if err != nil {
+			t.Fatalf("validate: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Validation successful") {
+			t.Fatalf("validate:\n%s", out)
+		}
+
+		out, err = runCLI(t, "plan", "--project", demo, "--state", db)
+		if err != nil {
+			t.Fatalf("plan: %v\n%s", err, out)
+		}
+		out, err = runCLI(t, "apply", "--project", demo, "--state", db, "--auto-approve")
+		if err != nil {
+			t.Fatalf("apply: %v\n%s", err, out)
+		}
+
+		out, err = runCLI(t,
+			"run", "workflow/handoff",
+			"--project", demo,
+			"--state", db,
+			"--input-file", input,
+		)
+		if err != nil {
+			t.Fatalf("run: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Status: succeeded") {
+			t.Fatalf("run output:\n%s", out)
+		}
+		runID := extractRunID(out)
+		if runID == "" {
+			t.Fatalf("no run id in:\n%s", out)
+		}
+
+		out, err = runCLI(t, "logs", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("logs: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "triager") {
+			t.Fatalf("logs missing triager step/agent:\n%s", out)
+		}
+		if !strings.Contains(out, "fixer") {
+			t.Fatalf("logs missing fixer step/agent:\n%s", out)
+		}
+		if n := strings.Count(out, string(trace.EventLLMCompletion)); n < 2 {
+			t.Fatalf("logs want >=2 %q, got %d:\n%s", trace.EventLLMCompletion, n, out)
+		}
+		if strings.Contains(out, string(trace.EventHitlRequestCreated)) {
+			t.Fatalf("logs must not contain HITL:\n%s", out)
+		}
+
+		out, err = runCLI(t, "audit", "verify", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("audit verify: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "OK") {
+			t.Fatalf("audit verify:\n%s", out)
+		}
+	})
 }
 
 func copyFile(t *testing.T, src, dst string) {
