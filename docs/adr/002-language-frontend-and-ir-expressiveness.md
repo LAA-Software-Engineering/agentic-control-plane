@@ -188,42 +188,66 @@ fifth is an afternoon's work and permanent. Graph-structure fields (`needs`, `pa
 This constrains the **resource model** specifically, because that is what humans author, what
 `plan` diffs, and what deployment state stores. It does not constrain the execution IR.
 
-### 5. Two IR layers, with distinct roles.
+### 5. Resource IR and execution IR are sibling projections, not a pipeline.
 
 Conditionals and loops must become *something* after the AST is discarded. Stating only "no
-control flow in the IR" leaves the compiler nowhere to lower to, so the layers are named
-explicitly:
+control flow in the IR" leaves the compiler nowhere to lower to.
+
+The naive reading — `AST → resource IR → execution IR` — is **wrong and must not be
+implemented.** The resource IR cannot represent `if` or a loop by decision 4, so an execution IR
+containing `Branch` and `Loop` cannot be derived from it. A linear pipeline would force the
+computational information to be smuggled into the resource IR, which is exactly what decision 4
+forbids.
+
+Both are projections of one checked program:
 
 ```text
-.agent  →  typed AST
-              ↓
-        Semantic / resource IR        ← authored, diffed, stored, policy-checked
-          Agent · Tool · Policy · Workflow · Environment · effect graph
-              ↓
-        Execution IR                  ← derived, never authored
-          InvokeTool · InvokeAgent · InvokeWorkflow
-          Fork · Join · Branch · Loop · Return
-              ↓
-           engine
+.agent  →  typed AST  →  checked program
+                         (resolved refs · types · effect bound)
+                                  │
+                ┌─────────────────┴──────────────────┐
+                ↓                                    ↓
+      resource projection                    execution lowering
+      Agent · Tool · Policy                  InvokeTool · InvokeAgent
+      Workflow identity + graph              InvokeWorkflow · Fork · Join
+      Environment · effect graph             Branch · Loop · Return
+                ↓                                    ↓
+        plan / apply / state                       engine
 ```
 
-- **Semantic / resource IR** is the existing resource model. It is the desired state: what
-  `plan` diffs, what `apply` writes, what policy and effect analysis run against. YAML remains
-  valid ingress to this layer (ADR 003). It never gains an expression language.
-- **Execution IR** is lowered output. `Branch` and `Loop` live here and only here. It is never
-  hand-authored and has no YAML surface.
+- **The checked program** is the single source of truth after type and effect checking (#198).
+  Neither projection is authoritative over the other.
+- **Resource projection** is the existing resource model — desired state: what `plan` diffs, what
+  `apply` writes, what policy and effect analysis run against. It never gains an expression
+  language.
+- **Execution lowering** produces the executable form. `Branch` and `Loop` live here and only
+  here. Never hand-authored, no YAML surface.
 
-Two consequences that must hold or the split is meaningless:
+**YAML ingress is a degenerate case, and that asymmetry is intended.** For YAML the resource IR
+*is* the checked program — there is no separate representation, because YAML cannot express
+anything the resource model cannot hold. Execution lowering runs directly from it. Do not force
+YAML through a synthetic "program" layer that adds nothing; do require both paths to converge on
+the same execution IR, since divergent execution semantics between ingress paths is a defect, not
+a design freedom.
 
-- **`plan` continues to diff the resource IR.** The execution IR is derived, so it does not
-  produce its own diff lines; its digest folds into the workflow hash so that a lowering change
-  with no resource-level change still invalidates a stale plan.
-- **Both ingress paths converge before the engine.** YAML lowers to the same execution IR as
-  `.agent`, minus the constructs YAML cannot express. Divergent execution semantics between the
-  two ingress paths is a defect, not a design freedom.
+Three consequences that must hold or the split is meaningless:
 
-This does not require two fully separate Go type hierarchies on day one, but the distinction is
-normative and the layer boundary should be visible in package structure.
+- **`plan` diffs the resource projection.** The execution IR produces no diff lines of its own.
+  Its digest folds into the workflow hash so a lowering change with no resource-level change still
+  invalidates a stale plan.
+- **`apply` persists the execution IR, not just the resource projection.** This follows from
+  [ADR 001](001-control-plane-runtime-boundary.md), which forbids runtime adapters from calling
+  `project.LoadProject` or re-reading user YAML: the runtime executes from a resolved snapshot
+  only. Recompiling `.agent` from source at run time is therefore already ruled out, and the
+  resource projection alone cannot reconstruct `Branch`/`Loop`. The compiled execution IR is a
+  deployment artifact, stored alongside the resource state, following the existing
+  `.agentic/resolved-config.json` snapshot pattern (#112).
+- **Runs pin the execution IR digest.** `runs` already pins `workflow_spec_hash` and
+  `environment_name` for safe resume (#105). The execution IR digest needs the same treatment, or
+  `run --resume` could continue an in-flight run against a differently-lowered program.
+
+This does not require separate Go type hierarchies on day one, but the projection relationship is
+normative and the boundary should be visible in package structure.
 
 ## Soundness assumptions and limits
 
@@ -247,7 +271,35 @@ Each `Tool` resource therefore carries an allowed-operation manifest with per-op
 digested and pinned into deployment state at apply. Runtime `tools/list` may return anything;
 operations absent from the deployed manifest are denied, and manifest or schema drift makes
 deployment state dirty rather than silently expanding the callable set. This is tracked as a
-first-class Epic F issue, not an afterthought.
+first-class Epic F issue (#204), not an afterthought.
+
+### Three kinds of manifest, and one authority per phase
+
+Conflating these makes `validate` impossible to define for a project that has never been applied
+— there is no deployed manifest yet, so there is nothing to bound against. Keep them distinct:
+
+| Concept | Meaning | Authority? |
+|---|---|---|
+| **Remote discovery** | what a server currently advertises (`tools/list`) | **Never.** Observation only — it populates a *desired* manifest during authoring and is never trusted at run time |
+| **Desired manifest** | what the proposed configuration *will* permit | Proposed authority |
+| **Deployed manifest** | what the applied configuration *does* permit | Actual authority |
+
+Each phase resolves against exactly one:
+
+```text
+validate   bound(desired)
+plan       bound(desired)  vs  bound(deployed)      → authority delta
+apply      desired becomes deployed
+run        enforce(deployed, as pinned on the run)
+```
+
+The `plan` comparison is what produces the reviewable authority diff — and the distinction
+between a widened *static* and a widened *autonomous* bound is the highest-value line of output
+in the system (#191).
+
+A resumed run enforces the manifest **pinned at run start**, not whatever is currently deployed.
+Otherwise an `apply` landing mid-run silently changes the authority of an in-flight
+nondeterministic agent, which is the precise failure this whole section exists to prevent.
 
 ### The bound is over the callable set, not over callable behavior
 
