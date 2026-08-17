@@ -1,0 +1,18 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: hitl-resume
+spec:
+  imports:
+    - ./policies/gated-publish.yaml
+    - ./tools/publish.yaml
+    - ./agents/drafter.yaml
+    - ./workflows/publish.yaml
+  defaults:
+    policy: gated-publish
+    model: mock/gpt-4
+    runtime: local
+  providers:
+    models:
+      mock:
+        type: mock

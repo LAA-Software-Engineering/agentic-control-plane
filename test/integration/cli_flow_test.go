@@ -616,6 +616,103 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("plan missing applied env line:\n%s", out)
 		}
 	})
+
+	t.Run("hitl_resume_interrupt_then_approve", func(t *testing.T) {
+		root := repoRoot(t)
+		demo := filepath.Join(root, "examples", "hitl-resume")
+		input := filepath.Join(demo, "fixtures", "sample-input.json")
+		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+			t.Fatalf("demo project: %v", err)
+		}
+		db := filepath.Join(t.TempDir(), "hitl-resume.db")
+
+		out, err := runCLI(t, "validate", "--project", demo, "--no-color")
+		if err != nil {
+			t.Fatalf("validate: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Validation successful") {
+			t.Fatalf("validate:\n%s", out)
+		}
+
+		out, err = runCLI(t, "plan", "--project", demo, "--state", db)
+		if err != nil {
+			t.Fatalf("plan: %v\n%s", err, out)
+		}
+		out, err = runCLI(t, "apply", "--project", demo, "--state", db, "--auto-approve")
+		if err != nil {
+			t.Fatalf("apply: %v\n%s", err, out)
+		}
+
+		out, err = runCLI(t,
+			"run", "workflow/publish",
+			"--project", demo,
+			"--state", db,
+			"--input-file", input,
+		)
+		if err != nil {
+			t.Fatalf("run interrupt: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Status: interrupted") {
+			t.Fatalf("expected interrupted:\n%s", out)
+		}
+		runID := extractRunID(out)
+		if runID == "" {
+			t.Fatalf("no run id in:\n%s", out)
+		}
+
+		out, err = runCLI(t, "logs", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("logs interrupt: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, string(trace.EventHitlRequestCreated)) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventHitlRequestCreated, out)
+		}
+		if strings.Contains(out, string(trace.EventHitlDecisionSubmitted)) {
+			t.Fatalf("interrupt logs must not contain decision yet:\n%s", out)
+		}
+		llmBefore := strings.Count(out, string(trace.EventLLMCompletion))
+		if llmBefore < 1 {
+			t.Fatalf("interrupt logs missing %q:\n%s", trace.EventLLMCompletion, out)
+		}
+
+		out, err = runCLI(t,
+			"run", "--resume", runID,
+			"--project", demo,
+			"--state", db,
+			"--decision", "approve",
+		)
+		if err != nil {
+			t.Fatalf("resume: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Status: succeeded") {
+			t.Fatalf("expected succeeded:\n%s", out)
+		}
+
+		out, err = runCLI(t, "logs", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("logs resume: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, string(trace.EventHitlDecisionSubmitted)) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventHitlDecisionSubmitted, out)
+		}
+		if !strings.Contains(out, string(trace.EventHitlResolutionApplied)) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventHitlResolutionApplied, out)
+		}
+		if !strings.Contains(out, string(trace.EventToolExecution)) {
+			t.Fatalf("logs missing %q:\n%s", trace.EventToolExecution, out)
+		}
+		if n := strings.Count(out, string(trace.EventLLMCompletion)); n != llmBefore {
+			t.Fatalf("resume re-ran draft Generate: llm_completion before=%d after=%d\n%s", llmBefore, n, out)
+		}
+
+		out, err = runCLI(t, "audit", "verify", "--project", demo, "--state", db, "--run", runID)
+		if err != nil {
+			t.Fatalf("audit verify: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "OK") {
+			t.Fatalf("audit verify:\n%s", out)
+		}
+	})
 }
 
 func copyFile(t *testing.T, src, dst string) {

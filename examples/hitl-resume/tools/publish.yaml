@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: publish
+spec:
+  type: mock
+  safety:
+    trusted: true
+    sideEffects: true

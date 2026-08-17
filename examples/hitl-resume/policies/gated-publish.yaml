@@ -1,0 +1,17 @@
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: gated-publish
+spec:
+  execution:
+    maxWallClockSeconds: 300
+    maxTotalCostUsd: 5
+  approvals:
+    requiredFor:
+      - tool.publish.default
+  hitl:
+    descriptionPrefix: Publishing requires operator approval
+    interruptOn:
+      publish:
+        allowedDecisions: [approve, reject]
+        description: "Review publish call (${uses})"
