@@ -29,7 +29,7 @@ flowchart TB
 
 ## Plan-time bounds (shipped vs direction)
 
-The uncopyable capability is a **plan-time effect bound**: a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). That product is **not shipped yet**.
+The uncopyable capability is a **plan-time effect bound**: a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). Compute over the desired graph is [`internal/effects.Compute`](../internal/effects) (#189); plan output of bounds/deltas is **not shipped** (#191).
 
 **What `agentctl plan` already diffs today:**
 

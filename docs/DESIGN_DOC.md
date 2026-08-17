@@ -273,6 +273,10 @@ agentctl/
       budget.go
       permissions.go
 
+    effects/
+      types.go
+      compute.go
+
     trace/
       recorder.go
       events.go
@@ -700,6 +704,9 @@ A tool with **no** declared effects is fail-closed in the **effect resolver**
 (`[ResolveToolEffects]`): it carries an unknown effect that no policy permits unless the
 tool opts in. That is **not** a runtime `CheckToolCall` change — existing ToolSafety + Policy
 gating is unchanged until #190. `spec.operations` is additive to `spec.safety`.
+
+Transitive bounds over these declarations (static `uses:` plus autonomous grants) are
+computed by [`internal/effects`](../internal/effects) — see §12.2 J.
 
 ### MVP tool types
 
@@ -1501,7 +1508,7 @@ Responsibilities:
 
 The engine implements the bounded tool-calling loop (issue #160). Each agent-declared Tool resource is advertised as one `ToolDef` (name = Tool metadata.name, permissive object schema). `agent.spec.tools` entries may be the Tool metadata name or a pinned uses string `tool.<name>.<operation>`. `ToolChoice` is `auto`. Type defaults when only the name is listed: native → `tool.<name>.echo`; mock/mcp → `tool.<name>.default`. HTTP has no default (`parseOperation` would treat `default` as `GET /default`); list `tool.<name>.<method.path>` — pinned `tool.<name>.default` is rejected the same way as a bare HTTP name. `agentctl validate` / `plan` apply these advertised-uses rules (unknown tools, HTTP method.path, conflicting ops on one Tool name). Only the ToolDef name is accepted as a `ToolCall.Name` (ADR 002: no operation is agent-callable unless it was advertised). Aliases such as `helper.echo`, `tool.helper.echo`, `helper.command.run`, or HTTP `delete.users` fail before `CheckToolCall` / `Tools.Call`. On `StopReason: tool_use`, each accepted call is checked with `CheckToolCall`, then executed via `Tools.Call` on the agent `constraints.timeoutSeconds` context. Results are appended as `ChatMessage.ToolResults` (with the assistant `ToolCalls` replayed) and the loop continues. Agents that declare no tools stay a single `Generate` with no `Tools` field. Loop cost (model + tool) accumulates into the step `GenerateMeta`; `policy.CheckRun` runs after each Generate and tool turn so `execution.maxTotalCostUsd` / wall-clock apply inside a single agent step. `constraints.maxIterations` (default 8, hard cap 32) counts **Generate turns**; `tool_use` on the last turn fails without executing those calls (`maxIterations: 1` is one completion, tools never run). A cutoff emits `limit_hit` (`kind: max_iterations`) and fails the step. HITL interrupt is **not** consulted inside the loop: inner uses must already be pre-approved (`agentctl run --approve` / `ApprovedActions`) or `CheckToolCall` fails closed. Policy denial uses the existing `DeniedError` path (CLI exit **5**).
 
-`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — why #191 will report a new **autonomous** effect at higher severity than a new **static** one. The plan-time effect bound (#189 / #191) is **not shipped**; today `agentctl plan` diffs C1 risk including `tool_surface_change`. For MCP tools the grant is only sound against a pinned operation manifest (#204), which is **not shipped** (`tools/list` can still expand the world). Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
+`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — why #191 will report a new **autonomous** effect at higher severity than a new **static** one. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; `agentctl plan` does not print it yet (#191). For MCP tools the grant is only sound against a pinned operation manifest (#204), which is **not shipped** (`tools/list` can still expand the world). Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
 
 Abstraction:
 
@@ -1623,6 +1630,47 @@ Event types (issue #115 closed taxonomy, `TaxonomyVersion` 1):
 Legacy dot-notation types (`run.started`, `tool.called`, …) are normalized to the above on read and by SQLite migration `006`.
 
 Issue #116 adds a **tamper-evident hash chain** per run: each persisted event stores `prev_hash` and `hash` over canonical (redacted) fields. See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
+
+---
+
+## J. Effect bound (issue #189)
+
+[`internal/effects.Compute`](../internal/effects) walks an already-resolved **desired**
+`ProjectGraph` and returns a bound for every Agent and Workflow. It does not apply
+Environment overlays, call MCP `tools/list`, or change `CheckToolCall`. CLI plan/validate
+do not print bounds yet (#191). Policy enforcement of the bound is #190.
+
+The bound is a sound **upper** set of named effects the root may perform, over both
+deterministic and autonomous paths. Two edge kinds are preserved on each witness hop:
+
+| Kind | Source | Reachability |
+|---|---|---|
+| **static** | workflow step `uses:` naming `tool.<name>.<operation>` | authored call |
+| **autonomous** | `agent.spec.tools` grant, resolved to one advertised uses string | the agent may choose the operation |
+
+Autonomous edges resolve through **concrete operations**, never effect classes. A grant is
+`tool.<name>.<operation>` (or a Tool metadata name resolved by `[ResolveAgentAdvertisedTools]`:
+native → `echo`, mock/mcp → `default`, HTTP must be pinned). The bound unions
+`[ResolveOperationEffects]` for those operations. There is no `grants { github.read }`.
+
+Witness path: `Workflow → step → Agent → tool.operation`, each hop tagged `static` or
+`autonomous`. Agent-only roots omit workflow/step hops. Hop fields match `plan.WitnessHop`
+(`kind`, `name`, `id`, `reachability`) so #191 can map without `effects` importing `plan`.
+Kinds: `workflow`, `step`, `agent`, `tool_operation`. Pos is metadata only and is not part
+of the bound.
+
+**Unknown vs unreachable.** A reachable operation with no declared effects
+(`[ResolveToolEffects].Unknown` / empty operation set) is an **explicit unknown** in the
+bound — fail-closed, not empty/allow, not omitted. Effects **declared** on a tool operation
+that is not reachable from that root are listed as **unreachable**, not dropped.
+
+**#204 is not shipped.** The bound is over declared `spec.operations` and advertised uses on
+the desired graph. `validate`/`plan` would bound desired; `run` would enforce the deployed
+manifest — this package only computes desired-graph bounds. A remote `tools/list` expansion
+is out of scope until the pin lands.
+
+Walks use a visiting set (least fixed point) so cyclic graphs terminate. Production YAML has
+no subworkflows (#194); diamond reuse of one agent does not duplicate infinitely.
 
 ---
 
