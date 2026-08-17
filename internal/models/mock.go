@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -14,6 +15,7 @@ type MockTurn struct {
 	ToolCalls  []ToolCall
 	StopReason string
 	// Meta is per-call accounting (token counts, cost). When nil, [MockClient.Meta] or a small default is used.
+	// Token counts with CostUSD 0 are priced via the B1 table for req.Model (issue #164).
 	Meta *GenerateMeta
 	// Err, when set, is returned from Generate instead of a response.
 	Err error
@@ -49,7 +51,7 @@ func (m *MockClient) Generate(ctx context.Context, req GenerateRequest) (Generat
 		return GenerateResponse{
 			Content:    m.Content,
 			StopReason: StopReasonEndTurn,
-			Meta:       m.metaFor(nil),
+			Meta:       m.metaFor(req.Model, nil),
 		}, nil
 	}
 	if m.call >= len(m.Script) {
@@ -72,7 +74,7 @@ func (m *MockClient) Generate(ctx context.Context, req GenerateRequest) (Generat
 		Content:    turn.Content,
 		ToolCalls:  cloneToolCalls(turn.ToolCalls),
 		StopReason: stop,
-		Meta:       m.metaFor(turn.Meta),
+		Meta:       m.metaFor(req.Model, turn.Meta),
 	}, nil
 }
 
@@ -113,14 +115,33 @@ func (m *MockClient) Reset() {
 	m.requests = nil
 }
 
-func (m *MockClient) metaFor(turn *GenerateMeta) GenerateMeta {
-	if turn != nil {
-		return *turn
+func (m *MockClient) metaFor(model string, turn *GenerateMeta) GenerateMeta {
+	var meta GenerateMeta
+	switch {
+	case turn != nil:
+		meta = *turn
+	case m != nil && m.Meta != nil:
+		meta = *m.Meta
+	default:
+		return GenerateMeta{DurationMs: 1, CostUSD: 0.001}
 	}
-	if m.Meta != nil {
-		return *m.Meta
+	if meta.CostUSD == 0 && (meta.PromptTokens != 0 || meta.CompletionTokens != 0) {
+		meta.CostUSD = estimateMockTokenCostUSD(model, meta.PromptTokens, meta.CompletionTokens)
 	}
-	return GenerateMeta{DurationMs: 1, CostUSD: 0.001}
+	return meta
+}
+
+// estimateMockTokenCostUSD uses the same B1 tables as live adapters (issue #164).
+// An explicit non-zero CostUSD on Meta is left unchanged by [MockClient.metaFor].
+func estimateMockTokenCostUSD(model string, promptTokens, completionTokens int) float64 {
+	id := strings.TrimSpace(model)
+	if i := strings.IndexByte(id, '/'); i >= 0 && i < len(id)-1 {
+		id = id[i+1:]
+	}
+	if c := estimateOpenAIChatCostUSD(id, promptTokens, completionTokens); c != 0 {
+		return c
+	}
+	return estimateAnthropicCostUSD(id, promptTokens, completionTokens)
 }
 
 func cloneGenerateRequest(req GenerateRequest) GenerateRequest {

@@ -5,7 +5,9 @@
 // [MockClient.Script] drives a tool-calling loop without a live provider: each Generate consumes
 // the next [MockTurn] (for example turn 1 → [StopReasonToolUse], turn 2 → final text/JSON).
 // Requests, including [GenerateRequest.Tools], are recorded for assertions; per-call token counts
-// go on [MockTurn.Meta]. Without Script, [MockClient] still returns a fixed [MockClient.Content].
+// go on [MockTurn.Meta]. When tokens are set and CostUSD is 0, CostUSD is filled from the same
+// B1 price table as live adapters (issue #164); an explicit non-zero CostUSD is kept. Without
+// Script, [MockClient] still returns a fixed [MockClient.Content].
 //
 // # Model contract (issue #156)
 //
