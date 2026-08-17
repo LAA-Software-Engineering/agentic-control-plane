@@ -144,7 +144,7 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		return nil, models.GenerateMeta{}, err
 	}
 	if len(toolDefs) == 0 {
-		return e.finishAgentTurn(ctx, ctx2, runHandle, pol, cli, modelRef, modelID, runID, step, agent, models.GenerateRequest{
+		return e.finishAgentTurn(ctx, ctx2, runHandle, pol, cli, modelRef, modelID, runID, step, pctx, agent, models.GenerateRequest{
 			Model:    modelID,
 			Messages: messages,
 		})
@@ -175,6 +175,10 @@ func (e *Executor) runAgentToolLoop(
 	loopPctx := pctx
 
 	for i := 1; i <= maxIter; i++ {
+		// Check already-accumulated cost (prior steps + prior turns) before the next Generate.
+		if _, err := e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, acc); err != nil {
+			return nil, acc, err
+		}
 		req := models.GenerateRequest{
 			Model:      modelID,
 			Messages:   messages,
@@ -231,6 +235,9 @@ func (e *Executor) runAgentToolLoop(
 			if err != nil {
 				return nil, acc, fmt.Errorf("engine: tool call %q: %w", call.Name, err)
 			}
+			if _, err := e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, acc); err != nil {
+				return nil, acc, err
+			}
 			out, tmeta, err := e.runToolStep(ctx2, runHandle, pol, wf, runID, step, args, loopPctx, uses, args)
 			if err != nil {
 				return nil, acc, err
@@ -260,12 +267,16 @@ func (e *Executor) finishAgentTurn(
 	cli models.ModelClient,
 	modelRef, modelID, runID string,
 	step spec.WorkflowStep,
+	pctx policy.RunContext,
 	agent *spec.AgentResource,
 	req models.GenerateRequest,
 ) (map[string]any, models.GenerateMeta, error) {
 	resp, err := e.generateAgentTurn(ctx, ctx2, runHandle, cli, modelRef, runID, step, req)
 	if err != nil {
 		return nil, models.GenerateMeta{}, err
+	}
+	if _, err := e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, resp.Meta); err != nil {
+		return nil, resp.Meta, err
 	}
 	return e.completeAgentOutput(ctx, pol, agent, step, resp.Content, resp.Meta)
 }
@@ -323,9 +334,36 @@ func (e *Executor) checkAgentLoopRun(ctx context.Context, pol policy.PolicyEvalu
 				_, _ = e.Trace.Append(ctx, runID, stepID, trace.EventSystemError, trace.ActorSystem, d.TraceData())
 			}
 		}
+		e.appendCostLimitHit(ctx, runID, stepID, err)
 		return loop, err
 	}
 	return loop, nil
+}
+
+func (e *Executor) appendCostLimitHit(ctx context.Context, runID, stepID string, err error) {
+	if e == nil || e.Trace == nil {
+		return
+	}
+	d, ok := policy.AsDenied(err)
+	if !ok || d.Reason != policy.ReasonMaxCost {
+		return
+	}
+	_, _ = e.Trace.Append(ctx, runID, stepID, trace.EventLimitHit, trace.ActorSystem, costLimitHitData(d, stepID))
+}
+
+// costLimitHitData is the limit_hit payload for execution.maxTotalCostUsd (issue #163).
+// This is not [trace.LimitHitTraceData], which is byte-oriented (issue #117).
+func costLimitHitData(d *policy.DeniedError, stepID string) map[string]any {
+	data := map[string]any{
+		"kind":   "max_cost",
+		"stepId": stepID,
+	}
+	if d != nil {
+		for k, v := range d.Extra {
+			data[k] = v
+		}
+	}
+	return data
 }
 
 func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {

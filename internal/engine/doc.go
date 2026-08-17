@@ -13,7 +13,10 @@
 // applies the same advertised-uses rules. Only that ToolDef name is accepted — aliased ops such as
 // `helper.echo` or `helper.command.run` fail before [policy.PolicyEvaluator.CheckToolCall] /
 // [tools.ToolExecutor.Call]. Inner calls use the agent `timeoutSeconds` context. After each Generate
-// and tool turn, [policy.PolicyEvaluator.CheckRun] re-checks cost and wall-clock budgets.
+// and tool turn, [policy.PolicyEvaluator.CheckRun] re-checks cost and wall-clock budgets
+// against already-accumulated run cost before the next Generate or inner tool call, and again
+// after each call's actual cost. Exceeding `execution.maxTotalCostUsd` records `limit_hit`
+// (`kind: max_cost`) plus `system_error`, then fails the step with `run_error` (issue #163).
 // `constraints.maxIterations` (default 8, hard cap 32) counts Generate turns; `tool_use` on the last
 // turn fails without executing those calls. HITL interrupt does not run inside the loop: inner uses
 // must be pre-approved (`--approve` / ApprovedActions) or CheckToolCall fails closed. Agents with no

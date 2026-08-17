@@ -173,6 +173,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 			ApprovedActions:    in.ApprovedActions,
 		}
 		if err := wfPol.CheckRun(ctx, pctx); err != nil {
+			e.appendCostLimitHit(ctx, in.RunID, step.ID, err)
 			return e.failRunStep(ctx, in, step.ID, with, err, totalCost)
 		}
 
@@ -250,7 +251,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 				CostUSD:    stepCost,
 			})
 			if e.Trace != nil {
-				_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, map[string]any{"error": err.Error(), "stepId": step.ID})
+				_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
 			}
 			return e.failRun(ctx, in, fmt.Errorf("engine: step %q: %w", step.ID, err), totalCost)
 		}
@@ -331,7 +332,18 @@ func (e *Executor) failRunStep(ctx context.Context, in RunInput, stepID string, 
 		ErrorText:  runErr.Error(),
 	})
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, in.RunID, stepID, trace.EventRunError, trace.ActorSystem, map[string]any{"error": runErr.Error(), "stepId": stepID})
+		_, _ = e.Trace.Append(ctx, in.RunID, stepID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(stepID, runErr))
 	}
 	return e.failRun(ctx, in, runErr, totalCost)
+}
+
+func runErrorTraceData(stepID string, err error) map[string]any {
+	data := map[string]any{"stepId": stepID}
+	if err != nil {
+		data["error"] = err.Error()
+	}
+	if d, ok := policy.AsDenied(err); ok {
+		data["reason"] = d.Reason
+	}
+	return data
 }
