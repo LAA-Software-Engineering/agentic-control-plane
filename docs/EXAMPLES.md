@@ -159,7 +159,7 @@ This is a small but **end-to-end** project: a **native echo** step supplies fixe
 
 The runtime calls OpenAI’s **`/v1/chat/completions`** endpoint. The agent **must** answer with a **single JSON object** (no markdown fences); the engine parses that object and exposes its fields to **`spec.output`**.
 
-**`totalCostUsd` on runs** is accumulated from each step’s reported cost. Native tools report **0**. For **OpenAI** and **Anthropic**, the client estimates USD from API **`usage`** token counts × approximate per-million rates for known models (for example **`gpt-4o-mini`**, **`gpt-4o`**, **`claude-sonnet-4-…`**, **`claude-haiku-4-5-…`**). Other model ids stay at **0** until their rates are added in **`internal/models/cost.go`**. Verify against [OpenAI pricing](https://openai.com/api/pricing/) and [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing).
+**`totalCostUsd` on runs** is accumulated from each step’s reported cost. Native tools report **0**. For **OpenAI** and **Anthropic**, the client estimates USD from API **`usage`** token counts × approximate **standard-tier** per-million rates for known models (for example **`gpt-4o-mini`**, **`gpt-4o`**, **`claude-sonnet-4-20250514`**, **`claude-haiku-4-5-…`**). Dated snapshots match; a newer version id that only shares a shorter prefix stays at **0** until added in **`internal/models/cost.go`**. Verify against [OpenAI pricing](https://openai.com/api/pricing/) and [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing). Cache-read and batch rates are not applied.
 
 ### Layout
 
