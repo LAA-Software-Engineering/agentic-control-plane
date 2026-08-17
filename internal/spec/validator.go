@@ -407,6 +407,9 @@ func validateAgentSpecs(g *ProjectGraph) []error {
 				errs = append(errs, fmt.Errorf("Agent/%s: constraints.timeoutSeconds must be non-negative", name))
 			}
 		}
+		if _, err := ResolveAgentAdvertisedTools(ar, g.Tools); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return errs
 }

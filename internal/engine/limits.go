@@ -8,6 +8,24 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
+// Default and hard-cap for agent.spec.constraints.maxIterations (issue #160).
+// Unset or zero uses the default; values above the hard cap are clamped.
+const (
+	defaultAgentMaxIterations = 8
+	hardAgentMaxIterations    = 32
+)
+
+func agentMaxIterations(agent *spec.AgentResource) int {
+	n := defaultAgentMaxIterations
+	if agent != nil && agent.Spec.Constraints != nil && agent.Spec.Constraints.MaxIterations > 0 {
+		n = agent.Spec.Constraints.MaxIterations
+	}
+	if n > hardAgentMaxIterations {
+		return hardAgentMaxIterations
+	}
+	return n
+}
+
 func (e *Executor) redactionOpts() trace.RedactionOptions {
 	if e != nil && e.Trace != nil {
 		return e.Trace.Redaction

@@ -231,7 +231,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 				err = fmt.Errorf("engine: unknown agent %q", agentName)
 			} else {
 				var gmeta models.GenerateMeta
-				out, gmeta, err = e.runAgentStep(ctx, runHandle, wfPol, in.RunID, step, with, pctx, ar)
+				out, gmeta, err = e.runAgentStep(ctx, runHandle, wfPol, wf, in.RunID, step, with, pctx, ar)
 				stepCost = gmeta.CostUSD
 			}
 		}

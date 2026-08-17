@@ -92,6 +92,77 @@ func TestValidateProjectGraph_workflowStepNeitherAgentNorUses(t *testing.T) {
 	}
 }
 
+func TestValidateProjectGraph_agentToolUsesString(t *testing.T) {
+	g := &ProjectGraph{
+		Agents: map[string]*AgentResource{
+			"a": {
+				Kind:     KindAgent,
+				Metadata: Metadata{Name: "a"},
+				Spec:     AgentSpec{Tools: []string{"tool.helper.echo"}},
+			},
+		},
+		Tools: map[string]*ToolResource{
+			"helper": {
+				Kind:     KindTool,
+				Metadata: Metadata{Name: "helper"},
+				Spec:     ToolSpec{Type: "mock"},
+			},
+		},
+	}
+	if err := ValidateProjectGraph(g, t.TempDir()); err != nil {
+		t.Fatalf("uses-string tool ref should resolve: %v", err)
+	}
+}
+
+func TestValidateProjectGraph_agentAdvertisedTools(t *testing.T) {
+	httpTool := &ToolResource{
+		Kind:     KindTool,
+		Metadata: Metadata{Name: "api"},
+		Spec:     ToolSpec{Type: "http", HTTP: &ToolHTTP{BaseURL: "https://example.com"}},
+	}
+	native := &ToolResource{
+		Kind:     KindTool,
+		Metadata: Metadata{Name: "shell"},
+		Spec:     ToolSpec{Type: "native"},
+	}
+	t.Run("bare http", func(t *testing.T) {
+		g := &ProjectGraph{
+			Agents: map[string]*AgentResource{
+				"a": {Kind: KindAgent, Metadata: Metadata{Name: "a"}, Spec: AgentSpec{Tools: []string{"api"}}},
+			},
+			Tools: map[string]*ToolResource{"api": httpTool},
+		}
+		err := ValidateProjectGraph(g, t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "no default operation") {
+			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("pinned http default", func(t *testing.T) {
+		g := &ProjectGraph{
+			Agents: map[string]*AgentResource{
+				"a": {Kind: KindAgent, Metadata: Metadata{Name: "a"}, Spec: AgentSpec{Tools: []string{"tool.api.default"}}},
+			},
+			Tools: map[string]*ToolResource{"api": httpTool},
+		}
+		err := ValidateProjectGraph(g, t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "no default operation") {
+			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("conflicting ops", func(t *testing.T) {
+		g := &ProjectGraph{
+			Agents: map[string]*AgentResource{
+				"a": {Kind: KindAgent, Metadata: Metadata{Name: "a"}, Spec: AgentSpec{Tools: []string{"shell", "tool.shell.command.run"}}},
+			},
+			Tools: map[string]*ToolResource{"shell": native},
+		}
+		err := ValidateProjectGraph(g, t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "different operations") {
+			t.Fatalf("got %v", err)
+		}
+	})
+}
+
 func TestValidateProjectGraph_agentMissingTool(t *testing.T) {
 	g := &ProjectGraph{
 		Agents: map[string]*AgentResource{

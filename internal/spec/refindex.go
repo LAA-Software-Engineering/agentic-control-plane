@@ -35,9 +35,15 @@ func BuildRefIndex(g *ProjectGraph) *RefIndex {
 		}
 		var tools []string
 		for _, t := range ar.Spec.Tools {
-			if s := strings.TrimSpace(t); s != "" {
-				tools = append(tools, s)
+			s := strings.TrimSpace(t)
+			if s == "" {
+				continue
 			}
+			if tn, ok := ParseToolUses(s); ok {
+				tools = append(tools, tn)
+				continue
+			}
+			tools = append(tools, s)
 		}
 		ix.AgentTools[name] = dedupeRefStrings(tools)
 		if p := strings.TrimSpace(ar.Spec.Policy); p != "" {
