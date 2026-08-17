@@ -173,6 +173,18 @@ func TestInspect_unknownResource_exit2(t *testing.T) {
 	}
 }
 
+func TestInspect_effectUnpermitted_doesNotFailCheck(t *testing.T) {
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"inspect", "Workflow/deploy-production", "--project", testdataPath(t, "validate_effect_unpermitted")})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("inspect must not run effects.Check: %v\n%s", err, out.String())
+	}
+}
+
 func TestInspect_wrongArgCount_exit2(t *testing.T) {
 	ResetGlobalsForTest()
 	cmd := NewRootCmd()

@@ -117,6 +117,9 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 							"x": {Enabled: true},
 						},
 					},
+					Effects: &spec.PolicyEffects{
+						Permit: []string{"github.read"},
+					},
 				},
 			},
 		},
@@ -160,6 +163,7 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 	pol.Spec.Hitl.InterruptOnPos = map[string]spec.Pos{
 		"x": {File: "policy.yaml", Line: 11, Column: 5},
 	}
+	pol.Spec.Effects.PermitPos = []spec.Pos{{File: "policy.yaml", Line: 20, Column: 7}}
 	tool := g.Tools["x"]
 	op := tool.Spec.Operations["y"]
 	op.Pos = spec.Pos{File: "tool.yaml", Line: 10, Column: 3}

@@ -1,0 +1,17 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: validate-effect-unpermitted
+spec:
+  imports:
+    - ./policy.yaml
+    - ./tool.yaml
+    - ./agent.yaml
+    - ./workflow.yaml
+  defaults:
+    policy: staging-only
+    model: mock/gpt-4
+  providers:
+    models:
+      mock:
+        type: mock

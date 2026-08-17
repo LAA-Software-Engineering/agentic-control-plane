@@ -220,3 +220,73 @@ func TestSnapshotPath(t *testing.T) {
 	}
 	_ = os.MkdirAll(filepath.Dir(want), 0o755)
 }
+
+func TestResolve_doesNotEnforceEffectBounds(t *testing.T) {
+	root := t.TempDir()
+	writeYAML(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: resolve-skips-effect-check
+spec:
+  imports:
+    - ./policy.yaml
+    - ./tool.yaml
+    - ./agent.yaml
+    - ./workflow.yaml
+  defaults:
+    policy: staging-only
+    model: mock/gpt-4
+  providers:
+    models:
+      mock:
+        type: mock
+`)
+	writeYAML(t, filepath.Join(root, "policy.yaml"), `apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: staging-only
+spec:
+  effects:
+    permit:
+      - production.read
+`)
+	writeYAML(t, filepath.Join(root, "tool.yaml"), `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: kubernetes
+spec:
+  type: native
+  operations:
+    restart:
+      effects: [production.write]
+`)
+	writeYAML(t, filepath.Join(root, "agent.yaml"), `apiVersion: agentic.dev/v0
+kind: Agent
+metadata:
+  name: deploy-agent
+spec:
+  model: mock/gpt-4
+  policy: staging-only
+  tools:
+    - tool.kubernetes.restart
+  instructions: |
+    Restart the service when asked.
+`)
+	writeYAML(t, filepath.Join(root, "workflow.yaml"), `apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: deploy-production
+spec:
+  policy: staging-only
+  steps:
+    - id: remediate
+      agent: deploy-agent
+`)
+	rc, err := Resolve(ResolveOptions{ProjectRoot: root})
+	if err != nil {
+		t.Fatalf("Resolve must not run effects.Check (validate/plan only): %v", err)
+	}
+	if rc.Graph() == nil {
+		t.Fatal("expected graph")
+	}
+}

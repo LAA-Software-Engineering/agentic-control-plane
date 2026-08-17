@@ -72,6 +72,9 @@ func runPlan(cmd *cobra.Command, fromEnv string) error {
 		return NewExitError(ExitValidationError, err)
 	}
 	graph := rc.Graph()
+	if err := checkEffectBounds(graph); err != nil {
+		return err
+	}
 	env := rc.Environment()
 	appliedEnv := env
 	if s := strings.TrimSpace(fromEnv); s != "" {

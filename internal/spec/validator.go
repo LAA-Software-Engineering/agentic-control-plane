@@ -287,7 +287,36 @@ func validatePolicySpecs(g *ProjectGraph) []error {
 			}
 		}
 		errs = append(errs, validateHitlPolicy(pr.Pos, name, pr.Spec.Hitl, g)...)
+		errs = append(errs, validatePolicyEffects(pr.Pos, name, pr.Spec.Effects)...)
 	}
+	return errs
+}
+
+func validatePolicyEffects(p Pos, policyName string, e *PolicyEffects) []error {
+	if e == nil {
+		return nil
+	}
+	var errs []error
+	check := func(field string, idents []string, pos []Pos) {
+		seen := make(map[string]struct{})
+		for i, raw := range idents {
+			ePos := p
+			if i < len(pos) && !pos[i].IsZero() {
+				ePos = pos[i]
+			}
+			if err := ValidateEffectIdent(raw); err != nil {
+				errs = append(errs, ePos.Errorf("Policy/%s: spec.effects.%s[%d]: %w", policyName, field, i, err))
+				continue
+			}
+			id := strings.TrimSpace(raw)
+			if _, dup := seen[id]; dup {
+				errs = append(errs, ePos.Errorf("Policy/%s: duplicate spec.effects.%s entry %q", policyName, field, id))
+			}
+			seen[id] = struct{}{}
+		}
+	}
+	check("permit", e.Permit, e.PermitPos)
+	check("permitWithApproval", e.PermitWithApproval, e.PermitWithApprovalPos)
 	return errs
 }
 

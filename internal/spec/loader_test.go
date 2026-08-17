@@ -168,6 +168,10 @@ func stripResourcePos(res any) any {
 		if r.Spec.Hitl != nil {
 			r.Spec.Hitl.InterruptOnPos = nil
 		}
+		if r.Spec.Effects != nil {
+			r.Spec.Effects.PermitPos = nil
+			r.Spec.Effects.PermitWithApprovalPos = nil
+		}
 	case *EnvironmentResource:
 		r.Pos = Pos{}
 	}

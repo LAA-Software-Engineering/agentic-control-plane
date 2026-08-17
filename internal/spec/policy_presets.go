@@ -101,6 +101,9 @@ func MergePolicySpec(base, overlay PolicySpec) PolicySpec {
 	if overlay.Security != nil {
 		out.Security = clonePolicySecurity(overlay.Security)
 	}
+	if overlay.Effects != nil {
+		out.Effects = clonePolicyEffects(overlay.Effects)
+	}
 	if overlay.ResolvedPreset != "" {
 		out.ResolvedPreset = overlay.ResolvedPreset
 	}
@@ -316,6 +319,26 @@ func clonePolicyApprovals(in *PolicyApprovals) *PolicyApprovals {
 	if in.Permissive != nil {
 		v := *in.Permissive
 		cp.Permissive = &v
+	}
+	return &cp
+}
+
+func clonePolicyEffects(in *PolicyEffects) *PolicyEffects {
+	if in == nil {
+		return nil
+	}
+	cp := *in
+	if in.Permit != nil {
+		cp.Permit = append([]string(nil), in.Permit...)
+	}
+	if in.PermitPos != nil {
+		cp.PermitPos = append([]Pos(nil), in.PermitPos...)
+	}
+	if in.PermitWithApproval != nil {
+		cp.PermitWithApproval = append([]string(nil), in.PermitWithApproval...)
+	}
+	if in.PermitWithApprovalPos != nil {
+		cp.PermitWithApprovalPos = append([]Pos(nil), in.PermitWithApprovalPos...)
 	}
 	return &cp
 }

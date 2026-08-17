@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: review
+spec:
+  policy: guarded-writes
+  steps:
+    - id: fetch
+      uses: tool.github.read_pr

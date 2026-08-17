@@ -103,6 +103,23 @@ func TestGolden_validate_unknown_agent_table(t *testing.T) {
 	assertGoldenOutput(t, "validate_unknown_agent.table.golden.txt", err.Error()+"\n")
 }
 
+func TestGolden_validate_effect_unpermitted_table(t *testing.T) {
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "--project", testdataPath(t, "validate_effect_unpermitted"), "--no-color"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d err=%v\n%s", ExitCodeOf(err), err, out.String())
+	}
+	assertGoldenOutput(t, "validate_effect_unpermitted.table.golden.txt", err.Error()+"\n")
+}
+
 func TestGolden_plan_first_table(t *testing.T) {
 	root := t.TempDir()
 	copyPlanFixture(t, root)

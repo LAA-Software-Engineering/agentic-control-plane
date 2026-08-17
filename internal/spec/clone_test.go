@@ -81,6 +81,10 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 							"helper": {File: "policy.yaml", Line: 12, Column: 5},
 						},
 					},
+					Effects: &PolicyEffects{
+						Permit:    []string{"github.read"},
+						PermitPos: []Pos{{File: "policy.yaml", Line: 16, Column: 7}},
+					},
 				},
 			},
 		},
@@ -126,6 +130,9 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 	}
 	if pol.Spec.Hitl == nil || pol.Spec.Hitl.InterruptOnPos["helper"].Line != 12 {
 		t.Fatalf("InterruptOnPos dropped: %#v", pol.Spec.Hitl)
+	}
+	if pol.Spec.Effects == nil || len(pol.Spec.Effects.PermitPos) != 1 || pol.Spec.Effects.PermitPos[0].Line != 16 {
+		t.Fatalf("PermitPos dropped: %#v", pol.Spec.Effects)
 	}
 	op := cl.Tools["helper"].Spec.Operations["echo"]
 	if op.Pos.Line != 8 || len(op.EffectsPos) != 1 || op.EffectsPos[0].Line != 9 {

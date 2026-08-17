@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/effects"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
@@ -28,4 +29,14 @@ func prepareProjectGraph(g *Global) (*spec.ProjectGraph, string, error) {
 		return nil, "", err
 	}
 	return rc.Graph(), rc.ProjectRoot(), nil
+}
+
+// checkEffectBounds runs [effects.Check] after a successful graph validate.
+// Issue #190 is validate/plan only; apply/run/test/inspect must still load the graph
+// so runtime CheckToolCall can deny at exit 5.
+func checkEffectBounds(graph *spec.ProjectGraph) error {
+	if err := effects.Check(graph); err != nil {
+		return NewExitError(ExitValidationError, err)
+	}
+	return nil
 }

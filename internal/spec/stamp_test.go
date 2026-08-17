@@ -81,6 +81,11 @@ spec:
   hitl:
     interruptOn:
       deploy: true
+  effects:
+    permit:
+      - github.read
+    permitWithApproval:
+      - destructive
 `
 
 func TestStampResourcePositions_policyRequiredForAndInterruptOn(t *testing.T) {
@@ -105,5 +110,11 @@ func TestStampResourcePositions_policyRequiredForAndInterruptOn(t *testing.T) {
 	ip := pr.Spec.Hitl.InterruptOnPos["deploy"]
 	if ip.File != "policy.yaml" || ip.Line != 11 {
 		t.Fatalf("interruptOn key Pos = %#v, want policy.yaml line 11", ip)
+	}
+	if pr.Spec.Effects == nil || len(pr.Spec.Effects.PermitPos) != 1 || pr.Spec.Effects.PermitPos[0].Line < 11 {
+		t.Fatalf("PermitPos = %#v", pr.Spec.Effects)
+	}
+	if len(pr.Spec.Effects.PermitWithApprovalPos) != 1 || pr.Spec.Effects.PermitWithApprovalPos[0].Line < 11 {
+		t.Fatalf("PermitWithApprovalPos = %#v", pr.Spec.Effects)
 	}
 }

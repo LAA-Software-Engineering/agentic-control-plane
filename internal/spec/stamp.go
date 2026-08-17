@@ -166,4 +166,22 @@ func stampPolicySpec(file string, specNode *yaml.Node, s *PolicySpec) {
 			}
 		}
 	}
+	if s.Effects != nil {
+		stampPolicyEffectList(file, yamlMapValue(yamlMapValue(specNode, "effects"), "permit"), s.Effects.Permit, &s.Effects.PermitPos)
+		stampPolicyEffectList(file, yamlMapValue(yamlMapValue(specNode, "effects"), "permitWithApproval"), s.Effects.PermitWithApproval, &s.Effects.PermitWithApprovalPos)
+	}
+}
+
+func stampPolicyEffectList(file string, seq *yaml.Node, idents []string, pos *[]Pos) {
+	if seq == nil || seq.Kind != yaml.SequenceNode || len(idents) == 0 {
+		return
+	}
+	out := make([]Pos, len(idents))
+	for i, item := range seq.Content {
+		if i >= len(out) {
+			break
+		}
+		out[i] = posFromNode(file, item)
+	}
+	*pos = out
 }

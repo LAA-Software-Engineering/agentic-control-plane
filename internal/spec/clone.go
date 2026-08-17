@@ -96,6 +96,14 @@ func copyPolicyDiagnosticPos(src, dst *PolicyResource) {
 			dst.Spec.Hitl.InterruptOnPos[k] = p
 		}
 	}
+	if src.Spec.Effects != nil && dst.Spec.Effects != nil {
+		if len(src.Spec.Effects.PermitPos) > 0 {
+			dst.Spec.Effects.PermitPos = append([]Pos(nil), src.Spec.Effects.PermitPos...)
+		}
+		if len(src.Spec.Effects.PermitWithApprovalPos) > 0 {
+			dst.Spec.Effects.PermitWithApprovalPos = append([]Pos(nil), src.Spec.Effects.PermitWithApprovalPos...)
+		}
+	}
 }
 
 func copyToolDiagnosticPos(src, dst *ToolResource) {
