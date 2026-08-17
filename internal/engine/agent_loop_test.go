@@ -2,12 +2,16 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/audit"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -181,18 +185,23 @@ func TestRun_agentToolLoop_happyPath(t *testing.T) {
 	if got.TotalCostUSD < 0.05 {
 		t.Fatalf("cost %v, want model+tool loop", got.TotalCostUSD)
 	}
-	var sawTool, sawLLM int
+	var sawLLM int
 	for _, ev := range events {
-		switch ev.Type {
-		case string(trace.EventToolExecution):
-			sawTool++
-		case string(trace.EventLLMCompletion):
+		if ev.Type == string(trace.EventLLMCompletion) {
 			sawLLM++
 		}
 	}
-	if sawTool == 0 || sawLLM < 2 {
-		t.Fatalf("trace tool=%d llm=%d events=%d", sawTool, sawLLM, len(events))
+	if sawLLM < 2 {
+		t.Fatalf("trace llm=%d events=%d", sawLLM, len(events))
 	}
+	sel, exec := requireToolTracePair(t, events, "helper", "tool.helper.default")
+	assertNoRawToolArgs(t, sel, `"q"`, "weather")
+	wantDigest := argumentsDigestHex(map[string]any{"q": "weather"})
+	if got := eventData(t, sel)["argumentsDigest"]; got != wantDigest {
+		t.Fatalf("argumentsDigest = %v want %s", got, wantDigest)
+	}
+	assertToolExecutionPayload(t, exec, true, "")
+	assertAuditChain(t, "run-loop", events)
 }
 
 func TestRun_agentToolLoop_maxIterations(t *testing.T) {
@@ -261,6 +270,8 @@ func TestRun_agentToolLoop_policyDenied(t *testing.T) {
 	if !sawDeny {
 		t.Fatalf("expected system_error approval_required, events=%+v", events)
 	}
+	assertNoToolTraceEvents(t, events)
+	assertAuditChain(t, "run-loop", events)
 }
 
 func TestRun_agentToolLoop_noToolsRegression(t *testing.T) {
@@ -362,6 +373,7 @@ func TestRun_agentToolLoop_maxIterationsDoesNotExecuteLastToolUse(t *testing.T) 
 	if !sawLimit {
 		t.Fatalf("expected limit_hit max_iterations, events=%+v", events)
 	}
+	assertNoToolTraceEvents(t, events)
 }
 
 func TestRun_agentToolLoop_pinnedUses(t *testing.T) {
@@ -489,5 +501,158 @@ func TestRun_agentToolLoop_budgetCheckedEachTurn(t *testing.T) {
 	}
 	if !sawDeny {
 		t.Fatalf("expected system_error max_cost, events=%+v", events)
+	}
+}
+
+func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"helper"}}, spec.PolicySpec{})
+	mock := &models.MockClient{
+		Script: []models.MockTurn{
+			{ToolCalls: []models.ToolCall{{
+				ID:        "c1",
+				Name:      "helper",
+				Arguments: json.RawMessage(`{"password":"s3cret","q":"weather"}`),
+			}}},
+			{Content: `{"summary":"should not run"}`},
+		},
+	}
+	extra := &tools.MockExecutor{Err: errors.New("boom")}
+	got, events, err := runAgentLoop(t, graph, mock, extra)
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v", err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("status %q", got.Status)
+	}
+	if mock.CallCount() != 1 {
+		t.Fatalf("generates %d, want 1", mock.CallCount())
+	}
+	sel, exec := requireToolTracePair(t, events, "helper", "tool.helper.default")
+	assertNoRawToolArgs(t, sel, "s3cret", "weather", `"password"`)
+	wantDigest := argumentsDigestHex(map[string]any{"password": "s3cret", "q": "weather"})
+	if got := eventData(t, sel)["argumentsDigest"]; got != wantDigest {
+		t.Fatalf("argumentsDigest = %v want %s", got, wantDigest)
+	}
+	assertToolExecutionPayload(t, exec, false, "boom")
+	assertAuditChain(t, "run-loop", events)
+}
+
+func eventData(t *testing.T, ev trace.Event) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(ev.DataJSON), &m); err != nil {
+		t.Fatalf("data json: %v (%s)", err, ev.DataJSON)
+	}
+	return m
+}
+
+func argumentsDigestHex(args map[string]any) string {
+	b, err := json.Marshal(args)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func requireToolTracePair(t *testing.T, events []trace.Event, tool, uses string) (selection, execution trace.Event) {
+	t.Helper()
+	var types []string
+	var sel, exec *trace.Event
+	for i := range events {
+		ev := events[i]
+		switch ev.Type {
+		case string(trace.EventToolSelection), string(trace.EventToolExecution):
+			types = append(types, ev.Type)
+			if ev.ActorType != string(trace.ActorAgent) {
+				t.Fatalf("%s actor = %q want %s", ev.Type, ev.ActorType, trace.ActorAgent)
+			}
+			data := eventData(t, ev)
+			if data["tool"] != tool || data["uses"] != uses {
+				t.Fatalf("%s payload tool=%v uses=%v want %s / %s (%s)", ev.Type, data["tool"], data["uses"], tool, uses, ev.DataJSON)
+			}
+			switch ev.Type {
+			case string(trace.EventToolSelection):
+				if sel != nil {
+					t.Fatalf("duplicate tool_selection: %v", types)
+				}
+				cp := ev
+				sel = &cp
+			case string(trace.EventToolExecution):
+				if exec != nil {
+					t.Fatalf("duplicate tool_execution: %v", types)
+				}
+				cp := ev
+				exec = &cp
+			}
+		}
+	}
+	if sel == nil || exec == nil {
+		t.Fatalf("missing tool_selection/tool_execution pair, types=%v events=%+v", types, events)
+	}
+	if types[0] != string(trace.EventToolSelection) || types[1] != string(trace.EventToolExecution) {
+		t.Fatalf("tool events order %v, want tool_selection then tool_execution", types)
+	}
+	return *sel, *exec
+}
+
+func assertToolExecutionPayload(t *testing.T, ev trace.Event, wantSuccess bool, errSubstr string) {
+	t.Helper()
+	data := eventData(t, ev)
+	if _, ok := data["durationMs"]; !ok {
+		t.Fatalf("missing durationMs: %s", ev.DataJSON)
+	}
+	if _, ok := data["costUsd"]; !ok {
+		t.Fatalf("missing costUsd: %s", ev.DataJSON)
+	}
+	got, ok := data["success"].(bool)
+	if !ok || got != wantSuccess {
+		t.Fatalf("success = %v (%T), want %v (%s)", data["success"], data["success"], wantSuccess, ev.DataJSON)
+	}
+	if errSubstr == "" {
+		if _, exists := data["error"]; exists {
+			t.Fatalf("unexpected error field: %s", ev.DataJSON)
+		}
+		return
+	}
+	msg, _ := data["error"].(string)
+	if !strings.Contains(msg, errSubstr) {
+		t.Fatalf("error = %q, want substring %q (%s)", msg, errSubstr, ev.DataJSON)
+	}
+}
+
+func assertNoRawToolArgs(t *testing.T, ev trace.Event, forbidden ...string) {
+	t.Helper()
+	for _, s := range forbidden {
+		if strings.Contains(ev.DataJSON, s) {
+			t.Fatalf("raw tool argument %q leaked into %s: %s", s, ev.Type, ev.DataJSON)
+		}
+	}
+}
+
+func assertNoToolTraceEvents(t *testing.T, events []trace.Event) {
+	t.Helper()
+	for _, ev := range events {
+		if ev.Type == string(trace.EventToolSelection) || ev.Type == string(trace.EventToolExecution) {
+			t.Fatalf("unexpected %s on fail-closed path: %s", ev.Type, ev.DataJSON)
+		}
+	}
+}
+
+func assertAuditChain(t *testing.T, runID string, events []trace.Event) {
+	t.Helper()
+	if err := audit.VerifyRunChainError(runID, events); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestArgumentsDigest_canonicalKeyOrder(t *testing.T) {
+	a := argumentsDigest(map[string]any{"z": 1, "a": 2})
+	b := argumentsDigest(map[string]any{"a": 2, "z": 1})
+	if a == "" || a != b {
+		t.Fatalf("digests %q vs %q", a, b)
+	}
+	if a != argumentsDigestHex(map[string]any{"a": 2, "z": 1}) {
+		t.Fatalf("digest %q mismatch vs json.Marshal key order", a)
 	}
 }
