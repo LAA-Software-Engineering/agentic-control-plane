@@ -59,7 +59,7 @@ Specs today are YAML (interchange / compilation output). The long-term authoring
 
 ## Flagship: incident triage
 
-**Start here:** [`examples/incident-triage`](examples/incident-triage) — an offline agent that can page, read logs, and file a ticket, but **cannot restart a service** unless policy already requires `--approve tool.restart.restart`. Unapproved `agentctl run` exits **5**; with the grant it completes and `audit verify` passes.
+**Start here:** [`examples/incident-triage`](examples/incident-triage) — an offline agent that can page, read logs, and file a ticket, but **cannot restart a service** unless policy `approvals.requiredFor` includes `tool.restart.restart` and that uses string is **pre-approved** with `--approve tool.restart.restart`. Inner agent-loop tools do not HITL; unapproved `agentctl run` fail-closes with **exit 5** (`approval_required`). With `--approve` it completes and `audit verify` passes.
 
 Other walkthroughs: policy-blocked PR review in [`examples/pr-review-demo`](examples/pr-review-demo/README.md) (no API keys); live GitHub read/write with a **mock** reviewer in [`examples/pr-review-github`](examples/pr-review-github/README.md); the same flow with OpenAI `gpt-4o-mini` plus GitHub Actions in [`examples/pr-review-github-actions`](examples/pr-review-github-actions/README.md) ([PR workflow](.github/workflows/agentctl-pr-review.yml); optional manual [`owner`/`repo`/`number`](.github/workflows/agentctl-pr-review-publish.yml)).
 
