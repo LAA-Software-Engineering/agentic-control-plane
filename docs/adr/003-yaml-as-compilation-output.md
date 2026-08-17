@@ -84,6 +84,13 @@ Doing this while the IR is a handful of structs in
 added fields and passes is a wide refactor. It is therefore sequenced **first**, ahead of the
 effect system.
 
+**Positions are diagnostic metadata only — never identity.** They must not participate in
+fingerprints, digests, workflow hashes, or generated resource names. Deriving a lowered step's
+identity from its source coordinates would make an unrelated edit ten lines above it produce a
+delete-and-recreate pair in `plan`, for a workflow that did not semantically change. Identity
+comes from structural position in the program (enclosing workflow, binding name, AST child path);
+location comes from `Pos`. The two must stay separable.
+
 ## Consequences
 
 - **Positive:** One authoring surface to document, teach, and produce good diagnostics for.

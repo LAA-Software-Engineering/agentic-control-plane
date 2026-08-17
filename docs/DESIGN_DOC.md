@@ -748,8 +748,10 @@ spec:
 ### End goal additions
 
 Each bullet is ruled on in [ADR 002](adr/002-language-frontend-and-ir-expressiveness.md).
-Graph structure lands in this YAML/IR model; computation lands in the `.agent` frontend and
-must never become an expression field on `WorkflowStep`.
+Graph structure lands in this authored resource model; computation lands in the `.agent`
+frontend and must never become an expression field on `WorkflowStep`. Conditionals and loops do
+lower to an internal **execution IR** (`Branch`, `Loop`, `Fork`, `Join`) that is derived rather
+than authored and has no YAML surface — see ADR 002 §5.
 
 | Addition | Surface |
 |----------|---------|

@@ -69,10 +69,15 @@ the declared-resource graph. It requires **no new syntax**.
 | **conditional steps** | **computation** | language frontend |
 | **loops** | **computation** | language frontend |
 
-**Rule:** graph structure is declarative and belongs in the IR. Computation — anything
-requiring an evaluated expression — does not go into YAML. A dependency graph reads fine in a
-declarative format (Argo, `needs:` in GitHub Actions). Conditionals and iteration bounds do not,
-and the failure mode is well documented in CloudFormation and GitHub Actions.
+**Rule:** the **author-facing Workflow resource does not acquire an expression language**.
+Computational syntax belongs exclusively to `.agent`; lowering may introduce internal
+execution-IR constructs (see §5). Graph structure is declarative and belongs in the resource
+model — a dependency graph reads fine in a declarative format (Argo, `needs:` in GitHub
+Actions). Conditionals and iteration bounds do not, and the failure mode is well documented in
+CloudFormation and GitHub Actions.
+
+The rule is deliberately about the *authoring surface*, not about all IR. A compiler needs
+somewhere to put an `if`; it must not be a field a human writes.
 
 **Fan-out is the trap.** *Static* fan-out — N branches known at author time — is parallel
 branches and belongs in the IR. *Dynamic* fan-out — iterating a runtime collection
@@ -99,7 +104,10 @@ test: *can the IR represent this line yet?*
 agent Reviewer {
     model  openai/gpt-5
     policy guarded-writes        // ref to a Policy resource; `strict` is its preset base
-    grants { github.read }       // autonomous capability bound — NOT a call list
+    grants {                     // autonomous capability bound — NOT a call list
+        tool.github.read_pr
+        tool.github.read_comments
+    }
     input  ReviewRequest
     output Review
 }
@@ -139,6 +147,36 @@ Four properties of this surface are normative:
 - **`grants` is an autonomous capability bound, not a call list.** Post-Epic A, listing a tool
   on an agent means the agent *may choose to call it*. That is a distinct concept from a
   workflow-level deterministic invocation, and the two must not share syntax.
+- **Grants name concrete operations; effects name classes of consequence.** These are separate
+  namespaces and must never be interchangeable — see below.
+
+### Capabilities and effects are distinct namespaces
+
+A **grant** answers *which concrete operation may this agent invoke?* An **effect** answers
+*what class of observable consequence can that operation have?* They are related by the
+per-operation declarations in Epic F, and the relation is one-directional:
+
+```text
+grant  tool.github.read_pr
+         ↓ (operation's declared effects)
+       { github.read }
+         ↓ (union over grants and static calls)
+       workflow effect bound
+```
+
+Grants use the existing reference vocabulary — `tool.<name>.<operation>`, the same form already
+used by `approvals.requiredFor` in every shipped example. Effects use bare dotted identifiers
+(`github.read`, `destructive`). The `tool.` prefix keeps the two textually distinguishable.
+
+**Grants must never be written in terms of effects.** If `grants { github.read }` meant "every
+operation classified `github.read`", then adding a new operation to a tool and classifying it
+`github.read` would silently widen every granting agent's concrete capability, with no diff on
+the agent and possibly no change in the effect delta. That is precisely the invisible capability
+widening this system exists to expose.
+
+Named capability groups may be introduced later for ergonomics, but a group **resolves to a
+concrete operation list**, and `plan` renders the expanded list rather than the group name.
+Expansion is the reviewable artifact.
 
 ### 4. No control-flow field lands on `WorkflowStep` without superseding this ADR.
 
@@ -146,6 +184,86 @@ Specifically: no `if`, `when`, `condition`, `foreach`, `loop`, `while`, or `expr
 [`WorkflowStep`](../../internal/spec/kinds.go). `WorkflowStep` is a four-field struct today; a
 fifth is an afternoon's work and permanent. Graph-structure fields (`needs`, `parallel`,
 `workflow`, `approval`) are explicitly permitted and are the subject of Epic G.
+
+This constrains the **resource model** specifically, because that is what humans author, what
+`plan` diffs, and what deployment state stores. It does not constrain the execution IR.
+
+### 5. Two IR layers, with distinct roles.
+
+Conditionals and loops must become *something* after the AST is discarded. Stating only "no
+control flow in the IR" leaves the compiler nowhere to lower to, so the layers are named
+explicitly:
+
+```text
+.agent  →  typed AST
+              ↓
+        Semantic / resource IR        ← authored, diffed, stored, policy-checked
+          Agent · Tool · Policy · Workflow · Environment · effect graph
+              ↓
+        Execution IR                  ← derived, never authored
+          InvokeTool · InvokeAgent · InvokeWorkflow
+          Fork · Join · Branch · Loop · Return
+              ↓
+           engine
+```
+
+- **Semantic / resource IR** is the existing resource model. It is the desired state: what
+  `plan` diffs, what `apply` writes, what policy and effect analysis run against. YAML remains
+  valid ingress to this layer (ADR 003). It never gains an expression language.
+- **Execution IR** is lowered output. `Branch` and `Loop` live here and only here. It is never
+  hand-authored and has no YAML surface.
+
+Two consequences that must hold or the split is meaningless:
+
+- **`plan` continues to diff the resource IR.** The execution IR is derived, so it does not
+  produce its own diff lines; its digest folds into the workflow hash so that a lowering change
+  with no resource-level change still invalidates a stale plan.
+- **Both ingress paths converge before the engine.** YAML lowers to the same execution IR as
+  `.agent`, minus the constructs YAML cannot express. Divergent execution semantics between the
+  two ingress paths is a defect, not a design freedom.
+
+This does not require two fully separate Go type hierarchies on day one, but the distinction is
+normative and the layer boundary should be visible in package structure.
+
+## Soundness assumptions and limits
+
+This ADR claims a "sound static upper bound on the blast radius of a nondeterministic agent."
+That claim is conditional, and the conditions must be stated or the claim is false.
+
+### The effect bound requires a closed world
+
+A static bound over reachable operations is sound only if the set of callable operations cannot
+grow after the bound is computed. ACP does not currently guarantee that.
+[`internal/tools/mcp_safety.go`](../../internal/tools/mcp_safety.go) calls `tools/list` at config
+resolution and merges remote-advertised `meta.mcp_flags` into `spec.safety`; a remote MCP server
+that advertises `read_issue` and `list_pr` at plan time may advertise `delete_repo` tomorrow. The
+existing discovery warning already tells authors to "pin `spec.safety` in YAML for stable
+plan→run digests" — a manual workaround for a known instability, with no enforcement.
+
+**Required invariant:** *no operation may become agent-callable unless it was present in the
+deployed capability manifest.*
+
+Each `Tool` resource therefore carries an allowed-operation manifest with per-operation effects,
+digested and pinned into deployment state at apply. Runtime `tools/list` may return anything;
+operations absent from the deployed manifest are denied, and manifest or schema drift makes
+deployment state dirty rather than silently expanding the callable set. This is tracked as a
+first-class Epic F issue, not an afterthought.
+
+### The bound is over the callable set, not over callable behavior
+
+Even with manifest pinning, the guarantee is narrower than it first appears:
+
+> No operation outside the deployed manifest becomes callable, and each operation's effects are
+> as declared and reviewed.
+
+The trust anchor is **human review of the manifest**, not runtime enforcement of semantics. If
+`tool.github.read_pr` declares `github.read` but its `ToolHTTP.baseUrl` points elsewhere, or the
+remote API changes what that endpoint does, the declaration is a lie and no analysis catches it.
+`ToolHTTP` carries exactly the same exposure as MCP.
+
+Documentation and marketing must not overstate this. The defensible claim is that ACP bounds and
+diffs the *authority* granted to nondeterministic components — which is genuinely more than any
+comparable tool offers — not that it verifies what remote systems do with that authority.
 
 ## Consequences
 
