@@ -10,103 +10,85 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
 )
 
-// defaultAgentToolOperation is the MVP single operation advertised for each
-// agent-declared Tool resource (issue #160). Refine per-transport later.
+// defaultAgentToolOperation is used when the tool type has no native single-op mapping (mock/mcp/http).
 const defaultAgentToolOperation = "default"
+
+// nativeAgentToolOperation is the MVP advertised op for type=native (Dispatch always has echo).
+const nativeAgentToolOperation = "echo"
 
 var defaultAgentToolParameters = json.RawMessage(`{"type":"object","properties":{}}`)
 
-func (e *Executor) agentToolDefs(agent *spec.AgentResource) ([]models.ToolDef, error) {
+func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []models.ToolDef, usesByName map[string]string, err error) {
 	if agent == nil || len(agent.Spec.Tools) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if e == nil || e.Graph == nil || e.Graph.Tools == nil {
-		return nil, fmt.Errorf("engine: agent %q declares tools but the project graph has none", agent.Metadata.Name)
+		return nil, nil, fmt.Errorf("engine: agent %q declares tools but the project graph has none", agent.Metadata.Name)
 	}
-	out := make([]models.ToolDef, 0, len(agent.Spec.Tools))
-	seen := make(map[string]struct{}, len(agent.Spec.Tools))
+	defs = make([]models.ToolDef, 0, len(agent.Spec.Tools))
+	usesByName = make(map[string]string, len(agent.Spec.Tools))
 	for _, raw := range agent.Spec.Tools {
 		name := strings.TrimSpace(raw)
 		if name == "" {
 			continue
 		}
-		if _, dup := seen[name]; dup {
+		if _, dup := usesByName[name]; dup {
 			continue
 		}
-		seen[name] = struct{}{}
 		tr, ok := e.Graph.Tools[name]
 		if !ok || tr == nil {
-			return nil, fmt.Errorf("engine: agent %q declares unknown tool %q", agent.Metadata.Name, name)
+			return nil, nil, fmt.Errorf("engine: agent %q declares unknown tool %q", agent.Metadata.Name, name)
 		}
+		uses := advertisedAgentUses(name, tr)
+		usesByName[name] = uses
 		desc := strings.TrimSpace(tr.Spec.Type)
 		if desc != "" {
 			desc = "Project tool " + name + " (" + desc + ")"
 		} else {
 			desc = "Project tool " + name
 		}
-		out = append(out, models.ToolDef{
+		defs = append(defs, models.ToolDef{
 			Name:        name,
 			Description: desc,
 			Parameters:  defaultAgentToolParameters,
 		})
 	}
-	return out, nil
+	return defs, usesByName, nil
 }
 
-func declaredAgentTools(agent *spec.AgentResource) map[string]struct{} {
-	out := map[string]struct{}{}
-	if agent == nil {
-		return out
+func advertisedAgentOperation(tr *spec.ToolResource) string {
+	if tr == nil {
+		return defaultAgentToolOperation
 	}
-	for _, raw := range agent.Spec.Tools {
-		name := strings.TrimSpace(raw)
-		if name == "" {
-			continue
-		}
-		out[name] = struct{}{}
+	switch strings.ToLower(strings.TrimSpace(tr.Spec.Type)) {
+	case "native":
+		// Native catalog ops are named (echo, identity, command.run, …). Agents
+		// that list the tool by metadata name get echo only — never command.run.
+		return nativeAgentToolOperation
+	default:
+		// mock/mcp accept a synthetic default op. HTTP interprets "default" as
+		// GET /default; prefer a workflow uses step with an explicit method.path.
+		return defaultAgentToolOperation
 	}
-	return out
 }
 
-func defaultAgentToolUses(toolName string) string {
-	return "tool." + toolName + "." + defaultAgentToolOperation
+func advertisedAgentUses(toolName string, tr *spec.ToolResource) string {
+	return "tool." + toolName + "." + advertisedAgentOperation(tr)
 }
 
-// resolveAgentToolCall maps a model tool name onto a workflow uses string.
-// Accepted forms: "<tool>", "<tool>.<operation>", "tool.<tool>.<operation>".
-func resolveAgentToolCall(name string, declared map[string]struct{}) (uses string, err error) {
+// resolveAgentToolCall maps a model tool name onto the single advertised uses string.
+// Only the ToolDef name given to the model is accepted — not an arbitrary operation on
+// that tool (ADR 002: no operation is agent-callable unless it was advertised).
+func resolveAgentToolCall(name string, advertised map[string]string) (uses string, err error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", fmt.Errorf("engine: tool call missing name")
 	}
-	if tn, ok := spec.ParseToolUses(name); ok {
-		if _, allowed := declared[tn]; !allowed {
-			return "", fmt.Errorf("engine: tool %q is not declared on the agent", tn)
-		}
-		if strings.Count(strings.TrimPrefix(name, "tool."), ".") == 0 {
-			return defaultAgentToolUses(tn), nil
-		}
-		return name, nil
+	uses, ok := advertised[name]
+	if !ok || uses == "" {
+		return "", fmt.Errorf("engine: tool %q is not declared on the agent", name)
 	}
-	toolName, op, ok := splitToolAndOperation(name)
-	if !ok {
-		if _, allowed := declared[name]; !allowed {
-			return "", fmt.Errorf("engine: tool %q is not declared on the agent", name)
-		}
-		return defaultAgentToolUses(name), nil
-	}
-	if _, allowed := declared[toolName]; !allowed {
-		return "", fmt.Errorf("engine: tool %q is not declared on the agent", toolName)
-	}
-	return "tool." + toolName + "." + op, nil
-}
-
-func splitToolAndOperation(name string) (toolName, operation string, ok bool) {
-	i := strings.IndexByte(name, '.')
-	if i <= 0 || i >= len(name)-1 {
-		return "", "", false
-	}
-	return name[:i], name[i+1:], true
+	return uses, nil
 }
 
 func parseToolCallArgs(raw json.RawMessage) (map[string]any, error) {

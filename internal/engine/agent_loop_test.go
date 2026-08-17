@@ -297,3 +297,69 @@ func TestRun_agentToolLoop_undeclaredTool(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestRun_agentToolLoop_rejectsUnadvertisedOperation(t *testing.T) {
+	names := []string{"helper.echo", "tool.helper.echo", "helper.command.run", "helper.delete.users"}
+	for _, name := range names {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"helper"}}, spec.PolicySpec{})
+			mock := &models.MockClient{
+				Script: []models.MockTurn{
+					{ToolCalls: []models.ToolCall{{ID: "c1", Name: name, Arguments: json.RawMessage(`{}`)}}},
+				},
+			}
+			calls := 0
+			extra := &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
+				calls++
+				return tools.ToolCallResponse{Output: map[string]any{"used": req.Uses}}, nil
+			}}
+			_, _, err := runAgentLoop(t, graph, mock, extra)
+			if err == nil || !strings.Contains(err.Error(), "not declared") {
+				t.Fatalf("err = %v", err)
+			}
+			if calls != 0 {
+				t.Fatalf("Tools.Call ran %d times; unadvertised ops must fail before Call", calls)
+			}
+		})
+	}
+}
+
+func TestRun_agentToolLoop_maxIterationsDoesNotExecuteLastToolUse(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{
+		Tools:       []string{"helper"},
+		Constraints: &spec.AgentConstraints{MaxIterations: 1},
+	}, spec.PolicySpec{})
+	mock := &models.MockClient{
+		Script: []models.MockTurn{
+			{ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}}},
+		},
+	}
+	calls := 0
+	extra := &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
+		calls++
+		return tools.ToolCallResponse{Output: map[string]any{"used": req.Uses}}, nil
+	}}
+	got, events, err := runAgentLoop(t, graph, mock, extra)
+	if err == nil || !strings.Contains(err.Error(), "maxIterations") {
+		t.Fatalf("err = %v", err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("status %q", got.Status)
+	}
+	if mock.CallCount() != 1 {
+		t.Fatalf("generates %d, want 1", mock.CallCount())
+	}
+	if calls != 0 {
+		t.Fatalf("Tools.Call ran %d times; last-turn tool_use must not execute", calls)
+	}
+	var sawLimit bool
+	for _, ev := range events {
+		if ev.Type == string(trace.EventLimitHit) && strings.Contains(ev.DataJSON, "max_iterations") {
+			sawLimit = true
+		}
+	}
+	if !sawLimit {
+		t.Fatalf("expected limit_hit max_iterations, events=%+v", events)
+	}
+}

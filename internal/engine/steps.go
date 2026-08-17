@@ -128,7 +128,7 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		{Role: "user", Content: string(payload)},
 	}
 
-	toolDefs, err := e.agentToolDefs(agent)
+	toolDefs, usesByName, err := e.advertisedAgentTools(agent)
 	if err != nil {
 		return nil, models.GenerateMeta{}, err
 	}
@@ -138,7 +138,7 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 			Messages: messages,
 		})
 	}
-	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs)
+	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName)
 }
 
 func (e *Executor) runAgentToolLoop(
@@ -153,8 +153,12 @@ func (e *Executor) runAgentToolLoop(
 	agent *spec.AgentResource,
 	messages []models.ChatMessage,
 	toolDefs []models.ToolDef,
+	advertised map[string]string,
 ) (map[string]any, models.GenerateMeta, error) {
-	declared := declaredAgentTools(agent)
+	// maxIter counts Generate turns. tool_use on the last turn fails without executing those calls
+	// (maxIterations: 1 is a single completion; tools never run). HITL interrupt is not consulted
+	// inside this loop: inner uses must already be pre-approved (--approve / ApprovedActions) or
+	// CheckToolCall fails closed (approval_required).
 	maxIter := agentMaxIterations(agent)
 	var acc models.GenerateMeta
 	loopPctx := pctx
@@ -205,7 +209,7 @@ func (e *Executor) runAgentToolLoop(
 
 		results := make([]models.ToolResult, 0, len(resp.ToolCalls))
 		for _, call := range resp.ToolCalls {
-			uses, err := resolveAgentToolCall(call.Name, declared)
+			uses, err := resolveAgentToolCall(call.Name, advertised)
 			if err != nil {
 				return nil, acc, err
 			}

@@ -29,7 +29,10 @@ func TestAgentMaxIterations(t *testing.T) {
 
 func TestResolveAgentToolCall(t *testing.T) {
 	t.Parallel()
-	declared := map[string]struct{}{"helper": {}, "docs": {}}
+	advertised := map[string]string{
+		"helper": "tool.helper.default",
+		"docs":   "tool.docs.default",
+	}
 	tests := []struct {
 		name    string
 		given   string
@@ -37,9 +40,11 @@ func TestResolveAgentToolCall(t *testing.T) {
 		wantErr string
 	}{
 		{name: "bare tool", given: "helper", want: "tool.helper.default"},
-		{name: "tool.op", given: "helper.echo", want: "tool.helper.echo"},
-		{name: "full uses", given: "tool.helper.echo", want: "tool.helper.echo"},
-		{name: "tool.name only", given: "tool.helper", want: "tool.helper.default"},
+		{name: "tool.op", given: "helper.echo", wantErr: "not declared"},
+		{name: "full uses", given: "tool.helper.echo", wantErr: "not declared"},
+		{name: "native shell op", given: "helper.command.run", wantErr: "not declared"},
+		{name: "http method.path", given: "helper.delete.users", wantErr: "not declared"},
+		{name: "tool.name only", given: "tool.helper", wantErr: "not declared"},
 		{name: "undeclared", given: "ghost", wantErr: "not declared"},
 		{name: "empty", given: "  ", wantErr: "missing name"},
 		{name: "undeclared full uses", given: "tool.ghost.default", wantErr: "not declared"},
@@ -48,7 +53,7 @@ func TestResolveAgentToolCall(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := resolveAgentToolCall(tc.given, declared)
+			got, err := resolveAgentToolCall(tc.given, advertised)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("err = %v, want %q", err, tc.wantErr)
@@ -91,27 +96,34 @@ func TestEncodeToolResultContent(t *testing.T) {
 	}
 }
 
-func TestAgentToolDefs(t *testing.T) {
+func TestAdvertisedAgentTools(t *testing.T) {
 	t.Parallel()
 	e := &Executor{Graph: &spec.ProjectGraph{
 		Tools: map[string]*spec.ToolResource{
 			"helper": {Metadata: spec.Metadata{Name: "helper"}, Spec: spec.ToolSpec{Type: "mock"}},
+			"shell":  {Metadata: spec.Metadata{Name: "shell"}, Spec: spec.ToolSpec{Type: "native"}},
 		},
 	}}
-	defs, err := e.agentToolDefs(&spec.AgentResource{
+	defs, uses, err := e.advertisedAgentTools(&spec.AgentResource{
 		Metadata: spec.Metadata{Name: "reviewer"},
-		Spec:     spec.AgentSpec{Tools: []string{"helper", "helper", ""}},
+		Spec:     spec.AgentSpec{Tools: []string{"helper", "helper", "", "shell"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(defs) != 1 || defs[0].Name != "helper" {
+	if len(defs) != 2 || defs[0].Name != "helper" || defs[1].Name != "shell" {
 		t.Fatalf("defs %+v", defs)
 	}
 	if string(defs[0].Parameters) != string(defaultAgentToolParameters) {
 		t.Fatalf("params %s", defs[0].Parameters)
 	}
-	_, err = e.agentToolDefs(&spec.AgentResource{
+	if uses["helper"] != "tool.helper.default" {
+		t.Fatalf("mock uses %q", uses["helper"])
+	}
+	if uses["shell"] != "tool.shell.echo" {
+		t.Fatalf("native uses %q", uses["shell"])
+	}
+	_, _, err = e.advertisedAgentTools(&spec.AgentResource{
 		Metadata: spec.Metadata{Name: "reviewer"},
 		Spec:     spec.AgentSpec{Tools: []string{"ghost"}},
 	})

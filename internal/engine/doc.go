@@ -7,7 +7,11 @@
 // persisted run_steps rows, and trace events (design doc sections 12.2 E, 13.3, 13.4, 14.2).
 //
 // Agent steps with declared tools run a bounded Generate loop (issue #160): the engine attaches
-// [models.ToolDef]s (`ToolChoice: auto`), executes `tool_use` only after [policy.PolicyEvaluator.CheckToolCall],
-// appends `tool_result` turns, and stops on `end_turn` or `constraints.maxIterations` (default 8,
-// hard cap 32). Agents with no tools remain a single completion.
+// one [models.ToolDef] per listed Tool (`ToolChoice: auto`; native advertises `echo`, other types
+// `default`). Only that ToolDef name is accepted — aliased ops such as `helper.echo` or
+// `helper.command.run` fail before [policy.PolicyEvaluator.CheckToolCall] / [tools.ToolExecutor.Call].
+// `constraints.maxIterations` (default 8, hard cap 32) counts Generate turns; `tool_use` on the last
+// turn fails without executing those calls. HITL interrupt does not run inside the loop: inner uses
+// must be pre-approved (`--approve` / ApprovedActions) or CheckToolCall fails closed. Agents with no
+// tools remain a single completion.
 package engine
