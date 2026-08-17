@@ -37,5 +37,7 @@ func (a *anthropicClient) Generate(ctx context.Context, req GenerateRequest) (Ge
 	if err != nil {
 		return GenerateResponse{}, err
 	}
-	return mapFromAnthropicResponse(out), nil
+	resp := mapFromAnthropicResponse(out)
+	resp.Meta.CostUSD = estimateAnthropicCostUSD(req.Model, resp.Meta.PromptTokens, resp.Meta.CompletionTokens)
+	return resp, nil
 }
