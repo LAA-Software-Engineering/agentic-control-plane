@@ -77,8 +77,9 @@ func TestAnthropicClient_Generate_toolCalling(t *testing.T) {
 				if resp.Meta.PromptTokens != 82 || resp.Meta.CompletionTokens != 18 {
 					t.Fatalf("tokens %+v", resp.Meta)
 				}
-				if resp.Meta.CostUSD != 0 {
-					t.Fatalf("CostUSD %v", resp.Meta.CostUSD)
+				wantCost := estimateAnthropicCostUSD("claude-sonnet-4-20250514", 82, 18)
+				if resp.Meta.CostUSD != wantCost || wantCost <= 0 {
+					t.Fatalf("CostUSD %v want %v", resp.Meta.CostUSD, wantCost)
 				}
 			},
 		},

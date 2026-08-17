@@ -32,6 +32,8 @@
 // user `tool_result` blocks (Anthropic has no `role: "tool"` and requires user/assistant
 // alternation, so extra [ChatMessage.Content] on a result turn stays in that same user message,
 // and consecutive ToolResults ChatMessages are merged into one user turn). Empty tool output
-// still sends `content: ""`. Token usage comes from `usage.input_tokens` / `usage.output_tokens`;
-// cost stays 0. Plain `end_turn` responses with no text still error; `tool_use` may omit text.
+// still sends `content: ""`. Token usage comes from `usage.input_tokens` / `usage.output_tokens`.
+// [GenerateMeta.CostUSD] is estimated from those counts × the Anthropic rows in tokenUSDPerMillion
+// (issue #162); unknown model ids stay at 0. Plain `end_turn` responses with no text still error;
+// `tool_use` may omit text.
 package models
