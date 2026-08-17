@@ -1505,7 +1505,7 @@ Responsibilities:
 * execute operation
 * normalize result
 
-Inner-loop Calls from the agent tool-calling loop use the same `CheckToolCall` then `ToolExecutor.Call` path as workflow `uses:` steps (`runToolStep`). Policy denial records `system_error` and does not invoke the tool. HITL interrupt (`maybeInterruptForHitl`) applies only to workflow `uses:` steps, not inner agent-loop tools. See [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
+Inner-loop Calls from the agent tool-calling loop use the same `CheckToolCall` then `ToolExecutor.Call` path as workflow `uses:` steps (`runToolStep`). The evaluator is the **workflow** policy (`wf.Spec.Policy` → `wfPol` into `runAgentStep` / `runToolStep`), not `agent.spec.policy` (YAML/plan documentation; not the inner gate). Policy denial records `system_error` and does not invoke the tool. HITL interrupt (`maybeInterruptForHitl`) applies only to workflow `uses:` steps, not inner agent-loop tools. See [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
 
 Abstraction:
 

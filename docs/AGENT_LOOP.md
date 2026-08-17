@@ -22,7 +22,7 @@ Because the agent selects its own tools, `agent.spec.tools` is an **autonomous c
 
 A grant is a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. `agent.spec.tools` entries are grants in this sense (Tool metadata name or a pinned uses string).
 
-An agent's action space is the union of its granted operations' declared effects. Widening the grant list expands the action space of a nondeterministic component — why [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191) reports a new **autonomous** effect at higher severity than a new **static** one.
+An agent's action space is the union of its granted operations' declared effects. Widening the grant list expands the action space of a nondeterministic component — why [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191) will report a new **autonomous** effect at higher severity than a new **static** one.
 
 The plan-time effect bound (#189 / #191) is **not shipped**. Today `agentctl plan` diffs C1 risk including `tool_surface_change`. ACP does not verify what remote systems do with a granted operation.
 
@@ -57,7 +57,9 @@ After each Generate and each inner tool turn, `CheckRun` re-evaluates `execution
 
 Every accepted `tool_use` goes through `CheckToolCall` **before** `Tools.Call` — the same `runToolStep` path as workflow `uses:`.
 
-If policy denies the call, the tool is **never invoked**. Trace records `system_error` only (no `tool_selection` / `tool_execution`).
+The evaluator is the **workflow** policy (`wfPol` from `wf.Spec.Policy` into `runAgentStep` / `runToolStep`), not `agent.spec.policy`. Agent policy is YAML/plan documentation; it is not the inner gate. [`examples/multi-agent`](../examples/multi-agent) gives each agent its own Policy resource while both steps run under one workflow policy.
+
+If policy denies the call, the tool is **never invoked**. Trace records `system_error` only (no `tool_selection` / `tool_execution`). Names missing from the advertised map fail in `resolveAgentToolCall` **before** `CheckToolCall` (execution error, not `approval_required`).
 
 ## HITL vs exit 5
 
@@ -65,8 +67,8 @@ Do **not** mix these paths:
 
 | Path | What happens |
 |---|---|
-| Inner agent-loop tool | **Does not HITL.** Ungranted `CheckToolCall` fail-closes with **exit 5** (`approval_required`). Pre-approve with `agentctl run --approve <uses>` / `ApprovedActions`. |
-| Workflow `uses:` + `approvals.requiredFor` | `maybeInterruptForHitl` → run **interrupted**, **exit 0**, checkpoint. Resume with `--resume --decision …`. |
+| Inner agent-loop tool | **Does not HITL.** A **granted** (advertised) operation that `CheckToolCall` denies for missing `--approve` / `ApprovedActions` fail-closes with **exit 5** (`approval_required`). |
+| Workflow `uses:` gated by `approvals.requiredFor` or safety metadata | `maybeInterruptForHitl` → run **interrupted**, **exit 0**, checkpoint. Resume with `--resume --decision …`. |
 
 `Policy.spec.hitl.interruptOn` configures review options for calls already gated by `requiredFor` or safety metadata; it does not by itself gate inner-loop tools.
 
