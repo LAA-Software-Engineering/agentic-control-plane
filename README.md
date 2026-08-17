@@ -93,13 +93,15 @@ Most agent stacks bury prompts, tool wiring, and permissions in application code
 
 ACP is the **declarative governance/config layer** for agent systems — not a replacement for durable-execution engines or code-first agent runtimes.
 
-| | This project | OpenAI Agents SDK | LangGraph | Temporal | Terraform |
+| Capability | This project | OpenAI Agents SDK | LangGraph | Temporal | Terraform |
 |---|---|---|---|---|---|
 | Role | Governance/config: versioned resources, plan/apply, policy | Code-first agent runtime | Code-first graph orchestration | Durable workflow execution | Infrastructure as code |
 | Durable execution / distributed scheduling | No | No | Optional checkpointers; not a durable-execution engine | Yes | N/A |
 | Code-first agent runtime | No (resource graph; YAML today) | Yes | Yes | Workflow SDK, not an agent runtime | No |
 | Desired-state plan / apply | Yes (`agentctl plan` / `apply` vs SQLite) | No | No | No | Yes |
-| Plan-time effect bound | **Direction** ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#190](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/190) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)): a sound static upper bound on the **callable operation set** — including tools the agent selects autonomously — checked against policy before execution and diffable in review. Requires the declared-resource graph; no listed comparable produces this. **Not shipped.** Today `agentctl plan` diffs permissions, approvals, models, budgets, and C1 risk items. The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/204)) is **not enforced** today (MCP `tools/list` can still expand the world). | No | No | No | No |
+| Plan-time effect bound | **Direction / not shipped** ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#190](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/190) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)): bound over the **callable operation set**, including autonomous tool selection. No listed comparable. | No | No | No | No |
+
+The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/204)) is **not enforced** today (MCP `tools/list` can still expand the world). Today `agentctl plan` diffs permissions, approvals, models, budgets, and C1 risk items.
 
 ---
 
