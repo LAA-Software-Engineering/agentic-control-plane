@@ -46,6 +46,12 @@ func NormalizeProjectGraph(g *ProjectGraph) {
 		NormalizeToolSafety(&tr.Spec)
 	}
 	ExpandPresetsInGraph(g)
+	for _, pr := range g.Policies {
+		if pr == nil {
+			continue
+		}
+		NormalizePolicyEffects(&pr.Spec)
+	}
 }
 
 func normalizeAgentSpec(spec *AgentSpec, defModel, defPolicy, defRuntime string) {

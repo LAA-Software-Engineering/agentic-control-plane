@@ -22,7 +22,7 @@ the selected Environment (-e / --env), then run spec validation and static polic
 Policy lint surfaces risky configurations (ungated sensitive tools, invalid HITL switch
 targets, and similar) before apply or run. Use --strict to fail on high-severity lint findings.
 
-Exit code 2 indicates validation or strict lint failure (design doc sections 10.2, 11.2).`,
+Exit code 2 indicates validation, effect-bound, or strict lint failure (design doc sections 10.2, 11.2).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runValidate(cmd, args, strict)
 		},

@@ -132,6 +132,16 @@ func NormalizeToolEffects(spec *ToolSpec) {
 	spec.Operations = out
 }
 
+// NormalizePolicyEffects trims and unique-sorts permit identifiers, keeping Pos aligned.
+func NormalizePolicyEffects(pol *PolicySpec) {
+	if pol == nil || pol.Effects == nil {
+		return
+	}
+	e := pol.Effects
+	e.Permit, e.PermitPos = uniqueSortedEffectsWithPos(e.Permit, e.PermitPos)
+	e.PermitWithApproval, e.PermitWithApprovalPos = uniqueSortedEffectsWithPos(e.PermitWithApproval, e.PermitWithApprovalPos)
+}
+
 func toolHasDeclaredEffects(spec *ToolSpec) bool {
 	if spec == nil || len(spec.Operations) == 0 {
 		return false

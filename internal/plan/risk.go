@@ -39,6 +39,10 @@ type policySpecRisk struct {
 	Approvals *struct {
 		RequiredFor []string `json:"requiredFor"`
 	} `json:"approvals"`
+	Effects *struct {
+		Permit             []string `json:"permit"`
+		PermitWithApproval []string `json:"permitWithApproval"`
+	} `json:"effects"`
 }
 
 type agentSpecRisk struct {
@@ -281,6 +285,7 @@ func summarizePolicyRisk(sink *riskSink, op Operation, oldJSON, newJSON string, 
 			Witness:  wit,
 		})
 	}
+	addEffectPermitWidening(sink, name, target, wit, oldPol, newPol)
 }
 
 func summarizeAgentRisk(sink *riskSink, g *spec.ProjectGraph, op Operation, oldJSON, newJSON string, hadPrev bool) {
@@ -532,6 +537,45 @@ func policyApprovals(p *policySpecRisk) []string {
 		return nil
 	}
 	return p.Approvals.RequiredFor
+}
+
+func addEffectPermitWidening(sink *riskSink, name string, target RiskTarget, wit []WitnessHop, oldPol, newPol *policySpecRisk) {
+	oldSet := policyEffectPermits(oldPol)
+	for _, ident := range policyEffectPermits(newPol) {
+		if effectIdentCovered(oldSet, ident) {
+			continue
+		}
+		sink.add(RiskItem{
+			Category: RiskCategoryEffectPermitWidening,
+			Severity: RiskSeverityHigh,
+			Reason:   fmt.Sprintf("Effect permit widened with %q (Policy/%s).", ident, name),
+			Target:   target,
+			Witness:  wit,
+		})
+	}
+}
+
+func policyEffectPermits(p *policySpecRisk) []string {
+	if p == nil || p.Effects == nil {
+		return nil
+	}
+	var out []string
+	out = append(out, p.Effects.Permit...)
+	out = append(out, p.Effects.PermitWithApproval...)
+	return out
+}
+
+func effectIdentCovered(list []string, ident string) bool {
+	ident = strings.TrimSpace(ident)
+	if ident == "" {
+		return false
+	}
+	for _, p := range list {
+		if spec.EffectCovers(p, ident) {
+			return true
+		}
+	}
+	return false
 }
 
 func agentTools(a *agentSpecRisk) []string {

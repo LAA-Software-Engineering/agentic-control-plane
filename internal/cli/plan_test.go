@@ -233,6 +233,83 @@ func TestPlan_policyCostIncrease_riskDelta(t *testing.T) {
 	}
 }
 
+func copyPlanEffectPermitFixture(t *testing.T, dstDir string) {
+	t.Helper()
+	copyFixtureDir(t, dstDir, "plan_effect_permit")
+}
+
+func TestPlan_effectUnpermitted_exit2(t *testing.T) {
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", testdataPath(t, "validate_effect_unpermitted"), "--state", filepath.Join(t.TempDir(), "plan-fx.db")})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d want 2 err=%v\n%s", ExitCodeOf(err), err, out.String())
+	}
+	if ExitCodeOf(err) == ExitPolicyDenied {
+		t.Fatal("must not use exit 5")
+	}
+	if !strings.Contains(err.Error(), "effect not permitted by policy") {
+		t.Fatalf("message: %v", err)
+	}
+	if !strings.Contains(err.Error(), "AUTONOMOUS") {
+		t.Fatalf("AUTONOMOUS: %v", err)
+	}
+}
+
+func TestPlan_effectPermitWidening_riskItem(t *testing.T) {
+	root := t.TempDir()
+	copyPlanEffectPermitFixture(t, root)
+	db := filepath.Join(t.TempDir(), "plan-effect-permit.db")
+	applyProjectGraph(t, root, db)
+	replaceFile(t, filepath.Join(root, "policy.yaml"), "      - github.read\n", "      - github.read\n      - github.write\n")
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\nbody=%s", err, out.String())
+	}
+	items, ok := payload["riskItems"].([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("riskItems missing: %#v", payload["riskItems"])
+	}
+	var found bool
+	for _, raw := range items {
+		m, _ := raw.(map[string]any)
+		if m["category"] != "effect_permit_widening" {
+			continue
+		}
+		found = true
+		if m["severity"] != "high" {
+			t.Fatalf("severity: %#v", m)
+		}
+		reason, _ := m["reason"].(string)
+		if !strings.Contains(reason, "github.write") {
+			t.Fatalf("reason: %s", reason)
+		}
+		if strings.Contains(strings.ToLower(reason), "tight") {
+			t.Fatalf("must not call permit widening tightening: %s", reason)
+		}
+	}
+	if !found {
+		t.Fatalf("missing effect_permit_widening in %#v\n%s", items, out.String())
+	}
+}
+
 func applyProjectGraph(t *testing.T, root, db string) {
 	t.Helper()
 	ctx := context.Background()

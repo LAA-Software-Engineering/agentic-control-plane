@@ -100,6 +100,58 @@ func TestRiskSummary_newToolCreate_flagsWriteLikeWhenNoPriorState(t *testing.T) 
 	}
 }
 
+func TestRiskSummary_effectPermitWidening(t *testing.T) {
+	oldG := graphWithPolicyBudget(3, 0, nil)
+	oldG.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github.read"}}
+	applied := appliedFromDesired(t, "dev", oldG)
+	newG := graphWithPolicyBudget(3, 0, nil)
+	newG.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github.read", "github.write"}}
+
+	p := NewPlanner(&fakeDeploy{list: applied})
+	pl, err := p.ComputePlan(context.Background(), "dev", newG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasRiskCategory(pl, RiskCategoryEffectPermitWidening) {
+		t.Fatalf("expected effect_permit_widening, got %#v", pl.Risk.Items)
+	}
+	var n int
+	for _, it := range pl.Risk.Items {
+		if it.Category != RiskCategoryEffectPermitWidening {
+			continue
+		}
+		n++
+		if it.Severity != RiskSeverityHigh {
+			t.Fatalf("severity %s", it.Severity)
+		}
+		if !strings.Contains(it.Reason, "github.write") {
+			t.Fatalf("reason should name new ident: %#v", it)
+		}
+		if strings.Contains(strings.ToLower(it.Reason), "tight") || it.Category == RiskCategoryBudgetRelaxation {
+			t.Fatalf("permit widening must not be labeled tightening/budget: %#v", it)
+		}
+		if len(it.Witness) == 0 || it.Witness[0].Kind != WitnessKindPolicy {
+			t.Fatalf("witness: %#v", it.Witness)
+		}
+	}
+	if n != 1 {
+		t.Fatalf("want 1 widening item, got %d: %#v", n, pl.Risk.Items)
+	}
+
+	covered := graphWithPolicyBudget(3, 0, nil)
+	covered.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github"}}
+	applied2 := appliedFromDesired(t, "dev", covered)
+	child := graphWithPolicyBudget(3, 0, nil)
+	child.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github", "github.read"}}
+	pl2, err := NewPlanner(&fakeDeploy{list: applied2}).ComputePlan(context.Background(), "dev", child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasRiskCategory(pl2, RiskCategoryEffectPermitWidening) {
+		t.Fatalf("github already covers github.read: %#v", pl2.Risk.Items)
+	}
+}
+
 func TestRiskSummary_newWriteLikeToolPermissions(t *testing.T) {
 	oldG := graphWithTool([]string{"contents.read"})
 	applied := appliedFromDesired(t, "dev", oldG)

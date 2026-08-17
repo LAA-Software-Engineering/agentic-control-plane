@@ -1,0 +1,9 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: kubernetes
+spec:
+  type: native
+  operations:
+    restart:
+      effects: [production.write]

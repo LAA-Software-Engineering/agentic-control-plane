@@ -185,6 +185,67 @@ func TestValidateProjectGraph_toolWithoutOperationsStillOK(t *testing.T) {
 	}
 }
 
+func TestValidateProjectGraph_rejectsBadPolicyEffectIdents(t *testing.T) {
+	g := &ProjectGraph{
+		Policies: map[string]*PolicyResource{
+			"guarded": {
+				Metadata: Metadata{Name: "guarded"},
+				Spec: PolicySpec{
+					Effects: &PolicyEffects{Permit: []string{"tool.github.read"}},
+				},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "tool.") {
+		t.Fatalf("want tool. prefix rejection on permit, got %v", err)
+	}
+}
+
+func TestParseResourceFromBytes_policyEffects(t *testing.T) {
+	const y = `
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: guarded-writes
+spec:
+  effects:
+    permit: [github.read]
+    permitWithApproval: [destructive]
+`
+	dec, err := ParseResourceFromBytes([]byte(y), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr := dec.Resource.(*PolicyResource)
+	if pr.Spec.Effects == nil || pr.Spec.Effects.Permit[0] != "github.read" {
+		t.Fatalf("%#v", pr.Spec.Effects)
+	}
+	NormalizeProjectGraph(&ProjectGraph{Policies: map[string]*PolicyResource{"guarded-writes": pr}})
+	if err := ValidateProjectGraph(&ProjectGraph{Policies: map[string]*PolicyResource{"guarded-writes": pr}}, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParseResourceFromBytes_unknownFieldInPolicyEffects(t *testing.T) {
+	const y = `
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: guarded-writes
+spec:
+  effects:
+    allow: [github.read]
+`
+	_, err := ParseResourceFromBytes([]byte(y), "policy.yaml")
+	if err == nil {
+		t.Fatal("expected unknown field")
+	}
+	if !strings.Contains(err.Error(), "allow") {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestNormalizeToolEffects_stampedEffectsPosSurvivesUniqueSort(t *testing.T) {
 	const y = `
 apiVersion: agentic.dev/v0

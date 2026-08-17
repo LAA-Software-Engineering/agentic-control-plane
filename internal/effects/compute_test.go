@@ -262,6 +262,10 @@ func toolsGithub() map[string]*spec.ToolResource {
 			Metadata: spec.Metadata{Name: "github"},
 			Spec: spec.ToolSpec{
 				Type: "native",
+				Safety: &spec.ToolSafety{
+					Trusted:     spec.BoolPtr(true),
+					SideEffects: spec.BoolPtr(false),
+				},
 				Operations: map[string]spec.ToolOperation{
 					"read_pr":      {Effects: []string{"github.read"}},
 					"post_comment": {Effects: []string{"github.write", "external.visible"}},

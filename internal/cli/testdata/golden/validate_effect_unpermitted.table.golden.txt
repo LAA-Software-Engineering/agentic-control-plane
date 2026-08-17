@@ -1,0 +1,10 @@
+Error: effect not permitted by policy
+
+  Workflow/deploy-production may perform effect `production.write`
+
+  reachable via:
+    Workflow/deploy-production
+      → step remediate  (Agent/deploy-agent, AUTONOMOUS)
+        → tool.kubernetes.restart  [production.write]
+
+  Policy/staging-only permits: production.read

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/effects"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -129,6 +130,9 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 	}
 
 	if err := spec.ValidateProjectGraph(graph, root); err != nil {
+		return nil, err
+	}
+	if err := effects.Check(graph); err != nil {
 		return nil, err
 	}
 

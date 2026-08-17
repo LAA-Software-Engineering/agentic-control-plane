@@ -46,13 +46,14 @@ type FieldChange struct {
 type RiskCategory string
 
 const (
-	RiskCategoryPermissionWidening RiskCategory = "permission_widening"
-	RiskCategoryApprovalRemoval    RiskCategory = "approval_removal"
-	RiskCategoryBudgetRelaxation   RiskCategory = "budget_relaxation"
-	RiskCategoryModelChange        RiskCategory = "model_change"
-	RiskCategoryToolSurfaceChange  RiskCategory = "tool_surface_change"
-	RiskCategorySafety             RiskCategory = "safety"
-	RiskCategoryLint               RiskCategory = "lint"
+	RiskCategoryPermissionWidening   RiskCategory = "permission_widening"
+	RiskCategoryApprovalRemoval      RiskCategory = "approval_removal"
+	RiskCategoryBudgetRelaxation     RiskCategory = "budget_relaxation"
+	RiskCategoryModelChange          RiskCategory = "model_change"
+	RiskCategoryToolSurfaceChange    RiskCategory = "tool_surface_change"
+	RiskCategorySafety               RiskCategory = "safety"
+	RiskCategoryLint                 RiskCategory = "lint"
+	RiskCategoryEffectPermitWidening RiskCategory = "effect_permit_widening"
 )
 
 // RiskSeverity is high / medium / low. Approval removal, write-like permission widening,

@@ -151,6 +151,7 @@ func lookupStrictType(typeName string) reflect.Type {
 		"PolicyOverride":      reflect.TypeOf(PolicyOverride{}),
 		"AgentConstraints":    reflect.TypeOf(AgentConstraints{}),
 		"PolicyExecution":     reflect.TypeOf(PolicyExecution{}),
+		"PolicyEffects":       reflect.TypeOf(PolicyEffects{}),
 		"ToolSafety":          reflect.TypeOf(ToolSafety{}),
 		"ToolOperation":       reflect.TypeOf(ToolOperation{}),
 		"HitlPolicy":          reflect.TypeOf(HitlPolicy{}),

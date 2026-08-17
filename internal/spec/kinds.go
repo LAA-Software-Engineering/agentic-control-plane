@@ -212,9 +212,21 @@ type PolicySpec struct {
 	Execution      *PolicyExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
 	Tools          *PolicyTools     `yaml:"tools,omitempty" json:"tools,omitempty"`
 	Approvals      *PolicyApprovals `yaml:"approvals,omitempty" json:"approvals,omitempty"`
+	// Effects is the static permit set for transitive tool effects (issue #190).
+	Effects *PolicyEffects `yaml:"effects,omitempty" json:"effects,omitempty"`
 	// Hitl configures human-in-the-loop approval gates for gated tool calls (issue #106).
 	Hitl     *HitlPolicy     `yaml:"hitl,omitempty" json:"hitl,omitempty"`
 	Security *PolicySecurity `yaml:"security,omitempty" json:"security,omitempty"`
+}
+
+// PolicyEffects lists effect identifiers a Policy permits (issue #190, ADR 002).
+// permit is unattended allow; permitWithApproval is allowed only subject to approval.
+// A missing or empty block permits nothing once any Tool declares spec.operations effects.
+type PolicyEffects struct {
+	Permit                []string `yaml:"permit,omitempty" json:"permit,omitempty"`
+	PermitWithApproval    []string `yaml:"permitWithApproval,omitempty" json:"permitWithApproval,omitempty"`
+	PermitPos             []Pos    `yaml:"-" json:"-"`
+	PermitWithApprovalPos []Pos    `yaml:"-" json:"-"`
 }
 
 type PolicyExecution struct {

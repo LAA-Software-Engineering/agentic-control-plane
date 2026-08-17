@@ -80,6 +80,14 @@ func RelocateFile(res any, file string) {
 				r.Spec.Hitl.InterruptOnPos[k] = p
 			}
 		}
+		if r.Spec.Effects != nil {
+			for i := range r.Spec.Effects.PermitPos {
+				relocatePos(&r.Spec.Effects.PermitPos[i], file)
+			}
+			for i := range r.Spec.Effects.PermitWithApprovalPos {
+				relocatePos(&r.Spec.Effects.PermitWithApprovalPos[i], file)
+			}
+		}
 	case *EnvironmentResource:
 		relocatePos(&r.Pos, file)
 	}

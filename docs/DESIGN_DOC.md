@@ -826,6 +826,14 @@ spec:
       - tool.github.pull_request.merge
       - tool.slack.message.send
 
+  effects:
+    permit:
+      - github.read
+      - github.write
+      - external.visible
+    permitWithApproval:
+      - destructive
+
   security:
     networkAccess: restricted
     secretAccess: deny-by-default
@@ -838,6 +846,18 @@ spec:
 * require structured output
 * forbid unknown tools
 * approval-required actions
+* `spec.effects.permit` / `permitWithApproval` — static bound vs Policy (issue #190)
+
+`permit` is unattended allow for matching effect identifiers (`[spec.EffectCovers]`, so
+`permit: [github]` covers `github.read`). `permitWithApproval` is a second set: the effect
+is allowed only subject to approval. Do not overload `permit`. Identifiers follow the same
+dotted rules as tool operation effects (#188); a `tool.` prefix is rejected.
+
+Once any Tool declares `spec.operations` effects, a Policy with no `effects.permit` /
+`permitWithApproval` block **permits nothing** (fail-closed; the error names the Policy).
+Projects with no declared tool effects skip this check so existing examples still validate.
+Enforcement is `internal/effects.Check` at validate/plan (exit **2**), not runtime
+`CheckToolCall`. #204 pin is not shipped.
 
 ### End goal
 
@@ -969,6 +989,8 @@ my-agent-system/
 * budgets non-negative
 * action identifiers syntactically valid
 * approval actions unique
+* `spec.effects.permit` / `permitWithApproval` identifiers match `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*` and must not begin with `tool.`
+* after graph validate, `effects.Check` fails (exit 2) when a workflow bound contains an effect not covered by that policy’s permit lists — skipped when no Tool declares `spec.operations` effects
 
 ---
 
@@ -1638,7 +1660,16 @@ Issue #116 adds a **tamper-evident hash chain** per run: each persisted event st
 [`internal/effects.Compute`](../internal/effects) walks an already-resolved **desired**
 `ProjectGraph` and returns a bound for every Agent and Workflow. It does not apply
 Environment overlays, call MCP `tools/list`, or change `CheckToolCall`. CLI plan/validate
-do not print bounds yet (#191). Policy enforcement of the bound is #190.
+do not print the full bound table (#191).
+
+[`internal/effects.Check`](../internal/effects) (issue #190) compares each **workflow**
+bound (including autonomous agent grants) against that workflow’s `Policy.spec.effects`.
+Unpermitted effects fail validate and plan with exit **2** and a witness path that tags
+`AUTONOMOUS` on agent-selection edges. Unknown reachable operations fail closed (the
+message names the tool). A policy with no permit block permits nothing once any tool
+declares operations; if no tool declares operations, Check is skipped. `permit` vs
+`requiresApproval` / `approvals.requiredFor`: the stricter rule wins and the error says
+which applied. Runtime `CheckToolCall` is unchanged. #204 is not shipped.
 
 The bound is a sound **upper** set of named effects the root may perform, over both
 deterministic and autonomous paths. Two edge kinds are preserved on each witness hop:
