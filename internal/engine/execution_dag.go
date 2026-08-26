@@ -119,14 +119,27 @@ func (e *Executor) runWorkflowSteps(
 		failed := rt.failed
 		interrupting := rt.interrupting
 		allDone := workflowFullyComplete(steps, rt.completed)
-		stuck := nRunning == 0 && !allDone && failed == nil && !interrupting
 		rt.mu.Unlock()
 		if failed != nil || interrupting || allDone {
 			break
 		}
-		if stuck {
-			wg.Wait()
-			return rt.ictx, rt.totalCost, e.failRun(parent, in, fmt.Errorf("engine: workflow graph has no runnable step"), rt.totalCost)
+		if nRunning == 0 {
+			// Roots can finish before this loop samples `running` (fast
+			// rendezvous). Schedule again so a join is not reported as stuck.
+			trySchedule()
+			rt.mu.Lock()
+			nRunning = len(rt.running)
+			failed = rt.failed
+			interrupting = rt.interrupting
+			allDone = workflowFullyComplete(steps, rt.completed)
+			rt.mu.Unlock()
+			if failed != nil || interrupting || allDone {
+				break
+			}
+			if nRunning == 0 {
+				wg.Wait()
+				return rt.ictx, rt.totalCost, e.failRun(parent, in, fmt.Errorf("engine: workflow graph has no runnable step"), rt.totalCost)
+			}
 		}
 		<-completion
 		trySchedule()

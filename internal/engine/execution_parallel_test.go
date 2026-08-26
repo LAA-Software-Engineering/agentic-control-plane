@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -89,6 +90,50 @@ func whichOf(req tools.ToolCallRequest) string {
 	return w
 }
 
+// startBarrier is a two-party rendezvous: Wait returns true only if a peer also
+// called Wait before timeout. A timed-out waiter leaves so a later sequential
+// step cannot "complete" the barrier after the first has already returned.
+type startBarrier struct {
+	mu      sync.Mutex
+	waiting int
+	ready   chan struct{}
+	once    sync.Once
+}
+
+func newStartBarrier() *startBarrier {
+	return &startBarrier{ready: make(chan struct{})}
+}
+
+func (b *startBarrier) Wait(ctx context.Context, timeout time.Duration) bool {
+	b.mu.Lock()
+	b.waiting++
+	if b.waiting >= 2 {
+		b.once.Do(func() { close(b.ready) })
+	}
+	b.mu.Unlock()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-b.ready:
+		return true
+	case <-ctx.Done():
+		b.depart()
+		return false
+	case <-timer.C:
+		b.depart()
+		return false
+	}
+}
+
+func (b *startBarrier) depart() {
+	b.mu.Lock()
+	if b.waiting > 0 {
+		b.waiting--
+	}
+	b.mu.Unlock()
+}
+
 func TestRun_parallelBranchesOverlapInTime(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "overlap.db"))
@@ -100,25 +145,35 @@ func TestRun_parallelBranchesOverlapInTime(t *testing.T) {
 	graph := fanInWorkflowGraph(t)
 	runID := "run-overlap"
 	ctx, started, input := startFanInRun(t, st, runID)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	t.Cleanup(cancel)
 
-	type window struct{ start, end time.Time }
-	var mu sync.Mutex
-	times := map[string]window{}
+	gate := newStartBarrier()
+	var leftMet, rightMet atomic.Bool
+	var leftDone, rightDone atomic.Bool
 
 	ex := &Executor{
 		Graph: graph, ProjectRoot: t.TempDir(),
 		Tools: &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
 			w := whichOf(req)
-			begin := time.Now()
-			if w == "left" || w == "right" {
-				time.Sleep(120 * time.Millisecond)
-			}
-			end := time.Now()
-			mu.Lock()
-			times[w] = window{start: begin, end: end}
-			mu.Unlock()
 			out := map[string]any{"echo": w}
-			if w == "join" {
+			switch w {
+			case "left", "right":
+				met := gate.Wait(ctx, 5*time.Second)
+				if w == "left" {
+					leftMet.Store(met)
+					leftDone.Store(true)
+				} else {
+					rightMet.Store(met)
+					rightDone.Store(true)
+				}
+				if !met {
+					return tools.ToolCallResponse{}, fmt.Errorf("rendezvous timeout: peer did not enter %s concurrently", w)
+				}
+			case "join":
+				if !leftDone.Load() || !rightDone.Load() {
+					return tools.ToolCallResponse{}, fmt.Errorf("join started before both branches returned")
+				}
 				out["message"] = req.With["message"]
 			}
 			return tools.ToolCallResponse{Output: out}, nil
@@ -130,24 +185,8 @@ func TestRun_parallelBranchesOverlapInTime(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	mu.Lock()
-	left, okL := times["left"]
-	right, okR := times["right"]
-	join, okJ := times["join"]
-	mu.Unlock()
-	if !okL || !okR || !okJ {
-		t.Fatalf("missing windows: %+v", times)
-	}
-	if !left.start.Before(left.end) || !right.start.Before(right.end) {
-		t.Fatal("branch windows must be non-zero")
-	}
-	overlapped := left.start.Before(right.end) && right.start.Before(left.end)
-	if !overlapped {
-		t.Fatalf("left [%s,%s] and right [%s,%s] did not overlap", left.start, left.end, right.start, right.end)
-	}
-	if join.start.Before(left.end) || join.start.Before(right.end) {
-		t.Fatalf("join started before both branches finished: join=%s left.end=%s right.end=%s", join.start, left.end, right.end)
+	if !leftMet.Load() || !rightMet.Load() {
+		t.Fatal("independent steps did not rendezvous: both must observe the other has started")
 	}
 
 	got, err := st.GetRun(ctx, runID)
@@ -159,7 +198,7 @@ func TestRun_parallelBranchesOverlapInTime(t *testing.T) {
 	}
 }
 
-func TestRun_implicitSequentialDoesNotOverlap(t *testing.T) {
+func TestRun_implicitSequentialDoesNotRendezvous(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "seq.db"))
 	if err != nil {
@@ -182,19 +221,18 @@ func TestRun_implicitSequentialDoesNotOverlap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	type window struct{ start, end time.Time }
-	var mu sync.Mutex
-	times := map[string]window{}
+	gate := newStartBarrier()
+	var aMet, bMet atomic.Bool
 	ex := &Executor{
 		Graph: graph, ProjectRoot: testProjectRoot(t),
 		Tools: &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
 			w := whichOf(req)
-			begin := time.Now()
-			time.Sleep(50 * time.Millisecond)
-			end := time.Now()
-			mu.Lock()
-			times[w] = window{begin, end}
-			mu.Unlock()
+			met := gate.Wait(ctx, 250*time.Millisecond)
+			if w == "a" {
+				aMet.Store(met)
+			} else {
+				bMet.Store(met)
+			}
 			return tools.ToolCallResponse{Output: map[string]any{"echo": w}}, nil
 		}},
 		Store: st, Trace: trace.NewRecorder(st),
@@ -204,9 +242,8 @@ func TestRun_implicitSequentialDoesNotOverlap(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	a, b := times["a"], times["b"]
-	if a.start.Before(b.end) && b.start.Before(a.end) {
-		t.Fatalf("implicit sequential steps overlapped: a=[%s,%s] b=[%s,%s]", a.start, a.end, b.start, b.end)
+	if aMet.Load() || bMet.Load() {
+		t.Fatalf("implicit sequential steps rendezvoused (a=%v b=%v); YAML order must not overlap", aMet.Load(), bMet.Load())
 	}
 }
 
