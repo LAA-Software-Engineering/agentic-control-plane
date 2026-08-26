@@ -1,0 +1,51 @@
+Environment: local
+State: <STATE>
+
+Plan: 5 to add, 0 to change, 0 to delete
++ create Agent/reviewer
++ create Policy/guarded-writes
++ create Project/plan-effect-bound
++ create Tool/github
++ create Workflow/pr-review
+
+Effect bound (Workflow/pr-review):
+high:
+- [high] effect_bound: external.visible   autonomous  Agent/reviewer may select tool.github.post_comment
+- [high] effect_bound: github.write       autonomous  Agent/reviewer may select tool.github.post_comment
+medium:
+- [medium] effect_bound: github.read        static      step fetch_pr
+low:
+- [low] effect_bound: destructive        unreachable no grant path to tool.github.merge_pr
+
+Effect bound (Agent/reviewer):
+high:
+- [high] effect_bound: external.visible   autonomous  Agent/reviewer may select tool.github.post_comment
+- [high] effect_bound: github.write       autonomous  Agent/reviewer may select tool.github.post_comment
+low:
+- [low] effect_bound: destructive        unreachable no grant path to tool.github.merge_pr
+- [low] effect_bound: github.read        unreachable no grant path to tool.github.read_pr
+
+Capability delta:
+Agent/reviewer
++ tool.github.post_comment
+
+Effect delta:
++ external.visible
++ github.write
++ github.read
+
+Authority:
+  static      -> WIDENED
+  autonomous  -> WIDENED
+
+Risk delta:
+high:
+- [high] authority_widening: AUTONOMOUS authority WIDENED.
+medium:
+- [medium] authority_widening: STATIC authority WIDENED.
+- [medium] tool_surface_change: Agent tools list gained "tool.github.post_comment" (Agent/reviewer).
+low:
+- [low] safety: New agent binds a model (Agent/reviewer).
+- [low] safety: New policy defines a cost ceiling (Policy/guarded-writes).
+Effective policy (guarded-writes):
+- Tool/github decision=allow source=safety_metadata

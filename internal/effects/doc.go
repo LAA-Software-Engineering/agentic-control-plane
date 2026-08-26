@@ -7,7 +7,7 @@
 // (#204 pin is not shipped).
 //
 // [Check] is a static validate/plan gate (exit 2). It does not change runtime
-// CheckToolCall. Plan bound/delta tables are #191.
+// CheckToolCall. Plan bound/delta tables are rendered by [plan] (issue #191).
 //
 // Two edge kinds are preserved on witness hops:
 //

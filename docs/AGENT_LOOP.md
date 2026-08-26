@@ -22,9 +22,9 @@ Because the agent selects its own tools, `agent.spec.tools` is an **autonomous c
 
 A grant is a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. `agent.spec.tools` entries are grants in this sense (Tool metadata name or a pinned uses string).
 
-An agent's action space is the union of its granted operations' declared effects. Widening the grant list expands the action space of a nondeterministic component — why [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191) will report a new **autonomous** effect at higher severity than a new **static** one.
+An agent's action space is the union of its granted operations' declared effects. Widening the grant list expands the action space of a nondeterministic component — `agentctl plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set does not change.
 
-Issue #189 computes the effect bound in [`internal/effects`](../internal/effects) over the desired graph (static `uses:` plus these grants). Issue #190 enforces that bound against `Policy.spec.effects` at validate/plan (exit **2**). `agentctl plan` does not print the full bound table or deltas yet (#191). ACP does not verify what remote systems do with a granted operation.
+Issue #189 computes the effect bound in [`internal/effects`](../internal/effects) over the desired graph (static `uses:` plus these grants). Issue #190 enforces that bound against `Policy.spec.effects` at validate/plan (exit **2**). Issue #191 prints the bound table and the authority delta vs stored deployment state in `agentctl plan` (`-o table|json|yaml`). ACP does not verify what remote systems do with a granted operation.
 
 ### Closed world (#204)
 

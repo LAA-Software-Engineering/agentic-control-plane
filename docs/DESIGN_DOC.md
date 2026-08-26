@@ -1087,10 +1087,31 @@ Plan: 2 to add, 1 to change, 0 to delete
 ~ update Policy/default
     maxTotalCostUsd: 3.00 -> 10.00
 
+Effect bound (Workflow/pr-review):
+high:
+- [high] effect_bound: github.write       autonomous  Agent/reviewer may select tool.github.post_comment
+- [high] effect_bound: external.visible   autonomous  Agent/reviewer may select tool.github.post_comment
+medium:
+- [medium] effect_bound: github.read        static      step fetch_pr
+low:
+- [low] effect_bound: destructive        unreachable no grant path to tool.github.merge_pr
+
+Capability delta:
+Agent/reviewer
++ tool.github.post_comment
+
+Effect delta:
++ github.write
++ external.visible
+
+Authority:
+  static      -> unchanged
+  autonomous  -> WIDENED
+
 Risk delta:
 high:
+- [high] authority_widening: AUTONOMOUS authority WIDENED.
 - [high] budget_relaxation: Cost ceiling increased (Policy/default).
-- [high] approval_removal: Approval requirements removed for "tool.helper.echo" (Policy/default).
 ```
 
 ### MVP
@@ -1415,7 +1436,7 @@ Structured `RiskItem` list (category, severity, reason, target, witness path; is
 * model changes — agent `model` provider or id
 * tool surface change — tools added to an agent's `tools` list
 
-C1 witness hops are resource-level (static). Effect-bound Workflow→step→Agent→tool.operation hops land in #191 on the same `Witness` field and table/JSON/YAML render path (`FormatPlanSection` / `ExportRisk`). `RiskSummary.Messages` remains the item reasons for string consumers; JSON/YAML keep `"risk": []string` and expose structured `"riskItems"`. Table output groups items under `high:` / `medium:` / `low:` (issue #166).
+C1 witness hops are resource-level (static). Effect-bound Workflow→step→Agent→tool.operation hops land on the same `Witness` field and table/JSON/YAML render path (`FormatPlanSection` / `ExportRisk`). Capability delta and effect delta are separate `RiskItem` categories; `authority.static` / `authority.autonomous` (`unchanged` | `widened`) are structural JSON/YAML fields so CI can gate on `AUTONOMOUS` `WIDENED`. `RiskSummary.Messages` remains the item reasons for string consumers; JSON/YAML keep `"risk": []string` and expose structured `"riskItems"`. Table output groups items under `high:` / `medium:` / `low:` (issue #166) and prints the desired effect bound plus authority delta (issue #191).
 
 ### End goal risk summary
 
@@ -1530,7 +1551,7 @@ Responsibilities:
 
 The engine implements the bounded tool-calling loop (issue #160). Each agent-declared Tool resource is advertised as one `ToolDef` (name = Tool metadata.name, permissive object schema). `agent.spec.tools` entries may be the Tool metadata name or a pinned uses string `tool.<name>.<operation>`. `ToolChoice` is `auto`. Type defaults when only the name is listed: native → `tool.<name>.echo`; mock/mcp → `tool.<name>.default`. HTTP has no default (`parseOperation` would treat `default` as `GET /default`); list `tool.<name>.<method.path>` — pinned `tool.<name>.default` is rejected the same way as a bare HTTP name. `agentctl validate` / `plan` apply these advertised-uses rules (unknown tools, HTTP method.path, conflicting ops on one Tool name). Only the ToolDef name is accepted as a `ToolCall.Name` (ADR 002: no operation is agent-callable unless it was advertised). Aliases such as `helper.echo`, `tool.helper.echo`, `helper.command.run`, or HTTP `delete.users` fail before `CheckToolCall` / `Tools.Call`. On `StopReason: tool_use`, each accepted call is checked with `CheckToolCall`, then executed via `Tools.Call` on the agent `constraints.timeoutSeconds` context. Results are appended as `ChatMessage.ToolResults` (with the assistant `ToolCalls` replayed) and the loop continues. Agents that declare no tools stay a single `Generate` with no `Tools` field. Loop cost (model + tool) accumulates into the step `GenerateMeta`; `policy.CheckRun` runs after each Generate and tool turn so `execution.maxTotalCostUsd` / wall-clock apply inside a single agent step. `constraints.maxIterations` (default 8, hard cap 32) counts **Generate turns**; `tool_use` on the last turn fails without executing those calls (`maxIterations: 1` is one completion, tools never run). A cutoff emits `limit_hit` (`kind: max_iterations`) and fails the step. HITL interrupt is **not** consulted inside the loop: inner uses must already be pre-approved (`agentctl run --approve` / `ApprovedActions`) or `CheckToolCall` fails closed. Policy denial uses the existing `DeniedError` path (CLI exit **5**).
 
-`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — why #191 will report a new **autonomous** effect at higher severity than a new **static** one. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; `agentctl plan` does not print it yet (#191). For MCP tools the grant is only sound against a pinned operation manifest (#204), which is **not shipped** (`tools/list` can still expand the world). Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
+`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `agentctl plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is only sound against a pinned operation manifest (#204), which is **not shipped** (`tools/list` can still expand the world). Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
 
 Abstraction:
 
@@ -1659,8 +1680,9 @@ Issue #116 adds a **tamper-evident hash chain** per run: each persisted event st
 
 [`internal/effects.Compute`](../internal/effects) walks an already-resolved **desired**
 `ProjectGraph` and returns a bound for every Agent and Workflow. It does not apply
-Environment overlays, call MCP `tools/list`, or change `CheckToolCall`. CLI plan/validate
-do not print the full bound table (#191).
+Environment overlays, call MCP `tools/list`, or change `CheckToolCall`. `agentctl plan`
+renders the bound and the authority delta vs stored deployment state (issue #191) in
+table/JSON/YAML.
 
 [`internal/effects.Check`](../internal/effects) (issue #190) compares each **workflow**
 bound (including autonomous agent grants) against that workflow’s `Policy.spec.effects`.
@@ -1688,9 +1710,13 @@ native → `echo`, mock/mcp → `default`, HTTP must be pinned). The bound union
 
 Witness path: `Workflow → step → Agent → tool.operation`, each hop tagged `static` or
 `autonomous`. Agent-only roots omit workflow/step hops. Hop fields match `plan.WitnessHop`
-(`kind`, `name`, `id`, `reachability`) so #191 can map without `effects` importing `plan`.
+(`kind`, `name`, `id`, `reachability`) so plan output maps without `effects` importing `plan`.
 Kinds: `workflow`, `step`, `agent`, `tool_operation`. Pos is metadata only and is not part
-of the bound.
+of the bound. Plan JSON/YAML expose those hops on `effectBound` / `riskItems` plus
+`authority.static` / `authority.autonomous` (`unchanged` | `widened`) for CI gates.
+Capability changes (concrete `tool.<name>.<operation>` grants) and effect changes (named
+consequence classes) are separate lines: a new grant whose effects are already reachable
+widens capability with an empty effect delta and still marks autonomous authority `WIDENED`.
 
 **Unknown vs unreachable.** A reachable operation with no declared effects
 (`[ResolveToolEffects].Unknown` / empty operation set) is an **explicit unknown** in the

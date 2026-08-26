@@ -23,7 +23,8 @@ func newPlanCmd() *cobra.Command {
 		Short:        "Show desired vs applied deployment diff",
 		SilenceUsage: true,
 		Long: `Compare the validated project graph to rows in the SQLite deployment store and print
-a summary with create/update/delete lines plus a risk delta (design doc section 10.2).
+a summary with create/update/delete lines, the desired effect bound, an authority
+delta vs stored deployment state, and a risk delta (design doc section 10.2).
 
 The state database defaults to .agentic/state.db under --project, or project.spec.state.dsn,
 unless overridden by global --state.
@@ -38,6 +39,8 @@ JSON/YAML output includes resolvedConfigDigest, policyDigest, and effectivePolic
 default policy only; workflows/agents may bind other policy names) alongside deploymentBaseline.
 Risk items are grouped by severity in table output and exposed as structured riskItems
 (with typed witness hops) in JSON/YAML; the string list "risk" remains for compatibility.
+Effect bounds, capability/effect deltas, and authority.static / authority.autonomous are
+structural JSON/YAML fields so CI can gate on AUTONOMOUS WIDENED.
 
 Exit codes (section 11.2):
   0 — success
