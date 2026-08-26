@@ -43,6 +43,34 @@ func TestStampResourcePositions_workflowAgentLine(t *testing.T) {
 	}
 }
 
+const workflowApprovalYAML = `apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: demo
+spec:
+  steps:
+    - id: gate
+      approval: true
+`
+
+func TestStampResourcePositions_workflowApprovalLine(t *testing.T) {
+	dec, err := ParseResourceFromBytes([]byte(workflowApprovalYAML), "workflow.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wr, ok := dec.Resource.(*WorkflowResource)
+	if !ok || wr == nil {
+		t.Fatalf("got %T", dec.Resource)
+	}
+	st := wr.Spec.Steps[0]
+	if !StepIsApproval(st) {
+		t.Fatalf("approval not parsed: %+v", st.Approval)
+	}
+	if st.ApprovalPos.File != "workflow.yaml" || st.ApprovalPos.Line != 8 {
+		t.Fatalf("ApprovalPos = %#v, want workflow.yaml line 8", st.ApprovalPos)
+	}
+}
+
 func TestValidateProjectGraph_unknownAgentReportsPos(t *testing.T) {
 	dec, err := ParseResourceFromBytes([]byte(workflowUnknownAgentYAML), "workflow.yaml")
 	if err != nil {

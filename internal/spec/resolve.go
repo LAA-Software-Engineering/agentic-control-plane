@@ -133,6 +133,7 @@ func validateWorkflowStepErrors(wfName string, w *WorkflowSpec) []error {
 		hasA := strings.TrimSpace(st.Agent) != ""
 		hasU := strings.TrimSpace(st.Uses) != ""
 		hasW := strings.TrimSpace(st.Workflow) != ""
+		hasApproval := StepIsApproval(st)
 		n := 0
 		if hasA {
 			n++
@@ -143,12 +144,15 @@ func validateWorkflowStepErrors(wfName string, w *WorkflowSpec) []error {
 		if hasW {
 			n++
 		}
+		if hasApproval {
+			n++
+		}
 		if n > 1 {
-			errs = append(errs, st.Pos.Errorf("workflow %s step %q: cannot set more than one of agent, uses, or workflow", wfName, sid))
+			errs = append(errs, st.Pos.Errorf("workflow %s step %q: cannot set more than one of agent, uses, workflow, or approval", wfName, sid))
 			continue
 		}
 		if n == 0 {
-			errs = append(errs, st.Pos.Errorf("workflow %s step %q: must set exactly one of agent, uses, or workflow", wfName, sid))
+			errs = append(errs, st.Pos.Errorf("workflow %s step %q: must set exactly one of agent, uses, workflow, or approval", wfName, sid))
 			continue
 		}
 		if hasU {

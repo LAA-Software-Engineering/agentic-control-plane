@@ -824,10 +824,30 @@ A `workflow:` step invokes another Workflow by static name (ADR 002 graph struct
 * Traces emit `workflow_call_started` / `workflow_call_finished` and stamp `data_json.callStack` (callee names from the root) so `agentctl logs` shows the call structure. Nested `run_steps` use qualified ids `parentStep/childStep`. Step ids must not contain `/` (validate + engine) so those ids stay injective.
 * Checkpoints stack in-flight callee progress (`nested`) plus the outer DAG completion set. Resume continues **mid-subworkflow** without replaying completed inner or outer steps. Each nested frame is validated against the named callee (workflow exists, parent step is `workflow:`, inner ids belong to the callee) using the resolved `maxWorkflowNesting` cap.
 
+### Human approval steps (issue #195)
+
+An `approval:` step is a **graph node** (ADR 002) that suspends the run for a human decision that is not about a specific tool call. Policy still decides *what requires approval* for `uses:` / agent tool calls; this form only says *where the workflow pauses*. Do not inline `approvals.requiredFor` into workflow text.
+
+```yaml
+- id: review_plan
+  approval: true
+  with:
+    plan: ${steps.draft.output.summary}
+```
+
+`approval: true` or `approval: { description: "...", redactKeys: [secret] }` are equivalent except for review presentation. Exactly one of `agent:`, `uses:`, `workflow:`, or `approval:`.
+
+* The step interpolates `with:`, writes a HITL checkpoint (`pendingHitl.kind: approval`, sentinel uses `workflow.approval`), and returns [ErrInterrupted]. Resume uses the existing `--decision approve|reject|edit` path (#106). `switch` is not applicable (there is no tool identity to retarget).
+* **Approve** completes the step; step output is the reviewed `with:` payload.
+* **Edit** applies `#106` allow-list rules (top-level keys of the presented `with:`); the edited object is the step output.
+* **Reject aborts the whole workflow** (same as tool-call HITL reject). The DAG has no skip-descendants / partial-success status; a rejected gate is a failed step and fails the run. An approval step inside a **parallel group suspends only its branch** (siblings are not marked failed; the checkpoint `completed` set is reconstructed on resume, issue #192).
+* `--auto-approve` skips the pause and treats the interpolated `with:` as approved output.
+* The audit chain continues across suspend/resume (`hitl_request_created` → decision/resolution events on the same run).
+
 ### MVP workflow rules
 
 * steps execute as a DAG; with no `needs:` keys, YAML order is an implicit sequential chain
-* each step has exactly one of `agent`, `uses`, or `workflow`
+* each step has exactly one of `agent`, `uses`, `workflow`, or `approval`
 * `with` maps inputs (`workflow:` maps to the callee's input; callee `output.value` is the step output)
 * `${...}` interpolation supported
 * output can map from prior step outputs
@@ -1033,7 +1053,7 @@ my-agent-system/
 ## 9.4 Workflow validation
 
 * step ids must be unique
-* each step must specify exactly one of `agent` or `uses`
+* each step must specify exactly one of `agent`, `uses`, `workflow`, or `approval`
 * interpolation refs must resolve
 * interpolation may only reference predecessor steps (`needs` ancestors, or earlier YAML steps when `needs:` is omitted)
 * `needs:` must name existing step IDs; cycles and dangling references fail validation with positions
@@ -1859,6 +1879,17 @@ body: "Summary: ${steps.review.output.summary}"  # string
 
 The callee is a static `Workflow` metadata name. `with:` is interpolated in the caller then validated as the callee's input. The callee's `output.value` is this step's `output`. Recursion is a validate error (positions on `workflow:`). Depth is capped by `maxWorkflowNesting` (default 8). Policy is the stricter of caller and callee (both must pass; tighter budgets win; HITL `interruptOn` is unioned). Nested traces and mid-subworkflow checkpoints are described in §7.4.
 
+### Approval step (issue #195)
+
+```yaml
+- id: review_plan
+  approval: true
+  with:
+    plan: ${steps.draft.output.summary}
+```
+
+The engine interpolates `with:`, then suspends through the same HITL checkpoint used for gated tool calls (`pendingHitl`, `hitl_request_created`). Resume `--decision approve` / `edit` completes the node; **`reject` fails the run** (not only the branch). In a parallel group the interrupt is scoped to this step's branch; resume skips completed siblings. Step output is the reviewed payload (original `with:` or the edited object). `switch` is not offered.
+
 MVP step result shape:
 
 ```json
@@ -1888,6 +1919,14 @@ Trace `seq` follows SQLite insert (wall-clock, nondeterministic under concurrenc
 A `workflow:` step is a nested DAG run of the named callee on the same run id. Interpolation inside the callee uses the callee's input (`with:`) and the callee's local step ids. The engine qualifies persisted step ids as `callerStep/calleeStep` so a parent and child may reuse ids. Checkpoints wrap in-flight callee state in `nested` (stackable) while the outer `completed` set still skips finished caller steps. Resume restores the inner DAG and continues; a later outer join sees the callee's `output.value` as `${steps.<id>.output}`.
 
 Trace taxonomy 3 adds `workflow_call_started` and `workflow_call_finished`. Nested events include `callStack` (callee names from the root) and `workflow` (innermost).
+
+## 13.2.3 Approval-step execution (issue #195)
+
+An `approval:` step always pauses (unless `--auto-approve`). The engine reuses the #106 HITL checkpoint and `--decision` resume path. `pendingHitl.kind` is `approval`; `uses` is the sentinel `workflow.approval`. Allowed decisions are `approve`, `reject`, and `edit` when `with:` is non-empty (`switch` is omitted).
+
+**Reject** fails the run (`HitlRejectedError`), not only the branch. **Interrupt** in a parallel group does not fail sibling steps; resume reconstructs `completed` and continues remaining roots/joins.
+
+HITL events (`hitl_request_created`, `hitl_decision_submitted`, `hitl_resolution_applied`) append onto the same per-run audit chain; `audit verify --run` must succeed after resume.
 
 ---
 

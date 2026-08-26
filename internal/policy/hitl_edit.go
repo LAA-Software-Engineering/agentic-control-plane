@@ -74,6 +74,9 @@ func (e *HitlRejectedError) Error() string {
 	if e == nil {
 		return ErrHitlRejected.Error()
 	}
+	if e.Uses == spec.ApprovalStepUses {
+		return fmt.Sprintf("policy: operator %q rejected approval step", e.Actor)
+	}
 	return fmt.Sprintf("policy: operator %q rejected tool call %q", e.Actor, e.Uses)
 }
 

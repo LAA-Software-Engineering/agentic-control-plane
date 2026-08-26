@@ -52,8 +52,9 @@ Workflow input is built from optional --input-file (JSON object) plus repeated -
 --approve using the full uses string (e.g. tool.helper.echo).
 
 Resume an interrupted or incomplete run with --resume <run-id> (no workflow argument).
-When a run pauses for human approval, resume with --decision and related flags, or use
---auto-approve / AGENTCTL_AUTO_APPROVE=1 for non-interactive approval.
+When a run pauses for human approval (a workflow approval: step or a policy-gated tool call),
+resume with --decision and related flags, or use --auto-approve / AGENTCTL_AUTO_APPROVE=1 for
+non-interactive approval.
 
 Attribution flags (--tenant-id, --thread-id, --actor-id) scope runs for multi-tenant logs and
 compliance. When omitted, local defaults apply (tenant-1 / thread-1 / user-1) with a stderr

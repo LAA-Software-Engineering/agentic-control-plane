@@ -451,6 +451,7 @@ func (e *Executor) executeOneStep(
 	uses := strings.TrimSpace(step.Uses)
 	agentName := strings.TrimSpace(step.Agent)
 	callee := strings.TrimSpace(step.Workflow)
+	approval := spec.StepIsApproval(step)
 	forms := 0
 	if uses != "" {
 		forms++
@@ -461,8 +462,11 @@ func (e *Executor) executeOneStep(
 	if callee != "" {
 		forms++
 	}
+	if approval {
+		forms++
+	}
 	if forms != 1 {
-		return nil, 0, nil, nil, false, false, fmt.Errorf("engine: step %q must set exactly one of uses, agent, or workflow", step.ID)
+		return nil, 0, nil, nil, false, false, fmt.Errorf("engine: step %q must set exactly one of uses, agent, workflow, or approval", step.ID)
 	}
 
 	withAny, err := InterpolateWalk(step.With, ictx)
@@ -512,6 +516,10 @@ func (e *Executor) executeOneStep(
 		out, stepCost, interrupted, err = e.runSubworkflowStep(ctx, persistCtx, in, wf, wfPol, rt, ictx, runStartedAt, runHandle, i, step, with)
 		return out, stepCost, started, inJSON, pendingCleared, interrupted, err
 	}
+	if approval {
+		out, pendingCleared, interrupted, err = e.runApprovalStep(ctx, persistCtx, in, wf, wfPol, rt, ictx, pctx, runHandle, i, step, with)
+		return out, 0, started, inJSON, pendingCleared, interrupted, err
+	}
 	if uses != "" {
 		toolUses := uses
 		toolWith := with
@@ -521,12 +529,9 @@ func (e *Executor) executeOneStep(
 		}
 		if pending == nil {
 			rt.mu.Lock()
-			live := rt.ictx
 			liveTotal := rt.cost.get()
-			interruptedHITL, ierr := e.maybeInterruptForHitl(persistCtx, in, wf, i, step, with, wfPol, pctx, live, liveTotal, runHandle)
+			interruptedHITL, ierr := e.maybeInterruptForHitl(persistCtx, in, wf, i, step, with, wfPol, pctx, &rt.ictx, liveTotal, runHandle)
 			if interruptedHITL {
-				rt.ictx.PendingHitl = live.PendingHitl
-				rt.ictx.OtelInterrupt = live.OtelInterrupt
 				rt.mu.Unlock()
 				return nil, 0, started, inJSON, false, true, ierr
 			}

@@ -115,3 +115,41 @@ func TestWorkflowSpecHash_workflowFieldIsIdentity(t *testing.T) {
 		t.Fatal("WorkflowPos must not affect workflow spec hash")
 	}
 }
+
+func TestWorkflowSpecHash_approvalFieldIsIdentity(t *testing.T) {
+	base := &spec.WorkflowResource{
+		APIVersion: spec.APIVersionV0,
+		Kind:       spec.KindWorkflow,
+		Metadata:   spec.Metadata{Name: "demo"},
+		Spec: spec.WorkflowSpec{
+			Steps: []spec.WorkflowStep{{ID: "a", Uses: "tool.x.y"}},
+		},
+	}
+	h1, err := WorkflowSpecHash(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withApproval := &spec.WorkflowResource{
+		APIVersion: spec.APIVersionV0,
+		Kind:       spec.KindWorkflow,
+		Metadata:   spec.Metadata{Name: "demo"},
+		Spec: spec.WorkflowSpec{
+			Steps: []spec.WorkflowStep{{ID: "a", Approval: &spec.WorkflowApprovalValue{Enabled: true}}},
+		},
+	}
+	h2, err := WorkflowSpecHash(withApproval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h1 == h2 {
+		t.Fatal("approval: must participate in workflow spec hash")
+	}
+	withApproval.Spec.Steps[0].ApprovalPos = spec.Pos{File: "w.yaml", Line: 4, Column: 2}
+	h3, err := WorkflowSpecHash(withApproval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h3 != h2 {
+		t.Fatal("ApprovalPos must not affect workflow spec hash")
+	}
+}

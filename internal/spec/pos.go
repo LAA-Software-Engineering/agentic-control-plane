@@ -67,6 +67,7 @@ func RelocateFile(res any, file string) {
 			relocatePos(&r.Spec.Steps[i].UsesPos, file)
 			relocatePos(&r.Spec.Steps[i].AgentPos, file)
 			relocatePos(&r.Spec.Steps[i].WorkflowPos, file)
+			relocatePos(&r.Spec.Steps[i].ApprovalPos, file)
 			for j := range r.Spec.Steps[i].NeedsPos {
 				relocatePos(&r.Spec.Steps[i].NeedsPos[j], file)
 			}

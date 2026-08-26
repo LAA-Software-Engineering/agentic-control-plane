@@ -199,9 +199,13 @@ type WorkflowStep struct {
 	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
 	// Workflow names another Workflow resource in the project graph (issue #194, ADR 002).
 	// The callee is statically named; with: maps to the callee's input and the callee's
-	// output.value becomes this step's output. Exactly one of uses, agent, or workflow.
-	Workflow string         `yaml:"workflow,omitempty" json:"workflow,omitempty"`
-	With     map[string]any `yaml:"with,omitempty" json:"with,omitempty"`
+	// output.value becomes this step's output. Exactly one of uses, agent, workflow, or approval.
+	Workflow string `yaml:"workflow,omitempty" json:"workflow,omitempty"`
+	// Approval marks a graph-node human pause (issue #195, ADR 002). true or a mapping
+	// with optional description/redactKeys. Policy still gates tool-call approvals;
+	// this field only says where the workflow suspends. XOR with uses, agent, workflow.
+	Approval *WorkflowApprovalValue `yaml:"approval,omitempty" json:"approval,omitempty"`
+	With     map[string]any         `yaml:"with,omitempty" json:"with,omitempty"`
 	// Needs lists step IDs that must complete before this step runs (issue #192, ADR 002).
 	// Edges are static and author-declared. Empty/omitted means:
 	//   - if no step in the workflow declares needs, YAML order is an implicit chain
@@ -209,11 +213,12 @@ type WorkflowStep struct {
 	//   - if any step declares needs, omitted needs means this step is a root
 	//     (ready immediately, may run concurrently with other roots).
 	Needs []string `yaml:"needs,omitempty" json:"needs,omitempty"`
-	// Pos, UsesPos, AgentPos, WorkflowPos, and NeedsPos are diagnostic metadata only (issue #187).
+	// Pos, UsesPos, AgentPos, WorkflowPos, ApprovalPos, and NeedsPos are diagnostic metadata only (issue #187).
 	Pos         Pos   `yaml:"-" json:"-"`
 	UsesPos     Pos   `yaml:"-" json:"-"`
 	AgentPos    Pos   `yaml:"-" json:"-"`
 	WorkflowPos Pos   `yaml:"-" json:"-"`
+	ApprovalPos Pos   `yaml:"-" json:"-"`
 	NeedsPos    []Pos `yaml:"-" json:"-"`
 	// NeedsDeclared is true when the YAML mapping included a `needs` key (even if empty).
 	NeedsDeclared bool `yaml:"-" json:"-"`

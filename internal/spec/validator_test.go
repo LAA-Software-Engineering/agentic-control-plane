@@ -69,7 +69,7 @@ func TestValidateProjectGraph_workflowStepBothAgentAndUses(t *testing.T) {
 		},
 	}
 	err := ValidateProjectGraph(g, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "both agent and uses") && !strings.Contains(err.Error(), "more than one of agent, uses, or workflow") {
+	if err == nil || !strings.Contains(err.Error(), "both agent and uses") && !strings.Contains(err.Error(), "more than one of agent, uses, workflow, or approval") {
 		t.Fatalf("expected both agent and uses error, got %v", err)
 	}
 }
@@ -87,8 +87,50 @@ func TestValidateProjectGraph_workflowStepNeitherAgentNorUses(t *testing.T) {
 		},
 	}
 	err := ValidateProjectGraph(g, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "exactly one of agent, uses, or workflow") {
+	if err == nil || !strings.Contains(err.Error(), "exactly one of agent, uses, workflow, or approval") {
 		t.Fatalf("expected step shape error, got %v", err)
+	}
+}
+
+func TestValidateProjectGraph_approvalStepOK(t *testing.T) {
+	g := &ProjectGraph{
+		Workflows: map[string]*WorkflowResource{
+			"w": {
+				Kind:     KindWorkflow,
+				Metadata: Metadata{Name: "w"},
+				Spec: WorkflowSpec{
+					Steps: []WorkflowStep{
+						{ID: "gate", Approval: &WorkflowApprovalValue{Enabled: true}},
+					},
+				},
+			},
+		},
+	}
+	if err := ValidateProjectGraph(g, t.TempDir()); err != nil {
+		t.Fatalf("approval step should validate: %v", err)
+	}
+}
+
+func TestValidateProjectGraph_approvalXorUses(t *testing.T) {
+	g := &ProjectGraph{
+		Tools: map[string]*ToolResource{
+			"t": {Kind: KindTool, Metadata: Metadata{Name: "t"}, Spec: ToolSpec{Type: "native"}},
+		},
+		Workflows: map[string]*WorkflowResource{
+			"w": {
+				Kind:     KindWorkflow,
+				Metadata: Metadata{Name: "w"},
+				Spec: WorkflowSpec{
+					Steps: []WorkflowStep{
+						{ID: "s1", Uses: "tool.t.echo", Approval: &WorkflowApprovalValue{Enabled: true}},
+					},
+				},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "more than one of agent, uses, workflow, or approval") {
+		t.Fatalf("expected XOR error, got %v", err)
 	}
 }
 
