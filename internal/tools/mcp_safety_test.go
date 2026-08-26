@@ -2,18 +2,29 @@ package tools
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
+var (
+	mcpStdioMu   sync.Mutex
+	mockMCPOnce  sync.Once
+	mockMCPBin   string
+	mockMCPBuild error
+)
+
 func TestApplyMCPSafetyDiscovery_stdio_inheritsMeta(t *testing.T) {
-	bin := buildMockMCP(t)
+	mcpStdioMu.Lock()
+	defer mcpStdioMu.Unlock()
+	bin := mockMCPBinary(t)
 	g := &spec.ProjectGraph{
 		Tools: map[string]*spec.ToolResource{
 			"mc": {
@@ -41,7 +52,9 @@ func TestApplyMCPSafetyDiscovery_stdio_inheritsMeta(t *testing.T) {
 }
 
 func TestApplyMCPSafetyDiscovery_authorOverridesMCP(t *testing.T) {
-	bin := buildMockMCP(t)
+	mcpStdioMu.Lock()
+	defer mcpStdioMu.Unlock()
+	bin := mockMCPBinary(t)
 	tr := true
 	g := &spec.ProjectGraph{
 		Tools: map[string]*spec.ToolResource{
@@ -97,7 +110,9 @@ func TestApplyMCPSafetyDiscovery_missingServer_warnsAndFailClosed(t *testing.T) 
 }
 
 func TestApplyMCPSafetyDiscovery_perToolTimeout(t *testing.T) {
-	bin := buildMockMCP(t)
+	mcpStdioMu.Lock()
+	defer mcpStdioMu.Unlock()
+	bin := mockMCPBinary(t)
 	g := &spec.ProjectGraph{
 		Tools: map[string]*spec.ToolResource{
 			"slow": {
@@ -132,17 +147,40 @@ func TestApplyMCPSafetyDiscovery_nilGraph(t *testing.T) {
 	}
 }
 
-func buildMockMCP(t *testing.T) string {
+func mockMCPBinary(t *testing.T) string {
 	t.Helper()
-	name := "mockmcp"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
+	mockMCPOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "agentctl-mockmcp-")
+		if err != nil {
+			mockMCPBuild = err
+			return
+		}
+		name := "mockmcp"
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		out := filepath.Join(dir, name)
+		cmd := exec.Command("go", "build", "-o", out, "./mcp/testdata/mockmcp")
+		cmd.Dir = "."
+		if b, err := cmd.CombinedOutput(); err != nil {
+			mockMCPBuild = &mcpBuildError{err: err, out: string(b)}
+			return
+		}
+		mockMCPBin = out
+	})
+	if mockMCPBuild != nil {
+		t.Fatal(mockMCPBuild)
 	}
-	out := filepath.Join(t.TempDir(), name)
-	cmd := exec.Command("go", "build", "-o", out, "./mcp/testdata/mockmcp")
-	cmd.Dir = "."
-	if b, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build mockmcp: %v\n%s", err, b)
-	}
-	return out
+	return mockMCPBin
 }
+
+type mcpBuildError struct {
+	err error
+	out string
+}
+
+func (e *mcpBuildError) Error() string {
+	return "build mockmcp: " + e.err.Error() + "\n" + e.out
+}
+
+func (e *mcpBuildError) Unwrap() error { return e.err }

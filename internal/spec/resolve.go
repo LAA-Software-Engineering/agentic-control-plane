@@ -120,6 +120,10 @@ func validateWorkflowStepErrors(wfName string, w *WorkflowSpec) []error {
 	for _, st := range w.Steps {
 		sid := strings.TrimSpace(st.ID)
 		if sid != "" {
+			if strings.Contains(sid, "/") {
+				errs = append(errs, st.Pos.Errorf("workflow %s step %q: step id must not contain '/' (reserved for nested run_steps ids)", wfName, sid))
+				continue
+			}
 			if _, dup := seenID[sid]; dup {
 				errs = append(errs, st.Pos.Errorf("workflow %s: duplicate step id %q", wfName, sid))
 				continue

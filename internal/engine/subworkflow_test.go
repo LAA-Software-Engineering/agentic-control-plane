@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -163,11 +164,8 @@ func TestRun_subworkflowConsumesCalleeOutput(t *testing.T) {
 		case string(trace.EventWorkflowCallFinished):
 			finishedCall = true
 		case string(trace.EventToolSelection):
-			if ev.StepID == "echo" || ev.StepID == "call/echo" {
+			if ev.StepID == "call/echo" {
 				nestedSelection = true
-				if !strings.Contains(ev.DataJSON, `"callStack"`) && ev.StepID == "echo" {
-					// nested inner events should stamp callStack when prefix is set
-				}
 			}
 		}
 	}
@@ -199,8 +197,11 @@ func TestRun_subworkflowConsumesCalleeOutput(t *testing.T) {
 	if ids["call"] != "succeeded" || ids["after"] != "succeeded" {
 		t.Fatalf("outer steps %+v", ids)
 	}
-	if ids["call/echo"] != "succeeded" && ids["echo"] != "succeeded" {
-		t.Fatalf("inner step missing: %+v", ids)
+	if ids["call/echo"] != "succeeded" {
+		t.Fatalf("inner step must be qualified call/echo, got %+v", ids)
+	}
+	if _, ok := ids["echo"]; ok {
+		t.Fatalf("unqualified inner id echo must not be persisted: %+v", ids)
 	}
 }
 
@@ -327,7 +328,7 @@ func TestRun_resumeMidSubworkflow(t *testing.T) {
 		if ev.Type != string(trace.EventToolSelection) {
 			continue
 		}
-		if ev.StepID == "first" || ev.StepID == "call/first" {
+		if ev.StepID == "call/first" {
 			firstSelections++
 		}
 	}
@@ -400,5 +401,139 @@ func TestRun_subworkflowNestingDepthRuntime(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "maxWorkflowNesting") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestQualifyStepID_rejectsSlash(t *testing.T) {
+	if _, err := qualifyStepID("", "nest/inner"); err == nil || !strings.Contains(err.Error(), "must not contain '/'") {
+		t.Fatalf("got %v", err)
+	}
+	got, err := qualifyStepID("call", "echo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "call/echo" {
+		t.Fatalf("got %q", got)
+	}
+	got, err = qualifyStepID("a/b", "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "a/b/c" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRun_slashStepIDIsEngineError(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "slash.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	graph := &spec.ProjectGraph{
+		Tools:    map[string]*spec.ToolResource{"helper": helperTool()},
+		Policies: map[string]*spec.PolicyResource{"default": defaultPolicy()},
+		Workflows: map[string]*spec.WorkflowResource{
+			"w": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindWorkflow,
+				Metadata:   spec.Metadata{Name: "w"},
+				Spec: spec.WorkflowSpec{
+					Steps: []spec.WorkflowStep{{ID: "nest/inner", Uses: "tool.helper.echo"}},
+				},
+			},
+		},
+	}
+	started := time.Now().UTC()
+	if err := st.StartRun(ctx, state.Run{
+		RunID: "run-slash", WorkflowName: "w", Env: "dev", Status: "running",
+		StartedAt: started, InputJSON: `{}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ex := &Executor{
+		Graph: graph, ProjectRoot: t.TempDir(),
+		Tools: tools.NewRegistry(graph), Store: st, Trace: trace.NewRecorder(st),
+	}
+	err = ex.Run(ctx, RunInput{RunID: "run-slash", WorkflowName: "w", Env: "dev", StartedAt: started, Input: map[string]any{}})
+	if err == nil || !strings.Contains(err.Error(), "must not contain '/'") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRun_nestedAndSiblingCannotJointlyExceedCost(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "nest-cost.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	graph := &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{"helper": helperTool()},
+		Policies: map[string]*spec.PolicyResource{
+			"default": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindPolicy,
+				Metadata:   spec.Metadata{Name: "default"},
+				Spec:       spec.PolicySpec{Execution: &spec.PolicyExecution{MaxTotalCostUsd: 1.00}},
+			},
+		},
+		Workflows: map[string]*spec.WorkflowResource{
+			"child": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindWorkflow,
+				Metadata:   spec.Metadata{Name: "child"},
+				Spec: spec.WorkflowSpec{
+					Policy: "default",
+					Steps:  []spec.WorkflowStep{{ID: "inner", Uses: "tool.helper.echo", With: map[string]any{"which": "inner"}}},
+				},
+			},
+			"parent": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindWorkflow,
+				Metadata:   spec.Metadata{Name: "parent"},
+				Spec: spec.WorkflowSpec{
+					Policy: "default",
+					Steps: []spec.WorkflowStep{
+						{ID: "sib", Uses: "tool.helper.echo", With: map[string]any{"which": "sib"}, NeedsDeclared: true},
+						{ID: "call", Workflow: "child", NeedsDeclared: true},
+					},
+				},
+			},
+		},
+	}
+
+	runID := "run-nest-cost"
+	started := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: runID, WorkflowName: "parent", Env: "dev", Status: "running",
+		StartedAt: started, InputJSON: `{}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gate := newStartBarrier()
+	ex := &Executor{
+		Graph: graph, ProjectRoot: t.TempDir(),
+		Tools: &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
+			w := whichOf(req)
+			if w == "sib" || w == "inner" {
+				if !gate.Wait(ctx, 5*time.Second) {
+					return tools.ToolCallResponse{}, fmt.Errorf("rendezvous timeout on %s", w)
+				}
+			}
+			return tools.ToolCallResponse{Output: map[string]any{"echo": w}, Meta: tools.ToolCallMeta{CostUSD: 0.60}}, nil
+		}},
+		Store: st, Trace: trace.NewRecorder(st),
+	}
+	err = ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{},
+	})
+	if err == nil {
+		t.Fatal("expected joint $0.60+$0.60 to fail a $1.00 cap")
+	}
+	if !strings.Contains(err.Error(), "exceeds ceiling") {
+		t.Fatalf("want ceiling error, got %v", err)
 	}
 }

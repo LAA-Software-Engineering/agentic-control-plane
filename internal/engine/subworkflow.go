@@ -22,11 +22,31 @@ type nestParent struct {
 	rootWF *spec.WorkflowResource
 }
 
+func qualifyStepID(prefix, id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", fmt.Errorf("engine: empty step id")
+	}
+	if strings.Contains(id, "/") {
+		return "", fmt.Errorf("engine: step id %q must not contain '/'", id)
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return id, nil
+	}
+	return prefix + "/" + id, nil
+}
+
 func (e *Executor) qualID(id string) string {
-	if e == nil || strings.TrimSpace(e.stepPrefix) == "" || strings.TrimSpace(id) == "" {
+	prefix := ""
+	if e != nil {
+		prefix = e.stepPrefix
+	}
+	out, err := qualifyStepID(prefix, id)
+	if err != nil {
 		return id
 	}
-	return e.stepPrefix + "/" + id
+	return out
 }
 
 func (e *Executor) wrapNestedCheckpoint(ictx Context) Context {
@@ -99,9 +119,9 @@ func (e *Executor) runSubworkflowStep(
 	wfPol := policy.StricterOf(callerPol, calleePol)
 
 	child := *e
-	prefix := step.ID
-	if e.stepPrefix != "" {
-		prefix = e.stepPrefix + "/" + step.ID
+	prefix, err := qualifyStepID(e.stepPrefix, step.ID)
+	if err != nil {
+		return nil, 0, false, err
 	}
 	child.stepPrefix = prefix
 	if e.rootWF != nil {
@@ -162,8 +182,9 @@ func (e *Executor) runSubworkflowStep(
 		}
 	}
 
-	childIctx, total, err := child.runWorkflowSteps(ctx, childIn, callee, wfPol, childIctx, rt.totalCost, completed, runStartedAt, runHandle)
-	stepCost = total - rt.totalCost
+	startCost := rt.cost.get()
+	childIctx, total, err := child.runWorkflowSteps(ctx, childIn, callee, wfPol, childIctx, rt.cost, startCost, completed, runStartedAt, runHandle)
+	stepCost = total - startCost
 	if err != nil {
 		if errorsIsInterrupted(err) {
 			rt.mu.Lock()

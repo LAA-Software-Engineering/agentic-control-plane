@@ -21,14 +21,47 @@ import (
 // DefaultMaxConcurrentSteps bounds workflow goroutine fan-out (issue #192).
 const DefaultMaxConcurrentSteps = 8
 
+// liveCost is the run-wide accumulated cost, shared with nested subworkflow DAGs
+// so sibling steps and inner tools admit/commit against one total (issue #194).
+type liveCost struct {
+	mu    sync.Mutex
+	total float64
+}
+
+func (c *liveCost) get() float64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.total
+}
+
+func (c *liveCost) add(delta float64) float64 {
+	if c == nil {
+		return delta
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.total += delta
+	return c.total
+}
+
+func (rt *dagRuntime) applyLocalStepCost(step spec.WorkflowStep, stepCost float64) float64 {
+	if strings.TrimSpace(step.Workflow) != "" {
+		return rt.cost.get()
+	}
+	return rt.cost.add(stepCost)
+}
+
 type dagRuntime struct {
 	mu           sync.Mutex
+	cost         *liveCost
 	completed    map[string]struct{}
 	running      map[int]struct{}
 	failed       error
 	interrupting bool
 	interruptErr error
-	totalCost    float64
 	ictx         Context
 }
 
@@ -49,7 +82,8 @@ func (e *Executor) runWorkflowSteps(
 	wf *spec.WorkflowResource,
 	wfPol policy.PolicyEvaluator,
 	ictx Context,
-	totalCost float64,
+	cost *liveCost,
+	seedCost float64,
 	completed map[string]struct{},
 	runStartedAt time.Time,
 	runHandle *telemetry.RunHandle,
@@ -60,11 +94,14 @@ func (e *Executor) runWorkflowSteps(
 	if ictx.Steps == nil {
 		ictx.Steps = map[string]StepResult{}
 	}
+	if cost == nil {
+		cost = &liveCost{total: seedCost}
+	}
 	steps := wf.Spec.Steps
 	rt := &dagRuntime{
+		cost:      cost,
 		completed: completed,
 		running:   map[int]struct{}{},
-		totalCost: totalCost,
 		ictx:      ictx,
 	}
 
@@ -138,7 +175,7 @@ func (e *Executor) runWorkflowSteps(
 			}
 			if nRunning == 0 {
 				wg.Wait()
-				return rt.ictx, rt.totalCost, e.finishWorkflowError(parent, in, fmt.Errorf("engine: workflow graph has no runnable step"), rt.totalCost)
+				return rt.ictx, rt.cost.get(), e.finishWorkflowError(parent, in, fmt.Errorf("engine: workflow graph has no runnable step"), rt.cost.get())
 			}
 		}
 		<-completion
@@ -150,18 +187,18 @@ func (e *Executor) runWorkflowSteps(
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	if rt.failed != nil {
-		return rt.ictx, rt.totalCost, e.finishWorkflowError(parent, in, rt.failed, rt.totalCost)
+		return rt.ictx, rt.cost.get(), e.finishWorkflowError(parent, in, rt.failed, rt.cost.get())
 	}
 	if rt.interrupting {
 		if rt.interruptErr != nil {
-			return rt.ictx, rt.totalCost, rt.interruptErr
+			return rt.ictx, rt.cost.get(), rt.interruptErr
 		}
-		return rt.ictx, rt.totalCost, ErrInterrupted
+		return rt.ictx, rt.cost.get(), ErrInterrupted
 	}
 	if !workflowFullyComplete(steps, rt.completed) {
-		return rt.ictx, rt.totalCost, e.finishWorkflowError(parent, in, fmt.Errorf("engine: workflow graph incomplete after scheduling"), rt.totalCost)
+		return rt.ictx, rt.cost.get(), e.finishWorkflowError(parent, in, fmt.Errorf("engine: workflow graph incomplete after scheduling"), rt.cost.get())
 	}
-	return rt.ictx, rt.totalCost, nil
+	return rt.ictx, rt.cost.get(), nil
 }
 
 func (e *Executor) finishWorkflowError(ctx context.Context, in RunInput, err error, totalCost float64) error {
@@ -279,7 +316,7 @@ func (e *Executor) runDAGStep(
 			} else {
 				rt.failed = fmt.Errorf("engine: step %q: %w", step.ID, err)
 			}
-			rt.totalCost += stepCost
+			rt.applyLocalStepCost(step, stepCost)
 		}
 		cancel()
 		return
@@ -301,13 +338,13 @@ func (e *Executor) runDAGStep(
 
 	if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
 		rt.interrupting = true
-		rt.interruptErr = ex.interruptRun(persistCtx, wf, in, i, step.ID, rt.ictx, rt.totalCost, runHandle)
+		rt.interruptErr = ex.interruptRun(persistCtx, wf, in, i, step.ID, rt.ictx, rt.cost.get(), runHandle)
 		cancel()
 		return
 	}
 	if id := strings.TrimSpace(in.InterruptAfterStepID); id != "" && (id == step.ID || id == ex.qualID(step.ID)) {
 		rt.interrupting = true
-		rt.interruptErr = ex.interruptRun(persistCtx, wf, in, i, step.ID, rt.ictx, rt.totalCost, runHandle)
+		rt.interruptErr = ex.interruptRun(persistCtx, wf, in, i, step.ID, rt.ictx, rt.cost.get(), runHandle)
 		cancel()
 		return
 	}
@@ -331,11 +368,11 @@ func (e *Executor) commitDAGStepSuccess(
 	inJSON []byte,
 ) error {
 	finished := e.now()
-	rt.totalCost += stepCost
+	total := rt.applyLocalStepCost(step, stepCost)
 	pctx := policy.RunContext{
 		StartedAt:          runStartedAt,
 		Elapsed:            finished.Sub(runStartedAt),
-		AccumulatedCostUSD: rt.totalCost,
+		AccumulatedCostUSD: total,
 		ApprovedActions:    append([]string(nil), in.ApprovedActions...),
 	}
 	if err := wfPol.CheckRun(ctx, pctx); err != nil {
@@ -373,7 +410,7 @@ func (e *Executor) commitDAGStepSuccess(
 	if rt.interrupting {
 		cpStatus = state.CheckpointStatusInterrupted
 	}
-	if err := e.saveCheckpoint(ctx, wf, in.RunID, i, step.ID, rt.ictx, rt.totalCost, cpStatus); err != nil {
+	if err := e.saveCheckpoint(ctx, wf, in.RunID, i, step.ID, rt.ictx, total, cpStatus); err != nil {
 		return fmt.Errorf("engine: checkpoint step %q: %w", step.ID, err)
 	}
 	outJSON, _ := json.Marshal(out)
@@ -407,6 +444,9 @@ func (e *Executor) executeOneStep(
 ) (out map[string]any, stepCost float64, started *time.Time, inJSON []byte, pendingCleared bool, interrupted bool, err error) {
 	if strings.TrimSpace(step.ID) == "" {
 		return nil, 0, nil, nil, false, false, fmt.Errorf("engine: workflow step missing id")
+	}
+	if _, err := qualifyStepID(e.stepPrefix, step.ID); err != nil {
+		return nil, 0, nil, nil, false, false, err
 	}
 	uses := strings.TrimSpace(step.Uses)
 	agentName := strings.TrimSpace(step.Agent)
@@ -445,7 +485,7 @@ func (e *Executor) executeOneStep(
 		rt.mu.Unlock()
 		return nil, 0, nil, nil, false, false, context.Canceled
 	}
-	pctx.AccumulatedCostUSD = rt.totalCost
+	pctx.AccumulatedCostUSD = rt.cost.get()
 	admitErr := wfPol.CheckRun(ctx, pctx)
 	rt.mu.Unlock()
 	if admitErr != nil {
@@ -482,8 +522,8 @@ func (e *Executor) executeOneStep(
 		if pending == nil {
 			rt.mu.Lock()
 			live := rt.ictx
-			liveCost := rt.totalCost
-			interruptedHITL, ierr := e.maybeInterruptForHitl(persistCtx, in, wf, i, step, with, wfPol, pctx, live, liveCost, runHandle)
+			liveTotal := rt.cost.get()
+			interruptedHITL, ierr := e.maybeInterruptForHitl(persistCtx, in, wf, i, step, with, wfPol, pctx, live, liveTotal, runHandle)
 			if interruptedHITL {
 				rt.ictx.PendingHitl = live.PendingHitl
 				rt.ictx.OtelInterrupt = live.OtelInterrupt

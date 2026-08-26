@@ -85,7 +85,7 @@ func marshalCheckpointPayload(ictx Context, totalCost float64) (string, error) {
 	return string(b), nil
 }
 
-func unmarshalCheckpointPayload(contextJSON string, wf *spec.WorkflowResource, completedStepIndex int) (Context, float64, error) {
+func unmarshalCheckpointPayload(contextJSON string, g *spec.ProjectGraph, wf *spec.WorkflowResource, completedStepIndex int) (Context, float64, error) {
 	if len(contextJSON) > maxCheckpointContextBytes {
 		return Context{}, 0, fmt.Errorf("engine: checkpoint context exceeds %d bytes", maxCheckpointContextBytes)
 	}
@@ -108,7 +108,11 @@ func unmarshalCheckpointPayload(contextJSON string, wf *spec.WorkflowResource, c
 	if err := validateCheckpointSteps(payload.Steps, wf, completedStepIndex, payload.Completed); err != nil {
 		return Context{}, 0, err
 	}
-	if err := validateNestedRunState(payload.Nested); err != nil {
+	maxNest := spec.DefaultMaxWorkflowNesting
+	if g != nil && wf != nil {
+		maxNest = spec.ResolveMaxWorkflowNesting(&g.Spec, &wf.Spec)
+	}
+	if err := validateNestedRunState(payload.Nested, g, wf, maxNest); err != nil {
 		return Context{}, 0, err
 	}
 	if payload.TotalCostUSD < 0 {
@@ -121,12 +125,12 @@ func unmarshalCheckpointPayload(contextJSON string, wf *spec.WorkflowResource, c
 	}, payload.TotalCostUSD, nil
 }
 
-func validateNestedRunState(n *NestedRunState) error {
+func validateNestedRunState(n *NestedRunState, g *spec.ProjectGraph, parent *spec.WorkflowResource, maxNest int) error {
 	depth := 0
 	for n != nil {
 		depth++
-		if depth > spec.DefaultMaxWorkflowNesting+1 {
-			return fmt.Errorf("engine: nested checkpoint exceeds maxWorkflowNesting")
+		if maxNest > 0 && depth > maxNest {
+			return fmt.Errorf("engine: nested checkpoint exceeds maxWorkflowNesting %d", maxNest)
 		}
 		if strings.TrimSpace(n.StepID) == "" || strings.TrimSpace(n.Workflow) == "" {
 			return fmt.Errorf("engine: nested checkpoint missing stepId or workflow")
@@ -134,9 +138,52 @@ func validateNestedRunState(n *NestedRunState) error {
 		if len(n.Steps) > maxCheckpointSteps {
 			return fmt.Errorf("engine: nested checkpoint has too many steps (%d)", len(n.Steps))
 		}
+		callee, err := nestedCalleeWorkflow(g, parent, n)
+		if err != nil {
+			return err
+		}
+		completed := append([]string(nil), n.Completed...)
+		completed = append(completed, completedStepIDs(n.Steps)...)
+		if err := validateCheckpointSteps(n.Steps, callee, -1, completed); err != nil {
+			return fmt.Errorf("engine: nested checkpoint workflow %q: %w", n.Workflow, err)
+		}
+		parent = callee
 		n = n.Nested
 	}
 	return nil
+}
+
+func nestedCalleeWorkflow(g *spec.ProjectGraph, parent *spec.WorkflowResource, n *NestedRunState) (*spec.WorkflowResource, error) {
+	if parent == nil {
+		return nil, fmt.Errorf("engine: nested checkpoint missing parent workflow")
+	}
+	stepID := strings.TrimSpace(n.StepID)
+	calleeName := strings.TrimSpace(n.Workflow)
+	var found *spec.WorkflowStep
+	for i := range parent.Spec.Steps {
+		st := &parent.Spec.Steps[i]
+		if strings.TrimSpace(st.ID) == stepID {
+			found = st
+			break
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("engine: nested checkpoint step %q is not in workflow %q", stepID, parent.Metadata.Name)
+	}
+	if strings.TrimSpace(found.Workflow) == "" {
+		return nil, fmt.Errorf("engine: nested checkpoint step %q is not a workflow: call", stepID)
+	}
+	if strings.TrimSpace(found.Workflow) != calleeName {
+		return nil, fmt.Errorf("engine: nested checkpoint step %q calls %q, not %q", stepID, strings.TrimSpace(found.Workflow), calleeName)
+	}
+	if g == nil || g.Workflows == nil {
+		return nil, fmt.Errorf("engine: nested checkpoint cannot resolve workflow %q", calleeName)
+	}
+	callee, ok := g.Workflows[calleeName]
+	if !ok || callee == nil {
+		return nil, fmt.Errorf("engine: nested checkpoint unknown workflow %q", calleeName)
+	}
+	return callee, nil
 }
 
 func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResource, completedStepIndex int, completedIDs []string) error {
@@ -220,7 +267,7 @@ func (e *Executor) loadResumeState(ctx context.Context, in RunInput) (Context, f
 	if err != nil {
 		return Context{}, 0, nil, err
 	}
-	ictx, totalCost, err := unmarshalCheckpointPayload(cp.ContextJSON, wf, cp.StepIndex)
+	ictx, totalCost, err := unmarshalCheckpointPayload(cp.ContextJSON, e.Graph, wf, cp.StepIndex)
 	if err != nil {
 		return Context{}, 0, nil, err
 	}

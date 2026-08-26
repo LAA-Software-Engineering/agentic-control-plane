@@ -158,7 +158,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
 	finishAt := e.now()
 
-	ictx, totalCost, err = e.runWorkflowSteps(ctx, in, wf, wfPol, ictx, totalCost, completed, runStartedAt, runHandle)
+	ictx, totalCost, err = e.runWorkflowSteps(ctx, in, wf, wfPol, ictx, nil, totalCost, completed, runStartedAt, runHandle)
 	if err != nil {
 		return err
 	}

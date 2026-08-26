@@ -92,6 +92,27 @@ func TestValidateProjectGraph_workflowStepNeitherAgentNorUses(t *testing.T) {
 	}
 }
 
+func TestValidateProjectGraph_stepIDRejectsSlash(t *testing.T) {
+	g := &ProjectGraph{
+		Tools: map[string]*ToolResource{
+			"t": {Kind: KindTool, Metadata: Metadata{Name: "t"}, Spec: ToolSpec{Type: "native"}},
+		},
+		Workflows: map[string]*WorkflowResource{
+			"w": {
+				Kind:     KindWorkflow,
+				Metadata: Metadata{Name: "w"},
+				Spec: WorkflowSpec{
+					Steps: []WorkflowStep{{ID: "nest/inner", Uses: "tool.t.echo"}},
+				},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "must not contain '/'") {
+		t.Fatalf("expected slash rejection, got %v", err)
+	}
+}
+
 func TestValidateProjectGraph_agentToolUsesString(t *testing.T) {
 	g := &ProjectGraph{
 		Agents: map[string]*AgentResource{
