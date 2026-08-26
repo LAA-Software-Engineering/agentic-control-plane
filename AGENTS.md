@@ -43,7 +43,19 @@ Project workflows live under `.cursor/skills/`:
 
 - `/feature` — implement a capability or enhancement
 - `/bugfix` — diagnose and fix a defect
-- `/code-review` — defect-first review of a PR or diff
+- `/code-review` — adversarial senior review of a PR or diff; significant findings must be posted as inline code comments
+
+## Code review standard
+
+Code reviews must determine whether a change deserves to merge, not whether it deserves encouragement. Use the `/code-review` skill for PRs and diffs, and review as the maintainer who will own the repository for the next decade.
+
+- Technical analysis comes before presentation. Do not invent findings for tone.
+- Identify the claimed contract, then trace each important abstraction end-to-end through validation, storage, runtime behavior, error handling, and tests.
+- Prioritize memory safety, security, incorrect behavior, semantic/runtime mismatches, ownership/lifetime errors, broken API contracts, invariant violations, specification divergence, and error recovery corruption.
+- Treat comments and documentation as executable claims: "thread-safe", "zero-copy", "backwards compatible", "safe", "generic", "fully typed", "constant time", and similar statements require evidence.
+- Findings must be posted as inline code comments on the PR diff whenever a diff line can anchor the issue. The top-level review should contain only the verdict and concise summary unless an issue cannot be attached inline.
+- Do not praise effort. Acknowledge good engineering only when it conveys useful technical contrast.
+- If no meaningful defect can be demonstrated, approve. Never manufacture a blocker.
 
 ## Pull requests (required for agents)
 
