@@ -1,0 +1,29 @@
+// The normative ADR 002 target surface (docs/adr/002-…). This program is the
+// acceptance fixture: it must parse to a typed AST with no diagnostics.
+agent Reviewer {
+    model  openai/gpt-5
+    policy guarded-writes        // ref to a Policy resource; `strict` is its preset base
+    grants {                     // autonomous capability bound — NOT a call list
+        tool.github.read_pr
+        tool.github.read_comments
+    }
+    input  ReviewRequest
+    output Review
+}
+
+workflow PRReview(input: PullRequest) -> Review
+    effects { github.read, github.write, external.visible }
+{
+    pr = github.get_pr(input.repo, input.number)
+
+    parallel {
+        security = SecurityReviewer(pr)
+        quality  = Reviewer(pr)
+        tests    = TestReviewer(pr)
+    }
+
+    result = Synthesizer(security, quality, tests)
+
+    github.post_comment(repo: input.repo, number: input.number, body: result.summary)
+    return result
+}

@@ -1,0 +1,8 @@
+// A workflow exercising positional args, named args, nested calls, member
+// access, an expression statement, and a bare return. No effects clause.
+workflow Triage(input: Incident) -> Report {
+    enriched = enrich.lookup(input.id)
+    summary = Summarizer(enriched)
+    notify.send(channel: input.channel, body: summary.text, urgent: enriched.severity)
+    return summary
+}
