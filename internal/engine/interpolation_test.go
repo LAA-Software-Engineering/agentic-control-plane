@@ -148,9 +148,140 @@ func TestInterpolateWalk_mapNested(t *testing.T) {
 		t.Fatalf("repo %v", m["repo"])
 	}
 	n := m["nested"].(map[string]any)
-	if n["n"] != "7" {
-		t.Fatalf("n %v", n["n"])
+	if n["n"] != float64(7) {
+		t.Fatalf("n %v (%T), want float64 7 (whole-field preserves number)", n["n"], n["n"])
 	}
+}
+
+func TestInterpolateWalk_wholeFieldPreservesTypes(t *testing.T) {
+	obj := map[string]any{"title": "Fix bug", "id": float64(99)}
+	arr := []any{"a", float64(1)}
+	ctx := Context{
+		Input: map[string]any{
+			"flag":   true,
+			"count":  float64(3),
+			"nested": obj,
+			"items":  arr,
+		},
+		Steps: map[string]StepResult{
+			"review": {
+				Output: map[string]any{
+					"summary":  "LGTM",
+					"findings": arr,
+					"payload":  obj,
+				},
+			},
+		},
+	}
+
+	t.Run("object", func(t *testing.T) {
+		got, err := InterpolateWalk("${steps.review.output.payload}", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, ok := got.(map[string]any)
+		if !ok {
+			t.Fatalf("got %T %v, want map", got, got)
+		}
+		if m["title"] != "Fix bug" {
+			t.Fatalf("title %v", m["title"])
+		}
+	})
+	t.Run("array", func(t *testing.T) {
+		got, err := InterpolateWalk("${steps.review.output.findings}", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, ok := got.([]any)
+		if !ok {
+			t.Fatalf("got %T %v, want slice", got, got)
+		}
+		if len(a) != 2 || a[0] != "a" {
+			t.Fatalf("array %v", a)
+		}
+	})
+	t.Run("number", func(t *testing.T) {
+		got, err := InterpolateWalk("${input.count}", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != float64(3) {
+			t.Fatalf("got %v (%T)", got, got)
+		}
+	})
+	t.Run("bool", func(t *testing.T) {
+		got, err := InterpolateWalk("${input.flag}", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != true {
+			t.Fatalf("got %v (%T)", got, got)
+		}
+	})
+	t.Run("whitespace inside token still whole-field", func(t *testing.T) {
+		got, err := InterpolateWalk("${  input.count  }", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != float64(3) {
+			t.Fatalf("got %v (%T)", got, got)
+		}
+	})
+}
+
+func TestInterpolateWalk_embeddedStillStringifies(t *testing.T) {
+	ctx := Context{
+		Input: map[string]any{"count": float64(3), "flag": false},
+		Steps: map[string]StepResult{
+			"review": {
+				Output: map[string]any{
+					"summary": "LGTM",
+					"payload": map[string]any{"title": "Fix bug", "id": float64(99)},
+				},
+			},
+		},
+	}
+
+	t.Run("prefix", func(t *testing.T) {
+		got, err := InterpolateWalk("Summary: ${steps.review.output.summary}", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "Summary: LGTM" {
+			t.Fatalf("got %q (%T)", got, got)
+		}
+	})
+	t.Run("object in surrounding text is JSON", func(t *testing.T) {
+		got, err := InterpolateWalk("body=${steps.review.output.payload}", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, ok := got.(string)
+		if !ok {
+			t.Fatalf("got %T, want string", got)
+		}
+		if !strings.HasPrefix(s, "body=") || !strings.Contains(s, "Fix bug") || !strings.Contains(s, `"id":99`) {
+			t.Fatalf("got %q", s)
+		}
+	})
+	t.Run("leading space is surrounding text", func(t *testing.T) {
+		got, err := InterpolateWalk(" ${input.count}", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != " 3" {
+			t.Fatalf("got %q (%T)", got, got)
+		}
+	})
+	t.Run("two tokens stringify", func(t *testing.T) {
+		got, err := InterpolateWalk("${input.count}/${input.flag}", ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "3/false" {
+			t.Fatalf("got %q (%T)", got, got)
+		}
+	})
 }
 
 func TestInterpolateString_emptyPlaceholder(t *testing.T) {

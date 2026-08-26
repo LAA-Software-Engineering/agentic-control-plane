@@ -226,6 +226,9 @@ func TestValidateProjectGraph_schemaFileExists(t *testing.T) {
 	if err := ValidateProjectGraph(g, root); err != nil {
 		t.Fatal(err)
 	}
+	if g.Agents["a"].Spec.Input.Resolved == nil {
+		t.Fatal("expected schema loaded onto AgentIO.Resolved")
+	}
 }
 
 func TestValidateProjectGraph_duplicateApprovalActions(t *testing.T) {

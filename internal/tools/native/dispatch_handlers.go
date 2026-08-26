@@ -36,16 +36,34 @@ func dispatchIdentity(_ context.Context, with map[string]any, start time.Time) (
 
 func dispatchPullRequestFetch(_ context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
 	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
-	raw, _ := with["pr"].(string)
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, meta, fmt.Errorf("native: pull_request.fetch requires string field pr (JSON)")
-	}
-	var obj map[string]any
-	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
-		return nil, meta, fmt.Errorf("native: pull_request.fetch pr: %w", err)
+	obj, err := prObjectFromWith(with)
+	if err != nil {
+		return nil, meta, err
 	}
 	return map[string]any{"pull_request": obj}, meta, nil
+}
+
+func prObjectFromWith(with map[string]any) (map[string]any, error) {
+	v, ok := with["pr"]
+	if !ok || v == nil {
+		return nil, fmt.Errorf("native: pull_request.fetch requires JSON object or JSON string field pr")
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		return t, nil
+	case string:
+		raw := strings.TrimSpace(t)
+		if raw == "" {
+			return nil, fmt.Errorf("native: pull_request.fetch requires JSON object or JSON string field pr")
+		}
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+			return nil, fmt.Errorf("native: pull_request.fetch pr: %w", err)
+		}
+		return obj, nil
+	default:
+		return nil, fmt.Errorf("native: pull_request.fetch requires JSON object or JSON string field pr")
+	}
 }
 
 func dispatchPullRequestPostComment(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {

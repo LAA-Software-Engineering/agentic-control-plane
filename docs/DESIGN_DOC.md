@@ -1787,6 +1787,15 @@ Do not invent a scripting language.
 
 Fan-in: a step whose `needs:` lists multiple predecessors may interpolate `${steps.<id>.output}` for every ancestor. Siblings that do not precede the step cannot be referenced.
 
+Whole-field vs embedded (issue #193): when the entire field value is one `${...}` token, interpolation preserves the resolved JSON type (object, array, number, boolean, string). Tokens embedded in surrounding text are still coerced to strings (scalars printed; objects/arrays as JSON text).
+
+```yaml
+body: ${steps.review.output.summary}           # typed value
+body: "Summary: ${steps.review.output.summary}"  # string
+```
+
+`input.schema` / `output.schema` file references are loaded onto the graph at validate time. A step that consumes `${steps.x.output.foo}` is checked against step `x`'s declared output schema when one exists, and against the consuming agent's input schema when that exists. Mismatches fail validate with a YAML position. Missing schemas remain allowed (gradual typing); a declared schema is honored.
+
 ---
 
 ## 13.2 Step types
@@ -1843,6 +1852,8 @@ Failure should fail the step unless policy later allows soft-fail.
 
 MVP:
 hard fail
+
+Schema files named by `input.schema` / `output.schema` are compiled at validate (not only checked for existence) and held on the graph. Static wiring (issue #193) uses those documents so a consumer `${steps.x.output.foo}` is rejected before run when it cannot inhabit the producer output schema or the consumer input schema.
 
 ---
 

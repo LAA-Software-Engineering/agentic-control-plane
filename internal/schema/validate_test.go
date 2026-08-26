@@ -31,6 +31,15 @@ func TestValidate_fixtureValidAndInvalid(t *testing.T) {
 	}
 }
 
+func TestLoadDocument_missingFile(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist.schema.json")
+	_, err := LoadDocument(missing)
+	var fe *FileError
+	if !errors.As(err, &fe) {
+		t.Fatalf("want *FileError, got %T: %v", err, err)
+	}
+}
+
 func TestValidate_missingSchemaFile_clearPath(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "does-not-exist.schema.json")
