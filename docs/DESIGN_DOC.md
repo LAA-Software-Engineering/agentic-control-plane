@@ -797,10 +797,49 @@ Static fan-in (author-declared parallel branches) uses `needs:`:
 * Checkpoints store a **per-step completion set** (`completed` plus `steps` outputs). Resume skips completed IDs and can continue a parallel group after one branch finished.
 * Trace events record wall-clock insert order (`seq`) and a stable **`logicalOrder`** (YAML step index) in `data_json` so concurrent runs remain deterministically replayable; the audit chain still hashes stored rows including `data_json`.
 
+### Subworkflow steps (issue #194)
+
+A step may invoke another `Workflow` resource with `workflow:`. This is graph structure per
+ADR 002: the callee is **statically named**, never selected by an expression.
+
+```yaml
+    - id: triage
+      workflow: pr-triage        # invokes Workflow/pr-triage
+      with:
+        repo: ${input.repo}      # maps to the callee's input
+        number: ${input.number}
+    - id: summarize
+      agent: summarizer
+      with:
+        triage: ${steps.triage.output}   # callee's output.value is the step output
+```
+
+* A step sets **exactly one** of `agent`, `uses`, or `workflow`.
+* `with:` is interpolated and becomes the callee's run **input** (validated against the callee's
+  `input.schema` when present); the callee's `output.value` becomes the step's `output`.
+* **Recursion is rejected at validation time** with positions — direct (`a → a`) and indirect
+  (`a → b → a`). Cycle detection reuses the graph machinery from issue #192.
+* **Nesting depth is bounded** by `spec.DefaultMaxSubworkflowDepth` (8), enforced statically as
+  the longest path in the acyclic call graph and again at runtime as defense-in-depth.
+* **Effect bounds traverse into subworkflows.** A caller's transitive effect bound is the union
+  of its own and every reachable callee's effects; the witness path nests
+  `Workflow → step → Workflow → … → tool.operation`. This is the fixpoint case that motivates
+  issue #189.
+* **Policy resolution (chosen: static union = stricter).** The authority ceiling is enforced at
+  validate/plan time as the *union* of caller and callee effects against the **caller's**
+  `Policy.spec.effects` (fail-closed / stricter — a callee cannot smuggle in an effect the caller's
+  policy forbids). At runtime each workflow additionally enforces its **own** resolved Policy, so a
+  subworkflow is never *less* restricted than it would be when run directly.
+* **Execution and traces nest.** Each invocation runs as a child run linked by `parent_run_id`,
+  with its own checkpoint and trace chain (a nested `run_started` carries `parentRunId`). Resume
+  re-enters an incomplete subworkflow step and resumes the same child run — an interrupt (HITL)
+  deep inside a callee checkpoints the whole path. `agentctl logs <childRunId>` shows the callee's
+  own trace; the `parent_run_id` linkage reconstructs the call structure.
+
 ### MVP workflow rules
 
 * steps execute as a DAG; with no `needs:` keys, YAML order is an implicit sequential chain
-* each step has either `agent` or `uses`
+* each step has exactly one of `agent`, `uses`, or `workflow` (subworkflow, issue #194)
 * `with` maps inputs
 * `${...}` interpolation supported
 * output can map from prior step outputs
@@ -818,7 +857,7 @@ than authored and has no YAML surface — see ADR 002 §5.
 | Addition | Surface |
 |----------|---------|
 | parallel branches | YAML / IR |
-| subworkflows | YAML / IR |
+| subworkflows | YAML / IR — implemented, `workflow:` step (issue #194) |
 | human approval steps | YAML / IR |
 | scheduled triggers | YAML / IR |
 | event triggers | YAML / IR |
@@ -1818,6 +1857,20 @@ body: "Summary: ${steps.review.output.summary}"  # string
     repo: ${input.repo}
     number: ${input.number}
 ```
+
+### Subworkflow step (issue #194)
+
+```yaml
+- id: triage
+  workflow: pr-triage
+  with:
+    repo: ${input.repo}
+```
+
+Invokes another `Workflow` by `metadata.name`. `with:` is the callee's run input; the callee's
+`output.value` becomes the step output. Runs as a child run (`parent_run_id`) with its own
+checkpoint and trace chain; recursion is rejected and nesting depth is bounded at validation
+(see §7.4).
 
 MVP step result shape:
 

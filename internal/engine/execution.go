@@ -52,6 +52,10 @@ type RunInput struct {
 	InterruptAfterStepID string
 	// MaxConcurrentSteps bounds goroutine fan-out (issue #192). Zero uses DefaultMaxConcurrentSteps.
 	MaxConcurrentSteps int
+	// SubworkflowDepth is the current nesting depth of `workflow:` steps (issue #194). The top-level
+	// run is 0; each nested subworkflow invocation increments it. Enforced against
+	// [spec.DefaultMaxSubworkflowDepth] as defense-in-depth behind static validation.
+	SubworkflowDepth int
 	// Attribution for OTel gen_ai attributes (issue #111).
 	TenantID  string
 	ThreadID  string

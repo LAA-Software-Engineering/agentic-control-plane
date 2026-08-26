@@ -12,6 +12,13 @@ const (
 	DefaultMaxCheckpointBytes = 1 << 20   // 1 MiB
 )
 
+// DefaultMaxSubworkflowDepth bounds how deeply `workflow:` steps may nest (issue #194).
+// A workflow that invokes no subworkflow has nesting depth 0; a caller of a leaf callee has
+// depth 1. The limit is enforced statically at validate time (longest path in the acyclic
+// call graph) and again at runtime as defense-in-depth. Recursion is rejected before depth
+// is measured, so a cyclic graph never reaches this bound.
+const DefaultMaxSubworkflowDepth = 8
+
 // LimitExceedPolicy controls behavior when a byte limit is exceeded.
 type LimitExceedPolicy string
 

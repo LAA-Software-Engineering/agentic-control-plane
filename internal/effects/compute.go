@@ -34,9 +34,10 @@ func Compute(g *spec.ProjectGraph) GraphBounds {
 	return compute(g, nil)
 }
 
-// compute walks g. workflowCalls is a test-only adjacency (from → to) used to
-// prove cyclic termination until #194 subworkflows exist. Production Compute
-// passes nil.
+// compute walks g. workflowCalls is a test-only adjacency (from → to) that adds extra
+// synthetic workflow-call edges on top of the real `workflow:` steps traversed by walkStep
+// (issue #194); it is retained to exercise cyclic termination directly. Production Compute
+// passes nil and relies on authored subworkflow edges.
 func compute(g *spec.ProjectGraph, workflowCalls map[string][]string) GraphBounds {
 	out := GraphBounds{
 		Agents:    map[string]Bound{},
@@ -120,6 +121,12 @@ func (w *walker) walkStep(step spec.WorkflowStep, prefix []Hop) {
 	}
 	if ag := strings.TrimSpace(step.Agent); ag != "" {
 		w.walkAgent(ag, appendHop(p, Hop{Kind: KindAgent, Name: ag, Reachability: Static}))
+	}
+	// A `workflow:` step is a static graph edge into the callee (issue #194). The walker's
+	// on-stack guard makes cyclic call graphs terminate; the nested Workflow/step hops give
+	// the witness path its call structure.
+	if sub := strings.TrimSpace(step.Workflow); sub != "" {
+		w.walkWorkflow(sub, appendHop(p, Hop{Kind: KindWorkflow, Name: sub, Reachability: Static}))
 	}
 }
 

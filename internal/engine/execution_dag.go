@@ -402,8 +402,15 @@ func (e *Executor) executeOneStep(
 	}
 	uses := strings.TrimSpace(step.Uses)
 	agentName := strings.TrimSpace(step.Agent)
-	if (uses == "") == (agentName == "") {
-		return nil, 0, nil, nil, false, false, fmt.Errorf("engine: step %q must set exactly one of uses or agent", step.ID)
+	subWorkflow := strings.TrimSpace(step.Workflow)
+	set := 0
+	for _, has := range []bool{uses != "", agentName != "", subWorkflow != ""} {
+		if has {
+			set++
+		}
+	}
+	if set != 1 {
+		return nil, 0, nil, nil, false, false, fmt.Errorf("engine: step %q must set exactly one of uses, agent, or workflow", step.ID)
 	}
 
 	withAny, err := InterpolateWalk(step.With, ictx)
@@ -493,6 +500,12 @@ func (e *Executor) executeOneStep(
 			var meta tools.ToolCallMeta
 			out, meta, err = e.runToolStep(ctx, runHandle, wfPol, wf, in.RunID, step, with, pctx, toolUses, toolWith)
 			stepCost = meta.CostUSD
+		}
+	} else if subWorkflow != "" {
+		var subInterrupted bool
+		out, stepCost, subInterrupted, err = e.runSubworkflowStep(ctx, persistCtx, in, wf, i, step, subWorkflow, with, rt, runHandle)
+		if subInterrupted {
+			return out, stepCost, started, inJSON, pendingCleared, true, err
 		}
 	} else {
 		ar, ok := e.Graph.Agents[agentName]

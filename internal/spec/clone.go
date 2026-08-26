@@ -76,6 +76,7 @@ func preserveDerivedGraphFields(src, dst *ProjectGraph) {
 			wr.Spec.Steps[i].Pos = srcWr.Spec.Steps[i].Pos
 			wr.Spec.Steps[i].UsesPos = srcWr.Spec.Steps[i].UsesPos
 			wr.Spec.Steps[i].AgentPos = srcWr.Spec.Steps[i].AgentPos
+			wr.Spec.Steps[i].WorkflowPos = srcWr.Spec.Steps[i].WorkflowPos
 			wr.Spec.Steps[i].NeedsDeclared = srcWr.Spec.Steps[i].NeedsDeclared
 			if n := len(srcWr.Spec.Steps[i].NeedsPos); n > 0 {
 				wr.Spec.Steps[i].NeedsPos = append([]Pos(nil), srcWr.Spec.Steps[i].NeedsPos...)

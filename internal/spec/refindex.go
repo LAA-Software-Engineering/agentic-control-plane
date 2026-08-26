@@ -9,6 +9,8 @@ type RefIndex struct {
 	WorkflowAgents   map[string][]string
 	WorkflowTools    map[string][]string
 	WorkflowPolicies map[string]string
+	// WorkflowSubs maps a workflow to the workflows it invokes via `workflow:` steps (issue #194).
+	WorkflowSubs map[string][]string
 }
 
 // BuildRefIndex scans ProjectGraph resources and builds RefIndex lookup tables.
@@ -20,6 +22,7 @@ func BuildRefIndex(g *ProjectGraph) *RefIndex {
 			WorkflowAgents:   map[string][]string{},
 			WorkflowTools:    map[string][]string{},
 			WorkflowPolicies: map[string]string{},
+			WorkflowSubs:     map[string][]string{},
 		}
 	}
 	ix := &RefIndex{
@@ -28,6 +31,7 @@ func BuildRefIndex(g *ProjectGraph) *RefIndex {
 		WorkflowAgents:   make(map[string][]string),
 		WorkflowTools:    make(map[string][]string),
 		WorkflowPolicies: make(map[string]string),
+		WorkflowSubs:     make(map[string][]string),
 	}
 	for name, ar := range g.Agents {
 		if ar == nil {
@@ -57,7 +61,7 @@ func BuildRefIndex(g *ProjectGraph) *RefIndex {
 		if p := strings.TrimSpace(wr.Spec.Policy); p != "" {
 			ix.WorkflowPolicies[name] = p
 		}
-		var agents, tools []string
+		var agents, tools, subs []string
 		for _, st := range wr.Spec.Steps {
 			if a := strings.TrimSpace(st.Agent); a != "" {
 				agents = append(agents, a)
@@ -67,9 +71,13 @@ func BuildRefIndex(g *ProjectGraph) *RefIndex {
 					tools = append(tools, tn)
 				}
 			}
+			if sw := strings.TrimSpace(st.Workflow); sw != "" {
+				subs = append(subs, sw)
+			}
 		}
 		ix.WorkflowAgents[name] = dedupeRefStrings(agents)
 		ix.WorkflowTools[name] = dedupeRefStrings(tools)
+		ix.WorkflowSubs[name] = dedupeRefStrings(subs)
 	}
 	return ix
 }

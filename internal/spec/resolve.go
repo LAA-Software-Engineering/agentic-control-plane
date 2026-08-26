@@ -87,6 +87,15 @@ func collectReferenceErrors(g *ProjectGraph) []error {
 				})
 			}
 		}
+		for _, sw := range ix.WorkflowSubs[wfName] {
+			if _, ok := g.Workflows[sw]; !ok {
+				errs = append(errs, &MissingRefError{
+					Referrer: ResourceID{Kind: KindWorkflow, Name: wfName},
+					Missing:  ResourceID{Kind: KindWorkflow, Name: sw},
+					Pos:      workflowSubPos(wr, sw),
+				})
+			}
+		}
 		if pol := ix.WorkflowPolicies[wfName]; pol != "" {
 			if _, ok := g.Policies[pol]; !ok && !IsBuiltinPreset(pol) {
 				errs = append(errs, &MissingRefError{
@@ -101,6 +110,8 @@ func collectReferenceErrors(g *ProjectGraph) []error {
 		}
 		errs = append(errs, validateWorkflowGraph(wfName, &wr.Spec)...)
 	}
+	// Recursion and nesting-depth of `workflow:` steps are graph-global (issue #194).
+	errs = append(errs, validateSubworkflowGraph(g, ix)...)
 	return errs
 }
 
@@ -118,12 +129,19 @@ func validateWorkflowStepErrors(wfName string, w *WorkflowSpec) []error {
 		}
 		hasA := strings.TrimSpace(st.Agent) != ""
 		hasU := strings.TrimSpace(st.Uses) != ""
-		if hasA && hasU {
-			errs = append(errs, st.Pos.Errorf("workflow %s step %q: cannot set both agent and uses", wfName, sid))
+		hasW := strings.TrimSpace(st.Workflow) != ""
+		set := 0
+		for _, has := range []bool{hasA, hasU, hasW} {
+			if has {
+				set++
+			}
+		}
+		if set > 1 {
+			errs = append(errs, st.Pos.Errorf("workflow %s step %q: must set exactly one of agent, uses, or workflow", wfName, sid))
 			continue
 		}
-		if !hasA && !hasU {
-			errs = append(errs, st.Pos.Errorf("workflow %s step %q: must set exactly one of agent or uses", wfName, sid))
+		if set == 0 {
+			errs = append(errs, st.Pos.Errorf("workflow %s step %q: must set exactly one of agent, uses, or workflow", wfName, sid))
 			continue
 		}
 		if hasU {
@@ -212,6 +230,21 @@ func workflowUsesPos(wr *WorkflowResource, toolName string) Pos {
 		if tn, ok := ParseToolUses(u); ok && tn == toolName {
 			if !st.UsesPos.IsZero() {
 				return st.UsesPos
+			}
+			return st.Pos
+		}
+	}
+	return wr.Pos
+}
+
+func workflowSubPos(wr *WorkflowResource, calleeName string) Pos {
+	if wr == nil {
+		return Pos{}
+	}
+	for _, st := range wr.Spec.Steps {
+		if strings.TrimSpace(st.Workflow) == calleeName {
+			if !st.WorkflowPos.IsZero() {
+				return st.WorkflowPos
 			}
 			return st.Pos
 		}
