@@ -50,8 +50,8 @@ func (v *WorkflowApprovalValue) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	case yaml.MappingNode:
 		var cfg WorkflowApprovalConfig
-		if err := value.Decode(&cfg); err != nil {
-			return fmt.Errorf("spec: approval config: %w", err)
+		if err := decodeYAMLNodeKnownFields(value, &cfg); err != nil {
+			return err
 		}
 		v.Enabled = true
 		v.Config = &cfg

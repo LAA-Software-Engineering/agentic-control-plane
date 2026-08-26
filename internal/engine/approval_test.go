@@ -325,6 +325,12 @@ func TestRun_approvalStep_parallelSuspendsOnlyItsBranch(t *testing.T) {
 	if payload.PendingHitl == nil || payload.PendingHitl.StepID != "gate" || payload.PendingHitl.Kind != PendingHitlKindApproval {
 		t.Fatalf("pending %+v", payload.PendingHitl)
 	}
+	if !sliceContains(payload.Completed, "sib") {
+		t.Fatalf("interrupt checkpoint completed = %v want sib already recorded before resume", payload.Completed)
+	}
+	if sliceContains(payload.Completed, "gate") {
+		t.Fatalf("gate must not be completed while interrupted: %v", payload.Completed)
+	}
 	steps, err := st.ListRunStepsByRunID(ctx, "run-appr-par")
 	if err != nil {
 		t.Fatal(err)
@@ -365,4 +371,145 @@ func TestRun_approvalStep_parallelSuspendsOnlyItsBranch(t *testing.T) {
 	if err := audit.VerifyRunChainError("run-appr-par", events); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestRun_approvalStep_switchDecisionRejected(t *testing.T) {
+	ex, st, started := setupApprovalExecutor(t, nil, "run-appr-switch")
+	ctx := context.Background()
+	if err := ex.Run(ctx, RunInput{
+		RunID: "run-appr-switch", WorkflowName: "review", Env: "dev", StartedAt: started, Input: map[string]any{},
+	}); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("first run: %v", err)
+	}
+	if err := st.UpdateRunStatus(ctx, "run-appr-switch", state.RunStatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	err := ex.Run(ctx, RunInput{
+		RunID: "run-appr-switch", WorkflowName: "review", Env: "dev", StartedAt: started, Input: map[string]any{},
+		Resume: true,
+		Hitl: HitlRunOptions{
+			Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionSwitch, Actor: "alice", SwitchTarget: "identity"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), `decision "switch" is not allowed`) {
+		t.Fatalf("want switch rejection, got %v", err)
+	}
+}
+
+func TestRun_approvalStep_autoApproveSkipsPause(t *testing.T) {
+	ex, st, started := setupApprovalExecutor(t, nil, "run-appr-auto")
+	ctx := context.Background()
+	if err := ex.Run(ctx, RunInput{
+		RunID: "run-appr-auto", WorkflowName: "review", Env: "dev", StartedAt: started, Input: map[string]any{},
+		Hitl: HitlRunOptions{AutoApprove: true, Actor: "ci"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run, _ := ex.Store.GetRun(ctx, "run-appr-auto")
+	if run.Status != state.RunStatusSucceeded {
+		t.Fatalf("status = %q err=%q", run.Status, run.ErrorText)
+	}
+	if !strings.Contains(run.OutputJSON, "do-it") {
+		t.Fatalf("output = %s", run.OutputJSON)
+	}
+	cp, err := st.GetLatestCheckpoint(ctx, "run-appr-auto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload checkpointPayload
+	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.PendingHitl != nil {
+		t.Fatalf("auto-approve must not leave pending HITL: %+v", payload.PendingHitl)
+	}
+	assertTraceContains(t, ex.Store, "run-appr-auto", trace.EventHitlRequestCreated, trace.EventHitlDecisionSubmitted, trace.EventHitlResolutionApplied)
+}
+
+func TestRun_approvalStep_redactKeysMaskPresentation(t *testing.T) {
+	const secret = "super-secret-token-xyz"
+	graph := approvalTestGraph()
+	wf := graph.Workflows["review"]
+	wf.Spec.Steps = []spec.WorkflowStep{
+		{
+			ID: "gate",
+			Approval: &spec.WorkflowApprovalValue{
+				Enabled: true,
+				Config: &spec.WorkflowApprovalConfig{
+					Description: "review account",
+					RedactKeys:  []string{"accountNumber"},
+				},
+			},
+			With: map[string]any{
+				"accountNumber": secret,
+				"plan":          "visible-plan",
+			},
+		},
+	}
+	wf.Spec.Output = &spec.WorkflowOutput{
+		Value: map[string]any{"plan": "${steps.gate.output.plan}"},
+	}
+	ex, st, started := setupApprovalExecutor(t, graph, "run-appr-redact")
+	ctx := context.Background()
+	if err := ex.Run(ctx, RunInput{
+		RunID: "run-appr-redact", WorkflowName: "review", Env: "dev", StartedAt: started, Input: map[string]any{},
+	}); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("first run: %v", err)
+	}
+	cp, err := st.GetLatestCheckpoint(ctx, "run-appr-redact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload checkpointPayload
+	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.PendingHitl == nil {
+		t.Fatal("expected pending HITL")
+	}
+	if got := payload.PendingHitl.With["accountNumber"]; got != secret {
+		t.Fatalf("checkpoint with is unredacted for resume, got %v", got)
+	}
+	if !sliceContains(payload.PendingHitl.Review.RedactKeys, "accountNumber") {
+		t.Fatalf("review redactKeys = %v", payload.PendingHitl.Review.RedactKeys)
+	}
+	presented := policy.RedactHitlArgs(payload.PendingHitl.With, payload.PendingHitl.Review.RedactKeys)
+	if presented["accountNumber"] != policy.RedactedSecretPlaceholder {
+		t.Fatalf("checkpoint presentation %v", presented)
+	}
+	if presented["plan"] != "visible-plan" {
+		t.Fatalf("non-redacted key masked: %v", presented)
+	}
+
+	events, err := trace.NewReader(st).ListByRunID(ctx, "run-appr-redact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawHitl bool
+	for _, ev := range events {
+		if strings.Contains(ev.DataJSON, secret) {
+			t.Fatalf("secret leaked in %s: %s", ev.Type, ev.DataJSON)
+		}
+		if ev.Type == trace.EventHitlRequestCreated.String() {
+			sawHitl = true
+			if !strings.Contains(ev.DataJSON, policy.RedactedSecretPlaceholder) {
+				t.Fatalf("want HITL placeholder in trace: %s", ev.DataJSON)
+			}
+			if !strings.Contains(ev.DataJSON, "visible-plan") {
+				t.Fatalf("want unredacted plan in trace: %s", ev.DataJSON)
+			}
+		}
+	}
+	if !sawHitl {
+		t.Fatal("missing hitl_request_created")
+	}
+}
+
+func sliceContains(ids []string, want string) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
 }
