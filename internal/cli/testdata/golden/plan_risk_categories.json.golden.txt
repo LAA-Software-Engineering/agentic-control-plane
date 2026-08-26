@@ -1,8 +1,11 @@
 {
   "risk": [
     "Approval requirements removed for \"tool.helper.echo\" (Policy/default).",
+    "AUTONOMOUS authority WIDENED.",
     "Cost ceiling increased (Policy/default).",
     "Wall-clock ceiling increased (Policy/default).",
+    "Agent/reviewer gained tool.github.echo.",
+    "Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).",
     "New write-like tool permission \"issues.write\" added (Tool/github); see ActionSuggestsWriteSideEffects.",
     "Agent tools list gained write-like tool \"github\" (Agent/reviewer).",
     "Agent model changed (Agent/reviewer)."
@@ -23,6 +26,16 @@
           "reachability": "static"
         }
       ]
+    },
+    {
+      "category": "authority_widening",
+      "reachability": "autonomous",
+      "reason": "AUTONOMOUS authority WIDENED.",
+      "severity": "high",
+      "target": {
+        "kind": "agent",
+        "name": "reviewer"
+      }
     },
     {
       "category": "budget_relaxation",
@@ -53,6 +66,52 @@
           "kind": "policy",
           "name": "default",
           "reachability": "static"
+        }
+      ]
+    },
+    {
+      "category": "capability_delta",
+      "ident": "tool.github.echo",
+      "reachability": "autonomous",
+      "reason": "Agent/reviewer gained tool.github.echo.",
+      "severity": "high",
+      "target": {
+        "kind": "agent",
+        "name": "reviewer"
+      },
+      "witness": [
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.echo",
+          "reachability": "autonomous"
+        }
+      ]
+    },
+    {
+      "category": "effect_delta",
+      "ident": "unknown (tool.github.echo)",
+      "reachability": "autonomous",
+      "reason": "Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).",
+      "severity": "high",
+      "target": {
+        "kind": "agent",
+        "name": "reviewer"
+      },
+      "witness": [
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.echo",
+          "reachability": "autonomous"
         }
       ]
     },

@@ -272,3 +272,92 @@ func TestGolden_plan_risk_categories_yaml_risk(t *testing.T) {
 	_ = enc.Close()
 	assertGoldenOutput(t, "plan_risk_categories.yaml.golden.txt", buf.String())
 }
+
+func copyEffectBoundFixture(t *testing.T, dstDir string) {
+	t.Helper()
+	copyFixtureDir(t, dstDir, "plan_effect_bound")
+}
+
+func TestGolden_plan_effect_bound_table(t *testing.T) {
+	root := t.TempDir()
+	copyEffectBoundFixture(t, root)
+	db := filepath.Join(t.TempDir(), "golden-plan-effect-bound.db")
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	assertGoldenOutput(t, "plan_effect_bound.table.golden.txt", out.String())
+}
+
+func TestGolden_plan_effect_bound_json(t *testing.T) {
+	root := t.TempDir()
+	copyEffectBoundFixture(t, root)
+	db := filepath.Join(t.TempDir(), "golden-plan-effect-bound-json.db")
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\nbody=%s", err, out.String())
+	}
+	subset := map[string]any{
+		"risk":            payload["risk"],
+		"riskItems":       payload["riskItems"],
+		"effectBound":     payload["effectBound"],
+		"capabilityDelta": payload["capabilityDelta"],
+		"effectDelta":     payload["effectDelta"],
+		"authority":       payload["authority"],
+	}
+	b, err := json.MarshalIndent(subset, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGoldenOutput(t, "plan_effect_bound.json.golden.txt", string(b)+"\n")
+}
+
+func TestGolden_plan_effect_bound_yaml(t *testing.T) {
+	root := t.TempDir()
+	copyEffectBoundFixture(t, root)
+	db := filepath.Join(t.TempDir(), "golden-plan-effect-bound-yaml.db")
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "yaml"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload plan.RiskExport
+	if err := yaml.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("yaml: %v\nbody=%s", err, out.String())
+	}
+	if len(payload.EffectBound) == 0 {
+		t.Fatalf("yaml missing effectBound:\n%s", out.String())
+	}
+	if payload.Authority == nil {
+		t.Fatalf("yaml missing authority:\n%s", out.String())
+	}
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(payload); err != nil {
+		t.Fatal(err)
+	}
+	_ = enc.Close()
+	assertGoldenOutput(t, "plan_effect_bound.yaml.golden.txt", buf.String())
+}

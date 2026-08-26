@@ -102,6 +102,48 @@ func TestComputeGraphBounds(t *testing.T) {
 			},
 		},
 		{
+			name: "static-and-autonomous-same-op",
+			g: graph(
+				toolsGithub(),
+				agent("reviewer", "tool.github.post_comment"),
+				workflow("review",
+					stepUses("comment", "tool.github.post_comment"),
+					stepAgent("run", "reviewer"),
+				),
+			),
+			check: func(t *testing.T, got GraphBounds) {
+				b := got.Workflows["review"]
+				w := witnessFor(b, "github.write")
+				requireReachability(t, w, KindToolOperation, Autonomous)
+				requireKind(t, w, KindAgent)
+				if hopReachability(w, KindToolOperation) == Static {
+					t.Fatalf("same-op grant must path-max to autonomous, got static: %+v", w)
+				}
+				requireReachability(t, witnessFor(b, "external.visible"), KindToolOperation, Autonomous)
+			},
+		},
+		{
+			name: "static-and-autonomous-same-ident",
+			g: graph(
+				toolsGithub(),
+				agent("reviewer", "tool.github.merge_pr"),
+				workflow("review",
+					stepUses("comment", "tool.github.post_comment"),
+					stepAgent("run", "reviewer"),
+				),
+			),
+			check: func(t *testing.T, got GraphBounds) {
+				b := got.Workflows["review"]
+				w := witnessFor(b, "github.write")
+				requireReachability(t, w, KindToolOperation, Autonomous)
+				if hopReachability(w, KindToolOperation) == Static {
+					t.Fatalf("ident reachable by grant must path-max to autonomous: %+v", w)
+				}
+				requireReachability(t, witnessFor(b, "external.visible"), KindToolOperation, Static)
+				requireReachability(t, witnessFor(b, "destructive"), KindToolOperation, Autonomous)
+			},
+		},
+		{
 			name: "diamond",
 			g: graph(
 				toolsGithub(),

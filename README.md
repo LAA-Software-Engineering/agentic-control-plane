@@ -30,9 +30,9 @@ Expanded diagram, plan-time bounds, and closed-world caveats: [`docs/architectur
 
 ## The differentiator: plan-time bounds on authority
 
-This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. ACP's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). That full bound is **not shipped yet**.
+This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. ACP's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). `agentctl plan` prints that bound and the authority delta vs stored deployment state.
 
-**Today** `agentctl plan` already diffs **permissions**, **approvals**, **models**, **budgets**, and **C1 risk items** against SQLite desired state:
+**Today** `agentctl plan` diffs **permissions**, **approvals**, **models**, **budgets**, **C1 risk items**, and **effect/capability/authority** against SQLite desired state:
 
 ```text
 Plan: 0 to add, 3 to change, 0 to delete
@@ -53,6 +53,24 @@ high:
 - [high] tool_surface_change: Agent tools list gained write-like tool "github" (Agent/reviewer).
 medium:
 - [medium] model_change: Agent model changed (Agent/reviewer).
+```
+
+When the graph declares tool operations, `plan` also prints the effect bound and an **authority delta** (`bound(desired)` vs `bound(deployed)`). Capability changes and effect changes are separate lines; `AUTONOMOUS` `WIDENED` means a nondeterministic agent's action space grew — including when a new grant does not add named effects.
+
+```text
+Effect bound (Workflow/pr-review):
+high:
+- [high] effect_bound: github.write       autonomous  Agent/reviewer may select tool.github.post_comment
+medium:
+- [medium] effect_bound: github.read        static      step fetch_pr
+
+Capability delta:
+Agent/reviewer
++ tool.github.post_comment
+
+Authority:
+  static      -> unchanged
+  autonomous  -> WIDENED
 ```
 
 Specs today are YAML (interchange / compilation output). The long-term authoring surface is [`.agent`](docs/adr/002-language-frontend-and-ir-expressiveness.md) ([#200](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/200)); until then you still write YAML — lead on **capability**, not format.
@@ -99,9 +117,9 @@ ACP is the **declarative governance/config layer** for agent systems — not a r
 | Durable execution / distributed scheduling | No | No | Optional checkpointers; not a durable-execution engine | Yes | N/A |
 | Code-first agent runtime | No (resource graph; YAML today) | Yes | Yes | Workflow SDK, not an agent runtime | No |
 | Desired-state plan / apply | Yes (`agentctl plan` / `apply` vs SQLite) | No | No | No | Yes |
-| Plan-time effect bound | **Direction / not shipped** ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#190](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/190) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)): bound over the **callable operation set**, including autonomous tool selection. No listed comparable. | No | No | No | No |
+| Plan-time effect bound | **Shipped** ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#190](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/190) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `agentctl plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
 
-The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/204)) is **not enforced** today (MCP `tools/list` can still expand the world). Today `agentctl plan` diffs permissions, approvals, models, budgets, and C1 risk items.
+The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/204)) is **not enforced** today (MCP `tools/list` can still expand the world). `agentctl plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
 
 ---
 
@@ -109,7 +127,7 @@ The bound is not over what those operations do at the far end; the trust anchor 
 
 - **`agentctl init`** — scaffold `project.yaml`, policies, tools, and a sample workflow  
 - **`agentctl validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references; runs **policy lint** (ungated sensitive tools, invalid HITL config, etc.) as **advisory** output — use **`--strict`** to exit **2** on high-severity lint findings (fail-closed safety metadata still gates at **run** even when lint passes)  
-- **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint; JSON/YAML output includes **`policyLint`** and a **`deploymentBaseline`** digest for the store snapshot  
+- **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint, effect bound, and authority delta; JSON/YAML output includes **`policyLint`**, **`deploymentBaseline`**, **`effectBound`**, and **`authority`**
 - **`agentctl apply`** — persist plan (TTY confirm or `--auto-approve` / `AGENTCTL_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
 - **`agentctl run`** — execute a workflow locally; JSON Schema for inputs where configured; policy gates pause for **human-in-the-loop (HITL)** approval when a tool call requires it  
 - **`agentctl logs`** — read **trace events** from SQLite (`--run`, `--workflow`, or recent runs)

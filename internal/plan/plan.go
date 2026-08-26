@@ -23,6 +23,33 @@ type Plan struct {
 	// DeploymentBaseline is a digest of applied_resources + applied_projects for this env at plan time.
 	// Apply rejects the plan if the store diverges (exit code 3; issue #78).
 	DeploymentBaseline string
+	// EffectBound is the desired-graph effect bound grouped by agent/workflow root (issue #191).
+	EffectBound []BoundSection
+	// Authority is bound(desired) vs bound(deployed) for CI gates (ADR 002 / issue #191).
+	Authority AuthorityDelta
+}
+
+// BoundSection is one agent or workflow effect bound for table/JSON/YAML (issue #191).
+type BoundSection struct {
+	RootKind string     `json:"rootKind" yaml:"rootKind"`
+	RootName string     `json:"rootName" yaml:"rootName"`
+	Items    []RiskItem `json:"items" yaml:"items"`
+}
+
+// AuthorityStatus is unchanged or widened for static/autonomous authority (issue #191).
+type AuthorityStatus string
+
+const (
+	AuthorityUnchanged AuthorityStatus = "unchanged"
+	AuthorityWidened   AuthorityStatus = "widened"
+)
+
+// AuthorityDelta is the structural static/autonomous comparison for CI gating.
+// JSON/YAML use these lowercase values; table output prints WIDENED in uppercase.
+type AuthorityDelta struct {
+	Static        AuthorityStatus `json:"static" yaml:"static"`
+	Autonomous    AuthorityStatus `json:"autonomous" yaml:"autonomous"`
+	EmptyBaseline bool            `json:"emptyBaseline,omitempty" yaml:"emptyBaseline,omitempty"`
 }
 
 // Operation is one create, update, or delete against a resource identity.
@@ -54,6 +81,10 @@ const (
 	RiskCategorySafety               RiskCategory = "safety"
 	RiskCategoryLint                 RiskCategory = "lint"
 	RiskCategoryEffectPermitWidening RiskCategory = "effect_permit_widening"
+	RiskCategoryEffectBound          RiskCategory = "effect_bound"
+	RiskCategoryEffectDelta          RiskCategory = "effect_delta"
+	RiskCategoryCapabilityDelta      RiskCategory = "capability_delta"
+	RiskCategoryAuthorityWidening    RiskCategory = "authority_widening"
 )
 
 // RiskSeverity is high / medium / low. Approval removal, write-like permission widening,
@@ -71,9 +102,10 @@ const (
 type RiskTargetKind string
 
 const (
-	RiskTargetPolicy RiskTargetKind = "policy"
-	RiskTargetAgent  RiskTargetKind = "agent"
-	RiskTargetTool   RiskTargetKind = "tool"
+	RiskTargetPolicy   RiskTargetKind = "policy"
+	RiskTargetAgent    RiskTargetKind = "agent"
+	RiskTargetTool     RiskTargetKind = "tool"
+	RiskTargetWorkflow RiskTargetKind = "workflow"
 )
 
 // RiskTarget identifies the changed resource for a [RiskItem].
@@ -83,7 +115,7 @@ type RiskTarget struct {
 }
 
 // WitnessHopKind is one node on a structured witness path (ADR 002 / issue #165).
-// C1 uses resource-level hops; #191 may add workflow → step → agent → tool.operation.
+// C1 uses resource-level hops; #191 maps Workflow → step → Agent → tool.operation from effects.Hop.
 type WitnessHopKind string
 
 const (
@@ -104,8 +136,8 @@ const (
 )
 
 // WitnessHop is one edge on a structured path from a workflow (or other root) to a
-// concrete tool operation. C1 does not compute effect bounds; hops are typically a
-// single static resource. #191 can append hops without a parallel rendering path.
+// concrete tool operation. Effect-bound items copy hop fields from effects.Hop
+// (kind, name, id, reachability) without importing a second render path.
 type WitnessHop struct {
 	Kind         WitnessHopKind      `json:"kind" yaml:"kind"`
 	Name         string              `json:"name,omitempty" yaml:"name,omitempty"`
@@ -120,6 +152,10 @@ type RiskItem struct {
 	Reason   string       `json:"reason" yaml:"reason"`
 	Target   RiskTarget   `json:"target" yaml:"target"`
 	Witness  []WitnessHop `json:"witness,omitempty" yaml:"witness,omitempty"`
+	// Ident is the effect identifier or tool.uses string for #191 bound/delta items.
+	Ident string `json:"ident,omitempty" yaml:"ident,omitempty"`
+	// Reachability is static or autonomous for the witnessing operation (#191).
+	Reachability WitnessReachability `json:"reachability,omitempty" yaml:"reachability,omitempty"`
 }
 
 // RiskSummary carries MVP plan risk signals (design doc §12.2, §10.2, issue #165).

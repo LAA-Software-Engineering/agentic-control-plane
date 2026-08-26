@@ -1,0 +1,338 @@
+risk:
+  - AUTONOMOUS authority WIDENED.
+  - Agent/reviewer gained tool.github.post_comment.
+  - Newly autonomous effect external.visible (workflow/pr-review).
+  - Newly autonomous effect github.write (workflow/pr-review).
+  - STATIC authority WIDENED.
+  - Newly static effect github.read (workflow/pr-review).
+  - Agent tools list gained "tool.github.post_comment" (Agent/reviewer).
+  - New agent binds a model (Agent/reviewer).
+  - New policy defines a cost ceiling (Policy/guarded-writes).
+riskItems:
+  - category: authority_widening
+    severity: high
+    reason: AUTONOMOUS authority WIDENED.
+    target:
+      kind: workflow
+      name: pr-review
+    reachability: autonomous
+  - category: capability_delta
+    severity: high
+    reason: Agent/reviewer gained tool.github.post_comment.
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.post_comment
+        reachability: autonomous
+    ident: tool.github.post_comment
+    reachability: autonomous
+  - category: effect_delta
+    severity: high
+    reason: Newly autonomous effect external.visible (workflow/pr-review).
+    target:
+      kind: workflow
+      name: pr-review
+    witness:
+      - kind: workflow
+        name: pr-review
+        reachability: static
+      - kind: step
+        name: review
+        id: review
+        reachability: static
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.post_comment
+        reachability: autonomous
+    ident: external.visible
+    reachability: autonomous
+  - category: effect_delta
+    severity: high
+    reason: Newly autonomous effect github.write (workflow/pr-review).
+    target:
+      kind: workflow
+      name: pr-review
+    witness:
+      - kind: workflow
+        name: pr-review
+        reachability: static
+      - kind: step
+        name: review
+        id: review
+        reachability: static
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.post_comment
+        reachability: autonomous
+    ident: github.write
+    reachability: autonomous
+  - category: authority_widening
+    severity: medium
+    reason: STATIC authority WIDENED.
+    target:
+      kind: workflow
+      name: pr-review
+    reachability: static
+  - category: effect_delta
+    severity: medium
+    reason: Newly static effect github.read (workflow/pr-review).
+    target:
+      kind: workflow
+      name: pr-review
+    witness:
+      - kind: workflow
+        name: pr-review
+        reachability: static
+      - kind: step
+        name: fetch_pr
+        id: fetch_pr
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.read_pr
+        reachability: static
+    ident: github.read
+    reachability: static
+  - category: tool_surface_change
+    severity: medium
+    reason: Agent tools list gained "tool.github.post_comment" (Agent/reviewer).
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+  - category: safety
+    severity: low
+    reason: New agent binds a model (Agent/reviewer).
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+  - category: safety
+    severity: low
+    reason: New policy defines a cost ceiling (Policy/guarded-writes).
+    target:
+      kind: policy
+      name: guarded-writes
+    witness:
+      - kind: policy
+        name: guarded-writes
+        reachability: static
+effectBound:
+  - rootKind: workflow
+    rootName: pr-review
+    items:
+      - category: effect_bound
+        severity: high
+        reason: external.visible   autonomous  Agent/reviewer may select tool.github.post_comment
+        target:
+          kind: workflow
+          name: pr-review
+        witness:
+          - kind: workflow
+            name: pr-review
+            reachability: static
+          - kind: step
+            name: review
+            id: review
+            reachability: static
+          - kind: agent
+            name: reviewer
+            reachability: static
+          - kind: tool_operation
+            name: tool.github.post_comment
+            reachability: autonomous
+        ident: external.visible
+        reachability: autonomous
+      - category: effect_bound
+        severity: medium
+        reason: github.read        static      step fetch_pr
+        target:
+          kind: workflow
+          name: pr-review
+        witness:
+          - kind: workflow
+            name: pr-review
+            reachability: static
+          - kind: step
+            name: fetch_pr
+            id: fetch_pr
+            reachability: static
+          - kind: tool_operation
+            name: tool.github.read_pr
+            reachability: static
+        ident: github.read
+        reachability: static
+      - category: effect_bound
+        severity: high
+        reason: github.write       autonomous  Agent/reviewer may select tool.github.post_comment
+        target:
+          kind: workflow
+          name: pr-review
+        witness:
+          - kind: workflow
+            name: pr-review
+            reachability: static
+          - kind: step
+            name: review
+            id: review
+            reachability: static
+          - kind: agent
+            name: reviewer
+            reachability: static
+          - kind: tool_operation
+            name: tool.github.post_comment
+            reachability: autonomous
+        ident: github.write
+        reachability: autonomous
+      - category: effect_bound
+        severity: low
+        reason: destructive        unreachable no grant path to tool.github.merge_pr
+        target:
+          kind: workflow
+          name: pr-review
+        ident: destructive
+  - rootKind: agent
+    rootName: reviewer
+    items:
+      - category: effect_bound
+        severity: high
+        reason: external.visible   autonomous  Agent/reviewer may select tool.github.post_comment
+        target:
+          kind: agent
+          name: reviewer
+        witness:
+          - kind: agent
+            name: reviewer
+            reachability: static
+          - kind: tool_operation
+            name: tool.github.post_comment
+            reachability: autonomous
+        ident: external.visible
+        reachability: autonomous
+      - category: effect_bound
+        severity: high
+        reason: github.write       autonomous  Agent/reviewer may select tool.github.post_comment
+        target:
+          kind: agent
+          name: reviewer
+        witness:
+          - kind: agent
+            name: reviewer
+            reachability: static
+          - kind: tool_operation
+            name: tool.github.post_comment
+            reachability: autonomous
+        ident: github.write
+        reachability: autonomous
+      - category: effect_bound
+        severity: low
+        reason: destructive        unreachable no grant path to tool.github.merge_pr
+        target:
+          kind: agent
+          name: reviewer
+        ident: destructive
+      - category: effect_bound
+        severity: low
+        reason: github.read        unreachable no grant path to tool.github.read_pr
+        target:
+          kind: agent
+          name: reviewer
+        ident: github.read
+capabilityDelta:
+  - category: capability_delta
+    severity: high
+    reason: Agent/reviewer gained tool.github.post_comment.
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.post_comment
+        reachability: autonomous
+    ident: tool.github.post_comment
+    reachability: autonomous
+effectDelta:
+  - category: effect_delta
+    severity: high
+    reason: Newly autonomous effect external.visible (workflow/pr-review).
+    target:
+      kind: workflow
+      name: pr-review
+    witness:
+      - kind: workflow
+        name: pr-review
+        reachability: static
+      - kind: step
+        name: review
+        id: review
+        reachability: static
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.post_comment
+        reachability: autonomous
+    ident: external.visible
+    reachability: autonomous
+  - category: effect_delta
+    severity: high
+    reason: Newly autonomous effect github.write (workflow/pr-review).
+    target:
+      kind: workflow
+      name: pr-review
+    witness:
+      - kind: workflow
+        name: pr-review
+        reachability: static
+      - kind: step
+        name: review
+        id: review
+        reachability: static
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.post_comment
+        reachability: autonomous
+    ident: github.write
+    reachability: autonomous
+  - category: effect_delta
+    severity: medium
+    reason: Newly static effect github.read (workflow/pr-review).
+    target:
+      kind: workflow
+      name: pr-review
+    witness:
+      - kind: workflow
+        name: pr-review
+        reachability: static
+      - kind: step
+        name: fetch_pr
+        id: fetch_pr
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.read_pr
+        reachability: static
+    ident: github.read
+    reachability: static
+authority:
+  static: widened
+  autonomous: widened
+  emptyBaseline: true

@@ -13,9 +13,26 @@ Plan: 0 to add, 3 to change, 0 to delete
 ~ update Tool/github
     spec.permissions.allow.1:  -> "issues.write"
 
+Effect bound (Agent/reviewer):
+high:
+- [high] effect_bound: unknown            autonomous  Agent/reviewer may select tool.github.echo
+- [high] effect_bound: unknown            autonomous  Agent/reviewer may select tool.helper.echo
+
+Capability delta:
+Agent/reviewer
++ tool.github.echo
+
+Effect delta:
++ unknown (tool.github.echo)
+
+Authority:
+  static      -> unchanged
+  autonomous  -> WIDENED
+
 Risk delta:
 high:
 - [high] approval_removal: Approval requirements removed for "tool.helper.echo" (Policy/default).
+- [high] authority_widening: AUTONOMOUS authority WIDENED.
 - [high] budget_relaxation: Cost ceiling increased (Policy/default).
 - [high] budget_relaxation: Wall-clock ceiling increased (Policy/default).
 - [high] permission_widening: New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.

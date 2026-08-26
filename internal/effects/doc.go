@@ -7,7 +7,7 @@
 // (#204 pin is not shipped).
 //
 // [Check] is a static validate/plan gate (exit 2). It does not change runtime
-// CheckToolCall. Plan bound/delta tables are #191.
+// CheckToolCall. Plan bound/delta tables are rendered by [plan] (issue #191).
 //
 // Two edge kinds are preserved on witness hops:
 //
@@ -16,9 +16,11 @@
 //     effects join the bound even when no uses: names them
 //
 // Grants resolve through concrete operations (tool.<name>.<operation>), never
-// effect classes. A reachable operation with no declared effects is an explicit
-// unknown (fail-closed), not an empty/allow set. Declared effects on operations
-// not reachable from a root are reported as [Unreachable], not omitted.
+// effect classes. If an ident is reachable by both a static uses: and an
+// autonomous grant, the public witness is the autonomous path (path-max). A
+// reachable operation with no declared effects is an explicit unknown
+// (fail-closed), not an empty/allow set. Declared effects on operations not
+// reachable from a root are reported as [Unreachable], not omitted.
 //
 // Cyclic graphs terminate via a visiting set (least fixed point). Production YAML
 // has no subworkflows (#194); tests inject synthetic workflow→workflow edges.

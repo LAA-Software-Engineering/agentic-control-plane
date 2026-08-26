@@ -490,3 +490,162 @@ func TestPlan_yaml_riskItems_structuredAndStringList(t *testing.T) {
 		t.Fatalf("yaml combined approval+budget not distinct: %#v", cats)
 	}
 }
+
+func TestPlan_json_effectBoundAndAuthority(t *testing.T) {
+	root := t.TempDir()
+	copyEffectBoundFixture(t, root)
+	db := filepath.Join(t.TempDir(), "plan-effect-bound-json.db")
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\nbody=%s", err, out.String())
+	}
+	bound, ok := payload["effectBound"].([]any)
+	if !ok || len(bound) == 0 {
+		t.Fatalf("effectBound missing: %#v", payload["effectBound"])
+	}
+	auth, ok := payload["authority"].(map[string]any)
+	if !ok {
+		t.Fatalf("authority missing: %#v", payload["authority"])
+	}
+	if auth["autonomous"] != "widened" {
+		t.Fatalf("authority.autonomous: %#v", auth["autonomous"])
+	}
+	var sawWitness bool
+	for _, raw := range bound {
+		sec, _ := raw.(map[string]any)
+		items, _ := sec["items"].([]any)
+		for _, ir := range items {
+			it, _ := ir.(map[string]any)
+			if hops, ok := it["witness"].([]any); ok && len(hops) > 0 {
+				hop, _ := hops[0].(map[string]any)
+				if hop["kind"] != nil && hop["reachability"] != nil {
+					sawWitness = true
+				}
+			}
+		}
+	}
+	if !sawWitness {
+		t.Fatalf("effectBound items missing structured witness:\n%s", out.String())
+	}
+}
+
+func TestPlan_addGrant_autonomousEffectDelta(t *testing.T) {
+	root := t.TempDir()
+	copyEffectBoundFixture(t, root)
+	replaceFile(t, filepath.Join(root, "agent.yaml"), "    - tool.github.post_comment\n", "")
+	db := filepath.Join(t.TempDir(), "plan-effect-grant.db")
+	applyProjectGraph(t, root, db)
+	replaceFile(t, filepath.Join(root, "agent.yaml"), "  tools:\n", "  tools:\n    - tool.github.post_comment\n")
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\nbody=%s", err, out.String())
+	}
+	auth, _ := payload["authority"].(map[string]any)
+	if auth["autonomous"] != "widened" {
+		t.Fatalf("authority.autonomous: %#v\n%s", auth, out.String())
+	}
+	var sawCap, sawWrite bool
+	for _, raw := range asSlice(payload["capabilityDelta"]) {
+		m, _ := raw.(map[string]any)
+		if m["ident"] == "tool.github.post_comment" {
+			sawCap = true
+		}
+	}
+	for _, raw := range asSlice(payload["effectDelta"]) {
+		m, _ := raw.(map[string]any)
+		ident, _ := m["ident"].(string)
+		if strings.Contains(ident, "github.write") || strings.Contains(ident, "external.visible") {
+			if m["severity"] != "high" || m["reachability"] != "autonomous" {
+				t.Fatalf("new autonomous effect: %#v", m)
+			}
+			sawWrite = true
+		}
+	}
+	if !sawCap {
+		t.Fatalf("capabilityDelta missing post_comment:\n%s", out.String())
+	}
+	if !sawWrite {
+		t.Fatalf("effectDelta missing new autonomous write:\n%s", out.String())
+	}
+}
+
+func TestPlan_capabilityWidensEmptyEffectDelta(t *testing.T) {
+	root := t.TempDir()
+	copyEffectBoundFixture(t, root)
+	chat := `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: chat
+spec:
+  type: native
+  safety:
+    trusted: true
+    sideEffects: false
+  operations:
+    post:
+      effects: [github.write, external.visible]
+`
+	if err := os.WriteFile(filepath.Join(root, "chat.yaml"), []byte(chat), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	replaceFile(t, filepath.Join(root, "project.yaml"), "    - ./tool.yaml\n", "    - ./tool.yaml\n    - ./chat.yaml\n")
+	db := filepath.Join(t.TempDir(), "plan-cap-only.db")
+	applyProjectGraph(t, root, db)
+	replaceFile(t, filepath.Join(root, "agent.yaml"), "    - tool.github.post_comment\n", "    - tool.github.post_comment\n    - tool.chat.post\n")
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--project", root, "--state", db, "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v\nbody=%s", err, out.String())
+	}
+	if _, ok := payload["effectDelta"]; ok && len(asSlice(payload["effectDelta"])) > 0 {
+		t.Fatalf("effectDelta should be empty: %#v\n%s", payload["effectDelta"], out.String())
+	}
+	var sawChat bool
+	for _, raw := range asSlice(payload["capabilityDelta"]) {
+		m, _ := raw.(map[string]any)
+		if m["ident"] == "tool.chat.post" {
+			sawChat = true
+		}
+	}
+	if !sawChat {
+		t.Fatalf("capabilityDelta missing tool.chat.post:\n%s", out.String())
+	}
+	auth, _ := payload["authority"].(map[string]any)
+	if auth["autonomous"] != "widened" {
+		t.Fatalf("authority.autonomous: %#v", auth)
+	}
+}
+
+func asSlice(v any) []any {
+	s, _ := v.([]any)
+	return s
+}

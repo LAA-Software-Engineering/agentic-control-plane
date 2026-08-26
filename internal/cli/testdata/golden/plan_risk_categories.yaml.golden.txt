@@ -1,7 +1,10 @@
 risk:
   - Approval requirements removed for "tool.helper.echo" (Policy/default).
+  - AUTONOMOUS authority WIDENED.
   - Cost ceiling increased (Policy/default).
   - Wall-clock ceiling increased (Policy/default).
+  - Agent/reviewer gained tool.github.echo.
+  - Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).
   - New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
   - Agent tools list gained write-like tool "github" (Agent/reviewer).
   - Agent model changed (Agent/reviewer).
@@ -16,6 +19,13 @@ riskItems:
       - kind: policy
         name: default
         reachability: static
+  - category: authority_widening
+    severity: high
+    reason: AUTONOMOUS authority WIDENED.
+    target:
+      kind: agent
+      name: reviewer
+    reachability: autonomous
   - category: budget_relaxation
     severity: high
     reason: Cost ceiling increased (Policy/default).
@@ -36,6 +46,36 @@ riskItems:
       - kind: policy
         name: default
         reachability: static
+  - category: capability_delta
+    severity: high
+    reason: Agent/reviewer gained tool.github.echo.
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.echo
+        reachability: autonomous
+    ident: tool.github.echo
+    reachability: autonomous
+  - category: effect_delta
+    severity: high
+    reason: Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.echo
+        reachability: autonomous
+    ident: unknown (tool.github.echo)
+    reachability: autonomous
   - category: permission_widening
     severity: high
     reason: New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
@@ -66,3 +106,72 @@ riskItems:
       - kind: agent
         name: reviewer
         reachability: static
+effectBound:
+  - rootKind: agent
+    rootName: reviewer
+    items:
+      - category: effect_bound
+        severity: high
+        reason: unknown            autonomous  Agent/reviewer may select tool.github.echo
+        target:
+          kind: agent
+          name: reviewer
+        witness:
+          - kind: agent
+            name: reviewer
+            reachability: static
+          - kind: tool_operation
+            name: tool.github.echo
+            reachability: autonomous
+        ident: unknown
+        reachability: autonomous
+      - category: effect_bound
+        severity: high
+        reason: unknown            autonomous  Agent/reviewer may select tool.helper.echo
+        target:
+          kind: agent
+          name: reviewer
+        witness:
+          - kind: agent
+            name: reviewer
+            reachability: static
+          - kind: tool_operation
+            name: tool.helper.echo
+            reachability: autonomous
+        ident: unknown
+        reachability: autonomous
+capabilityDelta:
+  - category: capability_delta
+    severity: high
+    reason: Agent/reviewer gained tool.github.echo.
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.echo
+        reachability: autonomous
+    ident: tool.github.echo
+    reachability: autonomous
+effectDelta:
+  - category: effect_delta
+    severity: high
+    reason: Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).
+    target:
+      kind: agent
+      name: reviewer
+    witness:
+      - kind: agent
+        name: reviewer
+        reachability: static
+      - kind: tool_operation
+        name: tool.github.echo
+        reachability: autonomous
+    ident: unknown (tool.github.echo)
+    reachability: autonomous
+authority:
+  static: unchanged
+  autonomous: widened

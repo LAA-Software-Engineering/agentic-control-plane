@@ -108,11 +108,19 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 
 	risk := summarizeRisks(g, appliedByID, desiredByID, ops)
 	risk = mergePolicyLintRisk(g, risk)
+	ea := attachEffectAuthority(g, applied)
+	risk = mergeEffectAuthority(risk, ea.items)
 	fp, err := DeploymentStateFingerprint(ctx, p.Deploy, env, projectName)
 	if err != nil {
 		return nil, err
 	}
-	return &Plan{Operations: ops, Risk: risk, DeploymentBaseline: fp}, nil
+	return &Plan{
+		Operations:         ops,
+		Risk:               risk,
+		DeploymentBaseline: fp,
+		EffectBound:        ea.bound,
+		Authority:          ea.auth,
+	}, nil
 }
 
 func desiredRows(g *spec.ProjectGraph) ([]desiredRow, error) {

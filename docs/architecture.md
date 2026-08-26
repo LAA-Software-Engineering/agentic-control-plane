@@ -21,22 +21,23 @@ flowchart TB
 | Stage | What happens |
 |-------|----------------|
 | **Source graph** | Versioned resources (`Project`, `Agent`, `Tool`, `Workflow`, `Policy`, `Environment`). Today that graph is YAML — interchange / compilation output, not the long-term authoring surface. [`.agent`](adr/002-language-frontend-and-ir-expressiveness.md) is planned ([#200](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/200)). |
-| **validate / plan** | Load, normalize, overlay environments, lint policy, then **diff** desired graph vs SQLite deployment state. Plan output includes field diffs plus C1 `RiskItem`s (permissions, approvals, models, budgets, tool surface). |
+| **validate / plan** | Load, normalize, overlay environments, lint policy, then **diff** desired graph vs SQLite deployment state. Plan output includes field diffs, C1 `RiskItem`s (permissions, approvals, models, budgets, tool surface), the desired **effect bound**, and an **authority delta** vs deployed state. |
 | **SQLite desired state** | Applied resources live in `.agentic/state.db` (override with `--state`). Deployment rows are separate from run traces in the same file. |
 | **engine** | `agentctl run` executes a workflow against the applied snapshot. Policy gates tool calls; HITL / `--approve` / fail-closed denials are recorded. |
 | **tools + models** | Native, HTTP, mock, and MCP tools; OpenAI / Anthropic / mock models. Agents may only call advertised `uses` strings. |
 | **trace / logs / audit** | Hash-linked `trace_events`. `agentctl logs` reads them; `agentctl audit verify` re-walks the chain. |
 
-## Plan-time bounds (shipped vs direction)
+## Plan-time bounds
 
-The uncopyable capability is a **plan-time effect bound**: a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). Compute over the desired graph is [`internal/effects.Compute`](../internal/effects) (#189); plan output of bounds/deltas is **not shipped** (#191).
+The uncopyable capability is a **plan-time effect bound**: a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). Compute over the desired graph is [`internal/effects.Compute`](../internal/effects) (#189); `agentctl plan` prints the bound and `bound(desired)` vs `bound(deployed)` authority delta (#191).
 
-**What `agentctl plan` already diffs today:**
+**What `agentctl plan` diffs today:**
 
 - Tool **permissions** (`spec.permissions.allow`)
 - Policy **approvals** (`approvals.requiredFor`) and **budgets** (cost / wall-clock)
 - Agent **models** and **tool surface**
 - C1 **risk items** (`permission_widening`, `approval_removal`, `budget_relaxation`, `model_change`, `tool_surface_change`, plus safety/lint)
+- **Effect bound** and **authority delta** (`effect_bound`, `effect_delta`, `capability_delta`, `authority_widening`; JSON `authority.static` / `authority.autonomous`)
 
 See the sample `plan` table in the [README](../README.md#the-differentiator-plan-time-bounds-on-authority).
 

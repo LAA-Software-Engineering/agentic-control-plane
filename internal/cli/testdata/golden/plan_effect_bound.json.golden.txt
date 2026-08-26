@@ -1,0 +1,519 @@
+{
+  "authority": {
+    "autonomous": "widened",
+    "emptyBaseline": true,
+    "static": "widened"
+  },
+  "capabilityDelta": [
+    {
+      "category": "capability_delta",
+      "ident": "tool.github.post_comment",
+      "reachability": "autonomous",
+      "reason": "Agent/reviewer gained tool.github.post_comment.",
+      "severity": "high",
+      "target": {
+        "kind": "agent",
+        "name": "reviewer"
+      },
+      "witness": [
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.post_comment",
+          "reachability": "autonomous"
+        }
+      ]
+    }
+  ],
+  "effectBound": [
+    {
+      "items": [
+        {
+          "category": "effect_bound",
+          "ident": "external.visible",
+          "reachability": "autonomous",
+          "reason": "external.visible   autonomous  Agent/reviewer may select tool.github.post_comment",
+          "severity": "high",
+          "target": {
+            "kind": "workflow",
+            "name": "pr-review"
+          },
+          "witness": [
+            {
+              "kind": "workflow",
+              "name": "pr-review",
+              "reachability": "static"
+            },
+            {
+              "id": "review",
+              "kind": "step",
+              "name": "review",
+              "reachability": "static"
+            },
+            {
+              "kind": "agent",
+              "name": "reviewer",
+              "reachability": "static"
+            },
+            {
+              "kind": "tool_operation",
+              "name": "tool.github.post_comment",
+              "reachability": "autonomous"
+            }
+          ]
+        },
+        {
+          "category": "effect_bound",
+          "ident": "github.read",
+          "reachability": "static",
+          "reason": "github.read        static      step fetch_pr",
+          "severity": "medium",
+          "target": {
+            "kind": "workflow",
+            "name": "pr-review"
+          },
+          "witness": [
+            {
+              "kind": "workflow",
+              "name": "pr-review",
+              "reachability": "static"
+            },
+            {
+              "id": "fetch_pr",
+              "kind": "step",
+              "name": "fetch_pr",
+              "reachability": "static"
+            },
+            {
+              "kind": "tool_operation",
+              "name": "tool.github.read_pr",
+              "reachability": "static"
+            }
+          ]
+        },
+        {
+          "category": "effect_bound",
+          "ident": "github.write",
+          "reachability": "autonomous",
+          "reason": "github.write       autonomous  Agent/reviewer may select tool.github.post_comment",
+          "severity": "high",
+          "target": {
+            "kind": "workflow",
+            "name": "pr-review"
+          },
+          "witness": [
+            {
+              "kind": "workflow",
+              "name": "pr-review",
+              "reachability": "static"
+            },
+            {
+              "id": "review",
+              "kind": "step",
+              "name": "review",
+              "reachability": "static"
+            },
+            {
+              "kind": "agent",
+              "name": "reviewer",
+              "reachability": "static"
+            },
+            {
+              "kind": "tool_operation",
+              "name": "tool.github.post_comment",
+              "reachability": "autonomous"
+            }
+          ]
+        },
+        {
+          "category": "effect_bound",
+          "ident": "destructive",
+          "reason": "destructive        unreachable no grant path to tool.github.merge_pr",
+          "severity": "low",
+          "target": {
+            "kind": "workflow",
+            "name": "pr-review"
+          }
+        }
+      ],
+      "rootKind": "workflow",
+      "rootName": "pr-review"
+    },
+    {
+      "items": [
+        {
+          "category": "effect_bound",
+          "ident": "external.visible",
+          "reachability": "autonomous",
+          "reason": "external.visible   autonomous  Agent/reviewer may select tool.github.post_comment",
+          "severity": "high",
+          "target": {
+            "kind": "agent",
+            "name": "reviewer"
+          },
+          "witness": [
+            {
+              "kind": "agent",
+              "name": "reviewer",
+              "reachability": "static"
+            },
+            {
+              "kind": "tool_operation",
+              "name": "tool.github.post_comment",
+              "reachability": "autonomous"
+            }
+          ]
+        },
+        {
+          "category": "effect_bound",
+          "ident": "github.write",
+          "reachability": "autonomous",
+          "reason": "github.write       autonomous  Agent/reviewer may select tool.github.post_comment",
+          "severity": "high",
+          "target": {
+            "kind": "agent",
+            "name": "reviewer"
+          },
+          "witness": [
+            {
+              "kind": "agent",
+              "name": "reviewer",
+              "reachability": "static"
+            },
+            {
+              "kind": "tool_operation",
+              "name": "tool.github.post_comment",
+              "reachability": "autonomous"
+            }
+          ]
+        },
+        {
+          "category": "effect_bound",
+          "ident": "destructive",
+          "reason": "destructive        unreachable no grant path to tool.github.merge_pr",
+          "severity": "low",
+          "target": {
+            "kind": "agent",
+            "name": "reviewer"
+          }
+        },
+        {
+          "category": "effect_bound",
+          "ident": "github.read",
+          "reason": "github.read        unreachable no grant path to tool.github.read_pr",
+          "severity": "low",
+          "target": {
+            "kind": "agent",
+            "name": "reviewer"
+          }
+        }
+      ],
+      "rootKind": "agent",
+      "rootName": "reviewer"
+    }
+  ],
+  "effectDelta": [
+    {
+      "category": "effect_delta",
+      "ident": "external.visible",
+      "reachability": "autonomous",
+      "reason": "Newly autonomous effect external.visible (workflow/pr-review).",
+      "severity": "high",
+      "target": {
+        "kind": "workflow",
+        "name": "pr-review"
+      },
+      "witness": [
+        {
+          "kind": "workflow",
+          "name": "pr-review",
+          "reachability": "static"
+        },
+        {
+          "id": "review",
+          "kind": "step",
+          "name": "review",
+          "reachability": "static"
+        },
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.post_comment",
+          "reachability": "autonomous"
+        }
+      ]
+    },
+    {
+      "category": "effect_delta",
+      "ident": "github.write",
+      "reachability": "autonomous",
+      "reason": "Newly autonomous effect github.write (workflow/pr-review).",
+      "severity": "high",
+      "target": {
+        "kind": "workflow",
+        "name": "pr-review"
+      },
+      "witness": [
+        {
+          "kind": "workflow",
+          "name": "pr-review",
+          "reachability": "static"
+        },
+        {
+          "id": "review",
+          "kind": "step",
+          "name": "review",
+          "reachability": "static"
+        },
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.post_comment",
+          "reachability": "autonomous"
+        }
+      ]
+    },
+    {
+      "category": "effect_delta",
+      "ident": "github.read",
+      "reachability": "static",
+      "reason": "Newly static effect github.read (workflow/pr-review).",
+      "severity": "medium",
+      "target": {
+        "kind": "workflow",
+        "name": "pr-review"
+      },
+      "witness": [
+        {
+          "kind": "workflow",
+          "name": "pr-review",
+          "reachability": "static"
+        },
+        {
+          "id": "fetch_pr",
+          "kind": "step",
+          "name": "fetch_pr",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.read_pr",
+          "reachability": "static"
+        }
+      ]
+    }
+  ],
+  "risk": [
+    "AUTONOMOUS authority WIDENED.",
+    "Agent/reviewer gained tool.github.post_comment.",
+    "Newly autonomous effect external.visible (workflow/pr-review).",
+    "Newly autonomous effect github.write (workflow/pr-review).",
+    "STATIC authority WIDENED.",
+    "Newly static effect github.read (workflow/pr-review).",
+    "Agent tools list gained \"tool.github.post_comment\" (Agent/reviewer).",
+    "New agent binds a model (Agent/reviewer).",
+    "New policy defines a cost ceiling (Policy/guarded-writes)."
+  ],
+  "riskItems": [
+    {
+      "category": "authority_widening",
+      "reachability": "autonomous",
+      "reason": "AUTONOMOUS authority WIDENED.",
+      "severity": "high",
+      "target": {
+        "kind": "workflow",
+        "name": "pr-review"
+      }
+    },
+    {
+      "category": "capability_delta",
+      "ident": "tool.github.post_comment",
+      "reachability": "autonomous",
+      "reason": "Agent/reviewer gained tool.github.post_comment.",
+      "severity": "high",
+      "target": {
+        "kind": "agent",
+        "name": "reviewer"
+      },
+      "witness": [
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.post_comment",
+          "reachability": "autonomous"
+        }
+      ]
+    },
+    {
+      "category": "effect_delta",
+      "ident": "external.visible",
+      "reachability": "autonomous",
+      "reason": "Newly autonomous effect external.visible (workflow/pr-review).",
+      "severity": "high",
+      "target": {
+        "kind": "workflow",
+        "name": "pr-review"
+      },
+      "witness": [
+        {
+          "kind": "workflow",
+          "name": "pr-review",
+          "reachability": "static"
+        },
+        {
+          "id": "review",
+          "kind": "step",
+          "name": "review",
+          "reachability": "static"
+        },
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.post_comment",
+          "reachability": "autonomous"
+        }
+      ]
+    },
+    {
+      "category": "effect_delta",
+      "ident": "github.write",
+      "reachability": "autonomous",
+      "reason": "Newly autonomous effect github.write (workflow/pr-review).",
+      "severity": "high",
+      "target": {
+        "kind": "workflow",
+        "name": "pr-review"
+      },
+      "witness": [
+        {
+          "kind": "workflow",
+          "name": "pr-review",
+          "reachability": "static"
+        },
+        {
+          "id": "review",
+          "kind": "step",
+          "name": "review",
+          "reachability": "static"
+        },
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.post_comment",
+          "reachability": "autonomous"
+        }
+      ]
+    },
+    {
+      "category": "authority_widening",
+      "reachability": "static",
+      "reason": "STATIC authority WIDENED.",
+      "severity": "medium",
+      "target": {
+        "kind": "workflow",
+        "name": "pr-review"
+      }
+    },
+    {
+      "category": "effect_delta",
+      "ident": "github.read",
+      "reachability": "static",
+      "reason": "Newly static effect github.read (workflow/pr-review).",
+      "severity": "medium",
+      "target": {
+        "kind": "workflow",
+        "name": "pr-review"
+      },
+      "witness": [
+        {
+          "kind": "workflow",
+          "name": "pr-review",
+          "reachability": "static"
+        },
+        {
+          "id": "fetch_pr",
+          "kind": "step",
+          "name": "fetch_pr",
+          "reachability": "static"
+        },
+        {
+          "kind": "tool_operation",
+          "name": "tool.github.read_pr",
+          "reachability": "static"
+        }
+      ]
+    },
+    {
+      "category": "tool_surface_change",
+      "reason": "Agent tools list gained \"tool.github.post_comment\" (Agent/reviewer).",
+      "severity": "medium",
+      "target": {
+        "kind": "agent",
+        "name": "reviewer"
+      },
+      "witness": [
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        }
+      ]
+    },
+    {
+      "category": "safety",
+      "reason": "New agent binds a model (Agent/reviewer).",
+      "severity": "low",
+      "target": {
+        "kind": "agent",
+        "name": "reviewer"
+      },
+      "witness": [
+        {
+          "kind": "agent",
+          "name": "reviewer",
+          "reachability": "static"
+        }
+      ]
+    },
+    {
+      "category": "safety",
+      "reason": "New policy defines a cost ceiling (Policy/guarded-writes).",
+      "severity": "low",
+      "target": {
+        "kind": "policy",
+        "name": "guarded-writes"
+      },
+      "witness": [
+        {
+          "kind": "policy",
+          "name": "guarded-writes",
+          "reachability": "static"
+        }
+      ]
+    }
+  ]
+}

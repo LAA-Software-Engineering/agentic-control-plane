@@ -55,6 +55,12 @@ func TestExportRisk_emptySlicesNotNil(t *testing.T) {
 	if _, ok := m["riskItems"].([]RiskItem); !ok {
 		t.Fatalf("riskItems %T", m["riskItems"])
 	}
+	if _, ok := m["effectBound"]; ok {
+		t.Fatalf("nil plan should omit effectBound")
+	}
+	if _, ok := m["authority"]; ok {
+		t.Fatalf("nil plan should omit authority")
+	}
 }
 
 func TestExportRisk_includesWitnessHops(t *testing.T) {

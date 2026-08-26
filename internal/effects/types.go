@@ -41,7 +41,8 @@ type Effect struct {
 	// Uses is the witnessing tool.<name>.<operation>.
 	Uses string `json:"uses,omitempty" yaml:"uses,omitempty"`
 	// Witness is at least one path Workflow → step → Agent → tool.operation
-	// (agent-only roots omit workflow/step hops).
+	// (agent-only roots omit workflow/step hops). If any witnessing path is
+	// autonomous, Witness is that path (path-max), not the first static uses:.
 	Witness []Hop `json:"witness,omitempty" yaml:"witness,omitempty"`
 	// occurrences is every reachable op that declares Ident. [Check] uses this
 	// so requiresApproval is not limited to the first-witness Uses.
