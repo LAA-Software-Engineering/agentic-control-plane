@@ -63,6 +63,7 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 						Needs:         []string{"setup"},
 						Pos:           Pos{File: "workflow.yaml", Line: 8, Column: 5},
 						AgentPos:      Pos{File: "workflow.yaml", Line: 9, Column: 14},
+						WorkflowPos:   Pos{File: "workflow.yaml", Line: 11, Column: 16},
 						NeedsPos:      []Pos{{File: "workflow.yaml", Line: 10, Column: 9}},
 						NeedsDeclared: true,
 					}},
@@ -130,6 +131,9 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 	st := cl.Workflows["w"].Spec.Steps[0]
 	if st.AgentPos.Line != 9 || st.Pos.Line != 8 {
 		t.Fatalf("step pos dropped: %#v", st)
+	}
+	if st.WorkflowPos.Line != 11 {
+		t.Fatalf("WorkflowPos dropped: %#v", st)
 	}
 	if !st.NeedsDeclared || len(st.NeedsPos) != 1 || st.NeedsPos[0].Line != 10 {
 		t.Fatalf("NeedsPos dropped: %#v", st)

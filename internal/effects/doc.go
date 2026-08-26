@@ -22,6 +22,6 @@
 // (fail-closed), not an empty/allow set. Declared effects on operations not
 // reachable from a root are reported as [Unreachable], not omitted.
 //
-// Cyclic graphs terminate via a visiting set (least fixed point). Production YAML
-// has no subworkflows (#194); tests inject synthetic workflow→workflow edges.
+// Cyclic graphs terminate via a visiting set (least fixed point). Production
+// `workflow:` steps are walked; tests may still inject extra workflow→workflow edges.
 package effects

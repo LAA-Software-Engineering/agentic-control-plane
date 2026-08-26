@@ -69,7 +69,7 @@ func TestValidateProjectGraph_workflowStepBothAgentAndUses(t *testing.T) {
 		},
 	}
 	err := ValidateProjectGraph(g, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "both agent and uses") {
+	if err == nil || !strings.Contains(err.Error(), "both agent and uses") && !strings.Contains(err.Error(), "more than one of agent, uses, or workflow") {
 		t.Fatalf("expected both agent and uses error, got %v", err)
 	}
 }
@@ -87,7 +87,7 @@ func TestValidateProjectGraph_workflowStepNeitherAgentNorUses(t *testing.T) {
 		},
 	}
 	err := ValidateProjectGraph(g, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "exactly one of agent or uses") {
+	if err == nil || !strings.Contains(err.Error(), "exactly one of agent, uses, or workflow") {
 		t.Fatalf("expected step shape error, got %v", err)
 	}
 }

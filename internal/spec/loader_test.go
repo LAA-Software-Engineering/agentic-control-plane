@@ -159,6 +159,7 @@ func stripResourcePos(res any) any {
 			r.Spec.Steps[i].Pos = Pos{}
 			r.Spec.Steps[i].UsesPos = Pos{}
 			r.Spec.Steps[i].AgentPos = Pos{}
+			r.Spec.Steps[i].WorkflowPos = Pos{}
 		}
 	case *PolicyResource:
 		r.Pos = Pos{}

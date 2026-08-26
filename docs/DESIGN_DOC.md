@@ -786,6 +786,22 @@ Static fan-in (author-declared parallel branches) uses `needs:`:
         quality: ${steps.quality.output}
 ```
 
+A `workflow:` step invokes another Workflow by static name (ADR 002 graph structure — not an expression):
+
+```yaml
+    - id: compose
+      workflow: fetch-and-review
+      with:
+        repo: ${input.repo}
+        number: ${input.number}
+    - id: post_comment
+      uses: tool.github.pull_request.comment
+      with:
+        body: ${steps.compose.output.summary}
+```
+
+`with:` is the callee's input. The callee's `output.value` becomes this step's output (`${steps.compose.output…}`).
+
 ### Workflow graph rules
 
 * If **no** step declares `needs:`, YAML order is an **implicit chain** (step *i* waits for step *i-1*). Existing sequential workflows keep that behavior.
@@ -797,11 +813,22 @@ Static fan-in (author-declared parallel branches) uses `needs:`:
 * Checkpoints store a **per-step completion set** (`completed` plus `steps` outputs). Resume skips completed IDs and can continue a parallel group after one branch finished.
 * Trace events record wall-clock insert order (`seq`) and a stable **`logicalOrder`** (YAML step index) in `data_json` so concurrent runs remain deterministically replayable; the audit chain still hashes stored rows including `data_json`.
 
+### Subworkflow steps (issue #194)
+
+* Exactly one of `agent:`, `uses:`, or `workflow:` on each step. Sequential YAML without `workflow:` is unchanged.
+* The callee is a statically named `Workflow` resource in the project graph. No conditionals, loops, or expression-selected callees.
+* Direct and mutual recursion fail `validate` with YAML positions on the `workflow:` field (same cycle-detection style as `needs:`).
+* Nesting is bounded by `spec.limits.maxWorkflowNesting` (default [`DefaultMaxWorkflowNesting`](../internal/spec/limits.go) = 8; 0/omitted uses the default). Exceeding the cap fails validate (and run) with a clear `maxWorkflowNesting` message.
+* **Policy (fail-closed):** a `workflow:` step enforces **both** the caller's and the callee's `spec.policy` ([`policy.StricterOf`](../internal/policy/stricter.go)). Either evaluator may deny. Merged `PolicySpec` for HITL uses the tighter cost/time ceilings and the **union** of `hitl.interruptOn` keys.
+* Effect bounds walk `workflow:` steps; the caller's bound includes the callee's effects and the witness path shows the nesting (caller workflow → call step → callee workflow → …).
+* Traces emit `workflow_call_started` / `workflow_call_finished` and stamp `data_json.callStack` (callee names from the root) so `agentctl logs` shows the call structure. Nested `run_steps` use qualified ids `parentStep/childStep`.
+* Checkpoints stack in-flight callee progress (`nested`) plus the outer DAG completion set. Resume continues **mid-subworkflow** without replaying completed inner or outer steps.
+
 ### MVP workflow rules
 
 * steps execute as a DAG; with no `needs:` keys, YAML order is an implicit sequential chain
-* each step has either `agent` or `uses`
-* `with` maps inputs
+* each step has exactly one of `agent`, `uses`, or `workflow`
+* `with` maps inputs (`workflow:` maps to the callee's input; callee `output.value` is the step output)
 * `${...}` interpolation supported
 * output can map from prior step outputs
 * only manual trigger in MVP
@@ -1690,14 +1717,15 @@ type TraceEvent struct {
 }
 ```
 
-Event types (issue #115 closed taxonomy, `TaxonomyVersion` 1):
+Event types (issue #115 closed taxonomy, `TaxonomyVersion` 3):
 
 * run_started, run_finished, run_error
 * llm_completion
 * tool_selection, tool_execution
 * hitl_request_created, hitl_decision_submitted, hitl_resolution_applied
 * memory_read, memory_write (reserved)
-* system_error
+* system_error, limit_hit
+* workflow_call_started, workflow_call_finished (issue #194)
 
 Legacy dot-notation types (`run.started`, `tool.called`, …) are normalized to the above on read and by SQLite migration `006`.
 
@@ -1760,8 +1788,8 @@ the desired graph. `validate`/`plan` would bound desired; `run` would enforce th
 manifest — this package only computes desired-graph bounds. A remote `tools/list` expansion
 is out of scope until the pin lands.
 
-Walks use a visiting set (least fixed point) so cyclic graphs terminate. Production YAML has
-no subworkflows (#194); diamond reuse of one agent does not duplicate infinitely.
+Walks use a visiting set (least fixed point) so cyclic graphs terminate. Production `workflow:`
+steps are walked (issue #194); diamond reuse of one agent does not duplicate infinitely.
 
 ---
 
@@ -1819,6 +1847,18 @@ body: "Summary: ${steps.review.output.summary}"  # string
     number: ${input.number}
 ```
 
+### Workflow step (issue #194)
+
+```yaml
+- id: compose
+  workflow: fetch-and-review
+  with:
+    repo: ${input.repo}
+    number: ${input.number}
+```
+
+The callee is a static `Workflow` metadata name. `with:` is interpolated in the caller then validated as the callee's input. The callee's `output.value` is this step's `output`. Recursion is a validate error (positions on `workflow:`). Depth is capped by `maxWorkflowNesting` (default 8). Policy is the stricter of caller and callee (both must pass; tighter budgets win; HITL `interruptOn` is unioned). Nested traces and mid-subworkflow checkpoints are described in §7.4.
+
 MVP step result shape:
 
 ```json
@@ -1842,6 +1882,12 @@ MVP step result shape:
 Checkpoints persist `completed` (sorted step IDs) plus step outputs. Resume skips completed IDs, so a parallel group can continue after one branch finished. `StepIndex` remains the YAML index of the step that wrote the checkpoint (HITL / interrupt identity), not a linear cursor through remaining work.
 
 Trace `seq` follows SQLite insert (wall-clock, nondeterministic under concurrency). `data_json.logicalOrder` is the YAML step index for deterministic replay. `audit verify` hashes stored rows, including `logicalOrder` inside `data_json`.
+
+## 13.2.2 Subworkflow execution (issue #194)
+
+A `workflow:` step is a nested DAG run of the named callee on the same run id. Interpolation inside the callee uses the callee's input (`with:`) and the callee's local step ids. The engine qualifies persisted step ids as `callerStep/calleeStep` so a parent and child may reuse ids. Checkpoints wrap in-flight callee state in `nested` (stackable) while the outer `completed` set still skips finished caller steps. Resume restores the inner DAG and continues; a later outer join sees the callee's `output.value` as `${steps.<id>.output}`.
+
+Trace taxonomy 3 adds `workflow_call_started` and `workflow_call_finished`. Nested events include `callStack` (callee names from the root) and `workflow` (innermost).
 
 ---
 
@@ -2112,9 +2158,7 @@ Workflow-level tests via YAML fixtures.
 * registry
 * reconciliation controller
 * remote shared state
-* parallel execution
 * scheduled/event triggers
-* subworkflows
 * loops/conditionals
 * rich approval workflows
 * distributed execution

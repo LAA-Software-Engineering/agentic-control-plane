@@ -138,7 +138,7 @@ func (e *Executor) runWorkflowSteps(
 			}
 			if nRunning == 0 {
 				wg.Wait()
-				return rt.ictx, rt.totalCost, e.failRun(parent, in, fmt.Errorf("engine: workflow graph has no runnable step"), rt.totalCost)
+				return rt.ictx, rt.totalCost, e.finishWorkflowError(parent, in, fmt.Errorf("engine: workflow graph has no runnable step"), rt.totalCost)
 			}
 		}
 		<-completion
@@ -150,7 +150,7 @@ func (e *Executor) runWorkflowSteps(
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	if rt.failed != nil {
-		return rt.ictx, rt.totalCost, e.failRun(parent, in, rt.failed, rt.totalCost)
+		return rt.ictx, rt.totalCost, e.finishWorkflowError(parent, in, rt.failed, rt.totalCost)
 	}
 	if rt.interrupting {
 		if rt.interruptErr != nil {
@@ -159,9 +159,16 @@ func (e *Executor) runWorkflowSteps(
 		return rt.ictx, rt.totalCost, ErrInterrupted
 	}
 	if !workflowFullyComplete(steps, rt.completed) {
-		return rt.ictx, rt.totalCost, e.failRun(parent, in, fmt.Errorf("engine: workflow graph incomplete after scheduling"), rt.totalCost)
+		return rt.ictx, rt.totalCost, e.finishWorkflowError(parent, in, fmt.Errorf("engine: workflow graph incomplete after scheduling"), rt.totalCost)
 	}
 	return rt.ictx, rt.totalCost, nil
+}
+
+func (e *Executor) finishWorkflowError(ctx context.Context, in RunInput, err error, totalCost float64) error {
+	if e != nil && e.nestParent != nil {
+		return err
+	}
+	return e.failRun(ctx, in, err, totalCost)
 }
 
 func depsReady(steps []spec.WorkflowStep, i int, completed map[string]struct{}) bool {
@@ -229,6 +236,7 @@ func (e *Executor) runDAGStep(
 		Steps:         cloneStepResults(rt.ictx.Steps),
 		PendingHitl:   rt.ictx.PendingHitl,
 		OtelInterrupt: rt.ictx.OtelInterrupt,
+		Nested:        rt.ictx.Nested,
 	}
 	rt.mu.Unlock()
 
@@ -255,7 +263,7 @@ func (e *Executor) runDAGStep(
 			finished := ex.now()
 			_ = ex.Store.UpsertRunStep(persistCtx, state.RunStep{
 				RunID:      in.RunID,
-				StepID:     step.ID,
+				StepID:     ex.qualID(step.ID),
 				Status:     "failed",
 				StartedAt:  started,
 				FinishedAt: &finished,
@@ -264,7 +272,7 @@ func (e *Executor) runDAGStep(
 				CostUSD:    stepCost,
 			})
 			if ex.Trace != nil && !isContextCanceled(err) {
-				_, _ = ex.Trace.Append(persistCtx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
+				_, _ = ex.Trace.Append(persistCtx, in.RunID, ex.qualID(step.ID), trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
 			}
 			if strings.Contains(err.Error(), "engine:") {
 				rt.failed = err
@@ -297,7 +305,7 @@ func (e *Executor) runDAGStep(
 		cancel()
 		return
 	}
-	if id := strings.TrimSpace(in.InterruptAfterStepID); id != "" && id == step.ID {
+	if id := strings.TrimSpace(in.InterruptAfterStepID); id != "" && (id == step.ID || id == ex.qualID(step.ID)) {
 		rt.interrupting = true
 		rt.interruptErr = ex.interruptRun(persistCtx, wf, in, i, step.ID, rt.ictx, rt.totalCost, runHandle)
 		cancel()
@@ -331,10 +339,10 @@ func (e *Executor) commitDAGStepSuccess(
 		ApprovedActions:    append([]string(nil), in.ApprovedActions...),
 	}
 	if err := wfPol.CheckRun(ctx, pctx); err != nil {
-		e.appendCostLimitHit(ctx, in.RunID, step.ID, err)
+		e.appendCostLimitHit(ctx, in.RunID, e.qualID(step.ID), err)
 		_ = e.Store.UpsertRunStep(ctx, state.RunStep{
 			RunID:      in.RunID,
-			StepID:     step.ID,
+			StepID:     e.qualID(step.ID),
 			Status:     "failed",
 			StartedAt:  started,
 			FinishedAt: &finished,
@@ -343,7 +351,7 @@ func (e *Executor) commitDAGStepSuccess(
 			CostUSD:    stepCost,
 		})
 		if e.Trace != nil {
-			_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
+			_, _ = e.Trace.Append(ctx, in.RunID, e.qualID(step.ID), trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
 		}
 		return fmt.Errorf("engine: step %q: %w", step.ID, err)
 	}
@@ -371,7 +379,7 @@ func (e *Executor) commitDAGStepSuccess(
 	outJSON, _ := json.Marshal(out)
 	if err := e.Store.UpsertRunStep(ctx, state.RunStep{
 		RunID:      in.RunID,
-		StepID:     step.ID,
+		StepID:     e.qualID(step.ID),
 		Status:     "succeeded",
 		StartedAt:  started,
 		FinishedAt: &finished,
@@ -402,8 +410,19 @@ func (e *Executor) executeOneStep(
 	}
 	uses := strings.TrimSpace(step.Uses)
 	agentName := strings.TrimSpace(step.Agent)
-	if (uses == "") == (agentName == "") {
-		return nil, 0, nil, nil, false, false, fmt.Errorf("engine: step %q must set exactly one of uses or agent", step.ID)
+	callee := strings.TrimSpace(step.Workflow)
+	forms := 0
+	if uses != "" {
+		forms++
+	}
+	if agentName != "" {
+		forms++
+	}
+	if callee != "" {
+		forms++
+	}
+	if forms != 1 {
+		return nil, 0, nil, nil, false, false, fmt.Errorf("engine: step %q must set exactly one of uses, agent, or workflow", step.ID)
 	}
 
 	withAny, err := InterpolateWalk(step.With, ictx)
@@ -430,7 +449,7 @@ func (e *Executor) executeOneStep(
 	admitErr := wfPol.CheckRun(ctx, pctx)
 	rt.mu.Unlock()
 	if admitErr != nil {
-		e.appendCostLimitHit(persistCtx, in.RunID, step.ID, admitErr)
+		e.appendCostLimitHit(persistCtx, in.RunID, e.qualID(step.ID), admitErr)
 		inJSON, _ = json.Marshal(with)
 		now := e.now()
 		return nil, 0, &now, inJSON, false, false, admitErr
@@ -441,7 +460,7 @@ func (e *Executor) executeOneStep(
 	started = &st
 	if err := e.Store.UpsertRunStep(persistCtx, state.RunStep{
 		RunID:     in.RunID,
-		StepID:    step.ID,
+		StepID:    e.qualID(step.ID),
 		Status:    "running",
 		StartedAt: started,
 		InputJSON: string(inJSON),
@@ -449,6 +468,10 @@ func (e *Executor) executeOneStep(
 		return nil, 0, started, inJSON, false, false, fmt.Errorf("engine: upsert step %q: %w", step.ID, err)
 	}
 
+	if callee != "" {
+		out, stepCost, interrupted, err = e.runSubworkflowStep(ctx, persistCtx, in, wf, wfPol, rt, ictx, runStartedAt, runHandle, i, step, with)
+		return out, stepCost, started, inJSON, pendingCleared, interrupted, err
+	}
 	if uses != "" {
 		toolUses := uses
 		toolWith := with

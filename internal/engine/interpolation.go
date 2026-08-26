@@ -23,6 +23,8 @@ type Context struct {
 	Steps         map[string]StepResult
 	PendingHitl   *PendingHitlState  `json:"pendingHitl,omitempty"`
 	OtelInterrupt *telemetry.SpanRef `json:"otelInterrupt,omitempty"`
+	// Nested is in-flight subworkflow progress when a workflow: step is interrupted (issue #194).
+	Nested *NestedRunState `json:"nested,omitempty"`
 }
 
 var tokenRE = regexp.MustCompile(`\$\{([^}]*)\}`)

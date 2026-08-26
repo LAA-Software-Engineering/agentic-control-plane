@@ -35,6 +35,18 @@ type checkpointPayload struct {
 	TotalCostUSD  float64               `json:"totalCostUsd"`
 	PendingHitl   *PendingHitlState     `json:"pendingHitl,omitempty"`
 	OtelInterrupt *telemetry.SpanRef    `json:"otelInterrupt,omitempty"`
+	Nested        *NestedRunState       `json:"nested,omitempty"`
+}
+
+// NestedRunState is stacked in-flight subworkflow progress (issue #194).
+type NestedRunState struct {
+	StepID      string                `json:"stepId"`
+	Workflow    string                `json:"workflow"`
+	Input       map[string]any        `json:"input"`
+	Steps       map[string]StepResult `json:"steps"`
+	Completed   []string              `json:"completed,omitempty"`
+	PendingHitl *PendingHitlState     `json:"pendingHitl,omitempty"`
+	Nested      *NestedRunState       `json:"nested,omitempty"`
 }
 
 func completedStepIDs(steps map[string]StepResult) []string {
@@ -55,6 +67,7 @@ func marshalCheckpointPayload(ictx Context, totalCost float64) (string, error) {
 		TotalCostUSD:  totalCost,
 		PendingHitl:   ictx.PendingHitl,
 		OtelInterrupt: ictx.OtelInterrupt,
+		Nested:        ictx.Nested,
 	}
 	if payload.Input == nil {
 		payload.Input = map[string]any{}
@@ -95,13 +108,35 @@ func unmarshalCheckpointPayload(contextJSON string, wf *spec.WorkflowResource, c
 	if err := validateCheckpointSteps(payload.Steps, wf, completedStepIndex, payload.Completed); err != nil {
 		return Context{}, 0, err
 	}
+	if err := validateNestedRunState(payload.Nested); err != nil {
+		return Context{}, 0, err
+	}
 	if payload.TotalCostUSD < 0 {
 		return Context{}, 0, fmt.Errorf("engine: negative totalCostUsd in checkpoint")
 	}
 	return Context{
 		Input: payload.Input, Steps: payload.Steps,
 		PendingHitl: payload.PendingHitl, OtelInterrupt: payload.OtelInterrupt,
+		Nested: payload.Nested,
 	}, payload.TotalCostUSD, nil
+}
+
+func validateNestedRunState(n *NestedRunState) error {
+	depth := 0
+	for n != nil {
+		depth++
+		if depth > spec.DefaultMaxWorkflowNesting+1 {
+			return fmt.Errorf("engine: nested checkpoint exceeds maxWorkflowNesting")
+		}
+		if strings.TrimSpace(n.StepID) == "" || strings.TrimSpace(n.Workflow) == "" {
+			return fmt.Errorf("engine: nested checkpoint missing stepId or workflow")
+		}
+		if len(n.Steps) > maxCheckpointSteps {
+			return fmt.Errorf("engine: nested checkpoint has too many steps (%d)", len(n.Steps))
+		}
+		n = n.Nested
+	}
+	return nil
 }
 
 func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResource, completedStepIndex int, completedIDs []string) error {
@@ -147,6 +182,13 @@ func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResou
 }
 
 func (e *Executor) saveCheckpoint(ctx context.Context, wf *spec.WorkflowResource, runID string, stepIndex int, stepID string, ictx Context, totalCost float64, status string) error {
+	if e != nil {
+		ictx = e.wrapNestedCheckpoint(ictx)
+		if e.rootWF != nil {
+			wf = e.rootWF
+		}
+		stepID = e.qualID(stepID)
+	}
 	ctxJSON, err := marshalCheckpointPayload(ictx, totalCost)
 	if err != nil {
 		return err

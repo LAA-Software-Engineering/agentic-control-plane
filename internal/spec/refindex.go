@@ -4,30 +4,33 @@ import "strings"
 
 // RefIndex summarizes symbolic references between resources (issue #6, §9.1).
 type RefIndex struct {
-	AgentTools       map[string][]string
-	AgentPolicies    map[string]string
-	WorkflowAgents   map[string][]string
-	WorkflowTools    map[string][]string
-	WorkflowPolicies map[string]string
+	AgentTools        map[string][]string
+	AgentPolicies     map[string]string
+	WorkflowAgents    map[string][]string
+	WorkflowTools     map[string][]string
+	WorkflowWorkflows map[string][]string
+	WorkflowPolicies  map[string]string
 }
 
 // BuildRefIndex scans ProjectGraph resources and builds RefIndex lookup tables.
 func BuildRefIndex(g *ProjectGraph) *RefIndex {
 	if g == nil {
 		return &RefIndex{
-			AgentTools:       map[string][]string{},
-			AgentPolicies:    map[string]string{},
-			WorkflowAgents:   map[string][]string{},
-			WorkflowTools:    map[string][]string{},
-			WorkflowPolicies: map[string]string{},
+			AgentTools:        map[string][]string{},
+			AgentPolicies:     map[string]string{},
+			WorkflowAgents:    map[string][]string{},
+			WorkflowTools:     map[string][]string{},
+			WorkflowWorkflows: map[string][]string{},
+			WorkflowPolicies:  map[string]string{},
 		}
 	}
 	ix := &RefIndex{
-		AgentTools:       make(map[string][]string),
-		AgentPolicies:    make(map[string]string),
-		WorkflowAgents:   make(map[string][]string),
-		WorkflowTools:    make(map[string][]string),
-		WorkflowPolicies: make(map[string]string),
+		AgentTools:        make(map[string][]string),
+		AgentPolicies:     make(map[string]string),
+		WorkflowAgents:    make(map[string][]string),
+		WorkflowTools:     make(map[string][]string),
+		WorkflowWorkflows: make(map[string][]string),
+		WorkflowPolicies:  make(map[string]string),
 	}
 	for name, ar := range g.Agents {
 		if ar == nil {
@@ -57,7 +60,7 @@ func BuildRefIndex(g *ProjectGraph) *RefIndex {
 		if p := strings.TrimSpace(wr.Spec.Policy); p != "" {
 			ix.WorkflowPolicies[name] = p
 		}
-		var agents, tools []string
+		var agents, tools, workflows []string
 		for _, st := range wr.Spec.Steps {
 			if a := strings.TrimSpace(st.Agent); a != "" {
 				agents = append(agents, a)
@@ -67,9 +70,13 @@ func BuildRefIndex(g *ProjectGraph) *RefIndex {
 					tools = append(tools, tn)
 				}
 			}
+			if w := strings.TrimSpace(st.Workflow); w != "" {
+				workflows = append(workflows, w)
+			}
 		}
 		ix.WorkflowAgents[name] = dedupeRefStrings(agents)
 		ix.WorkflowTools[name] = dedupeRefStrings(tools)
+		ix.WorkflowWorkflows[name] = dedupeRefStrings(workflows)
 	}
 	return ix
 }

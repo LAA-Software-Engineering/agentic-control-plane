@@ -21,6 +21,7 @@ type Recorder struct {
 	Clock        func() time.Time
 	Redaction    RedactionOptions
 	logicalOrder *int
+	callStack    []string
 }
 
 // NewRecorder returns a recorder backed by rt. rt must not be nil when Append is called.
@@ -37,6 +38,16 @@ func (r *Recorder) WithLogicalOrder(order int) *Recorder {
 	cp := *r
 	o := order
 	cp.logicalOrder = &o
+	return &cp
+}
+
+// WithCallStack stamps data_json.callStack / workflow on nested subworkflow events (issue #194).
+func (r *Recorder) WithCallStack(stack []string) *Recorder {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	cp.callStack = append([]string(nil), stack...)
 	return &cp
 }
 
@@ -84,6 +95,19 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID string, eventType E
 			data = cp
 		}
 		data["logicalOrder"] = *r.logicalOrder
+	}
+	if len(r.callStack) > 0 {
+		if data == nil {
+			data = map[string]any{}
+		} else {
+			cp := make(map[string]any, len(data)+2)
+			for k, v := range data {
+				cp[k] = v
+			}
+			data = cp
+		}
+		data["callStack"] = append([]string(nil), r.callStack...)
+		data["workflow"] = r.callStack[len(r.callStack)-1]
 	}
 	if len(data) > 0 {
 		prepared := PrepareEventData(data, nil, r.Redaction)

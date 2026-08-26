@@ -168,7 +168,42 @@ func TestComputeGraphBounds(t *testing.T) {
 			},
 		},
 		{
-			name: "cycle",
+			name: "subworkflow-two-level",
+			g: graph(
+				toolsGithub(),
+				nil,
+				map[string]*spec.WorkflowResource{
+					"child": workflow("child", stepUses("read", "tool.github.read_pr"))["child"],
+					"parent": {
+						Metadata: spec.Metadata{Name: "parent"},
+						Spec: spec.WorkflowSpec{
+							Steps: []spec.WorkflowStep{
+								{ID: "compose", Workflow: "child"},
+								{ID: "comment", Uses: "tool.github.post_comment"},
+							},
+						},
+					},
+				},
+			),
+			check: func(t *testing.T, got GraphBounds) {
+				b := got.Workflows["parent"]
+				if !hasIdent(b, "github.read") || !hasIdent(b, "github.write") {
+					t.Fatalf("parent bound missing callee/static effects: %+v", b.Effects)
+				}
+				w := witnessFor(b, "github.read")
+				requireKind(t, w, KindWorkflow)
+				requireKind(t, w, KindStep)
+				requireReachability(t, w, KindToolOperation, Static)
+				if !witnessHasWorkflow(w, "parent") || !witnessHasWorkflow(w, "child") {
+					t.Fatalf("witness must nest parent then child: %+v", w)
+				}
+				if !witnessHasStep(w, "compose") || !witnessHasStep(w, "read") {
+					t.Fatalf("witness must include compose then child step: %+v", w)
+				}
+			},
+		},
+		{
+			name: "workflow-cycle",
 			g: graph(
 				toolsGithub(),
 				nil,
@@ -355,6 +390,24 @@ func stepUses(id, uses string) spec.WorkflowStep {
 
 func stepAgent(id, agentName string) spec.WorkflowStep {
 	return spec.WorkflowStep{ID: id, Agent: agentName}
+}
+
+func witnessHasWorkflow(hops []Hop, name string) bool {
+	for _, h := range hops {
+		if h.Kind == KindWorkflow && h.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func witnessHasStep(hops []Hop, id string) bool {
+	for _, h := range hops {
+		if h.Kind == KindStep && (h.ID == id || h.Name == id) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasIdent(b Bound, ident string) bool {

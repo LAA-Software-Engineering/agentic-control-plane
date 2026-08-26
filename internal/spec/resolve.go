@@ -87,6 +87,15 @@ func collectReferenceErrors(g *ProjectGraph) []error {
 				})
 			}
 		}
+		for _, callee := range ix.WorkflowWorkflows[wfName] {
+			if _, ok := g.Workflows[callee]; !ok {
+				errs = append(errs, &MissingRefError{
+					Referrer: ResourceID{Kind: KindWorkflow, Name: wfName},
+					Missing:  ResourceID{Kind: KindWorkflow, Name: callee},
+					Pos:      workflowWorkflowPos(wr, callee),
+				})
+			}
+		}
 		if pol := ix.WorkflowPolicies[wfName]; pol != "" {
 			if _, ok := g.Policies[pol]; !ok && !IsBuiltinPreset(pol) {
 				errs = append(errs, &MissingRefError{
@@ -101,6 +110,7 @@ func collectReferenceErrors(g *ProjectGraph) []error {
 		}
 		errs = append(errs, validateWorkflowGraph(wfName, &wr.Spec)...)
 	}
+	errs = append(errs, validateWorkflowCalls(g)...)
 	return errs
 }
 
@@ -118,12 +128,23 @@ func validateWorkflowStepErrors(wfName string, w *WorkflowSpec) []error {
 		}
 		hasA := strings.TrimSpace(st.Agent) != ""
 		hasU := strings.TrimSpace(st.Uses) != ""
-		if hasA && hasU {
-			errs = append(errs, st.Pos.Errorf("workflow %s step %q: cannot set both agent and uses", wfName, sid))
+		hasW := strings.TrimSpace(st.Workflow) != ""
+		n := 0
+		if hasA {
+			n++
+		}
+		if hasU {
+			n++
+		}
+		if hasW {
+			n++
+		}
+		if n > 1 {
+			errs = append(errs, st.Pos.Errorf("workflow %s step %q: cannot set more than one of agent, uses, or workflow", wfName, sid))
 			continue
 		}
-		if !hasA && !hasU {
-			errs = append(errs, st.Pos.Errorf("workflow %s step %q: must set exactly one of agent or uses", wfName, sid))
+		if n == 0 {
+			errs = append(errs, st.Pos.Errorf("workflow %s step %q: must set exactly one of agent, uses, or workflow", wfName, sid))
 			continue
 		}
 		if hasU {
@@ -212,6 +233,21 @@ func workflowUsesPos(wr *WorkflowResource, toolName string) Pos {
 		if tn, ok := ParseToolUses(u); ok && tn == toolName {
 			if !st.UsesPos.IsZero() {
 				return st.UsesPos
+			}
+			return st.Pos
+		}
+	}
+	return wr.Pos
+}
+
+func workflowWorkflowPos(wr *WorkflowResource, callee string) Pos {
+	if wr == nil {
+		return Pos{}
+	}
+	for _, st := range wr.Spec.Steps {
+		if strings.TrimSpace(st.Workflow) == callee {
+			if !st.WorkflowPos.IsZero() {
+				return st.WorkflowPos
 			}
 			return st.Pos
 		}

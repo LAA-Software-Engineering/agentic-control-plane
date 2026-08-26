@@ -10,6 +10,9 @@ const (
 	DefaultMaxToolInputBytes  = 256 << 10 // 256 KiB
 	DefaultMaxToolOutputBytes = 256 << 10 // 256 KiB
 	DefaultMaxCheckpointBytes = 1 << 20   // 1 MiB
+	// DefaultMaxWorkflowNesting is the maximum workflow: call depth (issue #194).
+	// Top-level run is depth 0; the first subworkflow is depth 1.
+	DefaultMaxWorkflowNesting = 8
 )
 
 // LimitExceedPolicy controls behavior when a byte limit is exceeded.
@@ -38,6 +41,7 @@ type ExecutionLimits struct {
 	MaxToolOutputBytes     int               `yaml:"maxToolOutputBytes,omitempty" json:"maxToolOutputBytes,omitempty"`
 	MaxCheckpointBytes     int               `yaml:"maxCheckpointBytes,omitempty" json:"maxCheckpointBytes,omitempty"`
 	MaxStateBytes          int               `yaml:"maxStateBytes,omitempty" json:"maxStateBytes,omitempty"`
+	MaxWorkflowNesting     int               `yaml:"maxWorkflowNesting,omitempty" json:"maxWorkflowNesting,omitempty"`
 	ToolInputExceedPolicy  LimitExceedPolicy `yaml:"toolInputExceedPolicy,omitempty" json:"toolInputExceedPolicy,omitempty"`
 	ToolOutputExceedPolicy LimitExceedPolicy `yaml:"toolOutputExceedPolicy,omitempty" json:"toolOutputExceedPolicy,omitempty"`
 	CheckpointExceedPolicy LimitExceedPolicy `yaml:"checkpointExceedPolicy,omitempty" json:"checkpointExceedPolicy,omitempty"`
@@ -48,6 +52,7 @@ type ResolvedExecutionLimits struct {
 	MaxToolInputBytes      int
 	MaxToolOutputBytes     int
 	MaxCheckpointBytes     int
+	MaxWorkflowNesting     int
 	ToolInputExceedPolicy  LimitExceedPolicy
 	ToolOutputExceedPolicy LimitExceedPolicy
 	CheckpointExceedPolicy LimitExceedPolicy
@@ -59,6 +64,7 @@ func DefaultExecutionLimits() ResolvedExecutionLimits {
 		MaxToolInputBytes:      DefaultMaxToolInputBytes,
 		MaxToolOutputBytes:     DefaultMaxToolOutputBytes,
 		MaxCheckpointBytes:     DefaultMaxCheckpointBytes,
+		MaxWorkflowNesting:     DefaultMaxWorkflowNesting,
 		ToolInputExceedPolicy:  LimitExceedTruncate,
 		ToolOutputExceedPolicy: LimitExceedTruncate,
 		CheckpointExceedPolicy: LimitExceedFail,
@@ -91,6 +97,9 @@ func MergeExecutionLimits(base ExecutionLimits, override *ExecutionLimits) Execu
 	if override.MaxCheckpointBytes > 0 {
 		out.MaxCheckpointBytes = override.MaxCheckpointBytes
 	}
+	if override.MaxWorkflowNesting > 0 {
+		out.MaxWorkflowNesting = override.MaxWorkflowNesting
+	}
 	if p := strings.TrimSpace(string(override.ToolInputExceedPolicy)); p != "" {
 		out.ToolInputExceedPolicy = LimitExceedPolicy(p)
 	}
@@ -112,6 +121,7 @@ func ResolveExecutionLimits(project *ProjectSpec, workflow *WorkflowSpec, tool *
 		MaxToolInputBytes:      def.MaxToolInputBytes,
 		MaxToolOutputBytes:     def.MaxToolOutputBytes,
 		MaxCheckpointBytes:     def.MaxCheckpointBytes,
+		MaxWorkflowNesting:     def.MaxWorkflowNesting,
 		ToolInputExceedPolicy:  def.ToolInputExceedPolicy,
 		ToolOutputExceedPolicy: def.ToolOutputExceedPolicy,
 		CheckpointExceedPolicy: def.CheckpointExceedPolicy,
@@ -129,10 +139,17 @@ func ResolveExecutionLimits(project *ProjectSpec, workflow *WorkflowSpec, tool *
 		MaxToolInputBytes:      merged.MaxToolInputBytes,
 		MaxToolOutputBytes:     merged.MaxToolOutputBytes,
 		MaxCheckpointBytes:     merged.MaxCheckpointBytes,
+		MaxWorkflowNesting:     merged.MaxWorkflowNesting,
 		ToolInputExceedPolicy:  merged.ToolInputExceedPolicy,
 		ToolOutputExceedPolicy: merged.ToolOutputExceedPolicy,
 		CheckpointExceedPolicy: merged.CheckpointExceedPolicy,
 	}
+}
+
+// ResolveMaxWorkflowNesting is the effective workflow: nesting cap (issue #194).
+// Zero/omitted YAML uses DefaultMaxWorkflowNesting.
+func ResolveMaxWorkflowNesting(project *ProjectSpec, workflow *WorkflowSpec) int {
+	return ResolveExecutionLimits(project, workflow, nil).MaxWorkflowNesting
 }
 
 // ValidateExecutionLimits returns an error when limits or policies are invalid.
@@ -148,6 +165,9 @@ func ValidateExecutionLimits(l *ExecutionLimits) error {
 		return err
 	}
 	if err := validateLimitBytes("maxCheckpointBytes", l.MaxCheckpointBytes); err != nil {
+		return err
+	}
+	if err := validateLimitBytes("maxWorkflowNesting", l.MaxWorkflowNesting); err != nil {
 		return err
 	}
 	if err := validateLimitBytes("maxStateBytes", l.MaxStateBytes); err != nil {
