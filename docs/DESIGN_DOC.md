@@ -1709,14 +1709,17 @@ native → `echo`, mock/mcp → `default`, HTTP must be pinned). The bound union
 `[ResolveOperationEffects]` for those operations. There is no `grants { github.read }`.
 
 Witness path: `Workflow → step → Agent → tool.operation`, each hop tagged `static` or
-`autonomous`. Agent-only roots omit workflow/step hops. Hop fields match `plan.WitnessHop`
-(`kind`, `name`, `id`, `reachability`) so plan output maps without `effects` importing `plan`.
-Kinds: `workflow`, `step`, `agent`, `tool_operation`. Pos is metadata only and is not part
-of the bound. Plan JSON/YAML expose those hops on `effectBound` / `riskItems` plus
-`authority.static` / `authority.autonomous` (`unchanged` | `widened`) for CI gates.
-Capability changes (concrete `tool.<name>.<operation>` grants) and effect changes (named
-consequence classes) are separate lines: a new grant whose effects are already reachable
-widens capability with an empty effect delta and still marks autonomous authority `WIDENED`.
+`autonomous`. Agent-only roots omit workflow/step hops. If an ident is reachable by
+both a static `uses:` and an autonomous grant, the bound tags it **autonomous** and the
+exported witness is that grant path (path-max, not first-witness). Hop fields match
+`plan.WitnessHop` (`kind`, `name`, `id`, `reachability`) so plan output maps without
+`effects` importing `plan`. Kinds: `workflow`, `step`, `agent`, `tool_operation`. Pos is
+metadata only and is not part of the bound. Plan JSON/YAML expose those hops on
+`effectBound` / `riskItems` plus `authority.static` / `authority.autonomous`
+(`unchanged` | `widened`) for CI gates. Capability changes (concrete
+`tool.<name>.<operation>` grants) and effect changes (named consequence classes) are
+separate lines: a new grant whose effects are already reachable widens capability with
+an empty effect delta and still marks autonomous authority `WIDENED`.
 
 **Unknown vs unreachable.** A reachable operation with no declared effects
 (`[ResolveToolEffects].Unknown` / empty operation set) is an **explicit unknown** in the

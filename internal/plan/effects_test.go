@@ -259,6 +259,43 @@ func TestEffectDelta_staticToAutonomousPromotion(t *testing.T) {
 	if !promo {
 		t.Fatalf("expected static→autonomous promotion: %#v", effectDeltaItemsOf(pl))
 	}
+	if pl.Authority.Autonomous != AuthorityWidened {
+		t.Fatalf("authority.autonomous: %s", pl.Authority.Autonomous)
+	}
+	it := workflowBoundItem(pl, "pr-review", "github.write")
+	if it.Reachability != WitnessAutonomous {
+		t.Fatalf("workflow EffectBound github.write want autonomous, got %#v", it)
+	}
+	if len(it.Witness) == 0 {
+		t.Fatalf("workflow bound missing witness: %#v", it)
+	}
+	var sawAutoOp bool
+	for _, h := range it.Witness {
+		if h.Kind == WitnessKindToolOperation && h.Reachability == WitnessAutonomous {
+			sawAutoOp = true
+		}
+	}
+	if !sawAutoOp {
+		t.Fatalf("workflow bound witness must be the autonomous grant path: %#v", it.Witness)
+	}
+	ext := workflowBoundItem(pl, "pr-review", "external.visible")
+	if ext.Reachability != WitnessAutonomous {
+		t.Fatalf("workflow EffectBound external.visible want autonomous, got %#v", ext)
+	}
+}
+
+func workflowBoundItem(pl *Plan, workflow, ident string) RiskItem {
+	for _, sec := range pl.EffectBound {
+		if sec.RootKind != "workflow" || sec.RootName != workflow {
+			continue
+		}
+		for _, it := range sec.Items {
+			if it.Ident == ident && it.Reachability != "" {
+				return it
+			}
+		}
+	}
+	return RiskItem{}
 }
 
 func TestGraphFromApplied_roundTrip(t *testing.T) {

@@ -201,7 +201,8 @@ func finish(g *spec.ProjectGraph, rootKind HopKind, rootName string, reached []r
 		if key == "" {
 			key = r.tool + "\x00" + r.op
 		}
-		if _, ok := first[key]; ok {
+		if prev, ok := first[key]; ok {
+			first[key] = preferAutonomousReached(prev, r)
 			continue
 		}
 		first[key] = r
@@ -238,6 +239,7 @@ func finish(g *spec.ProjectGraph, rootKind HopKind, rootName string, reached []r
 		for _, ident := range re.Effects {
 			if i, ok := seenIdent[ident]; ok {
 				effects[i].occurrences = appendOccurrence(effects[i].occurrences, r.uses, r.witness)
+				preferAutonomousEffect(&effects[i], r)
 				continue
 			}
 			seenIdent[ident] = len(effects)
@@ -332,6 +334,34 @@ func unknownMessage(tool, op, uses string, tsp *spec.ToolSpec) string {
 		return fmt.Sprintf("Tool/%s: no declared effects (fail-closed unknown; no policy permits this tool unless it opts in)", name)
 	}
 	return fmt.Sprintf("Tool/%s: operation %q has no declared effects (fail-closed unknown; no policy permits this operation unless it opts in)", name, op)
+}
+
+// preferAutonomousReached keeps the autonomous witnessing path when the same
+// operation is reached both as a static uses: and as an agent grant (path-max).
+func preferAutonomousReached(prev, next reachedOp) reachedOp {
+	if pathReachability(next.witness) == Autonomous && pathReachability(prev.witness) != Autonomous {
+		return next
+	}
+	return prev
+}
+
+func preferAutonomousEffect(e *Effect, r reachedOp) {
+	if e == nil {
+		return
+	}
+	if pathReachability(r.witness) == Autonomous && pathReachability(e.Witness) != Autonomous {
+		e.Witness = r.witness
+		e.Uses = r.uses
+	}
+}
+
+func pathReachability(hops []Hop) Reachability {
+	for _, h := range hops {
+		if h.Reachability == Autonomous {
+			return Autonomous
+		}
+	}
+	return Static
 }
 
 func appendOccurrence(dst []effectOccurrence, uses string, witness []Hop) []effectOccurrence {
