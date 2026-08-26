@@ -19,8 +19,12 @@ The reference implementation is [`internal/lang`](../internal/lang):
   it synchronizes to the next declaration, statement, list element, or line and keeps
   going, so a malformed file yields every diagnostic it can find in one pass.
 - **Grants vs. effects are distinct namespaces** (ADR 002 amendment, #188). A **grant**
-  names a concrete operation as `tool.<name>.<operation>` — the same reference
-  vocabulary as `approvals.requiredFor`. An **effect** is a bare dotted identifier
+  names a concrete operation as `tool.<name>.<operation>` — the exact reference
+  vocabulary of `approvals.requiredFor` / `uses:`. It is split the same way as
+  [`tools.ParseUses`](../internal/tools/registry.go): the tool name is the single segment
+  after `tool.`, and the **operation is everything after it** and may be dotted
+  (`tool.github.pull_request.post_comment` → tool `github`, operation
+  `pull_request.post_comment`). An **effect** is a bare dotted identifier
   (`github.read`). The parser keeps them separate and rejects a grant written as a bare
   name or an effect written with a `tool.` prefix.
 - **Deliberately omitted** (ADR 002): anonymous functions — every callable is a
@@ -56,7 +60,8 @@ AgentField  = "model"  ModelRef
             | "input"  Ident
             | "output" Ident ;
 ModelRef    = Ident "/" Ident ;                 (* e.g. openai/gpt-5 *)
-Grant       = "tool" "." Ident "." Ident ;      (* tool.<name>.<operation> *)
+Grant       = "tool" "." Ident "." Operation ;  (* tool.<name>.<operation> *)
+Operation   = Ident { "." Ident } ;             (* name = first Ident, operation = the rest *)
 
 WorkflowDecl = "workflow" Ident "(" [ Params ] ")" [ "->" Ident ]
                [ "effects" "{" [ Effects ] "}" ]
@@ -84,6 +89,9 @@ Notes:
   whether comma- or newline-separated. Grants are newline-separated (a comma between
   grants is tolerated for symmetry).
 - A `parallel` block admits only assignments: each branch binds a name for fan-in.
+- Each agent field (`model`, `policy`, `grants`, `input`, `output`) may appear at most
+  once; a repeated field keeps the first occurrence and yields a duplicate-field
+  diagnostic rather than silently overwriting.
 - Requiredness of agent fields, argument style (all-positional vs. all-named), reference
   resolution, and effect soundness are **not** enforced by the parser — they are
   checking concerns (#198). A field the author omitted is a nil node, not a parse error.

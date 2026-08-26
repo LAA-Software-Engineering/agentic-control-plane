@@ -135,6 +135,17 @@ func (p *parser) parseAgent() *AgentDecl {
 	if _, ok := p.expect(KindLBrace, "to open agent body"); !ok {
 		return decl
 	}
+	// seen tracks which fields have appeared so a repeated field is reported
+	// rather than silently overwriting (each agent field is admitted once).
+	seen := map[string]bool{}
+	dup := func(field string, pos Pos) bool {
+		if seen[field] {
+			p.errorf(pos, "duplicate agent field %q (each field may appear at most once)", field)
+			return true
+		}
+		seen[field] = true
+		return false
+	}
 	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
 		if p.cur.Kind != KindIdent {
 			p.errorf(p.cur.Pos, "expected agent field (model, policy, grants, input, output), got %s", p.cur)
@@ -145,19 +156,29 @@ func (p *parser) parseAgent() *AgentDecl {
 		switch field {
 		case "model":
 			p.advance()
-			decl.Model = p.parseModelRef()
+			if m := p.parseModelRef(); !dup(field, fpos) {
+				decl.Model = m
+			}
 		case "policy":
 			p.advance()
-			decl.Policy = p.ident("after 'policy'")
+			if id := p.ident("after 'policy'"); !dup(field, fpos) {
+				decl.Policy = id
+			}
 		case "grants":
 			p.advance()
-			decl.Grants = p.parseGrants()
+			if g := p.parseGrants(); !dup(field, fpos) {
+				decl.Grants = g
+			}
 		case "input":
 			p.advance()
-			decl.Input = p.parseTypeRef("after 'input'")
+			if t := p.parseTypeRef("after 'input'"); !dup(field, fpos) {
+				decl.Input = t
+			}
 		case "output":
 			p.advance()
-			decl.Output = p.parseTypeRef("after 'output'")
+			if t := p.parseTypeRef("after 'output'"); !dup(field, fpos) {
+				decl.Output = t
+			}
 		default:
 			p.errorf(fpos, "unknown agent field %q (want model, policy, grants, input, or output)", field)
 			p.syncLine()
@@ -216,7 +237,11 @@ func (p *parser) parseGrants() []*Grant {
 // parseGrant parses one dotted path and validates the grant shape. A grant
 // names a concrete operation as tool.<name>.<operation> (ADR 002 amendment,
 // #188) and must be textually distinguishable from a bare dotted effect: the
-// leading "tool" segment is required and the path has exactly three segments.
+// leading "tool" segment is required. The split matches tools.ParseUses — the
+// tool name is the single segment after "tool", and the operation is every
+// segment after that (at least one, possibly dotted, e.g.
+// tool.github.pull_request.post_comment → name github, operation
+// pull_request.post_comment).
 func (p *parser) parseGrant() *Grant {
 	parts := p.parseDottedPath("in grant")
 	g := &Grant{Segments: parts}
@@ -227,11 +252,11 @@ func (p *parser) parseGrant() *Grant {
 	switch {
 	case parts[0].Name != "tool":
 		p.errorf(g.Pos, "grant must name a concrete operation as tool.<name>.<operation>; %q is not a grant (bare dotted names are effects)", dottedName(parts))
-	case len(parts) != 3:
-		p.errorf(g.Pos, "grant must have exactly three segments tool.<name>.<operation>, got %q", dottedName(parts))
+	case len(parts) < 3:
+		p.errorf(g.Pos, "grant must be tool.<name>.<operation> with a tool name and an operation, got %q", dottedName(parts))
 	default:
 		g.Name = parts[1]
-		g.Operation = parts[2]
+		g.Operation = parts[2:]
 	}
 	return g
 }

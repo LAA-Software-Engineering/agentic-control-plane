@@ -1,0 +1,15 @@
+// Grants whose operation half is a dotted path — the exact tool.<name>.<operation>
+// vocabulary already shipped in examples/pr-review-demo and parsed by
+// tools.ParseUses (tool name = first segment, operation = the remainder).
+agent Committer {
+    model  openai/gpt-5
+    policy guarded-writes
+    grants {
+        tool.github.pull_request.get
+        tool.github.pull_request.post_comment
+        tool.api.post.users
+        tool.helper.echo
+    }
+    input  PullRequest
+    output Review
+}

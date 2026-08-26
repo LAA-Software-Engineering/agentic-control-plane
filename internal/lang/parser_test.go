@@ -95,8 +95,8 @@ func TestParseADR002Structure(t *testing.T) {
 	if len(agent.Grants) != 2 {
 		t.Fatalf("want 2 grants, got %d", len(agent.Grants))
 	}
-	if g := agent.Grants[0]; g.Name == nil || g.Name.Name != "github" || g.Operation == nil || g.Operation.Name != "read_pr" {
-		t.Errorf("grant 0 = %+v, want tool.github.read_pr", g)
+	if g := agent.Grants[0]; g.ToolName() != "github" || g.OperationName() != "read_pr" {
+		t.Errorf("grant 0 = %s.%s, want github.read_pr", g.ToolName(), g.OperationName())
 	}
 	if agent.Input == nil || agent.Input.Name != "ReviewRequest" {
 		t.Errorf("input = %+v, want ReviewRequest", agent.Input)
@@ -150,6 +150,38 @@ func TestParseADR002Structure(t *testing.T) {
 	}
 }
 
+// TestParseGrantOperations asserts a grant splits the same way as
+// tools.ParseUses: tool name is the first segment after "tool", and the
+// operation is the remainder (possibly dotted). A frozen three-segment grammar
+// would reject the multi-segment operations this repository already ships.
+func TestParseGrantOperations(t *testing.T) {
+	src := "agent A {\n" +
+		"    grants {\n" +
+		"        tool.github.pull_request.post_comment\n" +
+		"        tool.api.post.users\n" +
+		"        tool.helper.echo\n" +
+		"    }\n" +
+		"}\n"
+	file, diags := Parse("g.agent", src)
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics:\n%s", diags.Error())
+	}
+	grants := file.Decls[0].(*AgentDecl).Grants
+	want := []struct{ tool, op string }{
+		{"github", "pull_request.post_comment"},
+		{"api", "post.users"},
+		{"helper", "echo"},
+	}
+	if len(grants) != len(want) {
+		t.Fatalf("want %d grants, got %d", len(want), len(grants))
+	}
+	for i, w := range want {
+		if grants[i].ToolName() != w.tool || grants[i].OperationName() != w.op {
+			t.Errorf("grant %d = %s / %s, want %s / %s", i, grants[i].ToolName(), grants[i].OperationName(), w.tool, w.op)
+		}
+	}
+}
+
 // TestParseErrors is a table of malformed inputs asserting the parser recovers
 // and reports diagnostics at the expected positions and with the expected
 // messages (acceptance criterion: multiple positioned diagnostics).
@@ -170,6 +202,18 @@ func TestParseErrors(t *testing.T) {
 			name:     "grant missing tool prefix",
 			src:      "agent A {\n    grants {\n        github.read_pr\n    }\n}\n",
 			wantDiag: []wantDiag{{line: 3, col: 9, msg: "is not a grant"}},
+			minCount: 1,
+		},
+		{
+			name:     "grant missing operation",
+			src:      "agent A {\n    grants {\n        tool.github\n    }\n}\n",
+			wantDiag: []wantDiag{{line: 3, col: 9, msg: "grant must be tool.<name>.<operation>"}},
+			minCount: 1,
+		},
+		{
+			name:     "duplicate agent field",
+			src:      "agent A {\n    input Foo\n    input Bar\n}\n",
+			wantDiag: []wantDiag{{line: 3, col: 5, msg: "duplicate agent field \"input\""}},
 			minCount: 1,
 		},
 		{

@@ -1,10 +1,12 @@
 package lang
 
 // The typed AST for the .agent surface (ADR 002). Every node implements Node
-// and carries a spec.Pos (aliased as Pos) at its start. The tree is
-// parse-faithful: it records what was written, not what it resolves to —
-// reference resolution, typing, and effect checking are #198, and lowering to
-// the resource model is #197.
+// and carries a spec.Pos (aliased as Pos) at its start. The tree records the
+// declarations as written, not what they resolve to — reference resolution,
+// typing, and effect checking are #198, and lowering to the resource model is
+// #197. A construct the grammar admits at most once (an agent field) is
+// reported as a diagnostic if repeated rather than silently overwritten, so no
+// written declaration is dropped without a diagnostic.
 
 // Node is any AST node. Position returns the node's start position.
 type Node interface {
@@ -35,9 +37,12 @@ func (i *Ident) Position() Pos { return i.Pos }
 
 // --- Agent declarations -----------------------------------------------------
 
-// AgentDecl is `agent <Name> { ... }`. Fields are optional at the parse layer;
-// requiredness is a checking concern (#198), so a field the author omitted is a
-// nil pointer rather than a parse error. Fields are populated in source order.
+// AgentDecl is `agent <Name> { ... }`. Each field appears at most once; a field
+// the author omitted is a nil pointer (requiredness is a checking concern, #198)
+// and a repeated field keeps the first occurrence and yields a duplicate-field
+// diagnostic (the grammar admits each field once). Fields do not preserve
+// source order across kinds — the surface fixes their meaning by keyword, not
+// position.
 type AgentDecl struct {
 	Pos    Pos
 	Name   *Ident
@@ -64,20 +69,40 @@ func (m *ModelRef) Position() Pos { return m.Pos }
 
 // Grant is one autonomous capability bound inside a `grants { }` block. Per the
 // ADR 002 amendment (#188) a grant names a concrete operation as
-// tool.<Name>.<Operation> — the same reference vocabulary as
-// approvals.requiredFor — and lives in a namespace distinct from effects. The
-// parser records the leading "tool" segment so the distinction survives to the
-// checker; a grant that omits the tool. prefix is a diagnostic, not an EffectRef.
+// tool.<Name>.<Operation> — the exact reference vocabulary of
+// approvals.requiredFor / uses: — and lives in a namespace distinct from
+// effects. It is split the same way as tools.ParseUses: the leading "tool"
+// segment is the namespace marker, Name is the single tool-name segment, and
+// Operation is everything after it. Operation is therefore a dotted path, not a
+// single identifier: shipped strings such as tool.github.pull_request.get carry
+// a multi-segment operation (pull_request.get), and a lowering pass (#197)
+// reconstructs the uses string as tool.<Name>.<Operation joined by ".">.
+// A grant that omits the tool. prefix is a diagnostic, not an EffectRef.
 type Grant struct {
-	Pos       Pos
-	Name      *Ident // the <Name> segment (tool.<Name>.<operation>)
-	Operation *Ident // the <operation> segment
+	Pos  Pos
+	Name *Ident // the <Name> segment (tool.<Name>.<operation>); a single identifier
+	// Operation is the operation path (the segments after the tool name), at
+	// least one identifier and possibly dotted (pull_request.post_comment).
+	Operation []*Ident
 	// Segments is the full dotted path as written (including the leading
 	// "tool"), preserved for diagnostics and round-tripping.
 	Segments []*Ident
 }
 
 func (g *Grant) Position() Pos { return g.Pos }
+
+// ToolName returns the granted tool's name, or "" if the grant is malformed.
+func (g *Grant) ToolName() string {
+	if g.Name == nil {
+		return ""
+	}
+	return g.Name.Name
+}
+
+// OperationName returns the dotted operation path (e.g. "pull_request.get"), or
+// "" if the grant is malformed. This is the <operation> half that ParseUses
+// yields and that a uses string reconstructs after the tool name.
+func (g *Grant) OperationName() string { return dottedName(g.Operation) }
 
 // --- Workflow declarations --------------------------------------------------
 
