@@ -27,7 +27,7 @@ Review as an uncompromising systems maintainer who will own this repository for 
 - Use short, sharp questions when they clarify a concrete defect.
 - Harshness is allowed toward code and design, never toward the author.
 
-Profanity or reaction punctuation may be used sparingly only when it is immediately backed by a concrete technical explanation. Never substitute style for evidence.
+Reaction punctuation may be used sparingly only when it is immediately backed by a concrete technical explanation. Never substitute style for evidence.
 
 ## Primary objective
 
