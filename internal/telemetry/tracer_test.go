@@ -3,6 +3,8 @@ package telemetry_test
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
@@ -100,6 +102,56 @@ func TestNewTracer_consoleExport_emitsRunSpan(t *testing.T) {
 	_ = endModel
 	end(nil)
 	h.End(nil)
+}
+
+func TestNewTracer_OTLPEndpointURLPathContract(t *testing.T) {
+	tests := []struct {
+		name   string
+		suffix string
+		want   string
+	}{
+		{name: "base URL", want: "/v1/traces"},
+		{name: "base URL with slash", suffix: "/", want: "/v1/traces"},
+		{name: "explicit traces path", suffix: "/custom/traces", want: "/custom/traces"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			paths := make(chan string, 1)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case paths <- r.URL.Path:
+				default:
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			tr := telemetry.NewTracer(telemetry.Config{
+				Enabled:     true,
+				ServiceName: "test-svc",
+				Endpoint:    srv.URL + tt.suffix,
+			}, "0.1.0")
+			if !tr.Enabled() {
+				t.Fatal("expected enabled otlp tracer")
+			}
+
+			h := tr.BeginRun(context.Background(), telemetry.RunStartAttrs{
+				RunID: "run-otlp", Workflow: "demo",
+			})
+			h.End(nil)
+			tr.Shutdown()
+
+			select {
+			case got := <-paths:
+				if got != tt.want {
+					t.Fatalf("OTLP export path = %q, want %s", got, tt.want)
+				}
+			default:
+				t.Fatal("expected OTLP export request")
+			}
+		})
+	}
 }
 
 func TestRunHandle_EndInterrupted_notErrorStatus(t *testing.T) {
