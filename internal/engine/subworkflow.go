@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
@@ -25,10 +26,11 @@ func subworkflowRunID(parentRunID, stepID string) string {
 // nesting and executes under its own resolved Policy; the caller's Policy authority ceiling is
 // enforced statically as the union of caller and callee effects (see docs §7.4).
 //
-// When the child interrupts (HITL / stub interrupt), the parent run is checkpointed as
-// interrupted from live state under rt.mu and ErrInterrupted is propagated so a later resume
-// re-enters this step and resumes the same child run. A child that already succeeded (parent
-// crashed between child completion and the parent commit) is not re-run; its output is reused.
+// When the child interrupts (HITL / stub interrupt), the child's pending approval gate is lifted
+// onto the parent checkpoint so the run the operator started can resolve the nested gate, and
+// ErrInterrupted is propagated so a later resume re-enters this step and resumes the same child
+// run with the operator's decision. A child that already succeeded (parent crashed between child
+// completion and the parent commit) is not re-run; its output is reused.
 func (e *Executor) runSubworkflowStep(
 	ctx, persistCtx context.Context,
 	in RunInput,
@@ -66,7 +68,10 @@ func (e *Executor) runSubworkflowStep(
 		case state.RunStatusFailed:
 			return nil, existing.TotalCostUSD, false, fmt.Errorf("engine: subworkflow %q previously failed: %s", calleeName, existing.ErrorText)
 		default:
-			resume = true
+			// Resume only when a resumable checkpoint exists. A child row left Running with no
+			// checkpoint (crash between StartRun and the first save) is re-run from scratch on
+			// the existing row rather than forced into an unresumable Resume: true.
+			resume = e.childHasResumableCheckpoint(persistCtx, childRunID)
 		}
 	} else if err := e.startChildRun(persistCtx, in, calleeName, childRunID, input); err != nil {
 		return nil, 0, false, err
@@ -100,6 +105,13 @@ func (e *Executor) runSubworkflowStep(
 
 	if errors.Is(childErr, ErrInterrupted) {
 		rt.mu.Lock()
+		// Lift the child's pending approval gate onto the parent checkpoint so the operator can
+		// resolve the nested gate through the parent run they started; mirror the request event on
+		// the parent so `agentctl logs <parent>` shows it.
+		if gate := e.childPendingHitl(persistCtx, childRunID); gate != nil {
+			rt.ictx.PendingHitl = gate
+			e.appendParentHitlRequest(persistCtx, in.RunID, step.ID, stepIndex, calleeName, gate)
+		}
 		ierr := e.interruptRun(persistCtx, wf, in, stepIndex, step.ID, rt.ictx, rt.totalCost, runHandle)
 		rt.mu.Unlock()
 		return nil, child.TotalCostUSD, true, ierr
@@ -144,6 +156,53 @@ func (e *Executor) startChildRun(ctx context.Context, in RunInput, calleeName, c
 		})
 	}
 	return nil
+}
+
+// childHasResumableCheckpoint reports whether the child run has a checkpoint that e.Run can
+// resume. A Running child with no checkpoint (start-side crash window) is not resumable.
+func (e *Executor) childHasResumableCheckpoint(ctx context.Context, childRunID string) bool {
+	cp, err := e.Store.GetLatestCheckpoint(ctx, childRunID)
+	if err != nil || cp == nil {
+		return false
+	}
+	switch cp.Status {
+	case state.CheckpointStatusRunning, state.CheckpointStatusInterrupted:
+		return true
+	default:
+		return false
+	}
+}
+
+// childPendingHitl reads the pending approval gate persisted on the child's latest checkpoint,
+// or nil when the child interrupted for a non-HITL reason (e.g. the interrupt stub).
+func (e *Executor) childPendingHitl(ctx context.Context, childRunID string) *PendingHitlState {
+	cp, err := e.Store.GetLatestCheckpoint(ctx, childRunID)
+	if err != nil || cp == nil {
+		return nil
+	}
+	var payload checkpointPayload
+	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err != nil {
+		return nil
+	}
+	return payload.PendingHitl
+}
+
+// appendParentHitlRequest mirrors the callee's hitl_request_created onto the parent run so the
+// gate is visible in the parent's trace/logs (the resolution events stay on the child run id).
+func (e *Executor) appendParentHitlRequest(ctx context.Context, parentRunID, stepID string, stepIndex int, calleeName string, gate *PendingHitlState) {
+	if e.Trace == nil || gate == nil {
+		return
+	}
+	redacted := policy.RedactHitlArgs(gate.With, gate.Review.RedactKeys)
+	_, _ = e.Trace.Append(ctx, parentRunID, stepID, trace.EventHitlRequestCreated, trace.ActorSystem, map[string]any{
+		"uses":             gate.Uses,
+		"with":             redacted,
+		"description":      gate.Review.Description,
+		"allowedDecisions": gate.Review.AllowedDecisions,
+		"allowedSwitchTo":  gate.Review.SwitchTargets,
+		"stepIndex":        stepIndex,
+		"subworkflow":      calleeName,
+	})
 }
 
 func decodeChildOutput(outputJSON string) (map[string]any, error) {

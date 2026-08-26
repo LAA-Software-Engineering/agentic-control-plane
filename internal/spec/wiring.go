@@ -251,8 +251,20 @@ func producerOutputDoc(g *ProjectGraph, st WorkflowStep) *schema.Document {
 }
 
 func consumerInputDoc(g *ProjectGraph, st WorkflowStep) *schema.Document {
+	if g == nil {
+		return nil
+	}
+	// A `workflow:` step consumes the callee Workflow's input.schema (issue #194); a subworkflow
+	// output has no schema, so ${steps.<sub>.output…} stays untyped on the producer side.
+	if sub := strings.TrimSpace(st.Workflow); sub != "" {
+		wr := g.Workflows[sub]
+		if wr == nil || wr.Spec.Input == nil {
+			return nil
+		}
+		return wr.Spec.Input.Resolved
+	}
 	name := strings.TrimSpace(st.Agent)
-	if name == "" || g == nil {
+	if name == "" {
 		return nil
 	}
 	ar := g.Agents[name]
@@ -271,6 +283,9 @@ func producerSchemaName(st WorkflowStep) string {
 }
 
 func consumerSchemaName(st WorkflowStep) string {
+	if sub := strings.TrimSpace(st.Workflow); sub != "" {
+		return "Workflow/" + sub
+	}
 	name := strings.TrimSpace(st.Agent)
 	if name == "" {
 		return "consumer"

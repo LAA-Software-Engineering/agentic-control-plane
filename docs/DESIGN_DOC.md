@@ -815,8 +815,11 @@ ADR 002: the callee is **statically named**, never selected by an expression.
 ```
 
 * A step sets **exactly one** of `agent`, `uses`, or `workflow`.
-* `with:` is interpolated and becomes the callee's run **input** (validated against the callee's
-  `input.schema` when present); the callee's `output.value` becomes the step's `output`.
+* `with:` is interpolated and becomes the callee's run **input**; the callee's `output.value`
+  becomes the step's `output`. `agentctl validate` type-checks `with:` against the callee's
+  `input.schema` when present (§13.1 wiring, issue #193), and the engine validates the resolved
+  input against it at runtime. A subworkflow has no output schema, so `${steps.<sub>.output…}`
+  is **untyped** on the producer side (gradual typing) until `WorkflowOutput` grows a schema.
 * **Recursion is rejected at validation time** with positions — direct (`a → a`) and indirect
   (`a → b → a`). Cycle detection reuses the graph machinery from issue #192.
 * **Nesting depth is bounded** by `spec.DefaultMaxSubworkflowDepth` (8), enforced statically as

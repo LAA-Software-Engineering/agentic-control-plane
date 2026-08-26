@@ -507,6 +507,10 @@ func (e *Executor) executeOneStep(
 		if subInterrupted {
 			return out, stepCost, started, inJSON, pendingCleared, true, err
 		}
+		if err == nil {
+			// A nested gate lifted onto the parent checkpoint is resolved once the child completes.
+			pendingCleared = true
+		}
 	} else {
 		ar, ok := e.Graph.Agents[agentName]
 		if !ok || ar == nil {

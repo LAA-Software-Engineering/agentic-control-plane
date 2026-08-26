@@ -135,6 +135,108 @@ func TestSubworkflow_stepExclusivity(t *testing.T) {
 	}
 }
 
+func TestSubworkflow_withCheckedAgainstCalleeInputSchema(t *testing.T) {
+	root := t.TempDir()
+	writeSchema(t, root, "schemas/caller-in.json", `{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "object",
+		"properties": { "topic": { "type": "string" } },
+		"additionalProperties": false
+	}`)
+	writeSchema(t, root, "schemas/callee-in.json", `{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "object",
+		"properties": { "msg": { "type": "integer" } },
+		"additionalProperties": false
+	}`)
+
+	callerYAML := `apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: caller
+spec:
+  input:
+    schema: ./schemas/caller-in.json
+  steps:
+    - id: call
+      workflow: callee
+      with:
+        msg: ${input.topic}
+`
+	dec, err := ParseResourceFromBytes([]byte(callerYAML), "caller.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := dec.Resource.(*WorkflowResource)
+	g := &ProjectGraph{Workflows: map[string]*WorkflowResource{
+		"caller": caller,
+		"callee": {
+			Kind:     KindWorkflow,
+			Metadata: Metadata{Name: "callee"},
+			Spec:     WorkflowSpec{Input: &WorkflowInput{Schema: "./schemas/callee-in.json"}},
+		},
+	}}
+
+	err = ValidateProjectGraph(g, root)
+	if err == nil {
+		t.Fatal("expected a with/callee-input type mismatch")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "Workflow/callee") {
+		t.Fatalf("want callee schema name in %q", msg)
+	}
+	pos := caller.Spec.Steps[0].Pos.String()
+	if pos == "" || !strings.Contains(msg, pos) {
+		t.Fatalf("want positioned error containing %q, got %q", pos, msg)
+	}
+}
+
+func TestSubworkflow_withMatchingCalleeInputSchema_ok(t *testing.T) {
+	root := t.TempDir()
+	writeSchema(t, root, "schemas/caller-in.json", `{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "object",
+		"properties": { "topic": { "type": "string" } },
+		"additionalProperties": false
+	}`)
+	writeSchema(t, root, "schemas/callee-in.json", `{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "object",
+		"properties": { "msg": { "type": "string" } },
+		"additionalProperties": false
+	}`)
+
+	callerYAML := `apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: caller
+spec:
+  input:
+    schema: ./schemas/caller-in.json
+  steps:
+    - id: call
+      workflow: callee
+      with:
+        msg: ${input.topic}
+`
+	dec, err := ParseResourceFromBytes([]byte(callerYAML), "caller.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := dec.Resource.(*WorkflowResource)
+	g := &ProjectGraph{Workflows: map[string]*WorkflowResource{
+		"caller": caller,
+		"callee": {
+			Kind:     KindWorkflow,
+			Metadata: Metadata{Name: "callee"},
+			Spec:     WorkflowSpec{Input: &WorkflowInput{Schema: "./schemas/callee-in.json"}},
+		},
+	}}
+	if err := ValidateProjectGraph(g, root); err != nil {
+		t.Fatalf("matching schema should validate: %v", err)
+	}
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
