@@ -1,0 +1,42 @@
+// Same program as adr002.agent, reformatted with unrelated inserts: extra blank
+// lines, comments, and different indentation. Lowering must produce a
+// byte-identical resource graph (identity != location, ADR 003).
+
+
+
+agent Reviewer {
+        model  openai/gpt-5
+        // a comment that changes nothing
+        policy guarded-writes
+        grants {
+                tool.github.read_pr
+
+                tool.github.read_comments
+        }
+        input  ReviewRequest
+        output Review
+}
+
+
+// ten unrelated lines of comment above the workflow
+//
+//
+//
+//
+//
+//
+//
+//
+workflow PRReview(input: PullRequest) -> Review
+    effects { github.read, github.write, external.visible }
+{
+  pr = github.get_pr(input.repo, input.number)
+  parallel {
+    security = SecurityReviewer(pr)
+    quality  = Reviewer(pr)
+    tests    = TestReviewer(pr)
+  }
+  result = Synthesizer(security, quality, tests)
+  github.post_comment(repo: input.repo, number: input.number, body: result.summary)
+  return result
+}

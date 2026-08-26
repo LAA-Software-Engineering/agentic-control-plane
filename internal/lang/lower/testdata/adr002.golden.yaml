@@ -1,0 +1,61 @@
+apiVersion: agentic.dev/v0
+kind: Agent
+metadata:
+  name: Reviewer
+spec:
+  model: openai/gpt-5
+  tools:
+    - tool.github.read_pr
+    - tool.github.read_comments
+  policy: guarded-writes
+---
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: PRReview
+spec:
+  steps:
+    - id: pr
+      uses: tool.github.get_pr
+      with:
+        arg0: ${input.repo}
+        arg1: ${input.number}
+    - id: security
+      agent: SecurityReviewer
+      with:
+        arg0: ${steps.pr.output}
+      needs:
+        - pr
+    - id: quality
+      agent: Reviewer
+      with:
+        arg0: ${steps.pr.output}
+      needs:
+        - pr
+    - id: tests
+      agent: TestReviewer
+      with:
+        arg0: ${steps.pr.output}
+      needs:
+        - pr
+    - id: result
+      agent: Synthesizer
+      with:
+        arg0: ${steps.security.output}
+        arg1: ${steps.quality.output}
+        arg2: ${steps.tests.output}
+      needs:
+        - security
+        - quality
+        - tests
+    - id: post_comment
+      uses: tool.github.post_comment
+      with:
+        body: ${steps.result.output.summary}
+        number: ${input.number}
+        repo: ${input.repo}
+      needs:
+        - result
+  output:
+    value:
+      value: ${steps.result.output}

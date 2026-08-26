@@ -1,0 +1,5 @@
+// Exercises SSA-flattening of nested call arguments into generated temp steps.
+workflow Nested(input: Ticket) -> Summary {
+    result = report.render(triage.classify(input.body), input.id)
+    return result
+}
