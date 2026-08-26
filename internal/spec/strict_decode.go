@@ -20,6 +20,26 @@ type resourceDoc[T any] struct {
 	Spec       T        `yaml:"spec"`
 }
 
+// decodeYAMLNodeKnownFields re-encodes n and decodes it with KnownFields(true).
+// yaml.Node.Decode does not inherit KnownFields from a parent decoder, so custom
+// UnmarshalYAML implementations must use this for strict mapping keys.
+func decodeYAMLNodeKnownFields(n *yaml.Node, out any) error {
+	if n == nil {
+		return nil
+	}
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	if err := enc.Encode(n); err != nil {
+		return err
+	}
+	if err := enc.Close(); err != nil {
+		return err
+	}
+	dec := yaml.NewDecoder(&buf)
+	dec.KnownFields(true)
+	return dec.Decode(out)
+}
+
 func parseStrictResource[T any](data []byte, path string, wantKind string, wrap func(resourceDoc[T]) any) (*Decoded, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
@@ -136,25 +156,26 @@ func lookupStrictType(typeName string) reflect.Type {
 		short = typeName[i+1:]
 	}
 	registry := map[string]reflect.Type{
-		"Metadata":            reflect.TypeOf(Metadata{}),
-		"ProjectSpec":         reflect.TypeOf(ProjectSpec{}),
-		"ProjectDefaults":     reflect.TypeOf(ProjectDefaults{}),
-		"ProjectProviders":    reflect.TypeOf(ProjectProviders{}),
-		"ProjectStateConfig":  reflect.TypeOf(ProjectStateConfig{}),
-		"ProjectTracesConfig": reflect.TypeOf(ProjectTracesConfig{}),
-		"AgentSpec":           reflect.TypeOf(AgentSpec{}),
-		"ToolSpec":            reflect.TypeOf(ToolSpec{}),
-		"WorkflowSpec":        reflect.TypeOf(WorkflowSpec{}),
-		"PolicySpec":          reflect.TypeOf(PolicySpec{}),
-		"EnvironmentSpec":     reflect.TypeOf(EnvironmentSpec{}),
-		"AgentOverride":       reflect.TypeOf(AgentOverride{}),
-		"PolicyOverride":      reflect.TypeOf(PolicyOverride{}),
-		"AgentConstraints":    reflect.TypeOf(AgentConstraints{}),
-		"PolicyExecution":     reflect.TypeOf(PolicyExecution{}),
-		"PolicyEffects":       reflect.TypeOf(PolicyEffects{}),
-		"ToolSafety":          reflect.TypeOf(ToolSafety{}),
-		"ToolOperation":       reflect.TypeOf(ToolOperation{}),
-		"HitlPolicy":          reflect.TypeOf(HitlPolicy{}),
+		"Metadata":               reflect.TypeOf(Metadata{}),
+		"ProjectSpec":            reflect.TypeOf(ProjectSpec{}),
+		"ProjectDefaults":        reflect.TypeOf(ProjectDefaults{}),
+		"ProjectProviders":       reflect.TypeOf(ProjectProviders{}),
+		"ProjectStateConfig":     reflect.TypeOf(ProjectStateConfig{}),
+		"ProjectTracesConfig":    reflect.TypeOf(ProjectTracesConfig{}),
+		"AgentSpec":              reflect.TypeOf(AgentSpec{}),
+		"ToolSpec":               reflect.TypeOf(ToolSpec{}),
+		"WorkflowSpec":           reflect.TypeOf(WorkflowSpec{}),
+		"PolicySpec":             reflect.TypeOf(PolicySpec{}),
+		"EnvironmentSpec":        reflect.TypeOf(EnvironmentSpec{}),
+		"AgentOverride":          reflect.TypeOf(AgentOverride{}),
+		"PolicyOverride":         reflect.TypeOf(PolicyOverride{}),
+		"AgentConstraints":       reflect.TypeOf(AgentConstraints{}),
+		"PolicyExecution":        reflect.TypeOf(PolicyExecution{}),
+		"PolicyEffects":          reflect.TypeOf(PolicyEffects{}),
+		"ToolSafety":             reflect.TypeOf(ToolSafety{}),
+		"ToolOperation":          reflect.TypeOf(ToolOperation{}),
+		"HitlPolicy":             reflect.TypeOf(HitlPolicy{}),
+		"WorkflowApprovalConfig": reflect.TypeOf(WorkflowApprovalConfig{}),
 	}
 	return registry[short]
 }

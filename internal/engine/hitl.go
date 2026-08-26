@@ -14,12 +14,16 @@ import (
 
 const traceInterruptReasonHITL = "hitl"
 
+// PendingHitlKindApproval marks a workflow-level approval step in checkpoint context (issue #195).
+const PendingHitlKindApproval = "approval"
+
 // PendingHitlState is persisted in checkpoint context while awaiting operator input.
 type PendingHitlState struct {
 	StepID string                    `json:"stepId"`
 	Uses   string                    `json:"uses"`
 	With   map[string]any            `json:"with"`
 	Review policy.ResolvedHitlReview `json:"review"`
+	Kind   string                    `json:"kind,omitempty"`
 }
 
 // HitlRunOptions configures human-in-the-loop resolution for a run (issue #106).
@@ -38,7 +42,7 @@ func (e *Executor) maybeInterruptForHitl(
 	with map[string]any,
 	pol policy.PolicyEvaluator,
 	pctx policy.RunContext,
-	ictx Context,
+	ictx *Context,
 	totalCost float64,
 	runHandle *telemetry.RunHandle,
 ) (bool, error) {
@@ -58,11 +62,30 @@ func (e *Executor) maybeInterruptForHitl(
 	if in.Hitl.Decision != nil && in.Resume {
 		return false, nil
 	}
+	return e.interruptForHitlGate(ctx, in, wf, stepIndex, step, gate, ictx, totalCost, runHandle, "")
+}
+
+func (e *Executor) interruptForHitlGate(
+	ctx context.Context,
+	in RunInput,
+	wf *spec.WorkflowResource,
+	stepIndex int,
+	step spec.WorkflowStep,
+	gate *policy.HitlGate,
+	ictx *Context,
+	totalCost float64,
+	runHandle *telemetry.RunHandle,
+	kind string,
+) (bool, error) {
+	if gate == nil || ictx == nil {
+		return false, nil
+	}
 	ictx.PendingHitl = &PendingHitlState{
 		StepID: step.ID,
 		Uses:   gate.Uses,
 		With:   gate.With,
 		Review: gate.Review,
+		Kind:   kind,
 	}
 	if runHandle != nil {
 		endApproval := runHandle.StartApproval(telemetry.ApprovalAttrs{RunID: in.RunID, Uses: gate.Uses})
@@ -71,7 +94,7 @@ func (e *Executor) maybeInterruptForHitl(
 		ref := runHandle.SpanRef()
 		ictx.OtelInterrupt = &ref
 	}
-	if err := e.saveCheckpoint(ctx, wf, in.RunID, stepIndex, step.ID, ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
+	if err := e.saveCheckpoint(ctx, wf, in.RunID, stepIndex, step.ID, *ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
 		return false, fmt.Errorf("engine: save hitl checkpoint: %w", err)
 	}
 	if err := e.Store.UpdateRunStatus(ctx, in.RunID, state.RunStatusInterrupted); err != nil {
@@ -79,14 +102,18 @@ func (e *Executor) maybeInterruptForHitl(
 	}
 	if e.Trace != nil {
 		redacted := policy.RedactHitlArgs(gate.With, gate.Review.RedactKeys)
-		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlRequestCreated, trace.ActorSystem, map[string]any{
+		data := map[string]any{
 			"uses":             gate.Uses,
 			"with":             redacted,
 			"description":      gate.Review.Description,
 			"allowedDecisions": gate.Review.AllowedDecisions,
 			"allowedSwitchTo":  gate.Review.SwitchTargets,
 			"stepIndex":        stepIndex,
-		})
+		}
+		if kind != "" {
+			data["kind"] = kind
+		}
+		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlRequestCreated, trace.ActorSystem, data)
 		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, map[string]any{
 			"stepIndex": stepIndex, "stepId": step.ID, "reason": traceInterruptReasonHITL, "interrupted": true,
 		})
@@ -156,6 +183,9 @@ func (e *Executor) resolvePendingHitl(
 	if e.Trace != nil {
 		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlDecisionSubmitted, trace.ActorUser, traceData)
 		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlResolutionApplied, trace.ActorSystem, traceData)
+	}
+	if pending.Kind == PendingHitlKindApproval || pending.Uses == spec.ApprovalStepUses {
+		return uses, with, nil
 	}
 	pctx2 := pctx
 	pctx2.ApprovedActions = append(append([]string(nil), pctx.ApprovedActions...), uses)

@@ -229,7 +229,7 @@ func TestValidateProjectGraph_workflowPlusAgentRejected(t *testing.T) {
 		},
 	}
 	err := ValidateProjectGraph(g, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "more than one of agent, uses, or workflow") {
+	if err == nil || !strings.Contains(err.Error(), "more than one of agent, uses, workflow, or approval") {
 		t.Fatalf("got %v", err)
 	}
 }

@@ -76,6 +76,7 @@ Migration `007_trace_audit_chain.sql` adds nullable `prev_hash` and `hash` colum
 - Run `audit verify` after backups/restores or manual DB edits in compliance workflows.
 - Concurrent appends within one process are serialized by SQLite transactions; each run maintains a single chain tip.
 - Concurrent workflow steps (issue #192) may append events in nondeterministic wall-clock/`seq` order. Each step event also stores `logicalOrder` (YAML step index) inside `data_json`, so replay can sort by logical order while verification still hashes the stored sequence including that field.
+- HITL suspend/resume (tool-call gates and workflow `approval:` steps, issue #195) appends further events on the same run. `audit verify --run` must succeed across that boundary.
 - Future work (out of scope for #116): external signing, cross-run ledger, automatic verify in CI.
 
 ## Related docs
