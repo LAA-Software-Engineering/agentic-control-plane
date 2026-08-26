@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"time"
 
@@ -11,10 +12,13 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
-const providerShutdownTimeout = 5 * time.Second
+const (
+	providerShutdownTimeout = 5 * time.Second
+	defaultOTLPTracesPath   = "/v1/traces"
+)
 
 func newProvider(cfg Config, agentVersion string) (*sdktrace.TracerProvider, error) {
 	var exporters []sdktrace.SpanExporter
@@ -32,11 +36,9 @@ func newProvider(cfg Config, agentVersion string) (*sdktrace.TracerProvider, err
 		return nil, err
 	}
 	if endpoint != "" {
-		opts := []otlptracehttp.Option{}
-		if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
-			opts = append(opts, otlptracehttp.WithEndpointURL(endpoint))
-		} else {
-			opts = append(opts, otlptracehttp.WithEndpoint(endpoint))
+		opts, err := otlpHTTPOptions(endpoint)
+		if err != nil {
+			return nil, err
 		}
 		otlpExp, err := otlptracehttp.New(context.Background(), opts...)
 		if err != nil {
@@ -81,6 +83,21 @@ func newProvider(cfg Config, agentVersion string) (*sdktrace.TracerProvider, err
 		sdktrace.WithResource(res),
 	)
 	return tp, nil
+}
+
+func otlpHTTPOptions(endpoint string) ([]otlptracehttp.Option, error) {
+	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("telemetry: endpoint url: %w", err)
+		}
+		if u.Path == "" || u.Path == "/" {
+			u.Path = defaultOTLPTracesPath
+			u.RawPath = ""
+		}
+		return []otlptracehttp.Option{otlptracehttp.WithEndpointURL(u.String())}, nil
+	}
+	return []otlptracehttp.Option{otlptracehttp.WithEndpoint(endpoint)}, nil
 }
 
 type multiExporter struct {
