@@ -1,0 +1,6 @@
+// A workflow with no return type, no effects clause, and only effectful call
+// statements — every optional clause omitted.
+workflow Publish(input: Release) {
+    artifact = build.compile(input.ref)
+    registry.push(artifact)
+}

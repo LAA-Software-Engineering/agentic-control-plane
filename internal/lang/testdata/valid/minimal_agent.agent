@@ -1,0 +1,11 @@
+// A single agent with every field, exercising kebab-case policy refs and a
+// hyphenated model name (openai/gpt-4o-mini).
+agent Summarizer {
+    model  openai/gpt-4o-mini
+    policy read-only
+    grants {
+        tool.github.read_comments
+    }
+    input  Document
+    output Summary
+}
