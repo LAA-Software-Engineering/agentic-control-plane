@@ -115,6 +115,27 @@ func TestLower_SameFileWorkflowCalleeIsWorkflowStep(t *testing.T) {
 	}
 }
 
+// TestLower_WholeInputReferenceIsDiagnostic asserts a bare reference to a
+// single-parameter workflow's input is a diagnostic rather than an invalid
+// ${input} token: the resource-model interpolation language has no token for the
+// entire workflow input, only input.<field>.
+func TestLower_WholeInputReferenceIsDiagnostic(t *testing.T) {
+	src := "workflow Echo(input: T) -> T { return input }\n"
+	f, pd := lang.Parse("echo.agent", src)
+	if len(pd) > 0 {
+		t.Fatalf("unexpected parse diagnostics: %s", pd.Error())
+	}
+	_, ld := lower.LowerFile(f, lower.Options{})
+	if !strings.Contains(ld.Error(), "cannot reference the whole workflow input") {
+		t.Errorf("expected a whole-input diagnostic; got: %s", ld.Error())
+	}
+	// A field access on the same parameter must NOT diagnose.
+	f2, _ := lang.Parse("ok.agent", "workflow Echo(input: T) -> T { return input.field }\n")
+	if _, ld2 := lower.LowerFile(f2, lower.Options{}); len(ld2) > 0 {
+		t.Errorf("input.field must lower cleanly; got: %s", ld2.Error())
+	}
+}
+
 // TestLower_DuplicateAndCrossKindNamesAreDiagnostics asserts LowerFile is the
 // authority for resource identity: a duplicated agent/workflow name, and a name
 // declared as both, are diagnostics rather than a silent last-write-wins or a

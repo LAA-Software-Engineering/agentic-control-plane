@@ -154,8 +154,11 @@ Lowering rules:
   otherwise. A name declared as both an agent and a workflow is a diagnostic, never a silent
   `agent:`. Named arguments become `with:` keys; positional arguments become placeholder
   `arg0`, `arg1`, … keys pending parameter binding (#198).
-- **References.** A workflow parameter lowers to `${input.…}`; a binding lowers to
-  `${steps.<id>.output.…}`. `return <expr>` lowers to `output.value.value`.
+- **References.** A workflow parameter field lowers to `${input.…}`; a binding lowers to
+  `${steps.<id>.output.…}`. `return <expr>` lowers to `output.value.value`. A **bare**
+  reference to a single-parameter workflow's input (the whole input object, e.g.
+  `return input`) is a diagnostic: the interpolation language has no token for the entire
+  input, only `input.<field>` (see the whole-input limitation below).
 - **Nested calls** SSA-flatten: a call passed as an argument is hoisted into its own step
   (id `<parent>_arg<i>`) referenced by `${steps.<temp>.output}`.
 - **Sequencing and `parallel`.** Statements chain through `needs` (issue #192): each
@@ -172,6 +175,16 @@ graph, so `plan` shows no spurious diff. Positions are still carried — on the 
 themselves (`WorkflowStep.*Pos`, `AgentSpec.ToolsPos`, #187) and in an auxiliary
 `lower.SourceMap` keyed by structural identity — so a validation, policy, or effect
 diagnostic on lowered IR underlines the `.agent` call site, not a synthesized name.
+
+### Known limitation (whole-input reference)
+
+The interpolation language addresses a workflow's input only as `input.<field>`
+(`engine.resolvePath` requires at least two path segments), so there is no token for the
+*entire* input object — unlike a step, whose whole output is `${steps.<id>.output}`. A bare
+reference to a single-parameter workflow's input therefore cannot be lowered and is a
+diagnostic. Supporting it needs two things that are out of scope for the resource projection:
+a whole-input interpolation token in the engine/validator, and — for passing a whole input to
+a subworkflow — a callee input-document mapping rather than a one-key `with:` map (#194/#198).
 
 ### Known limitation (Epic F)
 

@@ -1,11 +1,12 @@
 // A workflow that calls another workflow declared later in the SAME file. The
 // callee must lower to a workflow: step, not an agent: step (#194), with no
-// caller-supplied Options.Workflows hint.
+// caller-supplied Options.Workflows hint. Fields are accessed (input.body,
+// input.text) so every lowered token is valid resource-model interpolation.
 workflow Main(input: Ticket) -> Summary {
-    x = Util(input)
+    x = Util(input.body)
     return x
 }
 
-workflow Util(input: Ticket) -> Summary {
-    return input
+workflow Util(input: Draft) -> Summary {
+    return input.text
 }

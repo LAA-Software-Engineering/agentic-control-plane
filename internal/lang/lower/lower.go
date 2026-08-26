@@ -275,7 +275,10 @@ func newEnv(d *lang.WorkflowDecl) refEnv {
 	roots := map[string]string{}
 	switch {
 	case len(d.Params) == 1 && d.Params[0].Name != nil:
-		// A single parameter names the whole workflow input.
+		// A single parameter names the whole workflow input, so a field access
+		// (input.repo) lowers to ${input.repo}. A BARE reference to that
+		// parameter would lower to ${input}, which the interpolation language
+		// cannot represent — token() diagnoses that case.
 		roots[d.Params[0].Name.Name] = "input"
 	default:
 		for _, p := range d.Params {
@@ -475,8 +478,22 @@ func (wl *workflowLowerer) lowerValue(e lang.Expr, idBase string, predNeeds []st
 
 // token renders a reference as an interpolation string, e.g. result.summary ->
 // ${steps.result.output.summary}, input.repo -> ${input.repo}.
+//
+// A bare reference to a single-parameter workflow's input resolves to the path
+// "input" alone, and the resource-model interpolation language has no token for
+// the whole workflow input — engine.resolvePath requires input.<field> (a step's
+// whole output is reachable as ${steps.<id>.output}, but the input root is not).
+// Emitting ${input} would skip-pass validation and fail-closed at run time, so it
+// is a diagnostic here rather than silent invalid IR. Whole-input pass-through
+// (including handing a subworkflow its entire input) needs both a whole-input
+// token and a callee input-document mapping; both are follow-ups (see
+// docs/plans/197-lowering.md), not part of the resource projection.
 func (wl *workflowLowerer) token(r *lang.RefExpr) any {
-	return "${" + wl.prefixOf(r) + "}"
+	path := wl.prefixOf(r)
+	if path == "input" {
+		wl.l.diag(r.Position(), "cannot reference the whole workflow input; use input.<field> (the resource model has no interpolation token for the entire input)")
+	}
+	return "${" + path + "}"
 }
 
 // prefixOf resolves a reference to its interpolation path (no ${}). An unresolved

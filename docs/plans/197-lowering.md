@@ -128,8 +128,22 @@ preserves every grant; lifting the limit is Epic F, tracked by #188/#204. The ac
 test asserts the lowered graph is clean on everything #197 owns and that this is the *only*
 remaining validation error.
 
+## Whole-input reference (follow-up)
+The interpolation language addresses workflow input only as `input.<field>`
+(`engine.resolvePath` requires ≥2 segments); there is no token for the whole input object,
+unlike a step's whole output (`${steps.<id>.output}`). Lowering a bare single-parameter
+reference (`return input`, `Util(input)`) would emit `${input}`, which skip-passes validation
+(`spec.checkInterpPath` returns nil for <2 segments) and fail-closes at run time. Lowering
+therefore **diagnoses** the bare whole-input reference instead of emitting invalid IR. Closing
+it properly needs a whole-input token in the engine/validator **and** a subworkflow
+input-document mapping (a single-param callee should receive the object as its input document,
+not as a one-key `with:` map) — the latter is #194/#198, and #198's `arg0`-rebind does not
+compose with the current whole-document convention on its own. Tracked as a follow-up; not the
+resource projection's job.
+
 ## Out of scope (follow-ups)
 Execution lowering / `Branch`/`Loop` (#199); type + effect checking of the effects clause
-(#198/#190); multi-operation-per-tool agent advertising (Epic F, #188/#204); wiring `.agent`
+(#198/#190); multi-operation-per-tool agent advertising (Epic F, #188/#204); a whole-input
+interpolation token + subworkflow input-document mapping (#194/#198, above); wiring `.agent`
 ingress into the project loader and `agentctl` (Epic H).
 </content>
