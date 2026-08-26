@@ -19,7 +19,7 @@ spec:
 |-------|-------------|
 | `enabled` | When `false` (default), no OTLP exporters are started and there is no network overhead. |
 | `serviceName` | Required when enabled; becomes the OpenTelemetry service name. |
-| `endpoint` | OTLP HTTP endpoint URL or `env:VAR` (same token style as `apiKeyFrom`). |
+| `endpoint` | OTLP HTTP endpoint URL or `env:VAR` (same token style as `apiKeyFrom`). Base URLs such as `http://127.0.0.1:4318` are exported to `/v1/traces`; explicit paths are preserved. |
 | `consoleExport` | Pretty-print spans to stderr (useful for local debugging). |
 
 At least one of `endpoint` or `consoleExport` must be set when telemetry is enabled.
@@ -30,7 +30,7 @@ At least one of `endpoint` or `consoleExport` must be set when telemetry is enab
 
 | Variable | When needed |
 |----------|-------------|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | When `endpoint: env:OTEL_EXPORTER_OTLP_ENDPOINT` (or another `env:VAR` you choose). Set to the OTLP HTTP traces URL, e.g. `http://127.0.0.1:4318/v1/traces` for Jaeger all-in-one. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | When `endpoint: env:OTEL_EXPORTER_OTLP_ENDPOINT` (or another `env:VAR` you choose). Set to the OTLP HTTP base URL, e.g. `http://127.0.0.1:4318`, or the traces URL, e.g. `http://127.0.0.1:4318/v1/traces` for Jaeger all-in-one. |
 
 **If the variable is unset** at run time, telemetry init fails gracefully: a warning is printed, OTLP export is disabled for that process, and the workflow run continues with SQLite traces only. Runs are never failed because of telemetry.
 
