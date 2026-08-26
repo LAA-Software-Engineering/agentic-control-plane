@@ -92,14 +92,19 @@ func TestRegistryDispatchPullRequestFetch(t *testing.T) {
 			wantKey: "pull_request",
 		},
 		{
+			name:    "JSON object",
+			with:    map[string]any{"pr": map[string]any{"number": float64(1), "title": "demo"}},
+			wantKey: "pull_request",
+		},
+		{
 			name:    "missing pr",
 			with:    map[string]any{},
-			wantErr: "requires string field pr",
+			wantErr: "requires JSON object or JSON string field pr",
 		},
 		{
 			name:    "empty pr",
 			with:    map[string]any{"pr": "   "},
-			wantErr: "requires string field pr",
+			wantErr: "requires JSON object or JSON string field pr",
 		},
 		{
 			name:    "malformed JSON",
@@ -109,7 +114,7 @@ func TestRegistryDispatchPullRequestFetch(t *testing.T) {
 		{
 			name:    "non-string pr",
 			with:    map[string]any{"pr": 42},
-			wantErr: "requires string field pr",
+			wantErr: "requires JSON object or JSON string field pr",
 		},
 	}
 	for _, tt := range tests {

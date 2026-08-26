@@ -1,6 +1,10 @@
 package spec
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
+)
 
 func TestCloneProjectGraph_isolatesMutation(t *testing.T) {
 	g := &ProjectGraph{
@@ -147,5 +151,40 @@ func TestCloneProjectGraph_preservesPos(t *testing.T) {
 	cl.Agents["a"].Pos.Line = 99
 	if g.Agents["a"].Pos.Line != 1 {
 		t.Fatal("clone Pos aliased original")
+	}
+}
+
+func TestCloneProjectGraph_preservesResolvedSchema(t *testing.T) {
+	doc := &schema.Document{Path: "/tmp/in.json", Raw: map[string]any{"type": "object"}}
+	g := &ProjectGraph{
+		Agents: map[string]*AgentResource{
+			"a": {
+				Kind:     KindAgent,
+				Metadata: Metadata{Name: "a"},
+				Spec: AgentSpec{
+					Input:  &AgentIO{Schema: "./schemas/in.json", Resolved: doc},
+					Output: &AgentIO{Schema: "./schemas/out.json", Resolved: doc},
+				},
+			},
+		},
+		Workflows: map[string]*WorkflowResource{
+			"w": {
+				Kind:     KindWorkflow,
+				Metadata: Metadata{Name: "w"},
+				Spec: WorkflowSpec{
+					Input: &WorkflowInput{Schema: "./schemas/in.json", Resolved: doc},
+				},
+			},
+		},
+	}
+	cl, err := CloneProjectGraph(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cl.Agents["a"].Spec.Input.Resolved != doc || cl.Agents["a"].Spec.Output.Resolved != doc {
+		t.Fatal("agent Resolved schema dropped on clone")
+	}
+	if cl.Workflows["w"].Spec.Input.Resolved != doc {
+		t.Fatal("workflow input Resolved schema dropped on clone")
 	}
 }

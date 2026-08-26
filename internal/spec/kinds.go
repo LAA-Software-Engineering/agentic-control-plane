@@ -1,5 +1,7 @@
 package spec
 
+import "github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
+
 // --- Project (design doc §7.1) ---
 
 type ProjectSpec struct {
@@ -99,6 +101,9 @@ type AgentConstraints struct {
 
 type AgentIO struct {
 	Schema string `yaml:"schema,omitempty" json:"schema,omitempty"`
+	// Resolved is the compiled JSON Schema loaded from Schema during validate (issue #193).
+	// Diagnostic/derived; not identity. Omitted from hashes.
+	Resolved *schema.Document `yaml:"-" json:"-"`
 }
 
 // --- Tool (design doc §7.3, MVP types: mcp, http, native) ---
@@ -184,6 +189,8 @@ type WorkflowTrigger struct {
 
 type WorkflowInput struct {
 	Schema string `yaml:"schema,omitempty" json:"schema,omitempty"`
+	// Resolved is the compiled JSON Schema loaded from Schema during validate (issue #193).
+	Resolved *schema.Document `yaml:"-" json:"-"`
 }
 
 type WorkflowStep struct {

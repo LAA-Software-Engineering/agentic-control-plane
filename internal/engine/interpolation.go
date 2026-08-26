@@ -28,7 +28,8 @@ type Context struct {
 var tokenRE = regexp.MustCompile(`\$\{([^}]*)\}`)
 
 // InterpolateString replaces every ${...} token in s using dot-path lookup only (§13.1 MVP).
-// Resolved values are embedded as strings: scalars and JSON for objects/arrays.
+// Resolved values are always embedded as strings: scalars and JSON for objects/arrays.
+// Use InterpolateWalk for type-preserving whole-field tokens (issue #193).
 func InterpolateString(s string, ctx Context) (string, error) {
 	var errs []error
 	out := tokenRE.ReplaceAllStringFunc(s, func(full string) string {
@@ -62,10 +63,14 @@ func InterpolateString(s string, ctx Context) (string, error) {
 
 // InterpolateWalk walks v recursively: it interpolates string leaves and descends into
 // map[string]any and []any. Other JSON-like types are left unchanged.
+//
+// When a string leaf is exactly one ${...} token (the whole field), the resolved value
+// keeps its native type (object/array/number/bool). Tokens embedded in surrounding text
+// are still stringified (issue #193, design doc §13.1).
 func InterpolateWalk(v any, ctx Context) (any, error) {
 	switch t := v.(type) {
 	case string:
-		return InterpolateString(t, ctx)
+		return interpolateStringLeaf(t, ctx)
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
@@ -89,6 +94,30 @@ func InterpolateWalk(v any, ctx Context) (any, error) {
 	default:
 		return v, nil
 	}
+}
+
+// wholeFieldToken reports whether s is exactly one ${...} token with no surrounding text.
+// Internal whitespace inside the braces is allowed; leading/trailing padding is not.
+func wholeFieldToken(s string) (inner string, ok bool) {
+	loc := tokenRE.FindStringIndex(s)
+	if loc == nil || loc[0] != 0 || loc[1] != len(s) {
+		return "", false
+	}
+	m := tokenRE.FindStringSubmatch(s)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
+}
+
+func interpolateStringLeaf(s string, ctx Context) (any, error) {
+	if inner, ok := wholeFieldToken(s); ok {
+		if inner == "" {
+			return nil, errors.New("interpolation: empty placeholder")
+		}
+		return resolvePath(ctx, inner)
+	}
+	return InterpolateString(s, ctx)
 }
 
 func resolvePath(ctx Context, path string) (any, error) {

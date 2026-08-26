@@ -3,7 +3,6 @@ package spec
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -12,7 +11,8 @@ import (
 )
 
 // ValidateProjectGraph runs MVP validation rules from design doc §9.1–§9.5 on a merged graph.
-// projectRoot is used to resolve Agent/Workflow input and output schema paths (§9.2).
+// projectRoot is used to resolve Agent/Workflow input and output schema paths (§9.2),
+// load those schemas onto the graph, and check step interpolation wiring (§13.1, issue #193).
 //
 // Multiple violations are combined with [errors.Join]. Callers (e.g. agentctl validate)
 // should treat a non-nil return as exit code 2 per §11.2.
@@ -36,6 +36,7 @@ func ValidateProjectGraph(g *ProjectGraph, projectRoot string) error {
 	if err := ResolveReferences(g); err != nil {
 		errs = append(errs, err)
 	}
+	errs = append(errs, validateStepWiring(g)...)
 	return errors.Join(errs...)
 }
 
@@ -499,15 +500,21 @@ func validateSchemaFiles(g *ProjectGraph, projectRoot string) []error {
 		}
 		if ar.Spec.Input != nil {
 			if p := strings.TrimSpace(ar.Spec.Input.Schema); p != "" {
-				if err := schemaFileReadable(projectRoot, p); err != nil {
+				doc, err := loadSchemaDocument(projectRoot, p)
+				if err != nil {
 					errs = append(errs, ar.Pos.Errorf("Agent/%s input.schema: %w", name, err))
+				} else {
+					ar.Spec.Input.Resolved = doc
 				}
 			}
 		}
 		if ar.Spec.Output != nil {
 			if p := strings.TrimSpace(ar.Spec.Output.Schema); p != "" {
-				if err := schemaFileReadable(projectRoot, p); err != nil {
+				doc, err := loadSchemaDocument(projectRoot, p)
+				if err != nil {
 					errs = append(errs, ar.Pos.Errorf("Agent/%s output.schema: %w", name, err))
+				} else {
+					ar.Spec.Output.Resolved = doc
 				}
 			}
 		}
@@ -518,8 +525,11 @@ func validateSchemaFiles(g *ProjectGraph, projectRoot string) []error {
 		}
 		if wr.Spec.Input != nil {
 			if p := strings.TrimSpace(wr.Spec.Input.Schema); p != "" {
-				if err := schemaFileReadable(projectRoot, p); err != nil {
+				doc, err := loadSchemaDocument(projectRoot, p)
+				if err != nil {
 					errs = append(errs, wr.Pos.Errorf("Workflow/%s input.schema: %w", name, err))
+				} else {
+					wr.Spec.Input.Resolved = doc
 				}
 			}
 		}
@@ -527,15 +537,12 @@ func validateSchemaFiles(g *ProjectGraph, projectRoot string) []error {
 	return errs
 }
 
-func schemaFileReadable(projectRoot, ref string) error {
+func loadSchemaDocument(projectRoot, ref string) (*schema.Document, error) {
 	abs, err := schema.ResolveSchemaPath(projectRoot, ref)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := os.Stat(abs); err != nil {
-		return fmt.Errorf("schema file %q: %w", abs, err)
-	}
-	return nil
+	return schema.LoadDocument(abs)
 }
 
 func resourcePos(v any) Pos {

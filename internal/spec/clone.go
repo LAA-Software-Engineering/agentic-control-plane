@@ -49,6 +49,8 @@ func preserveDerivedGraphFields(src, dst *ProjectGraph) {
 		if n := len(srcAr.Spec.ToolsPos); n > 0 {
 			ar.Spec.ToolsPos = append([]Pos(nil), srcAr.Spec.ToolsPos...)
 		}
+		copyResolvedIO(srcAr.Spec.Input, ar.Spec.Input)
+		copyResolvedIO(srcAr.Spec.Output, ar.Spec.Output)
 	}
 	for name, tr := range dst.Tools {
 		srcTr, ok := src.Tools[name]
@@ -64,6 +66,9 @@ func preserveDerivedGraphFields(src, dst *ProjectGraph) {
 			continue
 		}
 		wr.Pos = srcWr.Pos
+		if srcWr.Spec.Input != nil && wr.Spec.Input != nil {
+			wr.Spec.Input.Resolved = srcWr.Spec.Input.Resolved
+		}
 		if len(wr.Spec.Steps) != len(srcWr.Spec.Steps) {
 			continue
 		}
@@ -125,4 +130,11 @@ func copyToolDiagnosticPos(src, dst *ToolResource) {
 		}
 		dst.Spec.Operations[name] = dstOp
 	}
+}
+
+func copyResolvedIO(src, dst *AgentIO) {
+	if src == nil || dst == nil {
+		return
+	}
+	dst.Resolved = src.Resolved
 }
