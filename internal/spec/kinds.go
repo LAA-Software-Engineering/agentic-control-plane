@@ -191,10 +191,20 @@ type WorkflowStep struct {
 	Uses  string         `yaml:"uses,omitempty" json:"uses,omitempty"`
 	Agent string         `yaml:"agent,omitempty" json:"agent,omitempty"`
 	With  map[string]any `yaml:"with,omitempty" json:"with,omitempty"`
-	// Pos, UsesPos, and AgentPos are diagnostic metadata only (issue #187).
-	Pos      Pos `yaml:"-" json:"-"`
-	UsesPos  Pos `yaml:"-" json:"-"`
-	AgentPos Pos `yaml:"-" json:"-"`
+	// Needs lists step IDs that must complete before this step runs (issue #192, ADR 002).
+	// Edges are static and author-declared. Empty/omitted means:
+	//   - if no step in the workflow declares needs, YAML order is an implicit chain
+	//     (backward compatible sequential execution);
+	//   - if any step declares needs, omitted needs means this step is a root
+	//     (ready immediately, may run concurrently with other roots).
+	Needs []string `yaml:"needs,omitempty" json:"needs,omitempty"`
+	// Pos, UsesPos, AgentPos, and NeedsPos are diagnostic metadata only (issue #187).
+	Pos      Pos   `yaml:"-" json:"-"`
+	UsesPos  Pos   `yaml:"-" json:"-"`
+	AgentPos Pos   `yaml:"-" json:"-"`
+	NeedsPos []Pos `yaml:"-" json:"-"`
+	// NeedsDeclared is true when the YAML mapping included a `needs` key (even if empty).
+	NeedsDeclared bool `yaml:"-" json:"-"`
 }
 
 type WorkflowOutput struct {

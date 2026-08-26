@@ -31,9 +31,9 @@ a compiler pipeline.
 | Nested call expressions | Yes, by SSA-flattening to steps + `${steps.x}` refs | [`internal/engine/interpolation.go`](../../internal/engine/interpolation.go) |
 | Named arguments, bindings, return value | Yes — `with:`, step IDs, `output.value` | [`kinds.go:176`](../../internal/spec/kinds.go) |
 | Agent invocation with inputs | Yes — `agent:` + `with:` | `kinds.go:176` |
-| **Parallel branches / fan-in** | **No** — execution is `for _, step := range wf.Spec.Steps` | [`internal/engine/execution.go:304`](../../internal/engine/execution.go) |
+| **Parallel branches / fan-in** | **Yes** — `WorkflowStep.needs` (issue #192); execution is a bounded DAG in [`internal/engine/execution.go`](../../internal/engine/execution.go) |
 | **Checked types across steps** | **No** — interpolation stringifies every value; schemas are validated for file existence only | `interpolation.go`, [`validator.go:435`](../../internal/spec/validator.go) |
-| **Subworkflow calls** | **No** — `WorkflowStep` has four fields: `ID, Uses, Agent, With` | `kinds.go:176` |
+| **Subworkflow calls** | **No** — `WorkflowStep` is `ID, Uses, Agent, With, Needs` | `kinds.go` |
 | **Call-site approval** | **No** — approvals are resource-level `approvals.requiredFor` | [`internal/policy/approvals.go`](../../internal/policy/approvals.go) |
 
 The decisive observation: **a frontend can only compile to primitives the IR already has.**

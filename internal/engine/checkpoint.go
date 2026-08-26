@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
-
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -31,9 +31,19 @@ type checkpointPayload struct {
 	Version       int                   `json:"version"`
 	Input         map[string]any        `json:"input"`
 	Steps         map[string]StepResult `json:"steps"`
+	Completed     []string              `json:"completed,omitempty"`
 	TotalCostUSD  float64               `json:"totalCostUsd"`
 	PendingHitl   *PendingHitlState     `json:"pendingHitl,omitempty"`
 	OtelInterrupt *telemetry.SpanRef    `json:"otelInterrupt,omitempty"`
+}
+
+func completedStepIDs(steps map[string]StepResult) []string {
+	ids := make([]string, 0, len(steps))
+	for id := range steps {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func marshalCheckpointPayload(ictx Context, totalCost float64) (string, error) {
@@ -41,6 +51,7 @@ func marshalCheckpointPayload(ictx Context, totalCost float64) (string, error) {
 		Version:       checkpointPayloadVersion,
 		Input:         ictx.Input,
 		Steps:         ictx.Steps,
+		Completed:     completedStepIDs(ictx.Steps),
 		TotalCostUSD:  totalCost,
 		PendingHitl:   ictx.PendingHitl,
 		OtelInterrupt: ictx.OtelInterrupt,
@@ -81,7 +92,7 @@ func unmarshalCheckpointPayload(contextJSON string, wf *spec.WorkflowResource, c
 	if len(payload.Steps) > maxCheckpointSteps {
 		return Context{}, 0, fmt.Errorf("engine: checkpoint has too many steps (%d)", len(payload.Steps))
 	}
-	if err := validateCheckpointSteps(payload.Steps, wf, completedStepIndex); err != nil {
+	if err := validateCheckpointSteps(payload.Steps, wf, completedStepIndex, payload.Completed); err != nil {
 		return Context{}, 0, err
 	}
 	if payload.TotalCostUSD < 0 {
@@ -93,18 +104,41 @@ func unmarshalCheckpointPayload(contextJSON string, wf *spec.WorkflowResource, c
 	}, payload.TotalCostUSD, nil
 }
 
-func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResource, completedStepIndex int) error {
+func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResource, completedStepIndex int, completedIDs []string) error {
 	if wf == nil {
 		return fmt.Errorf("engine: nil workflow for checkpoint validation")
 	}
-	allowed := make(map[string]struct{}, completedStepIndex+1)
-	for i := 0; i <= completedStepIndex && i < len(wf.Spec.Steps); i++ {
-		id := strings.TrimSpace(wf.Spec.Steps[i].ID)
+	known := make(map[string]struct{}, len(wf.Spec.Steps))
+	for _, st := range wf.Spec.Steps {
+		id := strings.TrimSpace(st.ID)
 		if id != "" {
+			known[id] = struct{}{}
+		}
+	}
+	allowed := make(map[string]struct{})
+	if len(completedIDs) > 0 {
+		for _, id := range completedIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if _, ok := known[id]; !ok {
+				return fmt.Errorf("engine: checkpoint completed unknown step %q", id)
+			}
 			allowed[id] = struct{}{}
+		}
+	} else {
+		for i := 0; i <= completedStepIndex && i < len(wf.Spec.Steps); i++ {
+			id := strings.TrimSpace(wf.Spec.Steps[i].ID)
+			if id != "" {
+				allowed[id] = struct{}{}
+			}
 		}
 	}
 	for stepID := range steps {
+		if _, ok := known[stepID]; !ok {
+			return fmt.Errorf("engine: checkpoint references unknown or future step %q", stepID)
+		}
 		if _, ok := allowed[stepID]; !ok {
 			return fmt.Errorf("engine: checkpoint references unknown or future step %q", stepID)
 		}
@@ -130,29 +164,38 @@ func (e *Executor) saveCheckpoint(ctx context.Context, wf *spec.WorkflowResource
 	})
 }
 
-func (e *Executor) loadResumeState(ctx context.Context, in RunInput) (Context, float64, int, error) {
+func (e *Executor) loadResumeState(ctx context.Context, in RunInput) (Context, float64, map[string]struct{}, error) {
 	cp, err := e.Store.GetLatestCheckpoint(ctx, in.RunID)
 	if err != nil {
-		return Context{}, 0, 0, fmt.Errorf("engine: load checkpoint: %w", err)
+		return Context{}, 0, nil, fmt.Errorf("engine: load checkpoint: %w", err)
 	}
 	switch cp.Status {
 	case state.CheckpointStatusRunning, state.CheckpointStatusInterrupted:
 	default:
-		return Context{}, 0, 0, fmt.Errorf("engine: checkpoint status %q is not resumable", cp.Status)
+		return Context{}, 0, nil, fmt.Errorf("engine: checkpoint status %q is not resumable", cp.Status)
 	}
 	wf, err := lookupWorkflow(e.Graph, in.WorkflowName)
 	if err != nil {
-		return Context{}, 0, 0, err
+		return Context{}, 0, nil, err
 	}
 	ictx, totalCost, err := unmarshalCheckpointPayload(cp.ContextJSON, wf, cp.StepIndex)
 	if err != nil {
-		return Context{}, 0, 0, err
+		return Context{}, 0, nil, err
 	}
-	startIdx := cp.StepIndex + 1
-	if ictx.PendingHitl != nil {
-		startIdx = cp.StepIndex
+	completed := make(map[string]struct{}, len(ictx.Steps))
+	for id := range ictx.Steps {
+		completed[id] = struct{}{}
 	}
-	return ictx, totalCost, startIdx, nil
+	var payload checkpointPayload
+	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err == nil {
+		for _, id := range payload.Completed {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				completed[id] = struct{}{}
+			}
+		}
+	}
+	return ictx, totalCost, completed, nil
 }
 
 func (e *Executor) interruptRun(ctx context.Context, wf *spec.WorkflowResource, in RunInput, stepIndex int, stepID string, ictx Context, totalCost float64, runHandle *telemetry.RunHandle) error {

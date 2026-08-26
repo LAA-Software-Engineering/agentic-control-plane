@@ -134,6 +134,18 @@ func stampWorkflowSteps(file string, specNode *yaml.Node, w *WorkflowSpec) {
 		if v := yamlMapValue(item, "uses"); v != nil {
 			w.Steps[i].UsesPos = posFromNode(file, v)
 		}
+		if needs := yamlMapValue(item, "needs"); needs != nil {
+			w.Steps[i].NeedsDeclared = true
+			if needs.Kind == yaml.SequenceNode {
+				w.Steps[i].NeedsPos = make([]Pos, len(needs.Content))
+				for j, nitem := range needs.Content {
+					if j >= len(w.Steps[i].NeedsPos) {
+						break
+					}
+					w.Steps[i].NeedsPos[j] = posFromNode(file, nitem)
+				}
+			}
+		}
 	}
 }
 

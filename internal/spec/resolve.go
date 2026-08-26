@@ -99,6 +99,7 @@ func collectReferenceErrors(g *ProjectGraph) []error {
 		if e := validateWorkflowStepOrder(wfName, &wr.Spec); e != nil {
 			errs = append(errs, e)
 		}
+		errs = append(errs, validateWorkflowGraph(wfName, &wr.Spec)...)
 	}
 	return errs
 }
@@ -148,17 +149,23 @@ func validateWorkflowStepOrder(wfName string, w *WorkflowSpec) error {
 		}
 		idToIdx[id] = i
 	}
+	explicit := WorkflowUsesExplicitNeeds(w.Steps)
 	for i, st := range w.Steps {
 		sid := strings.TrimSpace(st.ID)
+		ancestors := StepAncestorIDs(w.Steps, i)
 		for _, sval := range CollectWithStringValues(st.With) {
 			for _, dep := range InterpolationStepRefs(sval) {
 				j, ok := idToIdx[dep]
 				if !ok {
 					return st.Pos.Errorf("workflow %s step %q: interpolation references unknown step %q", wfName, sid, dep)
 				}
-				if j >= i {
+				if _, pred := ancestors[dep]; pred {
+					continue
+				}
+				if !explicit && j >= i {
 					return st.Pos.Errorf("workflow %s step %q: forward reference to steps.%s (§9.4)", wfName, sid, dep)
 				}
+				return st.Pos.Errorf("workflow %s step %q: interpolation references step %q which is not a predecessor (needs)", wfName, sid, dep)
 			}
 		}
 	}
