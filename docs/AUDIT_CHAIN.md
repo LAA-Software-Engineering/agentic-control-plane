@@ -75,6 +75,7 @@ Migration `007_trace_audit_chain.sql` adds nullable `prev_hash` and `hash` colum
 - Without `--run`, verification scans only the **most recent runs** (`--limit`, default **50**, max **500**) ordered by `started_at`. For a full-database audit, raise `--limit` or verify runs individually with `--run`.
 - Run `audit verify` after backups/restores or manual DB edits in compliance workflows.
 - Concurrent appends within one process are serialized by SQLite transactions; each run maintains a single chain tip.
+- Concurrent workflow steps (issue #192) may append events in nondeterministic wall-clock/`seq` order. Each step event also stores `logicalOrder` (YAML step index) inside `data_json`, so replay can sort by logical order while verification still hashes the stored sequence including that field.
 - Future work (out of scope for #116): external signing, cross-run ledger, automatic verify in CI.
 
 ## Related docs

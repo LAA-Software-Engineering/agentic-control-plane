@@ -17,14 +17,27 @@ var ErrRunNotFound = errors.New("trace: run not found")
 
 // Recorder appends trace_events rows via [state.RuntimeStore] (design doc §12.2 I, §14.2).
 type Recorder struct {
-	RT        state.RuntimeStore
-	Clock     func() time.Time
-	Redaction RedactionOptions
+	RT           state.RuntimeStore
+	Clock        func() time.Time
+	Redaction    RedactionOptions
+	logicalOrder *int
 }
 
 // NewRecorder returns a recorder backed by rt. rt must not be nil when Append is called.
 func NewRecorder(rt state.RuntimeStore) *Recorder {
 	return &Recorder{RT: rt, Redaction: NormalizeRedactionOptions(DefaultRedactionOptions())}
+}
+
+// WithLogicalOrder returns a recorder that stamps data_json.logicalOrder on every Append.
+// YAML step index is the stable replay order for concurrent workflow branches (issue #192).
+func (r *Recorder) WithLogicalOrder(order int) *Recorder {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	o := order
+	cp.logicalOrder = &o
+	return &cp
 }
 
 func (r *Recorder) now() time.Time {
@@ -60,6 +73,18 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID string, eventType E
 	}
 
 	dataJSON := "{}"
+	if r.logicalOrder != nil {
+		if data == nil {
+			data = map[string]any{}
+		} else {
+			cp := make(map[string]any, len(data)+1)
+			for k, v := range data {
+				cp[k] = v
+			}
+			data = cp
+		}
+		data["logicalOrder"] = *r.logicalOrder
+	}
 	if len(data) > 0 {
 		prepared := PrepareEventData(data, nil, r.Redaction)
 		b, err := json.Marshal(prepared)

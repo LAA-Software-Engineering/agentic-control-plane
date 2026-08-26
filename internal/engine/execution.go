@@ -17,7 +17,8 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
 )
 
-// Executor runs sequential workflow steps (design doc section 12.2 E, section 13).
+// Executor runs workflow steps as a DAG (design doc section 12.2 E, section 13, issue #192).
+// Workflows with no `needs:` keep implicit sequential YAML order.
 type Executor struct {
 	Graph       *spec.ProjectGraph
 	ProjectRoot string
@@ -44,8 +45,13 @@ type RunInput struct {
 	// Hitl carries operator decisions for approval gates (issue #106).
 	Hitl HitlRunOptions
 	// InterruptAfterStepIndex, when non-nil, checkpoints and returns [ErrInterrupted] after
-	// completing the step at this index. Used to simulate approval gates until HITL lands.
+	// completing the step at this YAML index. Used to simulate approval gates until HITL lands.
 	InterruptAfterStepIndex *int
+	// InterruptAfterStepID checkpoints and returns [ErrInterrupted] after that step succeeds.
+	// Used to pause a parallel group after one branch completes (issue #192).
+	InterruptAfterStepID string
+	// MaxConcurrentSteps bounds goroutine fan-out (issue #192). Zero uses DefaultMaxConcurrentSteps.
+	MaxConcurrentSteps int
 	// Attribution for OTel gen_ai attributes (issue #111).
 	TenantID  string
 	ThreadID  string
@@ -70,8 +76,10 @@ func (e *Executor) modelClient(modelRef string) (models.ModelClient, string, err
 	return e.Models.ClientFor(modelRef)
 }
 
-// Run executes a workflow sequentially: interpolate step inputs, policy checks, tool/agent calls,
+// Run executes a workflow: interpolate step inputs, policy checks, tool/agent calls,
 // optional JSON Schema validation for agent output, persisted run_steps and trace events.
+// Independent steps (graph mode via `needs:`) run concurrently with a concurrency bound;
+// workflows with no `needs:` keep YAML-order sequential execution (issue #192).
 // The run row must already exist in [state.RuntimeStore] (e.g. via [state.RuntimeStore.StartRun]).
 func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	if e == nil || e.Store == nil {
@@ -95,9 +103,9 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 
 	ictx := Context{Input: in.Input, Steps: make(map[string]StepResult)}
 	var totalCost float64
-	stepStartIdx := 0
+	completed := map[string]struct{}{}
 	if in.Resume {
-		ictx, totalCost, stepStartIdx, err = e.loadResumeState(ctx, in)
+		ictx, totalCost, completed, err = e.loadResumeState(ctx, in)
 		if err != nil {
 			return err
 		}
@@ -142,145 +150,9 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
 	finishAt := e.now()
 
-	for i, step := range wf.Spec.Steps {
-		if i < stepStartIdx {
-			continue
-		}
-		step := step
-		if strings.TrimSpace(step.ID) == "" {
-			return e.failRun(ctx, in, fmt.Errorf("engine: workflow step missing id"), totalCost)
-		}
-		uses := strings.TrimSpace(step.Uses)
-		agentName := strings.TrimSpace(step.Agent)
-		if (uses == "") == (agentName == "") {
-			return e.failRun(ctx, in, fmt.Errorf("engine: step %q must set exactly one of uses or agent", step.ID), totalCost)
-		}
-
-		withAny, err := InterpolateWalk(step.With, ictx)
-		if err != nil {
-			return e.failRun(ctx, in, fmt.Errorf("engine: step %q with: %w", step.ID, err), totalCost)
-		}
-		with, ok := withAny.(map[string]any)
-		if !ok {
-			with = map[string]any{}
-		}
-
-		elapsed := e.now().Sub(runStartedAt)
-		pctx := policy.RunContext{
-			StartedAt:          runStartedAt,
-			Elapsed:            elapsed,
-			AccumulatedCostUSD: totalCost,
-			ApprovedActions:    in.ApprovedActions,
-		}
-		if err := wfPol.CheckRun(ctx, pctx); err != nil {
-			e.appendCostLimitHit(ctx, in.RunID, step.ID, err)
-			return e.failRunStep(ctx, in, step.ID, with, err, totalCost)
-		}
-
-		inJSON, _ := json.Marshal(with)
-		started := e.now()
-		if err := e.Store.UpsertRunStep(ctx, state.RunStep{
-			RunID:     in.RunID,
-			StepID:    step.ID,
-			Status:    "running",
-			StartedAt: &started,
-			InputJSON: string(inJSON),
-		}); err != nil {
-			return e.failRun(ctx, in, fmt.Errorf("engine: upsert step %q: %w", step.ID, err), totalCost)
-		}
-
-		var out map[string]any
-		var stepCost float64
-		if uses != "" {
-			toolUses := uses
-			toolWith := with
-			pending := ictx.PendingHitl
-			if pending == nil {
-				interrupted, ierr := e.maybeInterruptForHitl(ctx, in, wf, i, step, with, wfPol, pctx, ictx, totalCost, runHandle)
-				if interrupted {
-					return ierr
-				}
-				if in.Hitl.AutoApprove {
-					gate, gerr := policy.BuildHitlGateWithEvaluator(e.Graph, wfPol, policySpecFromEvaluator(wfPol), policy.ToolCallContext{
-						Run: pctx, StepID: step.ID, Uses: uses, With: with,
-					})
-					if gerr != nil {
-						err = gerr
-					} else if gate != nil {
-						e.recordAutoApproveHitl(ctx, in.RunID, step, i, *gate, in.Hitl.Actor)
-						pctx.ApprovedActions = append(append([]string(nil), pctx.ApprovedActions...), uses)
-					}
-				}
-			} else {
-				var rerr error
-				toolUses, toolWith, rerr = e.resolvePendingHitl(ctx, in, step, wfPol, pctx, pending)
-				if rerr != nil {
-					err = rerr
-				} else {
-					ictx.PendingHitl = nil
-					pctx.ApprovedActions = append(append([]string(nil), pctx.ApprovedActions...), toolUses)
-				}
-			}
-			if err == nil {
-				var meta tools.ToolCallMeta
-				out, meta, err = e.runToolStep(ctx, runHandle, wfPol, wf, in.RunID, step, with, pctx, toolUses, toolWith)
-				stepCost = meta.CostUSD
-			}
-		} else {
-			ar, ok := e.Graph.Agents[agentName]
-			if !ok || ar == nil {
-				err = fmt.Errorf("engine: unknown agent %q", agentName)
-			} else {
-				var gmeta models.GenerateMeta
-				out, gmeta, err = e.runAgentStep(ctx, runHandle, wfPol, wf, in.RunID, step, with, pctx, ar)
-				stepCost = gmeta.CostUSD
-			}
-		}
-
-		finished := e.now()
-		totalCost += stepCost
-		if err != nil {
-			_ = e.Store.UpsertRunStep(ctx, state.RunStep{
-				RunID:      in.RunID,
-				StepID:     step.ID,
-				Status:     "failed",
-				StartedAt:  &started,
-				FinishedAt: &finished,
-				InputJSON:  string(inJSON),
-				ErrorText:  err.Error(),
-				CostUSD:    stepCost,
-			})
-			if e.Trace != nil {
-				_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
-			}
-			return e.failRun(ctx, in, fmt.Errorf("engine: step %q: %w", step.ID, err), totalCost)
-		}
-
-		meta := map[string]any{"costUsd": stepCost, "durationMs": finished.Sub(started).Milliseconds()}
-		ictx.Steps[step.ID] = StepResult{Output: out, Meta: meta}
-
-		// Checkpoint before marking the step succeeded so resume never replays a completed step
-		// if the process dies after persistence (issue #105 / PR #127).
-		if err := e.saveCheckpoint(ctx, wf, in.RunID, i, step.ID, ictx, totalCost, state.CheckpointStatusRunning); err != nil {
-			return e.failRun(ctx, in, fmt.Errorf("engine: checkpoint step %q: %w", step.ID, err), totalCost)
-		}
-
-		outJSON, _ := json.Marshal(out)
-		if err := e.Store.UpsertRunStep(ctx, state.RunStep{
-			RunID:      in.RunID,
-			StepID:     step.ID,
-			Status:     "succeeded",
-			StartedAt:  &started,
-			FinishedAt: &finished,
-			InputJSON:  string(inJSON),
-			OutputJSON: string(outJSON),
-			CostUSD:    stepCost,
-		}); err != nil {
-			return e.failRun(ctx, in, fmt.Errorf("engine: upsert step %q: %w", step.ID, err), totalCost)
-		}
-		if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
-			return e.interruptRun(ctx, wf, in, i, step.ID, ictx, totalCost, runHandle)
-		}
+	ictx, totalCost, err = e.runWorkflowSteps(ctx, in, wf, wfPol, ictx, totalCost, completed, runStartedAt, runHandle)
+	if err != nil {
+		return err
 	}
 
 	finalOut, err := buildWorkflowOutput(wf, ictx)

@@ -771,14 +771,41 @@ spec:
       findings: ${steps.review.output.findings}
 ```
 
+Static fan-in (author-declared parallel branches) uses `needs:`:
+
+```yaml
+    - id: security
+      agent: security-reviewer
+    - id: quality
+      agent: reviewer
+    - id: synthesize
+      agent: synthesizer
+      needs: [security, quality]
+      with:
+        security: ${steps.security.output}
+        quality: ${steps.quality.output}
+```
+
+### Workflow graph rules
+
+* If **no** step declares `needs:`, YAML order is an **implicit chain** (step *i* waits for step *i-1*). Existing sequential workflows keep that behavior.
+* If **any** step declares `needs:`, the workflow is a DAG: omitted `needs` means a root (ready immediately). Independent roots run concurrently. A joining step lists every branch it waits on.
+* Edges are static and author-declared (ADR 002 graph structure, not computation). No `when`, `foreach`, expressions, or dynamic fan-out on `WorkflowStep`.
+* `${steps.*}` interpolation may only reference **predecessors** (transitive `needs`, or earlier YAML steps in implicit sequential mode). A join sees every upstream output.
+* Independent steps run concurrently with a **bounded** worker pool (`DefaultMaxConcurrentSteps`, 8). Dependent steps do not start until every listed predecessor has completed.
+* Validation rejects **cycles** and **dangling `needs` references** with YAML positions (issue #187 `Pos` / `NeedsPos`).
+* Checkpoints store a **per-step completion set** (`completed` plus `steps` outputs). Resume skips completed IDs and can continue a parallel group after one branch finished.
+* Trace events record wall-clock insert order (`seq`) and a stable **`logicalOrder`** (YAML step index) in `data_json` so concurrent runs remain deterministically replayable; the audit chain still hashes stored rows including `data_json`.
+
 ### MVP workflow rules
 
-* steps execute sequentially
+* steps execute as a DAG; with no `needs:` keys, YAML order is an implicit sequential chain
 * each step has either `agent` or `uses`
 * `with` maps inputs
 * `${...}` interpolation supported
 * output can map from prior step outputs
 * only manual trigger in MVP
+* `needs:` is an optional static dependency list of step IDs (parallel branches / fan-in)
 
 ### End goal additions
 
@@ -981,8 +1008,8 @@ my-agent-system/
 * step ids must be unique
 * each step must specify exactly one of `agent` or `uses`
 * interpolation refs must resolve
-* forward refs allowed only where dependency order is valid
-* no cycles in MVP since sequential only
+* interpolation may only reference predecessor steps (`needs` ancestors, or earlier YAML steps when `needs:` is omitted)
+* `needs:` must name existing step IDs; cycles and dangling references fail validation with positions
 
 ## 9.5 Policy validation
 
@@ -1518,7 +1545,8 @@ Responsibilities:
 
 ### MVP execution model
 
-* sequential steps only
+* DAG steps with optional `needs:` (implicit sequential when omitted)
+* independent steps run concurrently with a bounded worker pool
 * local execution only
 * no background daemons
 * no reconciliation loop
@@ -1528,13 +1556,14 @@ Responsibilities:
 1. load workflow
 2. validate runtime input
 3. initialize run context
-4. for each step:
+4. for each ready step (all `needs:` / implicit predecessors complete), up to the concurrency bound:
 
-   * resolve interpolations
-   * enforce policy
+   * resolve interpolations from completed `${steps.*}` outputs
+   * enforce policy (`CheckRun` against accumulated run cost; concurrent steps share one total without double-counting)
    * execute tool or agent (agent steps with `spec.tools` run a bounded Generate / `tool_use` / `tool_result` loop; each listed Tool advertises one operation; `policy.CheckToolCall` runs before every tool execution; the loop stops on `end_turn` or `constraints.maxIterations`, default 8, hard cap 32)
    * validate output if configured
-   * record trace
+   * record trace (`logicalOrder` = YAML step index alongside wall-clock `seq`)
+   * checkpoint the completion set before marking the step succeeded
 5. compute workflow output
 6. persist run result
 
@@ -1756,6 +1785,8 @@ MVP:
 This should stay simple.
 Do not invent a scripting language.
 
+Fan-in: a step whose `needs:` lists multiple predecessors may interpolate `${steps.<id>.output}` for every ancestor. Siblings that do not precede the step cannot be referenced.
+
 ---
 
 ## 13.2 Step types
@@ -1790,6 +1821,18 @@ MVP step result shape:
   }
 }
 ```
+
+## 13.2.1 Graph execution (issue #192)
+
+`WorkflowStep.needs` is a static list of step IDs. This is graph structure (ADR 002), not computation: no conditionals, loops, or dynamic fan-out.
+
+**Implicit sequential:** when every step omits `needs:`, execution order is YAML order (step *i* waits for *i-1*). Existing examples keep this behavior.
+
+**Explicit DAG:** when any step sets `needs:`, omitted `needs` means a root. Roots run concurrently (bounded). A join lists every branch; it does not start until all listed steps have completed, and then sees those outputs via `${steps.*}`.
+
+Checkpoints persist `completed` (sorted step IDs) plus step outputs. Resume skips completed IDs, so a parallel group can continue after one branch finished. `StepIndex` remains the YAML index of the step that wrote the checkpoint (HITL / interrupt identity), not a linear cursor through remaining work.
+
+Trace `seq` follows SQLite insert (wall-clock, nondeterministic under concurrency). `data_json.logicalOrder` is the YAML step index for deterministic replay. `audit verify` hashes stored rows, including `logicalOrder` inside `data_json`.
 
 ---
 

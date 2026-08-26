@@ -2,9 +2,14 @@
 //
 // [InterpolateString] and [InterpolateWalk] implement ${input.*} and ${steps.*} dot paths only (design doc section 13.1 MVP).
 //
-// [Executor.Run] executes sequential workflows: interpolated step inputs, policy checks from the
+// [Executor.Run] executes workflow DAGs: interpolated step inputs, policy checks from the
 // workflow's Policy resource, tool and agent steps, optional JSON Schema validation for agent output,
 // persisted run_steps rows, and trace events (design doc sections 12.2 E, 13.3, 13.4, 14.2).
+// Workflows with no `needs:` keep implicit sequential YAML order. Independent `needs:` roots
+// run concurrently with [DefaultMaxConcurrentSteps]; join steps see all upstream `${steps.*}`
+// outputs. Checkpoints store a completion set so resume can continue a partially finished
+// parallel group (issue #192). Trace events stamp `logicalOrder` (YAML index) for deterministic
+// replay; the audit chain still verifies insert order.
 //
 // Agent steps with declared tools run a bounded Generate loop (issue #160): the engine attaches
 // one [models.ToolDef] per listed Tool (`ToolChoice: auto`). `spec.tools` may name a Tool or pin

@@ -156,6 +156,8 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 	wf.Pos = spec.Pos{File: "workflow.yaml", Line: 1, Column: 1}
 	wf.Spec.Steps[0].Pos = spec.Pos{File: "workflow.yaml", Line: 8, Column: 5}
 	wf.Spec.Steps[0].UsesPos = spec.Pos{File: "workflow.yaml", Line: 9, Column: 13}
+	wf.Spec.Steps[0].NeedsPos = []spec.Pos{{File: "workflow.yaml", Line: 10, Column: 7}}
+	wf.Spec.Steps[0].NeedsDeclared = true
 	g.Pos = spec.Pos{File: "project.yaml", Line: 1, Column: 1}
 	pol := g.Policies["default"]
 	pol.Pos = spec.Pos{File: "policy.yaml", Line: 1, Column: 1}
@@ -195,6 +197,7 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 
 	wf.Spec.Steps[0].Pos.Line = 99
 	wf.Spec.Steps[0].UsesPos.Column = 42
+	wf.Spec.Steps[0].NeedsPos[0].Line = 77
 	d3, err := ResolvedGraphDigest(g)
 	if err != nil {
 		t.Fatal(err)
