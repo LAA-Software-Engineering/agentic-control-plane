@@ -472,3 +472,151 @@ func TestRun_parallelCostNotDoubleCounted(t *testing.T) {
 		t.Fatalf("totalCostUsd = %v want %v (no double-count)", got.TotalCostUSD, want)
 	}
 }
+
+func TestRun_resumeKeepsSiblingThatFinishedDuringInterrupt(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "sib.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	graph := fanInWorkflowGraph(t)
+	runID := "run-sib"
+	ctx, started, input := startFanInRun(t, st, runID)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	t.Cleanup(cancel)
+
+	gate := newStartBarrier()
+	var calls []string
+	var mu sync.Mutex
+	ex := &Executor{
+		Graph: graph, ProjectRoot: t.TempDir(),
+		Tools: &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
+			w := whichOf(req)
+			mu.Lock()
+			calls = append(calls, w)
+			mu.Unlock()
+			if w == "left" || w == "right" {
+				if !gate.Wait(ctx, 5*time.Second) {
+					return tools.ToolCallResponse{}, fmt.Errorf("rendezvous timeout on %s", w)
+				}
+				return tools.ToolCallResponse{Output: map[string]any{"echo": w[:1]}}, nil
+			}
+			msg, _ := req.With["message"].(string)
+			return tools.ToolCallResponse{Output: map[string]any{"echo": "J", "message": msg}}, nil
+		}},
+		Store: st, Trace: trace.NewRecorder(st),
+	}
+	err = ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "fanin", Env: "dev", StartedAt: started, Input: input,
+		InterruptAfterStepID: "left",
+	})
+	if !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("err = %v want ErrInterrupted", err)
+	}
+	cp, err := st.GetLatestCheckpoint(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload checkpointPayload
+	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	gotCompleted := map[string]struct{}{}
+	for _, id := range payload.Completed {
+		gotCompleted[id] = struct{}{}
+	}
+	if _, ok := gotCompleted["left"]; !ok {
+		t.Fatalf("completed = %v want left", payload.Completed)
+	}
+	if _, ok := gotCompleted["right"]; !ok {
+		t.Fatalf("right finished during interrupt must be checkpointed, completed=%v", payload.Completed)
+	}
+	if _, ok := payload.Steps["right"]; !ok {
+		t.Fatal("right output missing from interrupt checkpoint")
+	}
+
+	if err := st.UpdateRunStatus(ctx, runID, state.RunStatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	if err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "fanin", Env: "dev", StartedAt: started, Input: input, Resume: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	rightCalls := 0
+	for _, c := range calls {
+		if c == "right" {
+			rightCalls++
+		}
+	}
+	mu.Unlock()
+	if rightCalls != 1 {
+		t.Fatalf("right replayed after interrupt: calls=%v", calls)
+	}
+}
+
+func TestRun_parallelCostCapRejectsJointOverage(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "cap.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	graph := fanInWorkflowGraph(t)
+	graph.Policies["default"].Spec.Execution = &spec.PolicyExecution{MaxTotalCostUsd: 1.00}
+	runID := "run-cap"
+	ctx, started, input := startFanInRun(t, st, runID)
+	gate := newStartBarrier()
+	ex := &Executor{
+		Graph: graph, ProjectRoot: t.TempDir(),
+		Tools: &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
+			w := whichOf(req)
+			cost := 0.0
+			if w == "left" || w == "right" {
+				if !gate.Wait(ctx, 5*time.Second) {
+					return tools.ToolCallResponse{}, fmt.Errorf("rendezvous timeout on %s", w)
+				}
+				cost = 0.60
+			}
+			out := map[string]any{"echo": w}
+			if w == "join" {
+				out["message"] = req.With["message"]
+			}
+			return tools.ToolCallResponse{Output: out, Meta: tools.ToolCallMeta{CostUSD: cost}}, nil
+		}},
+		Store: st, Trace: trace.NewRecorder(st),
+	}
+	err = ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "fanin", Env: "dev", StartedAt: started, Input: input,
+	})
+	if err == nil {
+		t.Fatal("expected joint $0.60+$0.60 to fail a $1.00 cap")
+	}
+	if !strings.Contains(err.Error(), "exceeds ceiling") {
+		t.Fatalf("want ceiling error, got %v", err)
+	}
+	got, err := st.GetRun(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.RunStatusFailed {
+		t.Fatalf("status %q want failed", got.Status)
+	}
+	rows, err := st.ListRunStepsByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	succeeded := 0
+	for _, row := range rows {
+		if (row.StepID == "left" || row.StepID == "right") && row.Status == "succeeded" {
+			succeeded++
+		}
+	}
+	if succeeded == 2 {
+		t.Fatal("both concurrent $0.60 steps succeeded against a $1.00 cap")
+	}
+}

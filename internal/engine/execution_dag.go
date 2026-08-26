@@ -107,7 +107,7 @@ func (e *Executor) runWorkflowSteps(
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
-				e.runDAGStep(ctx, cancel, rt, in, wf, wfPol, runStartedAt, runHandle, i, completion)
+				e.runDAGStep(ctx, parent, cancel, rt, in, wf, wfPol, runStartedAt, runHandle, i, completion)
 			}(i)
 		}
 	}
@@ -200,6 +200,7 @@ func isContextCanceled(err error) bool {
 
 func (e *Executor) runDAGStep(
 	ctx context.Context,
+	persistCtx context.Context,
 	cancel context.CancelFunc,
 	rt *dagRuntime,
 	in RunInput,
@@ -229,10 +230,9 @@ func (e *Executor) runDAGStep(
 		PendingHitl:   rt.ictx.PendingHitl,
 		OtelInterrupt: rt.ictx.OtelInterrupt,
 	}
-	cost := rt.totalCost
 	rt.mu.Unlock()
 
-	out, stepCost, started, inJSON, pendingCleared, interrupted, err := ex.executeOneStep(ctx, in, wf, wfPol, rt, snap, cost, runStartedAt, runHandle, i, step)
+	out, stepCost, started, inJSON, pendingCleared, interrupted, err := ex.executeOneStep(ctx, persistCtx, in, wf, wfPol, rt, snap, runStartedAt, runHandle, i, step)
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -253,7 +253,7 @@ func (e *Executor) runDAGStep(
 		}
 		if rt.failed == nil {
 			finished := ex.now()
-			_ = ex.Store.UpsertRunStep(ctx, state.RunStep{
+			_ = ex.Store.UpsertRunStep(persistCtx, state.RunStep{
 				RunID:      in.RunID,
 				StepID:     step.ID,
 				Status:     "failed",
@@ -264,7 +264,7 @@ func (e *Executor) runDAGStep(
 				CostUSD:    stepCost,
 			})
 			if ex.Trace != nil && !isContextCanceled(err) {
-				_, _ = ex.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
+				_, _ = ex.Trace.Append(persistCtx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
 			}
 			if strings.Contains(err.Error(), "engine:") {
 				rt.failed = err
@@ -276,12 +276,78 @@ func (e *Executor) runDAGStep(
 		cancel()
 		return
 	}
-	if rt.interrupting || rt.failed != nil {
+
+	// Merge a successful result before honoring interrupt/failure so a sibling
+	// that finished its tool while interruptRun held the lock is not dropped
+	// and replayed on resume (issue #192 review).
+	if err := ex.commitDAGStepSuccess(persistCtx, rt, in, wf, wfPol, runStartedAt, i, step, out, stepCost, started, inJSON); err != nil {
+		if rt.failed == nil {
+			rt.failed = err
+		}
+		cancel()
+		return
+	}
+	if rt.failed != nil {
 		return
 	}
 
-	finished := ex.now()
+	if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
+		rt.interrupting = true
+		rt.interruptErr = ex.interruptRun(persistCtx, wf, in, i, step.ID, rt.ictx, rt.totalCost, runHandle)
+		cancel()
+		return
+	}
+	if id := strings.TrimSpace(in.InterruptAfterStepID); id != "" && id == step.ID {
+		rt.interrupting = true
+		rt.interruptErr = ex.interruptRun(persistCtx, wf, in, i, step.ID, rt.ictx, rt.totalCost, runHandle)
+		cancel()
+		return
+	}
+}
+
+// commitDAGStepSuccess records cost, completion, checkpoint, and the succeeded
+// row. Caller holds rt.mu. A live CheckRun after applying cost prevents two
+// in-flight branches from jointly exceeding maxTotalCostUsd.
+func (e *Executor) commitDAGStepSuccess(
+	ctx context.Context,
+	rt *dagRuntime,
+	in RunInput,
+	wf *spec.WorkflowResource,
+	wfPol policy.PolicyEvaluator,
+	runStartedAt time.Time,
+	i int,
+	step spec.WorkflowStep,
+	out map[string]any,
+	stepCost float64,
+	started *time.Time,
+	inJSON []byte,
+) error {
+	finished := e.now()
 	rt.totalCost += stepCost
+	pctx := policy.RunContext{
+		StartedAt:          runStartedAt,
+		Elapsed:            finished.Sub(runStartedAt),
+		AccumulatedCostUSD: rt.totalCost,
+		ApprovedActions:    append([]string(nil), in.ApprovedActions...),
+	}
+	if err := wfPol.CheckRun(ctx, pctx); err != nil {
+		e.appendCostLimitHit(ctx, in.RunID, step.ID, err)
+		_ = e.Store.UpsertRunStep(ctx, state.RunStep{
+			RunID:      in.RunID,
+			StepID:     step.ID,
+			Status:     "failed",
+			StartedAt:  started,
+			FinishedAt: &finished,
+			InputJSON:  string(inJSON),
+			ErrorText:  err.Error(),
+			CostUSD:    stepCost,
+		})
+		if e.Trace != nil {
+			_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(step.ID, err))
+		}
+		return fmt.Errorf("engine: step %q: %w", step.ID, err)
+	}
+
 	if rt.ictx.Steps == nil {
 		rt.ictx.Steps = map[string]StepResult{}
 	}
@@ -295,14 +361,15 @@ func (e *Executor) runDAGStep(
 	}
 	rt.completed[step.ID] = struct{}{}
 
-	// Checkpoint the merged completion set before the succeeded row (issue #105 / #192).
-	if err := ex.saveCheckpoint(ctx, wf, in.RunID, i, step.ID, rt.ictx, rt.totalCost, state.CheckpointStatusRunning); err != nil {
-		rt.failed = fmt.Errorf("engine: checkpoint step %q: %w", step.ID, err)
-		cancel()
-		return
+	cpStatus := state.CheckpointStatusRunning
+	if rt.interrupting {
+		cpStatus = state.CheckpointStatusInterrupted
+	}
+	if err := e.saveCheckpoint(ctx, wf, in.RunID, i, step.ID, rt.ictx, rt.totalCost, cpStatus); err != nil {
+		return fmt.Errorf("engine: checkpoint step %q: %w", step.ID, err)
 	}
 	outJSON, _ := json.Marshal(out)
-	if err := ex.Store.UpsertRunStep(ctx, state.RunStep{
+	if err := e.Store.UpsertRunStep(ctx, state.RunStep{
 		RunID:      in.RunID,
 		StepID:     step.ID,
 		Status:     "succeeded",
@@ -312,33 +379,19 @@ func (e *Executor) runDAGStep(
 		OutputJSON: string(outJSON),
 		CostUSD:    stepCost,
 	}); err != nil {
-		rt.failed = fmt.Errorf("engine: upsert step %q: %w", step.ID, err)
-		cancel()
-		return
+		return fmt.Errorf("engine: upsert step %q: %w", step.ID, err)
 	}
-
-	if in.InterruptAfterStepIndex != nil && i == *in.InterruptAfterStepIndex {
-		rt.interrupting = true
-		rt.interruptErr = ex.interruptRun(ctx, wf, in, i, step.ID, rt.ictx, rt.totalCost, runHandle)
-		cancel()
-		return
-	}
-	if id := strings.TrimSpace(in.InterruptAfterStepID); id != "" && id == step.ID {
-		rt.interrupting = true
-		rt.interruptErr = ex.interruptRun(ctx, wf, in, i, step.ID, rt.ictx, rt.totalCost, runHandle)
-		cancel()
-		return
-	}
+	return nil
 }
 
 func (e *Executor) executeOneStep(
 	ctx context.Context,
+	persistCtx context.Context,
 	in RunInput,
 	wf *spec.WorkflowResource,
 	wfPol policy.PolicyEvaluator,
 	rt *dagRuntime,
 	ictx Context,
-	totalCost float64,
 	runStartedAt time.Time,
 	runHandle *telemetry.RunHandle,
 	i int,
@@ -364,22 +417,29 @@ func (e *Executor) executeOneStep(
 
 	elapsed := e.now().Sub(runStartedAt)
 	pctx := policy.RunContext{
-		StartedAt:          runStartedAt,
-		Elapsed:            elapsed,
-		AccumulatedCostUSD: totalCost,
-		ApprovedActions:    append([]string(nil), in.ApprovedActions...),
+		StartedAt:       runStartedAt,
+		Elapsed:         elapsed,
+		ApprovedActions: append([]string(nil), in.ApprovedActions...),
 	}
-	if err := wfPol.CheckRun(ctx, pctx); err != nil {
-		e.appendCostLimitHit(ctx, in.RunID, step.ID, err)
+	rt.mu.Lock()
+	if rt.failed != nil || rt.interrupting {
+		rt.mu.Unlock()
+		return nil, 0, nil, nil, false, false, context.Canceled
+	}
+	pctx.AccumulatedCostUSD = rt.totalCost
+	admitErr := wfPol.CheckRun(ctx, pctx)
+	rt.mu.Unlock()
+	if admitErr != nil {
+		e.appendCostLimitHit(persistCtx, in.RunID, step.ID, admitErr)
 		inJSON, _ = json.Marshal(with)
 		now := e.now()
-		return nil, 0, &now, inJSON, false, false, err
+		return nil, 0, &now, inJSON, false, false, admitErr
 	}
 
 	inJSON, _ = json.Marshal(with)
 	st := e.now()
 	started = &st
-	if err := e.Store.UpsertRunStep(ctx, state.RunStep{
+	if err := e.Store.UpsertRunStep(persistCtx, state.RunStep{
 		RunID:     in.RunID,
 		StepID:    step.ID,
 		Status:    "running",
@@ -400,7 +460,7 @@ func (e *Executor) executeOneStep(
 			rt.mu.Lock()
 			live := rt.ictx
 			liveCost := rt.totalCost
-			interruptedHITL, ierr := e.maybeInterruptForHitl(ctx, in, wf, i, step, with, wfPol, pctx, live, liveCost, runHandle)
+			interruptedHITL, ierr := e.maybeInterruptForHitl(persistCtx, in, wf, i, step, with, wfPol, pctx, live, liveCost, runHandle)
 			if interruptedHITL {
 				rt.ictx.PendingHitl = live.PendingHitl
 				rt.ictx.OtelInterrupt = live.OtelInterrupt
@@ -415,7 +475,7 @@ func (e *Executor) executeOneStep(
 				if gerr != nil {
 					err = gerr
 				} else if gate != nil {
-					e.recordAutoApproveHitl(ctx, in.RunID, step, i, *gate, in.Hitl.Actor)
+					e.recordAutoApproveHitl(persistCtx, in.RunID, step, i, *gate, in.Hitl.Actor)
 					pctx.ApprovedActions = append(append([]string(nil), pctx.ApprovedActions...), uses)
 				}
 			}
