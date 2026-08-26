@@ -17,6 +17,8 @@ func (e EventType) SpanName() string {
 		return telemetry.SpanAgentRun
 	case EventSystemError, EventLimitHit:
 		return telemetry.SpanAgentRun
+	case EventWorkflowCallStarted, EventWorkflowCallFinished:
+		return telemetry.SpanAgentRun
 	default:
 		return telemetry.SpanAgentRun
 	}
@@ -65,6 +67,10 @@ func (e EventType) TimelineIcon() string {
 		return "↗"
 	case EventSystemError, EventLimitHit:
 		return "!"
+	case EventWorkflowCallStarted:
+		return "↳"
+	case EventWorkflowCallFinished:
+		return "↲"
 	default:
 		return "·"
 	}
@@ -85,6 +91,8 @@ func (e EventType) TimelineGroup() string {
 		return "memory"
 	case EventSystemError, EventLimitHit:
 		return "system"
+	case EventWorkflowCallStarted, EventWorkflowCallFinished:
+		return "workflow"
 	default:
 		return "other"
 	}

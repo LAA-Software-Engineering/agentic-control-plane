@@ -11,8 +11,8 @@ func TestDefaultExecutionLimits(t *testing.T) {
 	if def.MaxToolOutputBytes != DefaultMaxToolOutputBytes {
 		t.Fatalf("MaxToolOutputBytes = %d", def.MaxToolOutputBytes)
 	}
-	if def.MaxCheckpointBytes != DefaultMaxCheckpointBytes {
-		t.Fatalf("MaxCheckpointBytes = %d", def.MaxCheckpointBytes)
+	if def.MaxWorkflowNesting != DefaultMaxWorkflowNesting {
+		t.Fatalf("MaxWorkflowNesting = %d", def.MaxWorkflowNesting)
 	}
 	if def.ToolInputExceedPolicy != LimitExceedTruncate {
 		t.Fatalf("ToolInputExceedPolicy = %q", def.ToolInputExceedPolicy)

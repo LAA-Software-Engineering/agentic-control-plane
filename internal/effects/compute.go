@@ -34,9 +34,8 @@ func Compute(g *spec.ProjectGraph) GraphBounds {
 	return compute(g, nil)
 }
 
-// compute walks g. workflowCalls is a test-only adjacency (from → to) used to
-// prove cyclic termination until #194 subworkflows exist. Production Compute
-// passes nil.
+// compute walks g. workflowCalls is extra adjacency (from → to) used by tests to
+// inject synthetic edges; production Compute passes nil and walks `workflow:` steps.
 func compute(g *spec.ProjectGraph, workflowCalls map[string][]string) GraphBounds {
 	out := GraphBounds{
 		Agents:    map[string]Bound{},
@@ -120,6 +119,9 @@ func (w *walker) walkStep(step spec.WorkflowStep, prefix []Hop) {
 	}
 	if ag := strings.TrimSpace(step.Agent); ag != "" {
 		w.walkAgent(ag, appendHop(p, Hop{Kind: KindAgent, Name: ag, Reachability: Static}))
+	}
+	if callee := strings.TrimSpace(step.Workflow); callee != "" {
+		w.walkWorkflow(callee, appendHop(p, Hop{Kind: KindWorkflow, Name: callee, Reachability: Static}))
 	}
 }
 

@@ -2,7 +2,10 @@ package engine
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
 func TestMarshalCheckpointPayload_stableKeyOrder(t *testing.T) {
@@ -28,7 +31,7 @@ func TestMarshalCheckpointPayload_stableKeyOrder(t *testing.T) {
 	}
 
 	wf := demoWorkflowGraph(t).Workflows["demo"]
-	gotCtx, cost, err := unmarshalCheckpointPayload(s1, wf, 0)
+	gotCtx, cost, err := unmarshalCheckpointPayload(s1, demoWorkflowGraph(t), wf, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +49,195 @@ func TestMarshalCheckpointPayload_stableKeyOrder(t *testing.T) {
 
 func TestUnmarshalCheckpointPayload_malformed(t *testing.T) {
 	wf := demoWorkflowGraph(t).Workflows["demo"]
-	_, _, err := unmarshalCheckpointPayload(`not-json`, wf, 0)
+	_, _, err := unmarshalCheckpointPayload(`not-json`, demoWorkflowGraph(t), wf, 0)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestUnmarshalCheckpointPayload_nestedUnknownInnerStep(t *testing.T) {
+	g := subworkflowGraph()
+	raw, err := marshalCheckpointPayload(Context{
+		Input: map[string]any{},
+		Steps: map[string]StepResult{},
+		Nested: &NestedRunState{
+			StepID:    "call",
+			Workflow:  "child",
+			Steps:     map[string]StepResult{"nope": {Output: map[string]any{"x": 1}}},
+			Completed: []string{"nope"},
+		},
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = unmarshalCheckpointPayload(raw, g, g.Workflows["parent"], -1)
+	if err == nil {
+		t.Fatal("expected nested inner id error")
+	}
+	if !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestUnmarshalCheckpointPayload_nestedUnknownCallee(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Workflows: map[string]*spec.WorkflowResource{
+			"parent": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindWorkflow,
+				Metadata:   spec.Metadata{Name: "parent"},
+				Spec: spec.WorkflowSpec{
+					Steps: []spec.WorkflowStep{{ID: "call", Workflow: "ghost"}},
+				},
+			},
+		},
+	}
+	raw, err := marshalCheckpointPayload(Context{
+		Input: map[string]any{},
+		Steps: map[string]StepResult{},
+		Nested: &NestedRunState{
+			StepID:    "call",
+			Workflow:  "ghost",
+			Completed: []string{"inner"},
+		},
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = unmarshalCheckpointPayload(raw, g, g.Workflows["parent"], -1)
+	if err == nil {
+		t.Fatal("expected unknown nested workflow error")
+	}
+	if !strings.Contains(err.Error(), "unknown workflow") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestUnmarshalCheckpointPayload_nestedParentStepNotWorkflowCall(t *testing.T) {
+	g := subworkflowGraph()
+	raw, err := marshalCheckpointPayload(Context{
+		Input: map[string]any{},
+		Steps: map[string]StepResult{},
+		Nested: &NestedRunState{
+			StepID:    "after",
+			Workflow:  "child",
+			Completed: []string{"echo"},
+		},
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = unmarshalCheckpointPayload(raw, g, g.Workflows["parent"], -1)
+	if err == nil {
+		t.Fatal("expected parent step mismatch error")
+	}
+	if !strings.Contains(err.Error(), "is not a workflow:") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestUnmarshalCheckpointPayload_nestedCalleeNameMismatch(t *testing.T) {
+	g := subworkflowGraph()
+	raw, err := marshalCheckpointPayload(Context{
+		Input: map[string]any{},
+		Steps: map[string]StepResult{},
+		Nested: &NestedRunState{
+			StepID:    "call",
+			Workflow:  "ghost",
+			Completed: []string{"echo"},
+		},
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = unmarshalCheckpointPayload(raw, g, g.Workflows["parent"], -1)
+	if err == nil {
+		t.Fatal("expected callee name mismatch")
+	}
+	if !strings.Contains(err.Error(), "calls") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestUnmarshalCheckpointPayload_nestedDepthExceedsResolvedCap(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Workflows: map[string]*spec.WorkflowResource{
+			"leaf": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindWorkflow,
+				Metadata:   spec.Metadata{Name: "leaf"},
+				Spec: spec.WorkflowSpec{
+					Steps: []spec.WorkflowStep{{ID: "done", Uses: "tool.helper.echo"}},
+				},
+			},
+			"child": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindWorkflow,
+				Metadata:   spec.Metadata{Name: "child"},
+				Spec: spec.WorkflowSpec{
+					Steps: []spec.WorkflowStep{{ID: "inner", Workflow: "leaf"}},
+				},
+			},
+			"parent": {
+				APIVersion: spec.APIVersionV0,
+				Kind:       spec.KindWorkflow,
+				Metadata:   spec.Metadata{Name: "parent"},
+				Spec: spec.WorkflowSpec{
+					Limits: &spec.ExecutionLimits{MaxWorkflowNesting: 1},
+					Steps:  []spec.WorkflowStep{{ID: "call", Workflow: "child"}},
+				},
+			},
+		},
+	}
+	raw, err := marshalCheckpointPayload(Context{
+		Input: map[string]any{},
+		Steps: map[string]StepResult{},
+		Nested: &NestedRunState{
+			StepID:    "call",
+			Workflow:  "child",
+			Completed: []string{"inner"},
+			Nested: &NestedRunState{
+				StepID:    "inner",
+				Workflow:  "leaf",
+				Completed: []string{"done"},
+			},
+		},
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = unmarshalCheckpointPayload(raw, g, g.Workflows["parent"], -1)
+	if err == nil {
+		t.Fatal("expected nested depth error")
+	}
+	if !strings.Contains(err.Error(), "maxWorkflowNesting 1") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestUnmarshalCheckpointPayload_nestedValidInnerStep(t *testing.T) {
+	g := subworkflowGraph()
+	raw, err := marshalCheckpointPayload(Context{
+		Input: map[string]any{},
+		Steps: map[string]StepResult{"call": {Output: map[string]any{}}},
+		Nested: &NestedRunState{
+			StepID:    "call",
+			Workflow:  "child",
+			Steps:     map[string]StepResult{"echo": {Output: map[string]any{"msg": "hi"}}},
+			Completed: []string{"echo"},
+		},
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := unmarshalCheckpointPayload(raw, g, g.Workflows["parent"], -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Nested == nil || got.Nested.Workflow != "child" {
+		t.Fatalf("nested = %+v", got.Nested)
+	}
+	if _, ok := got.Nested.Steps["echo"]; !ok {
+		t.Fatalf("inner echo missing: %+v", got.Nested.Steps)
 	}
 }

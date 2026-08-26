@@ -12,7 +12,9 @@ import (
 )
 
 // MCPDiscoveryPerToolTimeout bounds tools/list for one MCP Tool resource during config resolution.
-const MCPDiscoveryPerToolTimeout = 10 * time.Second
+// Windows CI under -race/-cover can take well over 10s to spawn a stdio subprocess (AV scan,
+// scheduler delay); keep this high enough that a healthy mock handshake still succeeds.
+const MCPDiscoveryPerToolTimeout = 45 * time.Second
 
 // MCPDiscoveryWarning reports a non-fatal MCP tools/list failure during safety discovery.
 type MCPDiscoveryWarning struct {

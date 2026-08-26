@@ -9,8 +9,10 @@
 // Workflows with no `needs:` keep implicit sequential YAML order. Independent `needs:` roots
 // run concurrently with [DefaultMaxConcurrentSteps]; join steps see all upstream `${steps.*}`
 // outputs. Checkpoints store a completion set so resume can continue a partially finished
-// parallel group (issue #192). Trace events stamp `logicalOrder` (YAML index) for deterministic
-// replay; the audit chain still verifies insert order.
+// parallel group (issue #192). A `workflow:` step invokes another Workflow in the project graph
+// (issue #194); callee `output.value` becomes the step output. Nested progress is stored on the
+// checkpoint so resume can continue mid-subworkflow. Trace events stamp `logicalOrder` (YAML index)
+// and nested `callStack` for deterministic replay; the audit chain still verifies insert order.
 //
 // Agent steps with declared tools run a bounded Generate loop (issue #160): the engine attaches
 // one [models.ToolDef] per listed Tool (`ToolChoice: auto`). `spec.tools` may name a Tool or pin

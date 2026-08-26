@@ -30,6 +30,10 @@ type Executor struct {
 	Trace        *trace.Recorder
 	Telemetry    *telemetry.Tracer
 	Now          func() time.Time
+
+	stepPrefix string
+	rootWF     *spec.WorkflowResource
+	nestParent *nestParent
 }
 
 // RunInput identifies the workflow run and parsed input map (already JSON-valid).
@@ -52,6 +56,10 @@ type RunInput struct {
 	InterruptAfterStepID string
 	// MaxConcurrentSteps bounds goroutine fan-out (issue #192). Zero uses DefaultMaxConcurrentSteps.
 	MaxConcurrentSteps int
+	// WorkflowDepth is 0 for the entry run and increments for each workflow: step (issue #194).
+	WorkflowDepth int
+	// CallStack is callee workflow names from the root (issue #194 traces).
+	CallStack []string
 	// Attribution for OTel gen_ai attributes (issue #111).
 	TenantID  string
 	ThreadID  string
@@ -150,7 +158,7 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
 	finishAt := e.now()
 
-	ictx, totalCost, err = e.runWorkflowSteps(ctx, in, wf, wfPol, ictx, totalCost, completed, runStartedAt, runHandle)
+	ictx, totalCost, err = e.runWorkflowSteps(ctx, in, wf, wfPol, ictx, nil, totalCost, completed, runStartedAt, runHandle)
 	if err != nil {
 		return err
 	}

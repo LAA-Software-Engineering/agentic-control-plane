@@ -56,8 +56,9 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 	if withOverride != nil {
 		withArgs = withOverride
 	}
+	tid := e.qualID(step.ID)
 	var err error
-	withArgs, err = e.enforceToolInput(ctx, wf, runID, step.ID, uses, withArgs)
+	withArgs, err = e.enforceToolInput(ctx, wf, runID, tid, uses, withArgs)
 	if err != nil {
 		return nil, tools.ToolCallMeta{}, err
 	}
@@ -66,19 +67,19 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 		// record system_error instead (same as workflow uses: steps).
 		if e.Trace != nil {
 			if d, ok := policy.AsDenied(err); ok {
-				_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventSystemError, trace.ActorSystem, d.TraceData())
+				_, _ = e.Trace.Append(ctx, runID, tid, trace.EventSystemError, trace.ActorSystem, d.TraceData())
 			}
 		}
 		return nil, tools.ToolCallMeta{}, err
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventToolSelection, trace.ActorAgent, toolSelectionData(uses, withArgs))
+		_, _ = e.Trace.Append(ctx, runID, tid, trace.EventToolSelection, trace.ActorAgent, toolSelectionData(uses, withArgs))
 	}
 	started := e.now()
 	if e.Tools == nil {
 		err := fmt.Errorf("engine: nil tool executor")
 		meta := tools.ToolCallMeta{DurationMs: e.now().Sub(started).Milliseconds()}
-		e.appendToolExecution(ctx, runID, step.ID, uses, meta, err)
+		e.appendToolExecution(ctx, runID, tid, uses, meta, err)
 		return nil, meta, err
 	}
 	toolCtx := ctx
@@ -86,7 +87,7 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 	if runHandle != nil {
 		safety := e.toolSafetyForUses(uses)
 		toolCtx, endTool = runHandle.StartTool(telemetry.ToolAttrs{
-			RunID: runID, StepID: step.ID, Uses: uses,
+			RunID: runID, StepID: tid, Uses: uses,
 			Trusted: safety.Trusted, SideEffects: safety.SideEffects, RequiresApproval: safety.RequiresApproval,
 		})
 	}
@@ -99,11 +100,11 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 		meta.DurationMs = e.now().Sub(started).Milliseconds()
 	}
 	if err != nil {
-		e.appendToolExecution(ctx, runID, step.ID, uses, meta, err)
+		e.appendToolExecution(ctx, runID, tid, uses, meta, err)
 		return nil, meta, err
 	}
-	e.appendToolExecution(ctx, runID, step.ID, uses, meta, nil)
-	out, err := e.enforceToolOutput(ctx, wf, runID, step.ID, uses, resp.Output)
+	e.appendToolExecution(ctx, runID, tid, uses, meta, nil)
+	out, err := e.enforceToolOutput(ctx, wf, runID, tid, uses, resp.Output)
 	if err != nil {
 		return nil, meta, err
 	}
