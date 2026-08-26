@@ -80,7 +80,9 @@ func TestGolden_Lower(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read golden (run with GO_UPDATE_GOLDEN=1 to create): %v", err)
 			}
-			if !bytes.Equal(got, want) {
+			// Normalize line endings: git may check the golden out as CRLF on
+			// Windows, while the YAML encoder always emits LF.
+			if normalizeNewlines(got) != normalizeNewlines(want) {
 				t.Errorf("lowered YAML mismatch for %s\n--- got ---\n%s\n--- want ---\n%s", name, got, want)
 			}
 		})
@@ -261,6 +263,12 @@ func TestLower_PositionFidelityCallSite(t *testing.T) {
 	if found.Pos != wantPos {
 		t.Errorf("call-site diagnostic position = %+v, want the .agent call site %+v", found.Pos, wantPos)
 	}
+}
+
+// normalizeNewlines collapses CRLF to LF so a Windows CRLF golden checkout
+// compares equal to the encoder's LF output.
+func normalizeNewlines(b []byte) string {
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
 // flatten unwraps an errors.Join tree into a flat slice.
