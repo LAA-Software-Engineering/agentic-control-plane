@@ -149,10 +149,11 @@ Lowering rules:
   `AgentSpec.Tools` — each `tool.<name>.<operation>` grant reconstructed as a `uses` string,
   an autonomous capability bound, not a call list. Positions align in `AgentSpec.ToolsPos`.
 - **Calls.** A dotted callee (`github.get_pr`) is a tool step (`uses: tool.github.get_pr`);
-  a single identifier (`Reviewer`) is an agent step (`agent: Reviewer`), or a `workflow:`
-  step when `Options.Workflows` marks it a sub-workflow. Named arguments become `with:`
-  keys; positional arguments become placeholder `arg0`, `arg1`, … keys pending parameter
-  binding (#198).
+  a single identifier is a `workflow:` step when it names a workflow declared in the file
+  (or listed in `Options.Workflows` for workflows in other files) and an `agent:` step
+  otherwise. A name declared as both an agent and a workflow is a diagnostic, never a silent
+  `agent:`. Named arguments become `with:` keys; positional arguments become placeholder
+  `arg0`, `arg1`, … keys pending parameter binding (#198).
 - **References.** A workflow parameter lowers to `${input.…}`; a binding lowers to
   `${steps.<id>.output.…}`. `return <expr>` lowers to `output.value.value`.
 - **Nested calls** SSA-flatten: a call passed as an argument is hoisted into its own step

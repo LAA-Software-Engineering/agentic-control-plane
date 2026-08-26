@@ -67,7 +67,7 @@ func marshalResult(t *testing.T, r *lower.Result) []byte {
 // TestGolden_Lower lowers each fixture and compares the marshaled resource
 // projection to a hand-written YAML golden. Refresh with GO_UPDATE_GOLDEN=1.
 func TestGolden_Lower(t *testing.T) {
-	for _, name := range []string{"adr002", "nested_calls"} {
+	for _, name := range []string{"adr002", "nested_calls", "workflow_call"} {
 		t.Run(name, func(t *testing.T) {
 			got := marshalResult(t, lowerFixture(t, name))
 			golden := filepath.Join("testdata", name+".golden.yaml")
@@ -86,6 +86,77 @@ func TestGolden_Lower(t *testing.T) {
 				t.Errorf("lowered YAML mismatch for %s\n--- got ---\n%s\n--- want ---\n%s", name, got, want)
 			}
 		})
+	}
+}
+
+// TestLower_SameFileWorkflowCalleeIsWorkflowStep pins the fix for the classifier
+// defect: a call to a workflow declared in the same file lowers to a workflow:
+// step under the default Options{}, and the lowered graph resolves cleanly (no
+// invented missing-Agent error).
+func TestLower_SameFileWorkflowCalleeIsWorkflowStep(t *testing.T) {
+	r := lowerFixture(t, "workflow_call")
+	var main *spec.WorkflowResource
+	for _, w := range r.Workflows {
+		if w.Metadata.Name == "Main" {
+			main = w
+		}
+	}
+	if main == nil || len(main.Spec.Steps) != 1 {
+		t.Fatalf("expected one step in Main; got %+v", main)
+	}
+	st := main.Spec.Steps[0]
+	if st.Workflow != "Util" || st.Agent != "" {
+		t.Errorf("same-file workflow callee lowered wrong: workflow=%q agent=%q (want workflow=Util, agent empty)", st.Workflow, st.Agent)
+	}
+	// The whole graph must validate its references — the callee is a Workflow, so
+	// no Agent/Util is invented.
+	if err := spec.ResolveReferences(r.ToGraph()); err != nil {
+		t.Fatalf("lowered same-file workflow-call graph failed reference validation: %v", err)
+	}
+}
+
+// TestLower_DuplicateAndCrossKindNamesAreDiagnostics asserts LowerFile is the
+// authority for resource identity: a duplicated agent/workflow name, and a name
+// declared as both, are diagnostics rather than a silent last-write-wins or a
+// silent agent: classification.
+func TestLower_DuplicateAndCrossKindNamesAreDiagnostics(t *testing.T) {
+	src := "agent Dup { model openai/gpt-5 }\n" +
+		"agent Dup { model openai/gpt-4 }\n" +
+		"workflow Both(input: T) -> T { return input }\n" +
+		"agent Both { model openai/gpt-5 }\n"
+	f, pd := lang.Parse("dup.agent", src)
+	if len(pd) > 0 {
+		t.Fatalf("unexpected parse diagnostics: %s", pd.Error())
+	}
+	_, ld := lower.LowerFile(f, lower.Options{})
+	joined := ld.Error()
+	if !strings.Contains(joined, `duplicate agent "Dup"`) {
+		t.Errorf("expected a duplicate-agent diagnostic; got: %s", joined)
+	}
+	if !strings.Contains(joined, `"Both" is declared as both an agent and a workflow`) {
+		t.Errorf("expected a cross-kind diagnostic for Both; got: %s", joined)
+	}
+}
+
+// TestMergeLowered_CollisionIsAtomic asserts MergeLowered leaves the destination
+// untouched when any name collides, rather than mutating then erroring.
+func TestMergeLowered_CollisionIsAtomic(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Agents:    map[string]*spec.AgentResource{"Foo": {Metadata: spec.Metadata{Name: "Foo"}}},
+		Workflows: map[string]*spec.WorkflowResource{},
+	}
+	r := &lower.Result{Agents: []*spec.AgentResource{
+		{Metadata: spec.Metadata{Name: "Bar"}},
+		{Metadata: spec.Metadata{Name: "Foo"}},
+	}}
+	if err := project.MergeLowered(g, r); err == nil {
+		t.Fatal("expected a duplicate-Agent error")
+	}
+	if _, leaked := g.Agents["Bar"]; leaked {
+		t.Error("MergeLowered wrote Bar despite the Foo collision — merge was not atomic")
+	}
+	if len(g.Agents) != 1 {
+		t.Errorf("destination graph mutated on a failed merge: %d agents, want 1", len(g.Agents))
 	}
 }
 

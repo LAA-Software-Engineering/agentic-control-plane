@@ -1,0 +1,11 @@
+// A workflow that calls another workflow declared later in the SAME file. The
+// callee must lower to a workflow: step, not an agent: step (#194), with no
+// caller-supplied Options.Workflows hint.
+workflow Main(input: Ticket) -> Summary {
+    x = Util(input)
+    return x
+}
+
+workflow Util(input: Ticket) -> Summary {
+    return input
+}

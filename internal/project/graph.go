@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/lower"
@@ -17,9 +18,13 @@ func BuildRefIndex(g *spec.ProjectGraph) *spec.RefIndex {
 
 // MergeLowered folds the resource projection of a lowered .agent file (#197) into
 // g so downstream validate/plan/apply can consume it alongside YAML-ingested
-// resources. The graph's maps are allocated if nil. It returns an error on a name
-// collision with an existing resource of the same kind, since a project must not
-// declare the same Agent or Workflow twice across ingress paths.
+// resources. The graph's maps are allocated if nil.
+//
+// The merge is atomic: every collision — with a resource already in g, or a
+// duplicate within the Result itself — is collected before any write, and if any
+// exist g is left untouched and a joined error is returned. A project must not
+// declare the same Agent or Workflow twice across ingress paths, and a caller
+// that ignores the error must not be left with a half-merged graph.
 func MergeLowered(g *spec.ProjectGraph, r *lower.Result) error {
 	if g == nil || r == nil {
 		return nil
@@ -30,16 +35,32 @@ func MergeLowered(g *spec.ProjectGraph, r *lower.Result) error {
 	if g.Workflows == nil {
 		g.Workflows = map[string]*spec.WorkflowResource{}
 	}
+
+	var errs []error
+	seenAgent := make(map[string]bool, len(r.Agents))
 	for _, a := range r.Agents {
-		if _, dup := g.Agents[a.Metadata.Name]; dup {
-			return fmt.Errorf("project: duplicate Agent %q from lowered .agent source", a.Metadata.Name)
+		n := a.Metadata.Name
+		if _, dup := g.Agents[n]; dup || seenAgent[n] {
+			errs = append(errs, fmt.Errorf("project: duplicate Agent %q from lowered .agent source", n))
 		}
+		seenAgent[n] = true
+	}
+	seenWorkflow := make(map[string]bool, len(r.Workflows))
+	for _, w := range r.Workflows {
+		n := w.Metadata.Name
+		if _, dup := g.Workflows[n]; dup || seenWorkflow[n] {
+			errs = append(errs, fmt.Errorf("project: duplicate Workflow %q from lowered .agent source", n))
+		}
+		seenWorkflow[n] = true
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
+	for _, a := range r.Agents {
 		g.Agents[a.Metadata.Name] = a
 	}
 	for _, w := range r.Workflows {
-		if _, dup := g.Workflows[w.Metadata.Name]; dup {
-			return fmt.Errorf("project: duplicate Workflow %q from lowered .agent source", w.Metadata.Name)
-		}
 		g.Workflows[w.Metadata.Name] = w
 	}
 	return nil

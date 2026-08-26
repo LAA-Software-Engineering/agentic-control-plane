@@ -9,20 +9,26 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
-// Options tunes the lowering heuristics that will be replaced by the #198 symbol
-// table once reference resolution lands.
+// Options carries classification the current file cannot supply on its own.
 type Options struct {
-	// Workflows names callees that are known sub-workflows rather than agents.
-	// A single-identifier call to a name in this set lowers to a workflow: step;
-	// every other single-identifier call lowers to an agent: step. Nil/empty
-	// means all single-identifier calls are agent invocations. Dotted callees
-	// (github.get_pr) are always tool calls regardless of this set.
+	// Workflows names EXTRA callees — project-level workflows declared in other
+	// files — that a single-identifier call should lower to a workflow: step.
+	// Workflows declared in the file being lowered are detected automatically and
+	// need not be listed here; a name declared in the file always wins over this
+	// set. Dotted callees (github.get_pr) are always tool calls. Once #198 lands
+	// its project-wide symbol table replaces this field.
 	Workflows map[string]bool
 }
 
 // Result is the resource projection of a lowered .agent file (ADR 002 §5): the
 // Agent/Tool/Policy/Workflow resources plan/apply/policy analysis run against. It
 // is deliberately NOT an input to the execution lowering (#199) — see doc.go.
+//
+// Agents and Workflows have unique names whenever LowerFile returned no
+// diagnostics: LowerFile is the authority for resource identity in a file and
+// reports a duplicate agent/workflow name, or a name declared as both, as a
+// diagnostic. ToGraph and project.MergeLowered rely on that invariant; behavior
+// on a Result built despite duplicate-name diagnostics is unspecified.
 type Result struct {
 	Agents    []*spec.AgentResource
 	Workflows []*spec.WorkflowResource
@@ -31,7 +37,9 @@ type Result struct {
 
 // ToGraph folds the lowered resources into a fresh spec.ProjectGraph keyed by
 // name. It does not merge with any existing graph; use project.MergeLowered for
-// that.
+// that. It assumes a diagnostic-free Result (unique names, per the Result doc);
+// duplicate names would collapse under the map, which is why LowerFile diagnoses
+// them.
 func (r *Result) ToGraph() *spec.ProjectGraph {
 	g := &spec.ProjectGraph{
 		Agents:       map[string]*spec.AgentResource{},
@@ -61,6 +69,12 @@ func LowerFile(f *lang.File, opts Options) (*Result, lang.Diagnostics) {
 	if f == nil {
 		return res, nil
 	}
+	// A pre-pass over the whole file establishes resource identity before any
+	// body is lowered: which single-identifier callees are workflows vs agents
+	// (a call may name a workflow declared later in the file), and which names
+	// collide. The classifier this builds is the answer the File already holds —
+	// callee kind is not deferred to #198's project-wide resolution.
+	l.classifyDecls(f)
 	for _, d := range f.Decls {
 		switch decl := d.(type) {
 		case *lang.AgentDecl:
@@ -80,6 +94,63 @@ type lowerer struct {
 	opts  Options
 	sm    *SourceMap
 	diags lang.Diagnostics
+	// workflowCallee[name] is true when a single-identifier call to name lowers
+	// to a workflow: step. Built by classifyDecls from the file's WorkflowDecls
+	// (and Options.Workflows); an agent-declared name is never marked.
+	workflowCallee map[string]bool
+}
+
+// classifyDecls records, for every top-level declaration, whether its name is an
+// agent or a workflow, so a single-identifier callee lowers to the right step
+// kind. A name declared twice (same kind) or as both an agent and a workflow is a
+// diagnostic — the file is the first place resource identity exists, so the
+// ambiguity is reported here, never resolved by silently choosing agent:.
+func (l *lowerer) classifyDecls(f *lang.File) {
+	l.workflowCallee = map[string]bool{}
+	kind := map[string]string{}
+	at := map[string]spec.Pos{}
+	for _, d := range f.Decls {
+		var name, k string
+		var pos spec.Pos
+		switch decl := d.(type) {
+		case *lang.AgentDecl:
+			name, k, pos = identName(decl.Name), "agent", declNamePos(decl.Name, decl.Pos)
+		case *lang.WorkflowDecl:
+			name, k, pos = identName(decl.Name), "workflow", declNamePos(decl.Name, decl.Pos)
+		default:
+			continue
+		}
+		if name == "" {
+			continue
+		}
+		if prev, ok := kind[name]; ok {
+			if prev == k {
+				l.diag(pos, "duplicate %s %q (already declared at %s)", k, name, at[name].String())
+			} else {
+				l.diag(pos, "%q is declared as both an agent and a workflow", name)
+			}
+			continue // first declaration wins the classification
+		}
+		kind[name] = k
+		at[name] = pos
+		if k == "workflow" {
+			l.workflowCallee[name] = true
+		}
+	}
+	// Extra project-level workflow names from other files, but never overriding a
+	// name this file declares as an agent.
+	for name := range l.opts.Workflows {
+		if _, declared := kind[name]; !declared {
+			l.workflowCallee[name] = true
+		}
+	}
+}
+
+func declNamePos(id *lang.Ident, fallback spec.Pos) spec.Pos {
+	if id != nil && !id.Pos.IsZero() {
+		return id.Pos
+	}
+	return fallback
 }
 
 func (l *lowerer) diag(p spec.Pos, format string, args ...any) {
@@ -340,8 +411,9 @@ func (wl *workflowLowerer) lowerCall(id string, call *lang.CallExpr, predNeeds [
 }
 
 // applyCallee sets exactly one target field. A dotted callee (github.get_pr) is a
-// tool call; a single identifier is an agent invocation unless Options.Workflows
-// marks it a sub-workflow.
+// tool call; a single identifier is a workflow: step when classifyDecls marked it
+// a workflow (declared in this file or listed in Options.Workflows), otherwise an
+// agent: step.
 func (wl *workflowLowerer) applyCallee(step *spec.WorkflowStep, callee *lang.RefExpr) {
 	if callee == nil || len(callee.Parts) == 0 {
 		wl.l.diag(step.Pos, "call has no callee")
@@ -358,7 +430,7 @@ func (wl *workflowLowerer) applyCallee(step *spec.WorkflowStep, callee *lang.Ref
 		return
 	}
 	name := callee.Parts[0].Name
-	if wl.l.opts.Workflows[name] {
+	if wl.l.workflowCallee[name] {
 		step.Workflow = name
 		step.WorkflowPos = callee.Pos
 		return

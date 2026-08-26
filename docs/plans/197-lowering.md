@@ -50,10 +50,13 @@ which becomes the `needs` of the next statement (fan-in). This makes every refer
 binding a transitive `needs` ancestor, satisfying the validator's predecessor rule.
 
 - Dotted callee (`github.get_pr`) → **tool** step: `uses: tool.github.get_pr`.
-- Single-identifier callee (`Reviewer`) → **agent** step: `agent: Reviewer`.
-  (Sub-workflow callees are indistinguishable from agents without the #198 symbol table;
-  an optional `Options.Workflows` set lets a caller mark known-workflow names so they lower
-  to `workflow:` steps. Default: single-identifier ⇒ agent.)
+- Single-identifier callee → **workflow** step (`workflow: Util`) when the name is declared
+  as a workflow in the same file (a pre-pass classifies every `Decl` before any body is
+  lowered, so a call may reference a workflow declared later), or is listed in
+  `Options.Workflows` for a workflow in another file; otherwise an **agent** step
+  (`agent: Reviewer`). A name declared as both an agent and a workflow in the file is a
+  diagnostic. `Options.Workflows` only supplies cross-file names; #198's project-wide symbol
+  table replaces it.
 - Named args → `with: { name: <lowered> }`. Positional args → `with: { arg0: …, arg1: … }`
   placeholder keys, rebound to real parameter names by #198.
 - Nested call arguments SSA-flatten into their own steps (rule 2 temp IDs) referenced by
