@@ -295,28 +295,28 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 		diags = append(diags, d...)
 		// The loop variable is untyped — element-type inference from the
 		// collection is a follow-up; gradual typing keeps a reference to it
-		// compatible with anything. Scoping matches the interpreter exactly:
-		//   - a PARALLEL loop isolates each iteration, so neither the loop
-		//     variable nor any body binding escapes;
-		//   - a SEQUENTIAL loop shares the enclosing scope, so both escape (last
-		//     iteration wins).
+		// compatible with anything. Scoping matches the interpreter exactly, and
+		// the body runs with the loop variable bound in BOTH kinds:
+		//   - a PARALLEL loop isolates each iteration, so nothing the body binds
+		//     escapes (the interpreter runs each iteration in a child scope);
+		//   - a SEQUENTIAL loop may run ZERO times, so a name it first binds
+		//     (including the loop variable) is NOT definitely assigned afterward
+		//     and does not escape; a name that existed BEFORE the loop survives,
+		//     but reassignment inside it collapses to a union (untyped), never the
+		//     last iteration's type. loopJoin computes exactly that.
 		name := identName(s.Var)
-		if s.Parallel {
-			saved := snapshotEnv(wc.env)
-			if name != "" {
-				wc.env[name] = typeRef{}
-			}
-			for _, st := range s.Body {
-				diags = append(diags, wc.checkStmt(st)...)
-			}
-			wc.env = saved
-			return diags
-		}
+		pre := wc.env
+		wc.env = snapshotEnv(pre)
 		if name != "" {
 			wc.env[name] = typeRef{}
 		}
 		for _, st := range s.Body {
 			diags = append(diags, wc.checkStmt(st)...)
+		}
+		if s.Parallel {
+			wc.env = pre
+		} else {
+			wc.env = loopJoin(pre, wc.env)
 		}
 		return diags
 	}
@@ -352,6 +352,25 @@ func joinEnv(thenEnv, elseEnv map[string]typeRef) map[string]typeRef {
 			continue // bound in the then arm only: not definitely assigned
 		}
 		out[name] = mergeType(tThen, tElse)
+	}
+	return out
+}
+
+// loopJoin computes the environment after a sequential loop from the pre-loop
+// env and the env after one symbolic body pass (which started as a copy of the
+// pre-loop env plus the loop variable). Only names that existed BEFORE the loop
+// survive — a name the body first binds (the loop variable included) is not
+// definitely assigned, since the loop may run zero times. A surviving name whose
+// type the body changed collapses to untyped (its post-loop value is either the
+// pre-loop value or the last iteration's), never the body's type.
+func loopJoin(pre, after map[string]typeRef) map[string]typeRef {
+	out := make(map[string]typeRef, len(pre))
+	for name, tPre := range pre {
+		if tAfter, ok := after[name]; ok {
+			out[name] = mergeType(tPre, tAfter)
+		} else {
+			out[name] = tPre
+		}
 	}
 	return out
 }
@@ -399,10 +418,19 @@ func (wc *wfChecker) checkExpr(e lang.Expr) (typeRef, lang.Diagnostics) {
 }
 
 // checkRef resolves a dotted reference (pr, input.repo, result.summary)
-// against the environment, reporting a diagnostic only when the schema
-// positively forbids the path (additionalProperties: false); an untyped head
-// or an unresolved head (already lowering's diagnostic — see prefixOf in
-// internal/lang/lower/lower.go) is silently gradual here.
+// against the environment. An unresolved head — a name the scope model says is
+// not in scope at this point — is a compile error, so a reference the runtime
+// would fail on is rejected here rather than passing under one model and
+// panicking under another (#199). This is the same condition and message
+// lowering's prefixOf reports for the resource projection, but the checker's
+// env is the AUTHORITY: it is the definite-assignment scope (a one-arm `if`
+// binding and a sequential loop's body locals are absent, since a zero-iteration
+// loop or the untaken arm never binds them), whereas the resource-flatten env is
+// an effect over-approximation that keeps every name any branch binds. Check
+// dedups the two when they coincide on a straight-line reference (dedupDiags).
+// A member access past a resolved head is an error only when the schema
+// positively forbids the path (additionalProperties: false); an untyped head is
+// otherwise gradual.
 func (wc *wfChecker) checkRef(r *lang.RefExpr) (typeRef, lang.Diagnostics) {
 	if r == nil || len(r.Parts) == 0 {
 		return typeRef{}, nil
@@ -410,7 +438,10 @@ func (wc *wfChecker) checkRef(r *lang.RefExpr) (typeRef, lang.Diagnostics) {
 	head := r.Parts[0].Name
 	cur, ok := wc.env[head]
 	if !ok {
-		return typeRef{}, nil
+		return typeRef{}, lang.Diagnostics{{
+			Pos: r.Pos,
+			Msg: fmt.Sprintf("unresolved reference %q", head),
+		}}
 	}
 	for _, p := range r.Parts[1:] {
 		if cur.doc == nil {

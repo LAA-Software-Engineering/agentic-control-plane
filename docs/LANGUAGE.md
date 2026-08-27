@@ -410,9 +410,18 @@ under another:
   then a use of `x` is the intended idiom. A name bound in only one arm is not in scope
   afterward. When the two arms give a name different types the join is a union, represented as
   untyped/gradual (permissive) rather than whichever arm the checker walked last.
-- **Sequential `for`**: one flat scope — the loop variable and body bindings **escape** (last
-  iteration wins), and a `return` inside returns from the workflow and halts the loop and
-  everything after it.
+- **Sequential `for` may run zero times.** The loop variable is in scope inside the body, and a
+  `return` inside returns from the workflow and halts the loop. But a name the loop **first**
+  binds — the loop variable, or a binding introduced in the body — is **not** in scope after
+  the loop, because an empty collection never binds it. A name that existed **before** the loop
+  survives it (reassignment inside collapses its type to a union, never the last iteration's).
+
+A reference to a name the scope model says is absent — a one-arm `if` binding used after the
+`if`, a loop variable or body-local used after the loop, or any never-bound name — is a
+**compile error** (`unresolved reference "…"`), reported by the type checker from the same
+scope model the interpreter runs. This is what makes "the checker and interpreter share one
+rule" a checked property rather than a claim: a program the scope model rejects does not
+type-check, so it cannot reach the interpreter and fail there on an untaken path.
 - **Parallel** (`parallel { … }`, `parallel for`): each branch/iteration runs in an **isolated**
   scope; only a `parallel {}` branch's own binding is published at the join, and a `parallel
   for` body's bindings do not escape. A `return` inside a parallel body is a **compile error**

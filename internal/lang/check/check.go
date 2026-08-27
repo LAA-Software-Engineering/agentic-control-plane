@@ -144,7 +144,28 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 
 	diags = append(diags, checkEffectsClauses(unit, prog.Bounds)...)
 
-	return prog, diags.Sorted()
+	return prog, dedupDiags(diags.Sorted())
+}
+
+// dedupDiags drops adjacent exact-duplicate diagnostics (same position, message,
+// and severity). The checker is the authority for unresolved references and
+// emits the same message lowering's prefixOf does for a straight-line reference,
+// so a genuine typo would otherwise be reported twice; a control-flow scope
+// violation is reported by the checker alone. Sorting groups identical entries
+// adjacently, so one pass suffices.
+func dedupDiags(diags lang.Diagnostics) lang.Diagnostics {
+	if len(diags) < 2 {
+		return diags
+	}
+	out := diags[:1]
+	for _, d := range diags[1:] {
+		last := out[len(out)-1]
+		if d.Pos == last.Pos && d.Msg == last.Msg && d.Severity == last.Severity {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 // applyRebinds rewrites a lowered workflow: step's placeholder with: keys

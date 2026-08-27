@@ -145,10 +145,10 @@ workflow W(input: PullRequest) {
 		}
 	})
 
-	// A binding made only in the then arm is NOT definitely assigned, so it is
-	// dropped from the join. Old behavior leaked it as PullRequest, so a later
-	// forbidden-field access errored; now the reference is untyped/gradual.
-	t.Run("then-only binding is not definitely assigned", func(t *testing.T) {
+	// A binding made only in the then arm is NOT definitely assigned, so a
+	// reference to it after the `if` is a compile error — the same miss the
+	// interpreter would hit on the untaken (else) path, caught at compile time.
+	t.Run("then-only binding is a compile error after the if", func(t *testing.T) {
 		t.Parallel()
 		src := `
 agent PRSrc { output PullRequest }
@@ -161,8 +161,89 @@ workflow W(input: PullRequest) {
 `
 		f := parseOrFatal(t, src)
 		_, diags := Check(f, Options{SchemaDir: "testdata"})
+		if !hasSeverity(diags, lang.SeverityError, `unresolved reference "r"`) {
+			t.Fatalf("expected a then-only binding referenced after the if to be unresolved, got %v", diagMessages(diags))
+		}
+	})
+
+	// A binding made in BOTH arms is definitely assigned and resolves after.
+	t.Run("both-arm binding resolves after the if", func(t *testing.T) {
+		t.Parallel()
+		src := `
+agent PRSrc { output PullRequest }
+agent RevSrc { output Review }
+workflow W(input: PullRequest) {
+    if input.number {
+        r = PRSrc()
+    } else {
+        r = RevSrc()
+    }
+    z = r.repo
+}
+`
+		f := parseOrFatal(t, src)
+		_, diags := Check(f, Options{SchemaDir: "testdata"})
 		if diags.HasErrors() {
-			t.Fatalf("a then-only binding must not leak its type past the if; got %v", diagMessages(diags))
+			t.Fatalf("a both-arm binding must resolve after the if, got %v", diagMessages(diags))
+		}
+	})
+}
+
+// TestCheckControlFlow_LoopVariableScope proves the checker and interpreter
+// agree on loop scope: the loop variable and body-local bindings are NOT in
+// scope after a sequential loop (a zero-iteration loop never binds them), so a
+// later reference is a compile error — the same miss the interpreter hits on an
+// empty collection, caught at compile time (review finding).
+func TestCheckControlFlow_LoopVariableScope(t *testing.T) {
+	t.Parallel()
+
+	t.Run("loop variable after the loop is unresolved", func(t *testing.T) {
+		t.Parallel()
+		src := `
+workflow W(input: Repos) {
+    for x in input.repos {
+        github.get_pr()
+    }
+    return x
+}
+`
+		f := parseOrFatal(t, src)
+		_, diags := Check(f, Options{Project: projectWith(githubTool())})
+		if !hasSeverity(diags, lang.SeverityError, `unresolved reference "x"`) {
+			t.Fatalf("expected the loop variable to be out of scope after the loop, got %v", diagMessages(diags))
+		}
+	})
+
+	t.Run("loop-local binding after the loop is unresolved", func(t *testing.T) {
+		t.Parallel()
+		src := `
+workflow W(input: Repos) {
+    for x in input.repos {
+        latest = github.get_pr()
+    }
+    return latest
+}
+`
+		f := parseOrFatal(t, src)
+		_, diags := Check(f, Options{Project: projectWith(githubTool())})
+		if !hasSeverity(diags, lang.SeverityError, `unresolved reference "latest"`) {
+			t.Fatalf("expected a loop-local binding to be out of scope after the loop, got %v", diagMessages(diags))
+		}
+	})
+
+	t.Run("loop variable resolves inside the body", func(t *testing.T) {
+		t.Parallel()
+		src := `
+workflow W(input: Repos) {
+    for x in input.repos {
+        github.build(x)
+    }
+}
+`
+		f := parseOrFatal(t, src)
+		_, diags := Check(f, Options{Project: projectWith(githubTool())})
+		if diags.HasErrors() {
+			t.Fatalf("the loop variable must resolve inside the body, got %v", diagMessages(diags))
 		}
 	})
 }
