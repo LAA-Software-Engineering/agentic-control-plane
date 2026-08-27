@@ -1,0 +1,20 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: Nested
+spec:
+  steps:
+    - id: result_arg0
+      uses: tool.triage.classify
+      with:
+        arg0: ${input.body}
+    - id: result
+      uses: tool.report.render
+      with:
+        arg0: ${steps.result_arg0.output}
+        arg1: ${input.id}
+      needs:
+        - result_arg0
+  output:
+    value:
+      value: ${steps.result.output}

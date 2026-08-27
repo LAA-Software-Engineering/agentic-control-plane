@@ -1,0 +1,22 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: Main
+spec:
+  steps:
+    - id: x
+      workflow: Util
+      with:
+        text: ${input.body}
+  output:
+    value:
+      value: ${steps.x.output}
+---
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: Util
+spec:
+  output:
+    value:
+      value: ${input.text}
