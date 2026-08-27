@@ -365,8 +365,3 @@ The **recommended implementation phases** are outlined in **section 20** of [`do
 ## Contributing
 
 Issues and pull requests are welcome. See **[`CONTRIBUTING.md`](CONTRIBUTING.md)** for local setup, tests, golden updates, and pull request expectations.
-
----
-
-> **Local declarative agent systems with validate, plan, apply, run, and logs.**  
-> *(Closing recommendation in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md), section 23.)*
