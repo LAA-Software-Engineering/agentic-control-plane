@@ -4,11 +4,23 @@
 
 ## 0. Summary
 
-This project is a **declarative control plane for agent systems**.
+Terfyn is a **statically analyzable, capability-oriented execution platform for nondeterministic
+programs.** Its purpose is to make the **authority** granted to autonomous components — the set of
+operations they may call and the effects those may produce — **statically bounded, reviewable before
+execution (as a `plan` diff), and invariant across the execution lifecycle** (a suspended run cannot
+wake up under widened authority). Terfyn bounds and diffs that grant; it does **not** verify what
+remote systems (GitHub, a shell, an MCP server) actually do when invoked — see ADR 002, *Soundness
+assumptions and limits*, and [`docs/SOUNDNESS.md`](SOUNDNESS.md).
+
+Operationally it is a **declarative control plane**: teams define agents, tools, workflows, policies,
+and environments as versioned config (`.agent` is the authoring surface, YAML the compilation
+output/interchange — [ADR 003](adr/003-yaml-as-compilation-output.md)) and drive it Terraform-style.
+The scope boundary — what belongs inside this platform and what is an adapter, not an owned system —
+is [ADR 004](adr/004-scope-and-non-goals.md).
 
 The goal is not to be another Python agent framework.
 
-The goal is to let teams define agents, tools, workflows, policies, and environments as **versioned YAML**, then:
+The goal is to let teams define agents, tools, workflows, policies, and environments as **versioned config**, then:
 
 * validate
 * diff
