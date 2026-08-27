@@ -61,14 +61,20 @@ paths (`.agent` and YAML) share one interpreter, so execution semantics cannot d
 "Temporal-style memoization of completed `Invoke*` leaves, `{key → result}` + cost" — as rev. 1
 stated — **cannot pass the `#105/#106/#192/#195` suites** #258 must port, for three concrete reasons:
 
-1. **The interrupt point is inside a leaf, not between leaves.** `#105/#106` HITL fires *within*
-   [`runAgentStep`](../../internal/engine/steps.go)'s reason→act tool loop — `InvokeAgent` has not
-   returned, so there is no completed result to memoize. Re-invoking the agent on resume would
-   re-run every tool call before the gate: the duplicate side effects the recording `Invoker` is
-   supposed to forbid. `#194` already faced this inside `InvokeWorkflow` and invented
-   `NestedRunState`. So the durable state must carry **in-flight agent-loop and nested-subworkflow
-   frames**, which is exactly what `checkpointPayload{PendingHitl, Nested}` already does — the model
-   must *extend that payload onto the execir tree*, not *replace it* with a completed-leaf map.
+1. **The suspend point is an incomplete workflow-level node, not a completed leaf — and it is *not*
+   inside the agent loop.** HITL fires at a workflow-level `uses:` step (`maybeInterruptForHitl`,
+   the single call site in [`execution_dag.go`](../../internal/engine/execution_dag.go), *before*
+   `runToolStep`) or a `#195` approval step. The **inner agent-loop does not HITL** — a granted
+   operation `CheckToolCall` denies for a missing `--approve` fail-closes with **exit 5**, not a
+   gate (`docs/AGENT_LOOP.md` §"HITL vs exit 5"; DESIGN_DOC §12.2 F). So there is *no agent-loop
+   continuation to carry*: `InvokeTool`/`InvokeAgent` are leaves — completed → memoized by
+   structural key; an incomplete one (a crash mid-agent-step) replays the whole step, which is
+   exactly today's DAG behavior. The real in-flight states are the ones the engine already stores:
+   `checkpointPayload.PendingHitl` (an incomplete `uses:` / `Approval` node paused at a gate) and
+   `checkpointPayload.Nested` (a suspended subworkflow, `#194` `NestedRunState`). These are
+   *incomplete* nodes — not memoizable as completed-leaf results — so the durable model must
+   *extend* `PendingHitl` + `Nested` (+ the `Approval` node) onto execir node identities, not
+   *replace* the checkpoint with a `{key → result}` map.
 2. **The `Invoker` ABI cannot see a key.** Memoizing "node path + enclosing loop indices" requires
    the key to reach the invocation. `InvokeTool(ctx, uses, args)` does not carry it, and stashing a
    "current node" on the adapter is unsafe — `Fork` and parallel `Loop` invoke from several
@@ -81,10 +87,12 @@ stated — **cannot pass the `#105/#106/#192/#195` suites** #258 must port, for 
 **Corrected model.** Durable execir = deterministic replay of pure control flow (`Branch`
 conditions, `Let`, collection sizes — pure by construction, #199) + memoized **completed** effectful
 leaves keyed by a stable structural identity + **the engine's existing in-flight interrupt state**
-(agent-loop position, nested-subworkflow frames, pending HITL, approval pauses) carried across
-suspend exactly as `checkpointPayload` does today, re-anchored to execir node identities. The #258
-sign-off must resolve all three sub-problems above; "replay-with-memoization" alone is a slogan that
-stops one layer short of the interrupt states the engine already models.
+— `PendingHitl` (incomplete `uses:` / `Approval` node) and `Nested` (suspended subworkflow) —
+carried across suspend as `checkpointPayload` does today, re-anchored to execir node identities.
+There is deliberately **no** agent-loop program counter: the inner loop does not suspend, and an
+interrupted agent step replays wholesale (existing behavior). The #258 sign-off must resolve all
+three sub-problems above; "replay-with-memoization" alone is a slogan that stops one layer short of
+the interrupt states the engine actually models.
 
 ## The concurrency model: `needs:` is a general DAG, not `Fork`
 
@@ -132,18 +140,24 @@ graph class the concurrency decision admits.
 Implement an `execir.Invoker` over the engine's per-step executors, **extending the `Invoker` ABI to
 carry structural identity** (prerequisite for Phase 2), bridging execir's scope namespace ↔ the
 engine's `ictx`/policy/cost/trace. Run via `Interp` behind a flag, asserting **identical observable
-behavior** to the DAG path — including the concurrency semantics admitted by Phase 0 (per-branch
-suspend, DAG-accurate joins). Resume/HITL stay DAG-handled. **Largest PR; the differential harness
-is what makes it reviewable.**
+behavior** to the DAG path on **graphs that run to completion** — same traces, output, policy
+denials, cost, limits, and **join accuracy** (in the `A,B roots; C[A]; D[A,B]; E[C]` graph, `D` runs
+when A and B finish, not when C/E finish). **Suspend/HITL — including the per-branch-suspend case
+that motivates the DAG construct — is deliberately *out* of Phase 1's bar and stays DAG-handled; it
+is Phase 2's contract.** Proving per-branch suspend on the execir path here would require growing
+HITL on the flag path early, which Phase 1 does not do. **Largest PR; the differential harness is
+what makes it reviewable.**
 
 ### Phase 2 — durable execir: extend the interrupt/nested checkpoint machinery onto the tree (#258)
 Not a `{key → result}` replacement of the checkpoint — an **extension** of
 `checkpointPayload{Steps, Completed, PendingHitl, Nested}` re-anchored to execir node identities,
 plus deterministic replay of pure control flow and memoized completed leaves keyed by structural
-identity. Must carry in-flight agent-loop and nested-subworkflow state and `Approval`-node pauses.
-Port the `#105/#106/#192/#195` suites; assert **no duplicate side effects** on resume via the
-recording `Invoker`. **The correctness core — highest risk. Sign off the resume model (all three
-sub-problems above) before starting.**
+identity. Carries the engine's real in-flight states — `PendingHitl` (an incomplete workflow `uses:`
+/ `Approval` node paused at a gate) and `Nested` (a suspended subworkflow, `#194`) — **not** an
+agent-loop continuation (the inner loop does not suspend). Also adds per-branch suspend for the
+concurrency construct. Port the `#105/#106/#192/#195` suites; assert **no duplicate side effects** on
+resume via the recording `Invoker`. **The correctness core — highest risk. Sign off the resume model
+(all three sub-problems above) before starting.**
 
 ### Phase 3 — pin the program (was Phase 4; now a prerequisite for control flow) (#260)
 Control-flow `run`/`run --resume` is **impossible until the lowered program is a snapshot artifact**:
@@ -170,9 +184,10 @@ separate cleanup — deferred.
 ## Top risks & open questions
 
 1. **Resume grain (#258)** is make-or-break and is *not* naive leaf memoization — it must preserve
-   the engine's in-flight interrupt/nested state (agent tool loops, `NestedRunState`, approval
-   pauses) and extend the `Invoker` ABI with structural identity. Sign off all three sub-problems
-   before implementing.
+   the engine's real in-flight interrupt state, `PendingHitl` (incomplete `uses:` / `Approval` node)
+   and `Nested` (`NestedRunState`, `#194`), and extend the `Invoker` ABI with structural identity.
+   It must **not** invent an agent-loop continuation — the inner loop does not HITL (exit 5), so an
+   interrupted agent step replays wholesale. Sign off all three sub-problems before implementing.
 2. **Concurrency model (#256)** must be decided explicitly: `needs:` is a general DAG, not `Fork`.
    Extending execir with a `needs:`-preserving construct + an `Approval` node is the recommended path;
    the alternatives narrow scope deliberately.
