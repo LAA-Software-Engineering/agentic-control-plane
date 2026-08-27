@@ -100,8 +100,20 @@ func (e *Executor) enforceToolInput(
 	with map[string]any,
 ) (map[string]any, error) {
 	limits := e.resolveToolLimits(wf, uses)
-	return e.enforceMapLimit(ctx, runID, stepID, uses, spec.LimitKindToolInput, with,
+	out, err := e.enforceMapLimit(ctx, runID, stepID, uses, spec.LimitKindToolInput, with,
 		limits.MaxToolInputBytes, limits.ToolInputExceedPolicy)
+	if err != nil {
+		return nil, err
+	}
+	// Validate the operation's input schema (#204 manifest completion) against the payload that is
+	// actually dispatched — i.e. AFTER byte-limit enforcement. Under the default `truncate` policy
+	// enforceMapLimit may splice "..." into strings or drop keys, so validating the pre-truncation
+	// map would let a schema-violating payload reach CheckToolCall/Tools.Call. Fail closed: if what
+	// the tool would receive does not satisfy the schema (bad input, or truncation broke it), reject.
+	if err := e.validateToolInputSchema(uses, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (e *Executor) enforceToolOutput(

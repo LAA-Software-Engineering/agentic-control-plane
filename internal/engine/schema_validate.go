@@ -7,6 +7,7 @@ import (
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
 )
 
 // validateAgainstSchema validates instance against the schema referenced by sref. On a pinned
@@ -56,6 +57,35 @@ func (e *Executor) validateAgentOutputSchema(agent *spec.AgentResource, content 
 	}
 	if err := e.validateAgainstSchema(agent.Spec.Output.Schema, []byte(strings.TrimSpace(content))); err != nil {
 		return fmt.Errorf("engine: agent output: %w", err)
+	}
+	return nil
+}
+
+// validateToolInputSchema validates a tool call's input against the operation's declared input
+// schema, completing the #204 manifest's "operation → schema" half. Absent schema means gradual
+// (any input). Uses the pinned schema bundle on resume, the on-disk schema on a fresh run.
+func (e *Executor) validateToolInputSchema(uses string, with map[string]any) error {
+	if e == nil || e.Graph == nil {
+		return nil
+	}
+	toolName, operation, err := tools.ParseUses(uses)
+	if err != nil {
+		return nil // malformed uses is handled by the registry/policy; not this concern.
+	}
+	tr := e.Graph.Tools[toolName]
+	if tr == nil {
+		return nil
+	}
+	op, ok := tr.Spec.Operations[operation]
+	if !ok || strings.TrimSpace(op.Schema) == "" {
+		return nil
+	}
+	raw, err := json.Marshal(with)
+	if err != nil {
+		return fmt.Errorf("engine: marshal tool input: %w", err)
+	}
+	if err := e.validateAgainstSchema(op.Schema, raw); err != nil {
+		return fmt.Errorf("engine: tool %q input: %w", uses, err)
 	}
 	return nil
 }
