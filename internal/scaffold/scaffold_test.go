@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/project"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func scaffoldFixtureRoot(t *testing.T) string {

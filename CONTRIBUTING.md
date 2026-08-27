@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping improve Agentic Control Plane. This document describes how to work on the repo locally and what we expect in pull requests.
+Thank you for helping improve Terfyn. This document describes how to work on the repo locally and what we expect in pull requests.
 
 All participants are expected to follow the **[Code of Conduct](CODE_OF_CONDUCT.md)**.
 
@@ -12,10 +12,10 @@ All participants are expected to follow the **[Code of Conduct](CODE_OF_CONDUCT.
 ## Getting started
 
 ```bash
-git clone https://github.com/LAA-Software-Engineering/agentic-control-plane.git
-cd agentic-control-plane
+git clone https://github.com/LAA-Software-Engineering/terfyn.git
+cd terfyn
 go mod download
-make build    # or: go build -o bin/agentctl ./cmd/agentctl
+make build    # or: go build -o bin/terfyn ./cmd/terfyn
 ```
 
 Run **`make`** or **`make help`** for a full list of targets.
@@ -34,11 +34,11 @@ A convenient local gate (format check, vet, tests; no build):
 make ci
 ```
 
-CI in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) also **builds** `agentctl`, runs tests with **`-count=1 -shuffle=on -timeout=10m`**, and writes a **coverage** profile. To mirror that test invocation closely:
+CI in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) also **builds** `terfyn`, runs tests with **`-count=1 -shuffle=on -timeout=10m`**, and writes a **coverage** profile. To mirror that test invocation closely:
 
 ```bash
 go test -race -count=1 -shuffle=on -timeout=10m ./...
-go build -o bin/agentctl ./cmd/agentctl
+go build -o bin/terfyn ./cmd/terfyn
 ```
 
 ### CLI golden tests
@@ -57,7 +57,7 @@ High-level map (details in [`README.md`](README.md) and [`docs/DESIGN_DOC.md`](d
 
 | Area | Path |
 |------|------|
-| CLI entrypoint | `cmd/agentctl` |
+| CLI entrypoint | `cmd/terfyn` |
 | Commands, flags, golden tests | `internal/cli` |
 | YAML spec types and validation | `internal/spec`, `internal/project` |
 | Plan / apply / engine / policy | `internal/plan`, `internal/apply`, `internal/engine`, `internal/policy` |
@@ -79,7 +79,7 @@ High-level map (details in [`README.md`](README.md) and [`docs/DESIGN_DOC.md`](d
 ### Agentic PR review (fork and first-time contributors)
 
 This repository runs an automated **Agentic PR review** workflow
-([`.github/workflows/agentctl-pr-review.yml`](.github/workflows/agentctl-pr-review.yml)) on pull
+([`.github/workflows/terfyn-pr-review.yml`](.github/workflows/terfyn-pr-review.yml)) on pull
 requests. You may **not** see that check on your PR in these common cases:
 
 - **Fork-originated PRs** — the `review` job runs only when the PR head branch lives in the

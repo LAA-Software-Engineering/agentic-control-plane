@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 func assertDeploymentBaseline(ctx context.Context, dep state.DeploymentStore, env, projectName string, p *plan.Plan) error {

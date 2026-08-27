@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // ErrUnsupportedToolKind is returned when --kind is not a supported tool type.
@@ -27,7 +27,7 @@ func (e *UnsupportedToolKindError) Is(target error) bool {
 	return target == ErrUnsupportedToolKind
 }
 
-// Tool kinds supported by agentctl new tool.
+// Tool kinds supported by terfyn new tool.
 const (
 	ToolKindNative = "native"
 	ToolKindHTTP   = "http"

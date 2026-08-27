@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func githubTool() *spec.ToolResource {

@@ -11,11 +11,11 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/effects"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/check"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/effects"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang/check"
+	"github.com/LAA-Software-Engineering/terfyn/internal/project"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // diffProjectWith builds a minimal project graph holding the given tools (a

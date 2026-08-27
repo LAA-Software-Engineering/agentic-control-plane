@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 )
 
 func seedInspectorDB(t *testing.T) (string, *sqlite.Store) {
@@ -199,7 +199,7 @@ func TestServer_API_readOnly(t *testing.T) {
 		}
 		defer res.Body.Close()
 		b, _ := io.ReadAll(res.Body)
-		if !strings.Contains(string(b), "agentctl inspector") {
+		if !strings.Contains(string(b), "terfyn inspector") {
 			t.Fatalf("body=%q", b)
 		}
 	})

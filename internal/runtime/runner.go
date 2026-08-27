@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 // Runner drives workflow execution against persistent run and trace state (design doc §5.2).

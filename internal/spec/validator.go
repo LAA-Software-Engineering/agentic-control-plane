@@ -6,15 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/catalog"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime/catalog"
+	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
 )
 
 // ValidateProjectGraph runs MVP validation rules from design doc §9.1–§9.5 on a merged graph.
 // projectRoot is used to resolve Agent/Workflow input and output schema paths (§9.2),
 // load those schemas onto the graph, and check step interpolation wiring (§13.1, issue #193).
 //
-// Multiple violations are combined with [errors.Join]. Callers (e.g. agentctl validate)
+// Multiple violations are combined with [errors.Join]. Callers (e.g. terfyn validate)
 // should treat a non-nil return as exit code 2 per §11.2.
 func ValidateProjectGraph(g *ProjectGraph, projectRoot string) error {
 	if g == nil {

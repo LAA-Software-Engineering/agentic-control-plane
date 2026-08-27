@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 )
 
 func TestRegister_localFactory(t *testing.T) {

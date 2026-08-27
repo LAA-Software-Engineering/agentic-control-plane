@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func checkExecutionBudgets(run RunContext, ex *spec.PolicyExecution) error {

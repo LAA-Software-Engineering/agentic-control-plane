@@ -3,7 +3,7 @@ package plan
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // ProjectDeploymentMeta returns the Project resource name and spec_hash for applied_projects.version

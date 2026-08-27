@@ -12,8 +12,8 @@ below), and **CLI ingestion added in #200**: `project.LoadProject` discovers eve
 file under the project root (skipping dot-directories) and compiles the set through the
 checker ([`internal/lang/check`](../internal/lang/check)) — type and effect checking plus the
 positional workflow-argument rebind — merging the CHECKED resource projection into the graph
-that `validate`/`plan`/`apply`/`run` consume. `agentctl export --format yaml` materializes that
-graph (ADR 003), `agentctl fmt` formats `.agent`, and `agentctl init` scaffolds a `.agent`
+that `validate`/`plan`/`apply`/`run` consume. `terfyn export --format yaml` materializes that
+graph (ADR 003), `terfyn fmt` formats `.agent`, and `terfyn init` scaffolds a `.agent`
 project.
 
 **Straight-line `.agent` workflows execute end-to-end; control-flow ones do not yet.** The
@@ -25,7 +25,7 @@ fan-out reach the run path. Conditionals, loops, and dynamic fan-out still parse
 type-check (#199) and are usable as a library, but wiring `execir` onto the engine — with the
 persistence half of #199 (`apply` persisting the execution IR, `run --resume` pinning it,
 deferred to the content-addressed artifact store of #207) — is the remaining work before they
-run through `agentctl`.
+run through `terfyn`.
 
 The reference implementation is [`internal/lang`](../internal/lang):
 `lang.Parse(file, src) (*lang.File, lang.Diagnostics)`.
@@ -481,7 +481,7 @@ invalidate a stale plan is
 `execir.Program.Digest` into the spec-hash. **This is the mechanism, not yet a live invariant**:
 no production path constructs an `execir.Program` for a workflow today. `project.LoadProject`
 compiles `.agent` (#200) but uses the checked resource graph and refuses control-flow
-workflows, so it never builds an `execir.Program`; `agentctl plan` hashes resource envelopes
+workflows, so it never builds an `execir.Program`; `terfyn plan` hashes resource envelopes
 through `WorkflowSpecHash` (empty digest). When `execir` is wired onto the engine, those call
 sites move to `WorkflowSpecHashWithExec`; the plain `WorkflowSpecHash` doc comment flags that.
 The fold is unit-tested (`internal/plan/workflow_hash_execir_test.go`).

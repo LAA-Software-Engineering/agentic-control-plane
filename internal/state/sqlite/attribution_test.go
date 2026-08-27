@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 func TestStartRun_attributionDefaultsAndTracePropagation(t *testing.T) {

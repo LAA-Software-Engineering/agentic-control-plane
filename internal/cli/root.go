@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -16,13 +16,13 @@ func Execute() error {
 	return NewRootCmd().Execute()
 }
 
-// NewRootCmd builds the agentctl command tree (exposed for tests).
+// NewRootCmd builds the terfyn command tree (exposed for tests).
 func NewRootCmd() *cobra.Command {
 	global = Global{}
 	root := &cobra.Command{
-		Use:           "agentctl",
+		Use:           "terfyn",
 		Short:         "Declarative control plane for agent systems",
-		Long:          "agentctl validates, formats, inspects, plans, diffs, applies, runs, tests, and reads deployment state for declarative agent systems defined as YAML.",
+		Long:          "terfyn validates, formats, inspects, plans, diffs, applies, runs, tests, and reads deployment state for declarative agent systems defined as YAML.",
 		SilenceErrors: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			_ = cmd.Help()

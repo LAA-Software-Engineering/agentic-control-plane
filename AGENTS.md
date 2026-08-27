@@ -1,6 +1,6 @@
-# Agentic Control Plane — agent instructions
+# Terfyn — agent instructions
 
-Declarative YAML control plane for agents, tools, workflows, and policies. Primary interface is the Go CLI `agentctl` (Terraform-style validate / plan / apply / run / logs).
+Declarative YAML control plane for agents, tools, workflows, and policies. Primary interface is the Go CLI `terfyn` (Terraform-style validate / plan / apply / run / logs).
 
 Canonical product detail: [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). Human contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
@@ -8,7 +8,7 @@ Canonical product detail: [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). Human cont
 
 | Area | Path |
 |------|------|
-| CLI entrypoint | `cmd/agentctl` |
+| CLI entrypoint | `cmd/terfyn` |
 | Commands, flags, golden tests | `internal/cli` |
 | YAML spec types and validation | `internal/spec`, `internal/project` |
 | Plan / apply / engine / policy | `internal/plan`, `internal/apply`, `internal/engine`, `internal/policy` |
@@ -22,7 +22,7 @@ Canonical product detail: [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). Human cont
 - `make vet` — `go vet ./...`
 - `make test` — `go test ./... -race`
 - `make ci` — verify-fmt + vet + test (local gate before PR)
-- `make build` — `bin/agentctl`
+- `make build` — `bin/terfyn`
 
 Intentional CLI golden updates:
 

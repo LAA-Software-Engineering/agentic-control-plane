@@ -23,20 +23,20 @@ This minimal example shows a **real agent tool loop** hitting `execution.maxTota
 
 ## Prerequisites
 
-Build `agentctl` from the repo root (`make build`) or use a release binary on your `PATH`.
+Build `terfyn` from the repo root (`make build`) or use a release binary on your `PATH`.
 
 ## How to run
 
 From the **repository root**:
 
 ```bash
-agentctl validate --project examples/policy-denial-midrun
-agentctl plan --project examples/policy-denial-midrun --state /tmp/policy-denial-midrun.db
-agentctl apply --project examples/policy-denial-midrun --state /tmp/policy-denial-midrun.db --auto-approve
+terfyn validate --project examples/policy-denial-midrun
+terfyn plan --project examples/policy-denial-midrun --state /tmp/policy-denial-midrun.db
+terfyn apply --project examples/policy-denial-midrun --state /tmp/policy-denial-midrun.db --auto-approve
 ```
 
 ```bash
-agentctl run workflow/burn \
+terfyn run workflow/burn \
   --project examples/policy-denial-midrun \
   --state /tmp/policy-denial-midrun.db \
   --input-file examples/policy-denial-midrun/fixtures/sample-input.json
@@ -46,13 +46,13 @@ agentctl run workflow/burn \
 - Inspect the trace (printed **Run ID**):
 
 ```bash
-agentctl logs --project examples/policy-denial-midrun --state /tmp/policy-denial-midrun.db --run <run-id>
+terfyn logs --project examples/policy-denial-midrun --state /tmp/policy-denial-midrun.db --run <run-id>
 ```
 
 You should see **`limit_hit`** with **`kind: max_cost`**, plus **`system_error`**. There is no `hitl_request_created`.
 
 ```bash
-agentctl audit verify --project examples/policy-denial-midrun --state /tmp/policy-denial-midrun.db --run <run-id>
+terfyn audit verify --project examples/policy-denial-midrun --state /tmp/policy-denial-midrun.db --run <run-id>
 ```
 
 ## Expected highlights

@@ -36,7 +36,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement through **[GitHub Issues](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues)** on this repository. If you need a non-public channel, state that in your report or contact maintainers via GitHub so the team can follow up privately.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement through **[GitHub Issues](https://github.com/LAA-Software-Engineering/terfyn/issues)** on this repository. If you need a non-public channel, state that in your report or contact maintainers via GitHub so the team can follow up privately.
 
 All complaints will be reviewed and investigated promptly and fairly.
 

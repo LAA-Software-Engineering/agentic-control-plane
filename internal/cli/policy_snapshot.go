@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 )
 
 // persistSnapshots writes resolved-config and compiled policy snapshots for plan→run checks.

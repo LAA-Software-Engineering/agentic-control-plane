@@ -1,6 +1,6 @@
 # OpenTelemetry trace export (issue #108)
 
-ACP stores structured traces in SQLite by default. Optional OTLP export emits `gen_ai.*` spans for runs, model calls, tool executions, and HITL approvals so you can view them in Jaeger, Grafana Tempo, or any OTLP backend.
+Terfyn stores structured traces in SQLite by default. Optional OTLP export emits `gen_ai.*` spans for runs, model calls, tool executions, and HITL approvals so you can view them in Jaeger, Grafana Tempo, or any OTLP backend.
 
 ## Project configuration
 
@@ -24,7 +24,7 @@ spec:
 
 At least one of `endpoint` or `consoleExport` must be set when telemetry is enabled.
 
-`agentctl validate` checks YAML shape only (same as `apiKeyFrom: env:…` for models). It does **not** require the variable to be set at validate time.
+`terfyn validate` checks YAML shape only (same as `apiKeyFrom: env:…` for models). It does **not** require the variable to be set at validate time.
 
 ## Environment variables
 
@@ -63,7 +63,7 @@ docker run -d --name jaeger \
   jaegertracing/all-in-one:1.64
 ```
 
-Export endpoint for ACP:
+Export endpoint for Terfyn:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318/v1/traces
@@ -83,7 +83,7 @@ Run a workflow, then open [http://localhost:16686](http://localhost:16686) and s
 
 ## Attributes (WayFind-aligned)
 
-Core run attributes include `gen_ai.system` (`agentctl`), `gen_ai.operation.name`, `gen_ai.run.id`, `gen_ai.workflow`, and `gen_ai.agent.version`.
+Core run attributes include `gen_ai.system` (`terfyn`), `gen_ai.operation.name`, `gen_ai.run.id`, `gen_ai.workflow`, and `gen_ai.agent.version`.
 
 Tool spans include `gen_ai.tool.trusted`, `gen_ai.tool.side_effects`, and `gen_ai.tool.requires_approval` from resolved Tool safety metadata.
 

@@ -1,6 +1,6 @@
 # Audit tamper (hash-chain demo)
 
-This example is the distinctive **tamper-evident trace** demo. A successful mock run writes a hash-linked `trace_events` chain. `agentctl audit verify --run <id>` **passes**. After a planted SQLite edit to **`data_json` only** (hash left stale), the same command **fails with exit 1**.
+This example is the distinctive **tamper-evident trace** demo. A successful mock run writes a hash-linked `trace_events` chain. `terfyn audit verify --run <id>` **passes**. After a planted SQLite edit to **`data_json` only** (hash left stale), the same command **fails with exit 1**.
 
 ## What it demonstrates
 
@@ -25,20 +25,20 @@ Do not commit `.agentic/` state from a local walkthrough.
 
 ## Prerequisites
 
-Build `agentctl` from the repo root (`make build`) or use a release binary on your `PATH`. The helper script needs **python3** or **sqlite3**.
+Build `terfyn` from the repo root (`make build`) or use a release binary on your `PATH`. The helper script needs **python3** or **sqlite3**.
 
 ## How to run
 
 From the **repository root**:
 
 ```bash
-agentctl validate --project examples/audit-tamper
-agentctl plan --project examples/audit-tamper --state /tmp/audit-tamper.db
-agentctl apply --project examples/audit-tamper --state /tmp/audit-tamper.db --auto-approve
+terfyn validate --project examples/audit-tamper
+terfyn plan --project examples/audit-tamper --state /tmp/audit-tamper.db
+terfyn apply --project examples/audit-tamper --state /tmp/audit-tamper.db --auto-approve
 ```
 
 ```bash
-agentctl run workflow/note \
+terfyn run workflow/note \
   --project examples/audit-tamper \
   --state /tmp/audit-tamper.db \
   --input-file examples/audit-tamper/fixtures/sample-input.json
@@ -48,7 +48,7 @@ agentctl run workflow/note \
 - Copy the printed **Run ID**, then verify the chain:
 
 ```bash
-agentctl audit verify --project examples/audit-tamper --state /tmp/audit-tamper.db --run <run-id>
+terfyn audit verify --project examples/audit-tamper --state /tmp/audit-tamper.db --run <run-id>
 ```
 
 You should see `OK` (exit **0**).
@@ -64,7 +64,7 @@ Plant an edit (does **not** update `hash`):
 Verify again:
 
 ```bash
-agentctl audit verify --project examples/audit-tamper --state /tmp/audit-tamper.db --run <run-id>
+terfyn audit verify --project examples/audit-tamper --state /tmp/audit-tamper.db --run <run-id>
 echo "exit=$?"
 ```
 

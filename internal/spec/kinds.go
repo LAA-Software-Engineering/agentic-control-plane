@@ -1,6 +1,6 @@
 package spec
 
-import "github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
+import "github.com/LAA-Software-Engineering/terfyn/internal/schema"
 
 // --- Project (design doc §7.1) ---
 

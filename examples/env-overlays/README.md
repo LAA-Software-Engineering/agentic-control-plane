@@ -29,29 +29,29 @@ Do not commit `.agentic/` state from a local walkthrough.
 
 ## Prerequisites
 
-Build `agentctl` from the repo root (`make build`). Staging/prod **run** would need `OPENAI_API_KEY`; this walkthrough does not run those envs.
+Build `terfyn` from the repo root (`make build`). Staging/prod **run** would need `OPENAI_API_KEY`; this walkthrough does not run those envs.
 
 ## How to run
 
 From the **repository root**:
 
 ```bash
-agentctl validate --project examples/env-overlays -e dev
-agentctl validate --project examples/env-overlays -e staging
-agentctl validate --project examples/env-overlays -e prod
+terfyn validate --project examples/env-overlays -e dev
+terfyn validate --project examples/env-overlays -e staging
+terfyn validate --project examples/env-overlays -e prod
 ```
 
 Apply the mock overlay:
 
 ```bash
-agentctl plan --project examples/env-overlays -e dev --state /tmp/env-overlays.db
-agentctl apply --project examples/env-overlays -e dev --state /tmp/env-overlays.db --auto-approve
+terfyn plan --project examples/env-overlays -e dev --state /tmp/env-overlays.db
+terfyn apply --project examples/env-overlays -e dev --state /tmp/env-overlays.db --auto-approve
 ```
 
 Optional (mock only):
 
 ```bash
-agentctl run workflow/review \
+terfyn run workflow/review \
   --project examples/env-overlays \
   -e dev \
   --state /tmp/env-overlays.db \
@@ -61,7 +61,7 @@ agentctl run workflow/review \
 Preview promotion (prod desired vs applied **dev**):
 
 ```bash
-agentctl plan --project examples/env-overlays -e prod --from-env dev --state /tmp/env-overlays.db
+terfyn plan --project examples/env-overlays -e prod --from-env dev --state /tmp/env-overlays.db
 ```
 
 You should see:

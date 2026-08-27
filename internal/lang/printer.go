@@ -9,7 +9,7 @@ import (
 // Print reconstructs canonical .agent source from an AST. Output is normalized —
 // 4-space indentation, single spaces around operators, comma-joined effects — so
 // it does not depend on the incidental formatting of the input. Print is the
-// engine behind `agentctl fmt`; parse -> Print -> parse -> Print is stable
+// engine behind `terfyn fmt`; parse -> Print -> parse -> Print is stable
 // (idempotent) for any file that parses without error.
 func Print(f *File) string {
 	var b strings.Builder

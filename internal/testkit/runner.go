@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	_ "github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
+	_ "github.com/LAA-Software-Engineering/terfyn/internal/runtime/local"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 )
 
 // RunOptions configures environment labels for [RunCase].
@@ -36,7 +36,7 @@ func RunCase(ctx context.Context, projectRoot string, opts RunOptions, suitePath
 		Workflow: suite.Workflow,
 		Case:     c.Name,
 	}
-	db, err := os.CreateTemp("", "agentctl-test-*.db")
+	db, err := os.CreateTemp("", "terfyn-test-*.db")
 	if err != nil {
 		out.Detail = fmt.Sprintf("temp db: %v", err)
 		return out

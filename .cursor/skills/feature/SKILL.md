@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Implement a new capability or enhancement in this repo. Use when the user asks to add a feature, implement a capability, ship an enhancement, or build new agentctl/YAML behavior.
+description: Implement a new capability or enhancement in this repo. Use when the user asks to add a feature, implement a capability, ship an enhancement, or build new terfyn/YAML behavior.
 ---
 
 # Feature
@@ -8,7 +8,7 @@ description: Implement a new capability or enhancement in this repo. Use when th
 ## Workflow
 
 1. **Clarify scope** — Read `docs/DESIGN_DOC.md` and nearby code before coding. Prefer the smallest change that meets the ask.
-2. **Implement** — Match patterns in the same package (`cmd/agentctl`, `internal/*`). Avoid unrelated refactors.
+2. **Implement** — Match patterns in the same package (`cmd/terfyn`, `internal/*`). Avoid unrelated refactors.
 3. **Tests** — Add or update unit/integration coverage. For intentional CLI output changes:
    `GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_`
 4. **Verify** — Run `make ci` (verify-fmt, vet, test). Fix failures before claiming done.
@@ -19,7 +19,7 @@ description: Implement a new capability or enhancement in this repo. Use when th
 
 | Area | Path |
 |------|------|
-| CLI entry | `cmd/agentctl` |
+| CLI entry | `cmd/terfyn` |
 | Commands / goldens | `internal/cli` |
 | Spec / project load | `internal/spec`, `internal/project` |
 | Plan / apply / engine / policy | `internal/plan`, `internal/apply`, `internal/engine`, `internal/policy` |

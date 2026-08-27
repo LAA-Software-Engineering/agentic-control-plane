@@ -3,12 +3,12 @@ package telemetry_test
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
+	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
 )
 
 func TestResolveEndpoint_env(t *testing.T) {
-	t.Setenv("ACP_OTEL_TEST_EP", "http://127.0.0.1:4318")
-	got, err := telemetry.ResolveEndpoint("env:ACP_OTEL_TEST_EP")
+	t.Setenv("TERFYN_OTEL_TEST_EP", "http://127.0.0.1:4318")
+	got, err := telemetry.ResolveEndpoint("env:TERFYN_OTEL_TEST_EP")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +18,7 @@ func TestResolveEndpoint_env(t *testing.T) {
 }
 
 func TestResolveEndpoint_envMissing(t *testing.T) {
-	_, err := telemetry.ResolveEndpoint("env:ACP_OTEL_TEST_MISSING_XYZ")
+	_, err := telemetry.ResolveEndpoint("env:TERFYN_OTEL_TEST_MISSING_XYZ")
 	if err == nil {
 		t.Fatal("expected error")
 	}

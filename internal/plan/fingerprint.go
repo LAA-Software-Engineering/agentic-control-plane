@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 // DeploymentStateFingerprint returns a stable SHA-256 hex digest of deployment rows for env.

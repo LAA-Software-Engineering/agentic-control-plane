@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/apply"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/apply"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 )
 
 func TestApply_autoApprove_updatesState(t *testing.T) {

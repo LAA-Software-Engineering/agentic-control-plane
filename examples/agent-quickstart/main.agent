@@ -1,9 +1,9 @@
 // The .agent authoring surface (ADR 003). Agents and workflows are authored
 // here; tools, policies, and project.yaml stay YAML (the interchange format).
 //
-// Run:  agentctl validate
-//       agentctl export --format yaml     # materialize the compiled graph
-//       agentctl plan
+// Run:  terfyn validate
+//       terfyn export --format yaml     # materialize the compiled graph
+//       terfyn plan
 //
 // Note: this workflow is straight-line. Conditionals and loops parse and
 // type-check (issue #199), but do not execute end-to-end yet — the loader

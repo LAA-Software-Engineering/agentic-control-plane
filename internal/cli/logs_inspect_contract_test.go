@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/inspect"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
+	"github.com/LAA-Software-Engineering/terfyn/internal/inspect"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
 )
 
-// TestLogsInspectContract_eventsJSON verifies agentctl logs -o json events match inspector /api/runs/{id}.
+// TestLogsInspectContract_eventsJSON verifies terfyn logs -o json events match inspector /api/runs/{id}.
 func TestLogsInspectContract_eventsJSON(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "contract.db")
 	root := runProjRoot(t)

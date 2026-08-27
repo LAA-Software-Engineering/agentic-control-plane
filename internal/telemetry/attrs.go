@@ -49,4 +49,4 @@ const (
 )
 
 // SystemName identifies the emitter in gen_ai.system.
-const SystemName = "agentctl"
+const SystemName = "terfyn"

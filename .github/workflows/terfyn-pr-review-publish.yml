@@ -1,5 +1,5 @@
-# Manual publish: run agentctl with --approve so a real PR comment is posted.
-# Separate from agentctl-pr-review.yml so pull_request runs do not list a skipped publish job.
+# Manual publish: run terfyn with --approve so a real PR comment is posted.
+# Separate from terfyn-pr-review.yml so pull_request runs do not list a skipped publish job.
 # See docs/GITHUB_ACTIONS.md
 
 name: Agentic PR review (publish)
@@ -21,7 +21,7 @@ on:
         type: string
 
 concurrency:
-  group: agentctl-pr-publish-${{ github.repository }}-${{ github.run_id }}
+  group: terfyn-pr-publish-${{ github.repository }}-${{ github.run_id }}
   cancel-in-progress: false
 
 defaults:
@@ -29,8 +29,8 @@ defaults:
     shell: bash
 
 env:
-  AGENTCTL_INSTALL: go-build
-  AGENTCTL_VERSION: v0.1.9
+  TERFYN_INSTALL: go-build
+  TERFYN_VERSION: v0.1.9
   AGENTIC_PROJECT: examples/pr-review-github-actions
   AGENTIC_STATE: ${{ github.workspace }}/.agentic/ci-pr-publish.db
   AGENTIC_CACHE_STATE: "false"
@@ -48,12 +48,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate AGENTCTL_INSTALL
+      - name: Validate TERFYN_INSTALL
         run: |
           set -euo pipefail
-          case "${AGENTCTL_INSTALL:-go-build}" in
+          case "${TERFYN_INSTALL:-go-build}" in
             go-build|release) ;;
-            *) echo "AGENTCTL_INSTALL must be 'go-build' or 'release', got '${AGENTCTL_INSTALL}'" >&2; exit 1 ;;
+            *) echo "TERFYN_INSTALL must be 'go-build' or 'release', got '${TERFYN_INSTALL}'" >&2; exit 1 ;;
           esac
 
       - name: Cache SQLite state (optional)
@@ -63,37 +63,37 @@ jobs:
           path: .agentic/ci-pr-publish.db
           key: ${{ runner.os }}-agentic-pr-publish-${{ hashFiles('examples/pr-review-github-actions/**/*.yaml', 'examples/pr-review-github-actions/project.yaml') }}
 
-      - name: Set up Go (build agentctl from checkout)
-        if: env.AGENTCTL_INSTALL == 'go-build'
+      - name: Set up Go (build terfyn from checkout)
+        if: env.TERFYN_INSTALL == 'go-build'
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Install agentctl (go build from checkout)
-        if: env.AGENTCTL_INSTALL == 'go-build'
+      - name: Install terfyn (go build from checkout)
+        if: env.TERFYN_INSTALL == 'go-build'
         run: |
           set -euo pipefail
-          go build -o /tmp/agentctl ./cmd/agentctl
-          sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
-          agentctl version
+          go build -o /tmp/terfyn ./cmd/terfyn
+          sudo install -m 0755 /tmp/terfyn /usr/local/bin/terfyn
+          terfyn version
 
-      - name: Install agentctl (release tarball)
-        if: env.AGENTCTL_INSTALL == 'release'
+      - name: Install terfyn (release tarball)
+        if: env.TERFYN_INSTALL == 'release'
         run: |
           set -euo pipefail
-          version="${AGENTCTL_VERSION}"
-          asset="agentctl-${version}-linux-amd64.tar.gz"
-          url="https://github.com/LAA-Software-Engineering/agentic-control-plane/releases/download/${version}/${asset}"
-          curl -fsSL "$url" -o /tmp/agentctl.tgz
-          tar -xzf /tmp/agentctl.tgz -C /tmp
-          if [[ ! -x /tmp/agentctl ]]; then
-            echo "Release tarball did not extract ./agentctl to /tmp (layout may have changed). Contents:" >&2
-            tar -tzf /tmp/agentctl.tgz | head -n 50 >&2 || true
+          version="${TERFYN_VERSION}"
+          asset="terfyn-${version}-linux-amd64.tar.gz"
+          url="https://github.com/LAA-Software-Engineering/terfyn/releases/download/${version}/${asset}"
+          curl -fsSL "$url" -o /tmp/terfyn.tgz
+          tar -xzf /tmp/terfyn.tgz -C /tmp
+          if [[ ! -x /tmp/terfyn ]]; then
+            echo "Release tarball did not extract ./terfyn to /tmp (layout may have changed). Contents:" >&2
+            tar -tzf /tmp/terfyn.tgz | head -n 50 >&2 || true
             exit 1
           fi
-          sudo install -m 0755 /tmp/agentctl /usr/local/bin/agentctl
-          agentctl version
+          sudo install -m 0755 /tmp/terfyn /usr/local/bin/terfyn
+          terfyn version
 
       - name: Build workflow input
         run: |
@@ -107,12 +107,12 @@ jobs:
       - name: Validate / plan / apply
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AGENTCTL_AUTO_APPROVE: "1"
+          TERFYN_AUTO_APPROVE: "1"
         run: |
           set -euo pipefail
-          agentctl validate --project "$AGENTIC_PROJECT" --no-color
-          agentctl plan --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
-          agentctl apply --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
+          terfyn validate --project "$AGENTIC_PROJECT" --no-color
+          terfyn plan --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
+          terfyn apply --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE"
 
       - name: Run with approved comment post
         id: publish_run
@@ -121,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          agentctl run workflow/pr-review-github \
+          terfyn run workflow/pr-review-github \
             --project "$AGENTIC_PROJECT" \
             --state "$AGENTIC_STATE" \
             --input-file /tmp/pr-input.json \
@@ -153,7 +153,7 @@ jobs:
               echo "### Trace (truncated)"
               echo ""
               echo '```text'
-              agentctl logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --run "$rid" 2>/dev/null | head -n 200 || true
+              terfyn logs --project "$AGENTIC_PROJECT" --state "$AGENTIC_STATE" --run "$rid" 2>/dev/null | head -n 200 || true
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/catalog"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime/catalog"
 )
 
 // NameLocal is the built-in disk-backed workflow runtime (MVP).

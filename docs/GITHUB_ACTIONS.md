@@ -1,6 +1,6 @@
 # GitHub Actions integration
 
-This document is **Phase D + E**: how to run **`agentctl`** from GitHub Actions against a declarative
+This document is **Phase D + E**: how to run **`terfyn`** from GitHub Actions against a declarative
 project (the bundled example is **`examples/pr-review-github-actions/`**, which uses **OpenAI
 `gpt-4o-mini`** for the reviewer agent), including
 optional polish (job summary, cache, **`gh`** pointer comments).
@@ -14,10 +14,10 @@ For the YAML resources and workflow semantics, see **`DESIGN_DOC.md`**, **`examp
 1. **Project directory** — copy **`examples/pr-review-github-actions/`** (OpenAI reviewer + same
    workflow shape) or your own project into your repo, e.g. **`agent-plane/`**, committed next to
    your application code.
-2. **Workflow files** — copy **`.github/workflows/agentctl-pr-review.yml`** (runs on **`pull_request`**)
+2. **Workflow files** — copy **`.github/workflows/terfyn-pr-review.yml`** (runs on **`pull_request`**)
    from this repository’s **root** into **your** **`.github/workflows/`** (GitHub Actions only loads
    workflows from the repo root, not from under **`examples/`**). Optionally copy
-   **`.github/workflows/agentctl-pr-review-publish.yml`** if you want the manual **`workflow_dispatch`**
+   **`.github/workflows/terfyn-pr-review-publish.yml`** if you want the manual **`workflow_dispatch`**
    job that posts an approved PR comment (kept separate so PR runs do not show a skipped publish job).
 
 Then edit the workflow **`AGENTIC_PROJECT`** env (default in the template matches this monorepo;
@@ -27,7 +27,7 @@ in your repo set it to **`agent-plane`** or your path).
 
 GitHub only schedules **`on: pull_request`** workflows from the **default branch** (e.g. **`main`**)
 definition in many cases—especially for a **new** workflow file that does not yet exist on
-**`main`**. If your PR adds **`.github/workflows/agentctl-pr-review.yml`** (or the publish workflow)
+**`main`**. If your PR adds **`.github/workflows/terfyn-pr-review.yml`** (or the publish workflow)
 for the first time, the
 **Agentic PR review** check may **not appear on that PR** until either:
 
@@ -40,7 +40,7 @@ to **`.github/workflows/`**, and missing `pull_request` context can surface as a
 file” run.
 
 Configure repository secret **`OPENAI_API_KEY`** — the example project’s reviewer agent calls OpenAI
-(**`gpt-4o-mini`**) during **`agentctl run`**.
+(**`gpt-4o-mini`**) during **`terfyn run`**.
 
 ---
 
@@ -50,7 +50,7 @@ Configure repository secret **`OPENAI_API_KEY`** — the example project’s rev
   you need:
   - **`contents: read`** — checkout.
   - **`pull-requests: write`** — required for the bundled **`review`** job: it runs
-    **`agentctl run … --approve tool.github.pull_request.post_comment`**, which creates or updates a
+    **`terfyn run … --approve tool.github.pull_request.post_comment`**, which creates or updates a
     single issue comment on the PR after the model review (default **`comment_strategy: replace`**
     updates a comment containing **`<!-- agentic-review -->`** instead of posting anew on every push).
   - The optional **`post-pointer`** job (**`gh pr comment`**) also needs **`pull-requests: write`**
@@ -73,7 +73,7 @@ path that supplies credentials safely.
 
 ## Exit code **5** (policy denial) in CI
 
-`agentctl run` returns **exit code 5** when policy blocks a gated tool (for example
+`terfyn run` returns **exit code 5** when policy blocks a gated tool (for example
 **`tool.github.pull_request.post_comment`** without **`--approve`**).
 
 The default **`review`** job passes **`--approve tool.github.pull_request.post_comment`**, so a
@@ -95,46 +95,46 @@ comment. **`upsert: true`** is an alias for **`replace`**.
 
 ---
 
-## Fixture tests (`agentctl test`)
+## Fixture tests (`terfyn test`)
 
-Offline policy-regression fixtures (no secrets): copy **[`examples/regression-test/`](../examples/regression-test/README.md)** and the sample job **`.github/workflows/agentctl-test.yml`**. See **[`TESTING.md`](TESTING.md)**. A **new** `on: pull_request` workflow may not run until it exists on **`main`**; keep a Go integration test as the merge gate if you introduce the workflow in the same PR.
+Offline policy-regression fixtures (no secrets): copy **[`examples/regression-test/`](../examples/regression-test/README.md)** and the sample job **`.github/workflows/terfyn-test.yml`**. See **[`TESTING.md`](TESTING.md)**. A **new** `on: pull_request` workflow may not run until it exists on **`main`**; keep a Go integration test as the merge gate if you introduce the workflow in the same PR.
 
 ---
 
-## Installing `agentctl` in Actions
+## Installing `terfyn` in Actions
 
-The template supports exactly two values for **`AGENTCTL_INSTALL`**. Any other value fails the workflow early with a clear error.
+The template supports exactly two values for **`TERFYN_INSTALL`**. Any other value fails the workflow early with a clear error.
 
 | Value | When to use |
 |-------|-------------|
-| **`go-build`** (default in this monorepo) | The workflow checks out this repository and runs **`go build ./cmd/agentctl`**. Use this while developing here so CI always matches the native tools on the branch (no waiting on a release asset). |
-| **`release`** | Set **`AGENTCTL_INSTALL`** to **`release`** in a **downstream** repo that only copies the YAML project, not the Go source. Then set **`AGENTCTL_VERSION`** (e.g. **`v0.1.9`**) to a tag whose asset **`agentctl-<tag>-linux-amd64.tar.gz`** exists on **Releases**. |
+| **`go-build`** (default in this monorepo) | The workflow checks out this repository and runs **`go build ./cmd/terfyn`**. Use this while developing here so CI always matches the native tools on the branch (no waiting on a release asset). |
+| **`release`** | Set **`TERFYN_INSTALL`** to **`release`** in a **downstream** repo that only copies the YAML project, not the Go source. Then set **`TERFYN_VERSION`** (e.g. **`v0.1.9`**) to a tag whose asset **`terfyn-<tag>-linux-amd64.tar.gz`** exists on **Releases**. |
 
 ### arm64 and other non-amd64 runners
 
-The bundled **`Install agentctl (release tarball)`** step in
-**`.github/workflows/agentctl-pr-review.yml`** (and the publish workflow) downloads only
-**`agentctl-<tag>-linux-amd64.tar.gz`**. That matches GitHub-hosted **`ubuntu-latest`**
+The bundled **`Install terfyn (release tarball)`** step in
+**`.github/workflows/terfyn-pr-review.yml`** (and the publish workflow) downloads only
+**`terfyn-<tag>-linux-amd64.tar.gz`**. That matches GitHub-hosted **`ubuntu-latest`**
 (x86_64). The template does **not** select an asset from the runner OS or CPU architecture.
 
 On **self-hosted ARM64** Linux runners (or other non-amd64 hosts), that tarball is the wrong
-binary: the install step may fail when **`/tmp/agentctl`** is missing after extract, or
-**`agentctl`** may fail at runtime with an exec-format error. The workflow fails loudly in those
+binary: the install step may fail when **`/tmp/terfyn`** is missing after extract, or
+**`terfyn`** may fail at runtime with an exec-format error. The workflow fails loudly in those
 cases rather than silently continuing.
 
 **Workarounds:**
 
-- **`AGENTCTL_INSTALL: go-build`** — check out a repository that contains this Go module and
-  compile **`./cmd/agentctl`** on the runner (requires **Go** on the runner). This is the
+- **`TERFYN_INSTALL: go-build`** — check out a repository that contains this Go module and
+  compile **`./cmd/terfyn`** on the runner (requires **Go** on the runner). This is the
   default in this monorepo and works on any architecture the toolchain supports.
 - **Custom install step** — replace or extend the release install step to download the asset that
-  matches your runner (for example **`agentctl-<tag>-linux-arm64.tar.gz`** when published on
-  [Releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases)), or an
+  matches your runner (for example **`terfyn-<tag>-linux-arm64.tar.gz`** when published on
+  [Releases](https://github.com/LAA-Software-Engineering/terfyn/releases)), or an
   internal artifact URL you maintain.
 
 Native GitHub REST tools (**`pull_request.get`**, **`pull_request.diff`**, etc.) require an
-**`agentctl`** binary built from a release that includes them; if **`release`** mode fails with
-unknown tool **`uses`**, bump **`AGENTCTL_VERSION`** after a newer release is published.
+**`terfyn`** binary built from a release that includes them; if **`release`** mode fails with
+unknown tool **`uses`**, bump **`TERFYN_VERSION`** after a newer release is published.
 
 ---
 
@@ -144,19 +144,19 @@ The workflow template sets these **workflow-level** env vars (tune after copying
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| **`AGENTCTL_INSTALL`** | `go-build` in-repo | **`go-build`** or **`release`** only (invalid values fail fast). **`go-build`** compiles **`./cmd/agentctl`** after checkout. Downstream copies should use **`release`** and **`AGENTCTL_VERSION`**. |
+| **`TERFYN_INSTALL`** | `go-build` in-repo | **`go-build`** or **`release`** only (invalid values fail fast). **`go-build`** compiles **`./cmd/terfyn`** after checkout. Downstream copies should use **`release`** and **`TERFYN_VERSION`**. |
 | **`AGENTIC_CACHE_STATE`** | `false` | When `true`, restores/saves the SQLite state file between runs (update **`hashFiles()`** globs if **`AGENTIC_PROJECT`** is not **`examples/pr-review-github-actions`**). |
 | **`AGENTIC_GH_PR_COMMENT`** | `false` | When `true`, the **`review`** job exports this flag so the follow-up **`post-pointer`** job can run (**`gh pr comment`** pointer to the Actions run). Job-level **`if:`** cannot read workflow **`env`**, so the template uses a step output instead. |
 
 **`GITHUB_STEP_SUMMARY`:** the review job (and the optional publish workflow) append a markdown table
-plus a **truncated** **`agentctl logs --run …`** excerpt so reviewers see traces in the job summary
-without opening raw logs. **`agentctl run -o json`** captures **`runId`** for that step.
+plus a **truncated** **`terfyn logs --run …`** excerpt so reviewers see traces in the job summary
+without opening raw logs. **`terfyn run -o json`** captures **`runId`** for that step.
 
 ---
 
 ## Optional: publish workflow (`workflow_dispatch`)
 
-**`.github/workflows/agentctl-pr-review-publish.yml`** runs **`agentctl run … --approve …`** after a
+**`.github/workflows/terfyn-pr-review-publish.yml`** runs **`terfyn run … --approve …`** after a
 **manual** **`workflow_dispatch`**, with **`owner` / `repo` / `number`** inputs. It is **not** part of
 the PR workflow file so **`pull_request`** checks do not list a permanently skipped publish job. Use
 it only from protected branches or environments after you are comfortable with real PR comments.
@@ -165,7 +165,7 @@ it only from protected branches or environments after you are comfortable with r
 
 ## In-repo reference layout
 
-When developing **inside** the **agentic-control-plane** monorepo, you can point
+When developing **inside** the **terfyn** monorepo, you can point
 **`AGENTIC_PROJECT`** at **`examples/pr-review-github-actions`** so the checked-in workflow matches
 the copy-paste template without moving files.
 

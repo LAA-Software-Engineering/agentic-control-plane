@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -158,7 +158,7 @@ func writeInitSuccess(cmd *cobra.Command, projRoot, name string) error {
 			"created": true,
 		})
 	default:
-		_, err := fmt.Fprintf(out, "Created project %q at:\n  %s\n\nNext: agentctl validate --project %s\n", name, projRoot, projRoot)
+		_, err := fmt.Fprintf(out, "Created project %q at:\n  %s\n\nNext: terfyn validate --project %s\n", name, projRoot, projRoot)
 		return err
 	}
 }

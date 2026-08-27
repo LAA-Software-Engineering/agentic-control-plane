@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/inspect"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/inspect"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/spf13/cobra"
 )
 
@@ -29,10 +29,10 @@ With --web, starts a local read-only HTTP server over the SQLite state database 
 trace events, applied deployment resources, checkpoints). Binds to 127.0.0.1 by default.
 
 Exit code 2 for validation failure, unknown resource, or bad Kind/name (§11.2).`,
-		Example: `  agentctl inspect Workflow/pr-review
-  agentctl inspect Agent/reviewer -o yaml
-  agentctl inspect --web
-  agentctl inspect --web --port 8787 --state .agentic/state.db`,
+		Example: `  terfyn inspect Workflow/pr-review
+  terfyn inspect Agent/reviewer -o yaml
+  terfyn inspect --web
+  terfyn inspect --web --port 8787 --state .agentic/state.db`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if web {

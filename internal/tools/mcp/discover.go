@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // ToolDescriptor is one entry from MCP tools/list.

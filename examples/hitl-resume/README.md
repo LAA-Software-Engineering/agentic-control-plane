@@ -1,6 +1,6 @@
 # HITL resume (pause, approve, checkpoint)
 
-This example is the distinctive **human-in-the-loop resume** demo. A mock agent drafts a summary, then a **workflow `uses:`** publish step is gated by policy. The run **interrupts** (exit **0**, `Status: interrupted`), persists a **checkpoint**, and continues on the **same** run after `agentctl run --resume <id> --decision approve`.
+This example is the distinctive **human-in-the-loop resume** demo. A mock agent drafts a summary, then a **workflow `uses:`** publish step is gated by policy. The run **interrupts** (exit **0**, `Status: interrupted`), persists a **checkpoint**, and continues on the **same** run after `terfyn run --resume <id> --decision approve`.
 
 `examples/pr-review-demo` also **interrupts** unapproved workflow `uses:` (exit **0**, `hitl_request_created`); you continue with a **new** run plus `--approve`. `examples/incident-triage` is the fail-closed inner agent-loop path (exit **5**).
 
@@ -10,7 +10,7 @@ This example is the distinctive **human-in-the-loop resume** demo. A mock agent 
 - **Checkpoint** — the interrupted run stores pending HITL state. Resume skips the completed **draft** agent step (no second Generate).
 - **Audit chain** — `hitl_request_created`, then on resume `hitl_decision_submitted` / `hitl_resolution_applied` and `tool_execution`. `audit verify --run` stays **OK**.
 - **No agent tools** — `drafter` has no `spec.tools`, so the mock stays single-shot (no D1/D2 empty-Script loops). Ceiling **$5** covers the **$0.02** Generate.
-- **`--auto-approve` skips the pause** — `agentctl run ... --auto-approve` (or `AGENTCTL_AUTO_APPROVE=1`) does not interrupt; this walkthrough omits it so the checkpoint path is visible.
+- **`--auto-approve` skips the pause** — `terfyn run ... --auto-approve` (or `TERFYN_AUTO_APPROVE=1`) does not interrupt; this walkthrough omits it so the checkpoint path is visible.
 
 ## Project layout
 
@@ -28,22 +28,22 @@ Do not commit `.agentic/` state from a local walkthrough.
 
 ## Prerequisites
 
-Build `agentctl` from the repo root (`make build`) or use a release binary on your `PATH`.
+Build `terfyn` from the repo root (`make build`) or use a release binary on your `PATH`.
 
 ## How to run
 
 From the **repository root**:
 
 ```bash
-agentctl validate --project examples/hitl-resume
-agentctl plan --project examples/hitl-resume --state /tmp/hitl-resume.db
-agentctl apply --project examples/hitl-resume --state /tmp/hitl-resume.db --auto-approve
+terfyn validate --project examples/hitl-resume
+terfyn plan --project examples/hitl-resume --state /tmp/hitl-resume.db
+terfyn apply --project examples/hitl-resume --state /tmp/hitl-resume.db --auto-approve
 ```
 
 ### Pause (no `--approve`)
 
 ```bash
-agentctl run workflow/publish \
+terfyn run workflow/publish \
   --project examples/hitl-resume \
   --state /tmp/hitl-resume.db \
   --input-file examples/hitl-resume/fixtures/sample-input.json
@@ -54,7 +54,7 @@ agentctl run workflow/publish \
 - Passing **`--auto-approve`** on this first run would skip the pause and complete in one shot.
 
 ```bash
-agentctl logs --project examples/hitl-resume --state /tmp/hitl-resume.db --run <run-id>
+terfyn logs --project examples/hitl-resume --state /tmp/hitl-resume.db --run <run-id>
 ```
 
 You should see **`llm_completion`** on `draft`, then **`hitl_request_created`** on `publish` (no `tool_execution` for publish yet).
@@ -62,7 +62,7 @@ You should see **`llm_completion`** on `draft`, then **`hitl_request_created`** 
 ### Resume
 
 ```bash
-agentctl run --resume <run-id> \
+terfyn run --resume <run-id> \
   --project examples/hitl-resume \
   --state /tmp/hitl-resume.db \
   --decision approve
@@ -72,7 +72,7 @@ agentctl run --resume <run-id> \
 - Logs gain **`hitl_decision_submitted`**, **`hitl_resolution_applied`**, and **`tool_execution`**. Still a **single** `llm_completion`.
 
 ```bash
-agentctl audit verify --project examples/hitl-resume --state /tmp/hitl-resume.db --run <run-id>
+terfyn audit verify --project examples/hitl-resume --state /tmp/hitl-resume.db --run <run-id>
 ```
 
 ## Compared to nearby demos

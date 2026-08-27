@@ -3,7 +3,7 @@ package policy
 import (
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func approvalRequired(uses string, approvals *spec.PolicyApprovals) bool {

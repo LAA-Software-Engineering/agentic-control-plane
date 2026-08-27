@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 // querier is implemented by *sql.DB and *sql.Tx for deployment table access.

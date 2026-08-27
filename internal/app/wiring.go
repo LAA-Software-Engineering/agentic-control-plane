@@ -1,9 +1,9 @@
 package app
 
 import (
-	_ "github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
+	_ "github.com/LAA-Software-Engineering/terfyn/internal/runtime/local"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/cli"
+	"github.com/LAA-Software-Engineering/terfyn/internal/cli"
 )
 
 func runCLI() int {

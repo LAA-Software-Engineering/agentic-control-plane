@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 func TestResolveRunAttributionFlags_envOverrides(t *testing.T) {
@@ -111,12 +111,12 @@ func TestRun_warnsOnDefaultAttribution(t *testing.T) {
 }
 
 func TestEnvTruthy(t *testing.T) {
-	t.Setenv("AGENTCTL_TEST_TRUTHY", "yes")
-	if !envTruthy("AGENTCTL_TEST_TRUTHY") {
+	t.Setenv("TERFYN_TEST_TRUTHY", "yes")
+	if !envTruthy("TERFYN_TEST_TRUTHY") {
 		t.Fatal("expected truthy")
 	}
-	t.Setenv("AGENTCTL_TEST_TRUTHY", "0")
-	if envTruthy("AGENTCTL_TEST_TRUTHY") {
+	t.Setenv("TERFYN_TEST_TRUTHY", "0")
+	if envTruthy("TERFYN_TEST_TRUTHY") {
 		t.Fatal("expected false")
 	}
 }

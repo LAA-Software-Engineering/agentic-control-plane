@@ -1,4 +1,4 @@
-// Package cli defines agentctl commands, global flags (design doc section 11.1), and exit-code
+// Package cli defines terfyn commands, global flags (design doc section 11.1), and exit-code
 // mapping (section 11.2). Output formatting lives in [render].
 //
 // The init command scaffolds a minimal project from embedded templates (section 10.2).
@@ -29,7 +29,7 @@
 // updates, full JSON for creates/deletes) and supports an optional Kind/name argument (§10.2).
 //
 // The apply command runs the same preparation and planning, then prompts on a TTY (unless
-// --auto-approve or AGENTCTL_AUTO_APPROVE) and persists via [apply.Applier.ApplyPlan].
+// --auto-approve or TERFYN_AUTO_APPROVE) and persists via [apply.Applier.ApplyPlan].
 //
 // The run command executes a workflow by name (workflow/<name>), validates input, writes trace
 // rows to the same SQLite file as plan/apply, and maps policy denials to exit code 5.

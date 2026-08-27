@@ -3,8 +3,8 @@ package local
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func TestBuildEngineHitlOptions_invalidKind(t *testing.T) {

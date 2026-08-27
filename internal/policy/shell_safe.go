@@ -1,8 +1,8 @@
 package policy
 
 import (
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
 )
 
 // shellSafeRequiresApproval reports whether a tool call should be gated under shell_safe.

@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/inspect"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/inspect"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 	"github.com/spf13/cobra"
 )
 

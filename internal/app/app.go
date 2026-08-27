@@ -2,7 +2,7 @@ package app
 
 import "os"
 
-// App is the composition root for agentctl. Subsystems (stores, planner,
+// App is the composition root for terfyn. Subsystems (stores, planner,
 // runtime) will be assembled here in later phases.
 type App struct{}
 

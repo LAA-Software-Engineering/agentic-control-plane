@@ -1,7 +1,7 @@
 package local
 
 import (
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
 )
 
 func init() {

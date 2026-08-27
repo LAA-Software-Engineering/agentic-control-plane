@@ -1,11 +1,11 @@
 package check
 
 import (
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/effects"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/execir"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/lower"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/effects"
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang/lower"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // Options supplies context Check cannot derive from f alone.

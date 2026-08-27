@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
+	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
+	"github.com/LAA-Software-Engineering/terfyn/internal/project"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
 )
 
 // ErrResolvedConfigDrift means the resolved config digest differs from the stored snapshot.
@@ -33,7 +33,7 @@ type ResolveOptions struct {
 	ProjectRoot string
 	Env         string
 	StatePath   string // CLI --state override (highest precedence for state DSN)
-	HomeDir     string // user home for ~/.config/agentctl; empty uses os.UserHomeDir
+	HomeDir     string // user home for ~/.config/terfyn; empty uses os.UserHomeDir
 }
 
 // ResolvedConfig is a frozen snapshot of the fully resolved project configuration.

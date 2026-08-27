@@ -19,7 +19,7 @@ them; every open issue belongs to Epics A–E of `docs/IMPROVEMENT_SPEC.md`, and
 titled "Sequential workflow engine core". §7.4 is therefore a standing wishlist with no owner
 and no design.
 
-A recurring external suggestion is that ACP should acquire a **language frontend** — a
+A recurring external suggestion is that Terfyn should acquire a **language frontend** — a
 `.agent` surface syntax compiled into the existing resource model as an IR — on the argument
 that the resource graph already resembles a compiler IR and the YAML pipeline already resembles
 a compiler pipeline.
@@ -279,7 +279,7 @@ That claim is conditional, and the conditions must be stated or the claim is fal
 ### The effect bound requires a closed world
 
 A static bound over reachable operations is sound only if the set of callable operations cannot
-grow after the bound is computed. ACP does not currently guarantee that.
+grow after the bound is computed. Terfyn does not currently guarantee that.
 [`internal/tools/mcp_safety.go`](../../internal/tools/mcp_safety.go) calls `tools/list` at config
 resolution and merges remote-advertised `meta.mcp_flags` into `spec.safety`; a remote MCP server
 that advertises `read_issue` and `list_pr` at plan time may advertise `delete_repo` tomorrow. The
@@ -353,7 +353,7 @@ The trust anchor is **human review of the manifest**, not runtime enforcement of
 remote API changes what that endpoint does, the declaration is a lie and no analysis catches it.
 `ToolHTTP` carries exactly the same exposure as MCP.
 
-Documentation and marketing must not overstate this. The defensible claim is that ACP bounds and
+Documentation and marketing must not overstate this. The defensible claim is that Terfyn bounds and
 diffs the *authority* granted to nondeterministic components — which is genuinely more than any
 comparable tool offers — not that it verifies what remote systems do with that authority.
 

@@ -3,9 +3,9 @@ package cli
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/effects"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/effects"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // prepareResolvedConfig loads and resolves the project configuration using the full

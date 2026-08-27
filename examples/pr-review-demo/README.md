@@ -8,7 +8,7 @@ This example shows **why a declarative control plane beats ad-hoc glue code** fo
 - **Structured agent output** — the reviewer must return JSON validated by `schemas/review-output.json` (summary + findings), not an unparseable blob.
 - **First-class policy** — `policies/guarded-writes.yaml` lists which tool `uses` strings require explicit approval.
 - **Safe-by-default writes** — the `post_comment` step calls a **simulated** native GitHub tool (`tools/github.yaml`). Without approval, **policy blocks the call** before any side effect.
-- **Traceable behavior** — `agentctl logs` shows normal step progress plus a **`policy.denied`** event on the blocked step.
+- **Traceable behavior** — `terfyn logs` shows normal step progress plus a **`policy.denied`** event on the blocked step.
 
 ## Why this matters
 
@@ -28,22 +28,22 @@ In a typical script, “call the model, then maybe post to GitHub” is buried i
 
 ## Prerequisites
 
-Build `agentctl` from the repo root (`make build`) or use a release binary on your `PATH`.
+Build `terfyn` from the repo root (`make build`) or use a release binary on your `PATH`.
 
 ## How to run
 
 From the **repository root** (paths below assume that):
 
 ```bash
-agentctl validate --project examples/pr-review-demo
-agentctl plan --project examples/pr-review-demo --state /tmp/pr-review-state.db
-agentctl apply --project examples/pr-review-demo --state /tmp/pr-review-state.db --auto-approve
+terfyn validate --project examples/pr-review-demo
+terfyn plan --project examples/pr-review-demo --state /tmp/pr-review-state.db
+terfyn apply --project examples/pr-review-demo --state /tmp/pr-review-state.db --auto-approve
 ```
 
 ### Default run (comment blocked)
 
 ```bash
-agentctl run workflow/pr-review \
+terfyn run workflow/pr-review \
   --project examples/pr-review-demo \
   --state /tmp/pr-review-state.db \
   --input-file examples/pr-review-demo/fixtures/sample-pr.json
@@ -53,7 +53,7 @@ agentctl run workflow/pr-review \
 - Inspect the trace (use the printed **Run ID**):
 
 ```bash
-agentctl logs --project examples/pr-review-demo --state /tmp/pr-review-state.db --run <run-id>
+terfyn logs --project examples/pr-review-demo --state /tmp/pr-review-state.db --run <run-id>
 ```
 
 You should see steps through `review_diff`, then **`policy.denied`** on `post_comment` with reason **`approval_required`**.
@@ -61,13 +61,13 @@ You should see steps through `review_diff`, then **`policy.denied`** on `post_co
 Verify the trace chain was not tampered with:
 
 ```bash
-agentctl audit verify --project examples/pr-review-demo --state /tmp/pr-review-state.db --run <run-id>
+terfyn audit verify --project examples/pr-review-demo --state /tmp/pr-review-state.db --run <run-id>
 ```
 
 ### Optional: allow the write (full success)
 
 ```bash
-agentctl run workflow/pr-review \
+terfyn run workflow/pr-review \
   --project examples/pr-review-demo \
   --state /tmp/pr-review-state.db \
   --input-file examples/pr-review-demo/fixtures/sample-pr.json \
@@ -93,6 +93,6 @@ This records a simulated comment result (still **no** real GitHub traffic).
 | Order of operations | Workflow YAML | Implicit control flow |
 | “Can we post?” | Policy resource + trace | Easy to forget a guard |
 | Model output shape | JSON Schema on the agent | String parsing / hope |
-| Audit trail | `agentctl logs`; `agentctl audit verify` for tamper detection | Printf / none |
+| Audit trail | `terfyn logs`; `terfyn audit verify` for tamper detection | Printf / none |
 
 For broader patterns, see [`docs/EXAMPLES.md`](../../docs/EXAMPLES.md), [`docs/AUDIT_CHAIN.md`](../../docs/AUDIT_CHAIN.md), and [`docs/DESIGN_DOC.md`](../../docs/DESIGN_DOC.md).

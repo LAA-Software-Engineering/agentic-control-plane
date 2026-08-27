@@ -1,8 +1,8 @@
 # Agent tool-calling loop (issues #160 / #161)
 
-When an Agent declares `spec.tools`, `agentctl run` does **not** fire a single completion. The engine runs a bounded **reason → act → observe** loop: the model may call advertised tools, observe results, and continue until `end_turn` or `constraints.maxIterations`.
+When an Agent declares `spec.tools`, `terfyn run` does **not** fire a single completion. The engine runs a bounded **reason → act → observe** loop: the model may call advertised tools, observe results, and continue until `end_turn` or `constraints.maxIterations`.
 
-This is ADR 002 **Path 1**: agents genuinely select tools. Epic A **shipped** that form ([#160](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/160) / [#161](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/161)). If it had shipped reduced (workflow-only `uses:` steps), the grant semantics below would not apply; they do apply.
+This is ADR 002 **Path 1**: agents genuinely select tools. Epic A **shipped** that form ([#160](https://github.com/LAA-Software-Engineering/terfyn/issues/160) / [#161](https://github.com/LAA-Software-Engineering/terfyn/issues/161)). If it had shipped reduced (workflow-only `uses:` steps), the grant semantics below would not apply; they do apply.
 
 Implementation: [`internal/engine`](../internal/engine) (`runAgentToolLoop`, `advertisedAgentTools`). Design: [`DESIGN_DOC.md`](DESIGN_DOC.md) §12.2 F / G.
 
@@ -18,17 +18,17 @@ Stop when `StopReason` is `end_turn` (or empty with no tool calls). Other stop r
 
 ## Grants (ADR 002)
 
-Because the agent selects its own tools, `agent.spec.tools` is an **autonomous capability grant**, not a call list. Every granted tool contributes to the agent's effect bound ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189)) whether or not any authored workflow step names it.
+Because the agent selects its own tools, `agent.spec.tools` is an **autonomous capability grant**, not a call list. Every granted tool contributes to the agent's effect bound ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189)) whether or not any authored workflow step names it.
 
 A grant is a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. `agent.spec.tools` entries are grants in this sense (Tool metadata name or a pinned uses string).
 
-An agent's action space is the union of its granted operations' declared effects. Widening the grant list expands the action space of a nondeterministic component — `agentctl plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set does not change.
+An agent's action space is the union of its granted operations' declared effects. Widening the grant list expands the action space of a nondeterministic component — `terfyn plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set does not change.
 
-Issue #189 computes the effect bound in [`internal/effects`](../internal/effects) over the desired graph (static `uses:` plus these grants). Issue #190 enforces that bound against `Policy.spec.effects` at validate/plan (exit **2**). Issue #191 prints the bound table and the authority delta vs stored deployment state in `agentctl plan` (`-o table|json|yaml`). ACP does not verify what remote systems do with a granted operation.
+Issue #189 computes the effect bound in [`internal/effects`](../internal/effects) over the desired graph (static `uses:` plus these grants). Issue #190 enforces that bound against `Policy.spec.effects` at validate/plan (exit **2**). Issue #191 prints the bound table and the authority delta vs stored deployment state in `terfyn plan` (`-o table|json|yaml`). Terfyn does not verify what remote systems do with a granted operation.
 
 ### Closed world (#204)
 
-For MCP tools the grant is only meaningful against a **pinned operation manifest**. [#204](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/204) is **not shipped**; MCP `tools/list` can still expand the world. A closed world is **not** already guaranteed.
+For MCP tools the grant is only meaningful against a **pinned operation manifest**. [#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) is **not shipped**; MCP `tools/list` can still expand the world. A closed world is **not** already guaranteed.
 
 ## How tools are advertised
 
@@ -41,7 +41,7 @@ Each listed Tool becomes one `ToolDef` whose **name is the Tool metadata name**.
 | HTTP Tool name | rejected (no default; `default` would become `GET /default`) |
 | Pinned `tool.<name>.<operation>` | that exact uses string (HTTP must be a real `method.path`) |
 
-`agentctl validate` / `plan` apply the same rules. Aliases such as `helper.echo` or `helper.command.run` fail **before** `CheckToolCall` / `Tools.Call`. Inner calls use the agent `constraints.timeoutSeconds` context. ToolDef parameters are a permissive object schema.
+`terfyn validate` / `plan` apply the same rules. Aliases such as `helper.echo` or `helper.command.run` fail **before** `CheckToolCall` / `Tools.Call`. Inner calls use the agent `constraints.timeoutSeconds` context. ToolDef parameters are a permissive object schema.
 
 ## `maxIterations` / `ToolChoice`
 
@@ -84,7 +84,7 @@ Inner calls share the workflow `uses:` payload shape. Actor on selection/executi
 | `system_error` | `CheckToolCall` denial or budget denial — tool never invoked |
 | `limit_hit` | `kind: max_iterations` or `kind: max_cost` |
 
-Events are hash-linked. `agentctl logs --run <id>` shows them; `agentctl audit verify --run <id>` covers them. See [`AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
+Events are hash-linked. `terfyn logs --run <id>` shows them; `terfyn audit verify --run <id>` covers them. See [`AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
 
 ## Related docs
 

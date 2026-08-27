@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 // ErrRunNotFound is returned when appending events for a run_id that has no row in runs.

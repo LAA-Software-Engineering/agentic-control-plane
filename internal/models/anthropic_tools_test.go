@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models/anthropic"
+	"github.com/LAA-Software-Engineering/terfyn/internal/models/anthropic"
 )
 
 func TestMapAnthropicToolChoice(t *testing.T) {

@@ -9,12 +9,12 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 	"github.com/spf13/cobra"
 )
 
@@ -40,11 +40,11 @@ Canonical names are snake_case (e.g. tool_execution); legacy dot-notation (e.g. 
 is accepted for --event filters only.
 
 Examples:
-  agentctl logs
-  agentctl logs --run <run-id>
-  agentctl logs --run <run-id> --event tool_execution
-  agentctl logs --workflow pr-review
-  agentctl logs --tenant-id acme --thread-id prod-session-1
+  terfyn logs
+  terfyn logs --run <run-id>
+  terfyn logs --run <run-id> --event tool_execution
+  terfyn logs --workflow pr-review
+  terfyn logs --tenant-id acme --thread-id prod-session-1
 
 Exit codes (section 11.2):
   0 — success

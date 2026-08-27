@@ -2,5 +2,5 @@
 // into a spec.ProjectGraph. Reference checks use [ResolveReferences] (delegates to spec);
 // full MVP validation is [spec.ValidateProjectGraph].
 //
-// [ListProjectYAMLFiles] and [NormalizeYAML] support agentctl fmt (issue #74).
+// [ListProjectYAMLFiles] and [NormalizeYAML] support terfyn fmt (issue #74).
 package project

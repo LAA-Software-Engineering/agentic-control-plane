@@ -1,6 +1,6 @@
 # Tamper-evident trace audit chain (issue #116)
 
-SQLite trace rows are the compliance evidence that an approved agent run is what actually executed. Plain rows can be edited silently; ACP hash-links each `trace_events` row into a **per-run chain** so post-hoc tampering (insert, delete, reorder, or mutate) is detectable with `agentctl audit verify`.
+SQLite trace rows are the compliance evidence that an approved agent run is what actually executed. Plain rows can be edited silently; Terfyn hash-links each `trace_events` row into a **per-run chain** so post-hoc tampering (insert, delete, reorder, or mutate) is detectable with `terfyn audit verify`.
 
 This is **internal consistency**, not cryptographic non-repudiation: there is no external timestamp authority or signing key yet. The chain proves the stored sequence matches the hash algorithm — useful for regulated deployments and forensic review.
 
@@ -27,17 +27,17 @@ Implementation: [`internal/audit`](../internal/audit).
 ## CLI
 
 ```bash
-# Verify recent runs in the state DB (default: 50 newest, same as agentctl logs)
-agentctl audit verify --project my-agent-system
+# Verify recent runs in the state DB (default: 50 newest, same as terfyn logs)
+terfyn audit verify --project my-agent-system
 
 # Verify one run (full chain for that run regardless of --limit)
-agentctl audit verify --project my-agent-system --run <run-id>
+terfyn audit verify --project my-agent-system --run <run-id>
 
 # Scan more runs (clamped to 500)
-agentctl audit verify --project my-agent-system --limit 200
+terfyn audit verify --project my-agent-system --limit 200
 
 # JSON output (-o json)
-agentctl audit verify --project my-agent-system --run <run-id> -o json
+terfyn audit verify --project my-agent-system --run <run-id> -o json
 ```
 
 ### Exit codes
@@ -68,7 +68,7 @@ Migration `007_trace_audit_chain.sql` adds nullable `prev_hash` and `hash` colum
 
 ## JSON / inspector
 
-`agentctl logs --run <id> -o json` and inspector trace payloads include optional `prevHash` and `hash` on each event when present.
+`terfyn logs --run <id> -o json` and inspector trace payloads include optional `prevHash` and `hash` on each event when present.
 
 ## Operational notes
 

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	httptool "github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/http"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/mcp"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/native"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	httptool "github.com/LAA-Software-Engineering/terfyn/internal/tools/http"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools/mcp"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools/native"
 )
 
 // Registry resolves workflow uses strings against declared tools and dispatches by transport (MVP: native, mock, mcp stdio, http).

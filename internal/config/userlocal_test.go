@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func writeYAML(t *testing.T, path, content string) {
@@ -22,14 +22,14 @@ func writeYAML(t *testing.T, path, content string) {
 func TestDiscoverUserLocalPaths_order(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
-	writeYAML(t, filepath.Join(home, ".config", "agentctl", "config.yaml"), "defaults:\n  model: global\n")
+	writeYAML(t, filepath.Join(home, ".config", "terfyn", "config.yaml"), "defaults:\n  model: global\n")
 	writeYAML(t, filepath.Join(root, ".agentic", "local.yaml"), "defaults:\n  model: project-local\n")
 
 	got := DiscoverUserLocalPaths(root, home)
 	if len(got) != 2 {
 		t.Fatalf("paths = %v, want 2", got)
 	}
-	if !strings.HasSuffix(got[0], filepath.Join("agentctl", "config.yaml")) {
+	if !strings.HasSuffix(got[0], filepath.Join("terfyn", "config.yaml")) {
 		t.Fatalf("global should be first: %v", got)
 	}
 	if !strings.HasSuffix(got[1], filepath.Join(".agentic", "local.yaml")) {
@@ -69,13 +69,13 @@ func TestDiscoverUserLocalPaths_xdgConfigHome(t *testing.T) {
 	root := t.TempDir()
 	xdg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdg)
-	writeYAML(t, filepath.Join(xdg, "agentctl", "config.yaml"), "defaults:\n  model: xdg\n")
+	writeYAML(t, filepath.Join(xdg, "terfyn", "config.yaml"), "defaults:\n  model: xdg\n")
 
 	got := DiscoverUserLocalPaths(root, "")
 	if len(got) != 1 {
 		t.Fatalf("paths = %v, want 1", got)
 	}
-	if got[0] != filepath.Join(xdg, "agentctl", "config.yaml") {
+	if got[0] != filepath.Join(xdg, "terfyn", "config.yaml") {
 		t.Fatalf("path = %q, want XDG path", got[0])
 	}
 }

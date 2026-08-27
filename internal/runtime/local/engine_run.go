@@ -1,7 +1,7 @@
 package local
 
 import (
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
 )
 
 // engineRunConfig carries execution options shared by Invoke and Resume engine paths.

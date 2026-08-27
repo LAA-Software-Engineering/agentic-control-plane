@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func TestLint_ungatedSensitiveTool_noExplicitRule(t *testing.T) {

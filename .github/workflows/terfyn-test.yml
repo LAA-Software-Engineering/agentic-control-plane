@@ -3,7 +3,7 @@
 # until it exists on main — the merge gate is test/integration/cli_flow_test.go.
 # See examples/regression-test/README.md and docs/TESTING.md.
 
-name: agentctl test
+name: terfyn test
 
 on:
   pull_request:
@@ -39,8 +39,8 @@ jobs:
           go-version: "1.25.x"
           cache: true
 
-      - name: Build agentctl
-        run: go build -o agentctl ./cmd/agentctl
+      - name: Build terfyn
+        run: go build -o terfyn ./cmd/terfyn
 
-      - name: agentctl test (safe policy)
-        run: ./agentctl test --project examples/regression-test --no-color
+      - name: terfyn test (safe policy)
+        run: ./terfyn test --project examples/regression-test --no-color

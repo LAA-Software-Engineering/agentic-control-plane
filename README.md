@@ -1,14 +1,14 @@
-# Agentic Control Plane
+# Terfyn
 
-[![CI](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/ci.yml)
-[![Release](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml)
+[![CI](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/ci.yml)
+[![Release](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev/dl/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
-[![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/agentic-control-plane.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/agentic-control-plane)
+[![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/terfyn.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/terfyn)
 
 **A statically analyzable, capability-oriented execution platform for nondeterministic programs.** Review the **authority granted** to agents as a plan diff — before they run.
 
-ACP bounds and diffs that grant. It does **not** verify what remote systems do with it.
+Terfyn bounds and diffs that grant. It does **not** verify what remote systems do with it.
 
 ## Architecture
 
@@ -28,9 +28,9 @@ Expanded diagram, plan-time bounds, and closed-world caveats: [`docs/architectur
 
 ## The differentiator: plan-time bounds on authority
 
-This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. ACP's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). `agentctl plan` prints that bound and the authority delta vs stored deployment state.
+This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. Terfyn's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)). `terfyn plan` prints that bound and the authority delta vs stored deployment state.
 
-**Today** `agentctl plan` diffs **permissions**, **approvals**, **models**, **budgets**, **C1 risk items**, and **effect/capability/authority** against SQLite desired state:
+**Today** `terfyn plan` diffs **permissions**, **approvals**, **models**, **budgets**, **C1 risk items**, and **effect/capability/authority** against SQLite desired state:
 
 ```text
 Plan: 0 to add, 3 to change, 0 to delete
@@ -71,13 +71,13 @@ Authority:
   autonomous  -> WIDENED
 ```
 
-Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Straight-line workflows run end-to-end today; conditionals, loops, and dynamic fan-out parse and type-check ([#199](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/199)) but do not execute yet, so the loader refuses control-flow workflows until the execution IR runs on the engine. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the 58 existing fixtures work), and `agentctl export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
+Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Straight-line workflows run end-to-end today; conditionals, loops, and dynamic fan-out parse and type-check ([#199](https://github.com/LAA-Software-Engineering/terfyn/issues/199)) but do not execute yet, so the loader refuses control-flow workflows until the execution IR runs on the engine. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the 58 existing fixtures work), and `terfyn export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
 
 ## Flagship: incident triage
 
-**Start here:** [`examples/incident-triage`](examples/incident-triage) — an offline agent that can page, read logs, and file a ticket, but **cannot restart a service** unless policy `approvals.requiredFor` includes `tool.restart.restart` and that uses string is **pre-approved** with `--approve tool.restart.restart`. Inner agent-loop tools do not HITL; unapproved `agentctl run` fail-closes with **exit 5** (`approval_required`). With `--approve` it completes and `audit verify` passes.
+**Start here:** [`examples/incident-triage`](examples/incident-triage) — an offline agent that can page, read logs, and file a ticket, but **cannot restart a service** unless policy `approvals.requiredFor` includes `tool.restart.restart` and that uses string is **pre-approved** with `--approve tool.restart.restart`. Inner agent-loop tools do not HITL; unapproved `terfyn run` fail-closes with **exit 5** (`approval_required`). With `--approve` it completes and `audit verify` passes.
 
-Other walkthroughs: policy-blocked PR review in [`examples/pr-review-demo`](examples/pr-review-demo/README.md) (no API keys); live GitHub read/write with a **mock** reviewer in [`examples/pr-review-github`](examples/pr-review-github/README.md); the same flow with OpenAI `gpt-4o-mini` plus GitHub Actions in [`examples/pr-review-github-actions`](examples/pr-review-github-actions/README.md) ([PR workflow](.github/workflows/agentctl-pr-review.yml); optional manual [`owner`/`repo`/`number`](.github/workflows/agentctl-pr-review-publish.yml)).
+Other walkthroughs: policy-blocked PR review in [`examples/pr-review-demo`](examples/pr-review-demo/README.md) (no API keys); live GitHub read/write with a **mock** reviewer in [`examples/pr-review-github`](examples/pr-review-github/README.md); the same flow with OpenAI `gpt-4o-mini` plus GitHub Actions in [`examples/pr-review-github-actions`](examples/pr-review-github-actions/README.md) ([PR workflow](.github/workflows/terfyn-pr-review.yml); optional manual [`owner`/`repo`/`number`](.github/workflows/terfyn-pr-review-publish.yml)).
 
 ---
 
@@ -85,7 +85,7 @@ Other walkthroughs: policy-blocked PR review in [`examples/pr-review-demo`](exam
 
 Most agent stacks bury prompts, tool wiring, and permissions in application code. That makes it hard to answer: *Is this config valid? What authority changed? What are we about to grant? What actually ran? Did policy allow it?*
 
-**Agentic Control Plane** is a small Go CLI (`agentctl`) plus a resource graph so teams can:
+**Terfyn** is a small Go CLI (`terfyn`) plus a resource graph so teams can:
 
 - Review **capability diffs** (`plan`) before changes land
 - Track **deployment state** separately from **runtime traces**
@@ -107,31 +107,31 @@ Most agent stacks bury prompts, tool wiring, and permissions in application code
 
 ## Compared with adjacent tools
 
-ACP is the **declarative governance/config layer** for agent systems — not a replacement for durable-execution engines or code-first agent runtimes.
+Terfyn is the **declarative governance/config layer** for agent systems — not a replacement for durable-execution engines or code-first agent runtimes.
 
 | Capability | This project | OpenAI Agents SDK | LangGraph | Temporal | Terraform |
 |---|---|---|---|---|---|
 | Role | Governance/config: versioned resources, plan/apply, policy | Code-first agent runtime | Code-first graph orchestration | Durable workflow execution | Infrastructure as code |
 | Durable execution / distributed scheduling | No | No | Optional checkpointers; not a durable-execution engine | Yes | N/A |
 | Code-first agent runtime | No (resource graph; `.agent` authoring, YAML compilation output) | Yes | Yes | Workflow SDK, not an agent runtime | No |
-| Desired-state plan / apply | Yes (`agentctl plan` / `apply` vs SQLite) | No | No | No | Yes |
-| Plan-time effect bound | **Shipped** ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#190](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/190) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `agentctl plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
+| Desired-state plan / apply | Yes (`terfyn plan` / `apply` vs SQLite) | No | No | No | Yes |
+| Plan-time effect bound | **Shipped** ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#190](https://github.com/LAA-Software-Engineering/terfyn/issues/190) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `terfyn plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
 
-The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/204)) is **not enforced** today (MCP `tools/list` can still expand the world). `agentctl plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
+The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204)) is **not enforced** today (MCP `tools/list` can still expand the world). `terfyn plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
 
 ---
 
 ## Features (MVP today)
 
-- **`agentctl init`** — scaffold a `.agent`-led project (`main.agent` workflow plus `project.yaml`, policies, tools)  
-- **`agentctl export --format yaml`** — materialize the compiled resource graph as YAML on demand (nothing written to disk by default; `--output DIR` writes a loadable project)  
-- **`agentctl fmt`** — format `.agent` sources to canonical form (and normalize project YAML)  
-- **`agentctl validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references; runs **policy lint** (ungated sensitive tools, invalid HITL config, etc.) as **advisory** output — use **`--strict`** to exit **2** on high-severity lint findings (fail-closed safety metadata still gates at **run** even when lint passes)  
-- **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint, effect bound, and authority delta; JSON/YAML output includes **`policyLint`**, **`deploymentBaseline`**, **`effectBound`**, and **`authority`**
-- **`agentctl apply`** — persist plan (TTY confirm or `--auto-approve` / `AGENTCTL_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
-- **`agentctl run`** — execute a workflow locally; JSON Schema for inputs where configured; policy gates pause for **human-in-the-loop (HITL)** approval when a tool call requires it  
-- **`agentctl logs`** — read **trace events** from SQLite (`--run`, `--workflow`, or recent runs)
-- **`agentctl audit verify`** — re-walk hash-linked trace chains and detect tampering (see [`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md))  
+- **`terfyn init`** — scaffold a `.agent`-led project (`main.agent` workflow plus `project.yaml`, policies, tools)  
+- **`terfyn export --format yaml`** — materialize the compiled resource graph as YAML on demand (nothing written to disk by default; `--output DIR` writes a loadable project)  
+- **`terfyn fmt`** — format `.agent` sources to canonical form (and normalize project YAML)  
+- **`terfyn validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references; runs **policy lint** (ungated sensitive tools, invalid HITL config, etc.) as **advisory** output — use **`--strict`** to exit **2** on high-severity lint findings (fail-closed safety metadata still gates at **run** even when lint passes)  
+- **`terfyn plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint, effect bound, and authority delta; JSON/YAML output includes **`policyLint`**, **`deploymentBaseline`**, **`effectBound`**, and **`authority`**
+- **`terfyn apply`** — persist plan (TTY confirm or `--auto-approve` / `TERFYN_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
+- **`terfyn run`** — execute a workflow locally; JSON Schema for inputs where configured; policy gates pause for **human-in-the-loop (HITL)** approval when a tool call requires it  
+- **`terfyn logs`** — read **trace events** from SQLite (`--run`, `--workflow`, or recent runs)
+- **`terfyn audit verify`** — re-walk hash-linked trace chains and detect tampering (see [`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md))  
 - **Tools** — **`native`**, **`http`**, **`mock`**, and **`mcp`** — MCP supports **stdio** (subprocess) or **streamable HTTP** (`spec.mcp.transport: http`, `url`, optional `headers` with `env:` tokens)  
 - **Project defaults** — besides **`model`** and **`policy`**, optional **`runtime`** flows to **`spec.runtime`** on agents/workflows when omitted (MVP: **`local`** or unset; see spec validation)  
 - **Output** — table, JSON, or YAML (`-o` / `--output`)  
@@ -147,21 +147,21 @@ See **section 18 (MVP)** and **section 19 (End Goal)** in [`docs/DESIGN_DOC.md`]
 ### Prerequisites
 
 - **From source:** [Go 1.22+](https://go.dev/dl/)
-- **From a [release binary](#prebuilt-binaries):** no Go toolchain; put `agentctl` (or `agentctl.exe`) on your `PATH` after extracting the archive
+- **From a [release binary](#prebuilt-binaries):** no Go toolchain; put `terfyn` (or `terfyn.exe`) on your `PATH` after extracting the archive
 
 ### Build
 
 ```bash
-git clone https://github.com/LAA-Software-Engineering/agentic-control-plane.git
-cd agentic-control-plane
-make build   # writes bin/agentctl
+git clone https://github.com/LAA-Software-Engineering/terfyn.git
+cd terfyn
+make build   # writes bin/terfyn
 ```
 
-Or: `make install` / `go install ./cmd/agentctl` (honours `GOBIN` / `GOPATH/bin`; ensure that directory is on `PATH`).
+Or: `make install` / `go install ./cmd/terfyn` (honours `GOBIN` / `GOPATH/bin`; ensure that directory is on `PATH`).
 
 ### Prebuilt binaries
 
-[GitHub Releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases) ship **`agentctl`** for common platforms (`.tar.gz` on Linux/macOS, `.zip` on Windows) plus **`SHA256SUMS.txt`**. Pick the archive that matches your machine, for example:
+[GitHub Releases](https://github.com/LAA-Software-Engineering/terfyn/releases) ship **`terfyn`** for common platforms (`.tar.gz` on Linux/macOS, `.zip` on Windows) plus **`SHA256SUMS.txt`**. Pick the archive that matches your machine, for example:
 
 | Platform | Asset suffix |
 |----------|----------------|
@@ -169,32 +169,32 @@ Or: `make install` / `go install ./cmd/agentctl` (honours `GOBIN` / `GOPATH/bin`
 | Linux arm64 | `linux-arm64.tar.gz` |
 | macOS Intel | `darwin-amd64.tar.gz` |
 | macOS Apple Silicon | `darwin-arm64.tar.gz` |
-| Windows x86_64 | `windows-amd64.zip` (contains `agentctl.exe`) |
+| Windows x86_64 | `windows-amd64.zip` (contains `terfyn.exe`) |
 
-`agentctl version` reports the release tag (e.g. `v0.1.4`).
+`terfyn version` reports the release tag (e.g. `v0.1.4`).
 
-Releases are **created automatically** when changes land on **`main`**, using a **patch** semver bump over the latest `vMAJOR.MINOR.PATCH` tag (merges that only touch Markdown or the root `Makefile` do not trigger a release). To cut **minor** or **major** bumps on demand, run the [**Release** workflow](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml) manually (**Actions → Release → Run workflow**) and choose the bump type.
+Releases are **created automatically** when changes land on **`main`**, using a **patch** semver bump over the latest `vMAJOR.MINOR.PATCH` tag (merges that only touch Markdown or the root `Makefile` do not trigger a release). To cut **minor** or **major** bumps on demand, run the [**Release** workflow](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml) manually (**Actions → Release → Run workflow**) and choose the bump type.
 
 ### Create a project and run the loop
 
 From the repo root (or anywhere):
 
 ```bash
-agentctl init my-agent-system
-agentctl validate --project my-agent-system
-agentctl plan   --project my-agent-system
-agentctl apply  --project my-agent-system --auto-approve
-agentctl run    workflow/hello --project my-agent-system
-agentctl logs   --project my-agent-system --workflow hello
-agentctl audit verify --project my-agent-system --run <run-id>
-agentctl inspect --web --project my-agent-system   # read-only local UI on http://127.0.0.1:8787
+terfyn init my-agent-system
+terfyn validate --project my-agent-system
+terfyn plan   --project my-agent-system
+terfyn apply  --project my-agent-system --auto-approve
+terfyn run    workflow/hello --project my-agent-system
+terfyn logs   --project my-agent-system --workflow hello
+terfyn audit verify --project my-agent-system --run <run-id>
+terfyn inspect --web --project my-agent-system   # read-only local UI on http://127.0.0.1:8787
 ```
 
-`inspect --web` binds to **localhost only** and opens the state DB read-only. Avoid running it while `agentctl run` is writing the same SQLite file (you may see `database is locked` without WAL); use it when runs are idle or on a copy of the DB.
+`inspect --web` binds to **localhost only** and opens the state DB read-only. Avoid running it while `terfyn run` is writing the same SQLite file (you may see `database is locked` without WAL); use it when runs are idle or on a copy of the DB.
 
 ### Authoring: `.agent` plus `project.yaml`
 
-Agents and workflows are authored in `.agent` ([grammar reference](docs/LANGUAGE.md)); `.agent` files anywhere under the project root are discovered and compiled automatically. Tools, policies, and project configuration stay YAML (the interchange format). After **`agentctl init my-agent-system`**, `my-agent-system/main.agent` is:
+Agents and workflows are authored in `.agent` ([grammar reference](docs/LANGUAGE.md)); `.agent` files anywhere under the project root are discovered and compiled automatically. Tools, policies, and project configuration stay YAML (the interchange format). After **`terfyn init my-agent-system`**, `my-agent-system/main.agent` is:
 
 ```text
 workflow hello() {
@@ -228,17 +228,17 @@ spec:
       #   apiKeyFrom: env:ANTHROPIC_API_KEY
 ```
 
-To see the compiled resource graph as YAML — for inspection or handoff to another tool — run `agentctl export --format yaml` (it prints to stdout; nothing is written to disk unless you pass `--output DIR`). YAML remains valid ingress, so you can still author or generate resources directly in it.
+To see the compiled resource graph as YAML — for inspection or handoff to another tool — run `terfyn export --format yaml` (it prints to stdout; nothing is written to disk unless you pass `--output DIR`). YAML remains valid ingress, so you can still author or generate resources directly in it.
 
 Field-by-field rules, extra kinds, env overlays, MCP HTTP tools, and **`defaults.runtime`** are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for Anthropic fragments, MCP over HTTP, and structured-output notes.
 
 Notes:
 
 - **`init`** creates `my-agent-system/` with `apiVersion: agentic.dev/v0` resources and a **`hello`** workflow (native `echo` tool only — **no network**).  
-- **`apply`** in non-interactive environments needs **`--auto-approve`** or **`AGENTCTL_AUTO_APPROVE=1`**.  
-- **`run`** HITL: gated tool calls exit with **`Status: interrupted`** (exit **0**). Resume with **`--resume <run-id> --decision approve|reject|edit|switch`** (use **`--decision-edit-json`** / **`--decision-switch-target`** when needed), or skip prompts with **`--auto-approve`** / **`AGENTCTL_AUTO_APPROVE=1`**. Pre-approve a specific call with repeated **`--approve <uses>`**. Set **`AGENTCTL_HITL_ACTOR`** to attribute decisions in trace logs.  
+- **`apply`** in non-interactive environments needs **`--auto-approve`** or **`TERFYN_AUTO_APPROVE=1`**.  
+- **`run`** HITL: gated tool calls exit with **`Status: interrupted`** (exit **0**). Resume with **`--resume <run-id> --decision approve|reject|edit|switch`** (use **`--decision-edit-json`** / **`--decision-switch-target`** when needed), or skip prompts with **`--auto-approve`** / **`TERFYN_AUTO_APPROVE=1`**. Pre-approve a specific call with repeated **`--approve <uses>`**. Set **`TERFYN_HITL_ACTOR`** to attribute decisions in trace logs.  
 - **`Policy.spec.hitl.interruptOn`** keys are **Tool metadata.name** values; they configure review options (edit rules, switch targets) for calls already gated by **`approvals.requiredFor`** or safety metadata — they do not gate tools on their own.  
-- **`run`** stores traces in the **same** SQLite file used for plan/apply (default **`.agentic/state.db`** under `--project`). Optional OTLP export (`spec.telemetry`, off by default) is additive only — see [`docs/OTEL.md`](docs/OTEL.md). When enabled you need `serviceName` plus either `consoleExport: true` or an `endpoint` (`https://…` or `env:VAR`, e.g. `env:OTEL_EXPORTER_OTLP_ENDPOINT`). Export that variable before `run` if you use `env:`; if it is missing or the collector is unreachable, `agentctl` logs a warning, skips OTLP, and the workflow still completes (SQLite traces unchanged).  
+- **`run`** stores traces in the **same** SQLite file used for plan/apply (default **`.agentic/state.db`** under `--project`). Optional OTLP export (`spec.telemetry`, off by default) is additive only — see [`docs/OTEL.md`](docs/OTEL.md). When enabled you need `serviceName` plus either `consoleExport: true` or an `endpoint` (`https://…` or `env:VAR`, e.g. `env:OTEL_EXPORTER_OTLP_ENDPOINT`). Export that variable before `run` if you use `env:`; if it is missing or the collector is unreachable, `terfyn` logs a warning, skips OTLP, and the workflow still completes (SQLite traces unchanged).  
 - If **`spec.traces.retentionDays`** is a positive integer, runs older than that many **UTC calendar days** (by `runs.started_at`) are deleted lazily on **`run`** and **`logs`** (child trace rows cascade). Unset or non-positive means no pruning.  
 - **Trace payload redaction** (issue #110): before SQLite storage, event JSON is sanitized, key-redacted, and size-capped. Defaults mask common secret key names (substring match on map keys). Optional project knobs:
   - **`spec.traces.redactKeys`** / **`maxPayloadBytes`** — merged with defaults; also available under **`spec.traces.redaction`** together with **`maxDepth`**, **`maxStringChars`**, and **`maxBytes`** (max bytes for **binary** previews in sanitized values, not the overall JSON cap).
@@ -265,7 +265,7 @@ Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 
 | Path | Scope |
 |------|--------|
-| `$XDG_CONFIG_HOME/agentctl/config.yaml` or `~/.config/agentctl/config.yaml` | Global per-user defaults (`defaults`, `state`, `providers`, `traces`, `telemetry`) |
+| `$XDG_CONFIG_HOME/terfyn/config.yaml` or `~/.config/terfyn/config.yaml` | Global per-user defaults (`defaults`, `state`, `providers`, `traces`, `telemetry`) |
 | `.agentic/local.yaml` under `--project` | Project-scoped overrides (same fields; wins over the global file) |
 
 `validate`, `plan`, and `apply` write `.agentic/resolved-config.json` (digest of the resolved graph + env + state path). `run` rejects drift from that snapshot with exit **3** — re-run `validate` or `plan` after changing config.
@@ -276,7 +276,7 @@ Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 
 | Path | Role |
 |------|------|
-| `cmd/agentctl` | CLI entrypoint |
+| `cmd/terfyn` | CLI entrypoint |
 | `internal/cli` | Cobra commands, flags, golden tests |
 | `internal/spec` | YAML types, normalize, validate |
 | `internal/config` | Layered config resolution, immutable snapshot |
@@ -289,8 +289,8 @@ Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 | `internal/audit` | Tamper-evident hash chain for trace events (issue #116) |
 | `test/integration` | End-to-end CLI flow tests |
 | `docs/DESIGN_DOC.md` | Spec, CLI UX, architecture, roadmap |
-| `docs/GITHUB_ACTIONS.md` | Running **`agentctl`** from GitHub Actions (tokens, exit code **5**, template path) |
-| `examples/pr-review-github-actions/` | Full **`gpt-4o-mini`** project; PR workflow **`.github/workflows/agentctl-pr-review.yml`**; optional publish **`.github/workflows/agentctl-pr-review-publish.yml`** |
+| `docs/GITHUB_ACTIONS.md` | Running **`terfyn`** from GitHub Actions (tokens, exit code **5**, template path) |
+| `examples/pr-review-github-actions/` | Full **`gpt-4o-mini`** project; PR workflow **`.github/workflows/terfyn-pr-review.yml`**; optional publish **`.github/workflows/terfyn-pr-review-publish.yml`** |
 
 ---
 
@@ -302,8 +302,8 @@ Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 |--------|----------------|
 | `help` | Show usage and target list (default goal) |
 | `all` | `fmt` → `vet` → `test` → `build` (handy before a push) |
-| `build` | `go build` → `bin/agentctl` |
-| `install` | `go install ./cmd/agentctl` (`-trimpath`; uses `GOBIN` / `GOPATH/bin`) |
+| `build` | `go build` → `bin/terfyn` |
+| `install` | `go install ./cmd/terfyn` (`-trimpath`; uses `GOBIN` / `GOPATH/bin`) |
 | `clean` | Remove `bin/` and `coverage.out` |
 | `fmt` | `go fmt ./...` |
 | `verify-fmt` | Fail if `gofmt -l` would list files (matches CI-style formatting check) |
@@ -332,8 +332,8 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 Recent landings already cover much of “hardening”: **plan/apply optimistic concurrency** (exit **3** when deployment state drifts), **MCP** over **streamable HTTP** as well as stdio, **trace retention** (`spec.traces.retentionDays`), **`defaults.runtime`** / **`spec.runtime`** (MVP `local`), and clearer **defaults vs environment overlay** documentation. What is still open for near-term polish:
 
 - More **`diff` / drift** UX where the design doc calls for it (beyond today’s resource-level diff)  
-- Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/109))  
-- **`agentctl test`**-style workflow fixtures (**stretch** per design doc)  
+- Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/LAA-Software-Engineering/terfyn/issues/109))  
+- **`terfyn test`**-style workflow fixtures (**stretch** per design doc)  
 
 ### Post-MVP (from design doc section 19)
 
@@ -350,12 +350,12 @@ The **recommended implementation phases** are outlined in **section 20** of [`do
 
 - **[`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md)** — design document v0 (problem statement, spec, CLI, engine, state model, testing strategy, MVP vs end state, section 23 recommendation).  
 - **[`docs/AGENT_LOOP.md`](docs/AGENT_LOOP.md)** — bounded agent tool-calling loop: grants, advertised uses, `maxIterations`, policy on every inner call, traces, HITL vs exit **5** (issues #160 / #161 / #175).  
-- **[`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md)** — hash-linked trace audit chain and `agentctl audit verify` (issue #116).  
+- **[`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md)** — hash-linked trace audit chain and `terfyn audit verify` (issue #116).  
 - **[`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md)** — tenant, thread, and actor fields on runs and traces (issue #111).  
 - **[`docs/OTEL.md`](docs/OTEL.md)** — optional OTLP trace export alongside SQLite (issue #108).  
-- **[`docs/TESTING.md`](docs/TESTING.md)** — `agentctl test` fixture format; CI gate walkthrough in [`examples/regression-test`](examples/regression-test).  
+- **[`docs/TESTING.md`](docs/TESTING.md)** — `terfyn test` fixture format; CI gate walkthrough in [`examples/regression-test`](examples/regression-test).  
 - **[`examples/pr-review-demo/README.md`](examples/pr-review-demo/README.md)** — end-to-end demo: structured review output, traceable run, **approval-gated** write (`validate` → `plan` → `apply` → `run` → `logs`).
-- **[`examples/regression-test/README.md`](examples/regression-test/README.md)** — `agentctl test` is green on a gated publish and red after dropping `requiredFor` (issue #176).
+- **[`examples/regression-test/README.md`](examples/regression-test/README.md)** — `terfyn test` is green on a gated publish and red after dropping `requiredFor` (issue #176).
 - **[`docs/EXAMPLES.md`](docs/EXAMPLES.md)** — copy-paste YAML and CLI examples (`init`, mock vs OpenAI, workflows, environment overlays).  
 - **[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)** — Contributor Covenant 2.1; participation expectations and reporting.  
 - **License:** [MIT](LICENSE)  

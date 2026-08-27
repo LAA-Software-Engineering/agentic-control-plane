@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/cli"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/cli"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 	_ "modernc.org/sqlite"
 )
 
-// repoRoot returns the agentic-control-plane module root (directory containing go.mod).
+// repoRoot returns the terfyn module root (directory containing go.mod).
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -480,7 +480,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		}
 	})
 
-	// examples/regression-test: agentctl test is green on requiredFor, red after dropping the gate.
+	// examples/regression-test: terfyn test is green on requiredFor, red after dropping the gate.
 	t.Run("regression_test_unsafe_policy_fails_fixture", func(t *testing.T) {
 		root := repoRoot(t)
 		src := filepath.Join(root, "examples", "regression-test")

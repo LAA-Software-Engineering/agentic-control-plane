@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -36,7 +36,7 @@ spec:
     backend: sqlite
     dsn: .agentic/state.db
 `)
-	writeFile(t, filepath.Join(home, ".config", "agentctl", "config.yaml"), `state:
+	writeFile(t, filepath.Join(home, ".config", "terfyn", "config.yaml"), `state:
   dsn: /tmp/user-global-state.db
 `)
 

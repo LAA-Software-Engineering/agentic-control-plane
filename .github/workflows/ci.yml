@@ -60,13 +60,13 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
-      - name: Build agentctl
-        run: go build -v -o agentctl${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/agentctl
+      - name: Build terfyn
+        run: go build -v -o terfyn${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/terfyn
 
       - name: Policy lint strict gate (validate_ok fixture)
         shell: bash
         run: |
-          ./agentctl${{ runner.os == 'Windows' && '.exe' || '' }} validate \
+          ./terfyn${{ runner.os == 'Windows' && '.exe' || '' }} validate \
             --strict --no-color --project internal/cli/testdata/validate_ok
 
       # Use bash on Windows: PowerShell misparses -coverprofile=coverage.out

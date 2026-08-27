@@ -6,7 +6,7 @@ Accepted (2026-06-06)
 
 ## Context
 
-Agentic Control Plane (ACP) separates **declarative operations** (declare, validate, plan, apply, inspect) from **workflow execution**. Today only `runtime: local` exists, but the roadmap includes additional execution targets (remote executor, container runtime, hosted service).
+Terfyn separates **declarative operations** (declare, validate, plan, apply, inspect) from **workflow execution**. Today only `runtime: local` exists, but the roadmap includes additional execution targets (remote executor, container runtime, hosted service).
 
 Without an explicit boundary, execution code tends to reload project YAML/TOML, duplicate config resolution, and entangle policy/HITL/checkpoint wiring with CLI concerns.
 
