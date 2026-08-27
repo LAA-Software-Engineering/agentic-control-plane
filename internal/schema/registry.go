@@ -2,6 +2,7 @@ package schema
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,12 +40,28 @@ func (r *Registry) getOrCompile(abs string) (*jsonschema.Schema, error) {
 	return sch, nil
 }
 
+// capturedSchemaURL is a fixed, opaque base URL for a captured schema document. It deliberately does
+// NOT embed the schema's project path: a base like "mem:///./schemas/input.json" would make the
+// compiler normalize a same-document "#/$defs/..." ref to a *different* URL than the one registered,
+// miss the in-memory resource, and fall through to the file loader. A stable opaque URL keeps every
+// same-document ref inside the registered document.
+const capturedSchemaURL = "mem://terfyn/captured-schema"
+
+// noExternalLoader refuses to load any URL. A captured schema must be self-contained: following an
+// external reference (a file://, http://, or another-document $ref) would re-read live state and
+// defeat the drift-immunity that capturing the bytes exists to provide.
+type noExternalLoader struct{}
+
+func (noExternalLoader) Load(url string) (any, error) {
+	return nil, fmt.Errorf("external schema reference %q is not permitted in a captured schema (must be self-contained)", url)
+}
+
 // ValidateContent compiles a JSON Schema from schemaContent (rather than a file path) and validates
-// instance against it (issue: pinned-resume schema capture). ref is a stable label used for the
-// synthetic resource URL and in error paths. A pinned run resumes against the schema bytes captured
-// in its deployment snapshot, so it never re-reads a possibly-changed schema file on disk.
-//
-// Self-contained schemas only: an external `$ref` to another file is not resolved from bytes.
+// instance against it (pinned-resume schema capture, issue #207 follow-up). ref is only an error
+// label. The schema is compiled in isolation: it is registered under a fixed opaque URL and the
+// compiler's loader cannot open files, so a same-document "#/$defs/..." ref resolves within the
+// captured bytes and any external ref is a loud compile error — never a disk read. A pinned run
+// therefore validates against exactly the bytes captured in its deployment snapshot.
 func ValidateContent(ref string, schemaContent, instance []byte) error {
 	label := strings.TrimSpace(ref)
 	if label == "" {
@@ -55,11 +72,11 @@ func ValidateContent(ref string, schemaContent, instance []byte) error {
 		return &CompileError{Path: label, Err: err}
 	}
 	c := newCompiler()
-	url := "mem:///" + label
-	if err := c.AddResource(url, doc); err != nil {
+	c.UseLoader(noExternalLoader{})
+	if err := c.AddResource(capturedSchemaURL, doc); err != nil {
 		return &CompileError{Path: label, Err: err}
 	}
-	sch, err := c.Compile(url)
+	sch, err := c.Compile(capturedSchemaURL)
 	if err != nil {
 		return &CompileError{Path: label, Err: err}
 	}

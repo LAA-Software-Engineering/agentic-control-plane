@@ -775,10 +775,13 @@ run's authority. The canonical graph payload is a semantic projection: `Workflow
 workflow keeps its concurrent roots. Referenced JSON Schemas are **captured** into the snapshot (a
 `schema_bundle` artifact) at run start, so a pinned resume validates workflow input and agent output
 against the schema bytes it started with — never a re-read of a changed file; a schema uncaptured at
-start (e.g. a missing file) stays gradual (allowed). **Limits:** only self-contained schemas are
-captured — an external `$ref` to another file is not resolved from the bundle — and the execution IR
-(`execution_ir_digest`) is still empty until execir runs on the engine. See §14 and ADR 002,
-*Soundness assumptions and limits*.
+start (e.g. a missing file) stays gradual (allowed). Captured schemas compile in **isolation** — a
+fixed opaque URL and a loader that cannot open files — so a same-document `#/$defs/...` `$ref`
+resolves within the captured bytes, while an external `$ref` (`file://`, another document) is a loud
+compile error, never a live disk read (which would be the drift the capture prevents). **Limits:**
+schemas must be self-contained (no cross-file `$ref`), and the execution IR (`execution_ir_digest`)
+is still empty until execir runs on the engine. See §14 and ADR 002, *Soundness assumptions and
+limits*.
 
 The scope limit still holds: the manifest bounds the callable *set* and each operation's *declared*
 effects. It does not verify what a remote endpoint actually does — the trust anchor is human review
