@@ -310,8 +310,11 @@ reopen. YAML interchange preserves it as well (ADR 003): `ToolSpec.MarshalYAML` 
 `operations: {}` for a declared-but-empty manifest so `terfyn export` → load does not drop it.
 Discovery merges only `spec.safety` and never adds operations, so it is never an authority source.
 `tools.CapabilityManifest.Digest` / `GraphManifestDigest` are manifest-identity primitives for
-comparison and the #207 run-pin, not a second plan/apply pin; an input schema per operation is not
-yet modeled, so schema drift is out of scope here.
+comparison and the #207 run-pin, not a second plan/apply pin. Each operation also declares an input
+schema (`operations.<op>.schema`, the "operation → effects → schema" the manifest describes): the
+ref is part of manifest identity, `validate` compiles it, a tool call's input is validated against
+it before dispatch, and its content is captured into the #207 schema bundle so a pinned resume
+enforces the schema it started with.
 
 **Run-pinned authority (shipped by #207):** a run pins its deployment snapshot
 (`runs.deployment_snapshot_digest`), and `run --resume` hydrates the resolved graph from that

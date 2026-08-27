@@ -741,14 +741,16 @@ that set cannot grow after the bound is computed, so the manifest is authoritati
 *populate* a desired manifest during authoring, but it merges only `spec.safety`; it never adds
 operations. The deployed manifest is reconstructed from the applied Tool spec.
 
-`[tools.DeriveManifest]` builds the manifest. **Manifest drift** — an operation appearing,
-disappearing, or changing its effects — is reported by `plan` as a Tool state change because
-`spec.operations` lives in the Tool's normalized spec, so it already changes the resource spec hash
-that `plan`/`apply` diff; #204 coordinates with that existing pin rather than adding a second one.
-`[tools.CapabilityManifest.Digest]` / `[tools.GraphManifestDigest]` are manifest-identity
-primitives for direct comparison and the forthcoming #207 run-pin, not a separate plan/apply pin.
-An input schema per operation is not yet modeled on `ToolOperation`, so schema drift is out of
-scope until it is.
+`[tools.DeriveManifest]` builds the manifest — each operation's name, effects, and input-schema ref
+(see *Named effects on operations* above). **Manifest drift** — an operation appearing,
+disappearing, or changing its effects or input-schema ref — is reported by `plan` as a Tool state
+change because `spec.operations` lives in the Tool's normalized spec, so it already changes the
+resource spec hash that `plan`/`apply` diff; #204 coordinates with that existing pin rather than
+adding a second one. `[tools.CapabilityManifest.Digest]` / `[tools.GraphManifestDigest]` are
+manifest-identity primitives for direct comparison and the #207 run-pin, not a separate plan/apply
+pin, and they cover each operation's input-schema ref. The schema's *content* is captured into the
+deployment snapshot's schema bundle (#207), so a pinned resume validates tool input against the
+schema it started with.
 
 **Closed vs open.** Enforcement is opt-in per tool. An **omitted** `operations` key is an *open*
 callable set (backward compatible — existing MCP/HTTP examples dispatch every operation). A
@@ -782,8 +784,9 @@ enforces the policy **and** manifest it started with — approvals, presets, and
 run's authority. The canonical graph payload is a semantic projection: `WorkflowStep.NeedsDeclared`
 (the graph-vs-sequential signal) is part of identity and round-trips, so a resumed parallel-only
 workflow keeps its concurrent roots. Referenced JSON Schemas are **captured** into the snapshot (a
-`schema_bundle` artifact) at run start, so a pinned resume validates workflow input and agent output
-against the schema bytes it started with — never a re-read of a changed file; a schema uncaptured at
+`schema_bundle` artifact) at run start, so a pinned resume validates workflow input, agent output,
+and tool-operation input against the schema bytes it started with — never a re-read of a changed
+file; a schema uncaptured at
 start (e.g. a missing file) stays gradual (allowed). Captured schemas compile in **isolation** — a
 fixed opaque URL and a loader that cannot open files — so a same-document `#/$defs/...` `$ref`
 resolves within the captured bytes, while an external `$ref` (`file://`, another document) is a loud

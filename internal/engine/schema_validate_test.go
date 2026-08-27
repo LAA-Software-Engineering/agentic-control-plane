@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
@@ -100,6 +102,43 @@ func TestValidateToolInputSchema_pinnedUsesCapturedNotDisk(t *testing.T) {
 	}
 	if err := pinned.validateToolInputSchema("tool.github.read_pr", map[string]any{"y": 1}); err == nil {
 		t.Fatal("pinned tool input must enforce the captured strict schema, not the drifted disk file")
+	}
+}
+
+// enforceToolInput (the real runToolStep call site) must reject a tool call whose input violates the
+// operation schema, on the payload actually dispatched.
+func TestEnforceToolInput_rejectsInvalidInput(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "in.json"), []byte(strictInputSchema), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := &Executor{Graph: toolGraphWithOpSchema("./in.json"), ProjectRoot: root}
+	if _, err := e.enforceToolInput(context.Background(), nil, "r1", "s1", "tool.github.read_pr", map[string]any{"y": 1}); err == nil {
+		t.Fatal("enforceToolInput must reject input that violates the operation schema")
+	}
+	if _, err := e.enforceToolInput(context.Background(), nil, "r1", "s1", "tool.github.read_pr", map[string]any{"x": "ok"}); err != nil {
+		t.Fatalf("valid input must pass enforceToolInput: %v", err)
+	}
+}
+
+// The schema must be validated on the payload AFTER byte-limit truncation, not before: under the
+// default truncate policy a valid input can be mutated into a schema-violating one, and dispatch
+// must not observe that. Input valid pre-truncation, invalid once "..." is spliced in.
+func TestEnforceToolInput_rejectsPostTruncationMismatch(t *testing.T) {
+	root := t.TempDir()
+	// id must be all lowercase letters — the "..." truncation marker breaks the pattern.
+	if err := os.WriteFile(filepath.Join(root, "in.json"),
+		[]byte(`{"type":"object","required":["id"],"properties":{"id":{"type":"string","pattern":"^[a-z]+$"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g := toolGraphWithOpSchema("./in.json")
+	// Force truncation of any non-trivial input.
+	g.Tools["github"].Spec.Limits = &spec.ExecutionLimits{MaxToolInputBytes: 30, ToolInputExceedPolicy: spec.LimitExceedTruncate}
+	e := &Executor{Graph: g, ProjectRoot: root}
+
+	validPreTruncation := map[string]any{"id": strings.Repeat("a", 500)} // matches ^[a-z]+$, but ~510 bytes
+	if _, err := e.enforceToolInput(context.Background(), nil, "r1", "s1", "tool.github.read_pr", validPreTruncation); err == nil {
+		t.Fatal("truncation spliced \"...\" into id, breaking the pattern; the dispatched payload must be rejected")
 	}
 }
 
