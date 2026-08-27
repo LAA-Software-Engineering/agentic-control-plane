@@ -393,6 +393,21 @@ workflow ReleaseAll(input: Batch)
   with **bounded concurrency**. Each iteration has an isolated scope, so iterations never
   race and a body binding does not escape the loop.
 
+### Scope and `return` — one model, in the checker and the interpreter
+
+Sequential and parallel constructs scope bindings differently, and the type checker and the
+interpreter implement the **same** rule so a program cannot type-check under one model and run
+under another:
+
+- **Sequential** (top level, `if`/`else` arms, sequential `for`): one flat scope. A binding
+  introduced in an arm or a loop body **escapes** (last iteration wins), and a `return` inside
+  returns from the workflow and halts the loop and everything after it. `if c { x = A() } else
+  { x = B() }` followed by a use of `x` is the intended idiom.
+- **Parallel** (`parallel { … }`, `parallel for`): each branch/iteration runs in an **isolated**
+  scope; only a `parallel {}` branch's own binding is published at the join, and a `parallel
+  for` body's bindings do not escape. A `return` inside a parallel body is a **compile error**
+  (there is no join target for a racing iteration's return value).
+
 ### Lowering targets (execution IR)
 
 | Surface | `execir` node |
@@ -426,23 +441,33 @@ interpreter additionally caps the element count at `limits.maxLoopIterations`
 (`spec.DefaultMaxLoopIterations` = 1000; overridable per project/workflow), so a runtime
 collection cannot make a run unbounded — a loop over more elements fails loudly.
 
-### `plan` under control flow
+### `plan` under control flow — the fold mechanism, not yet wired
 
-`plan` still diffs only the **resource projection**; the execution IR produces no diff lines
-of its own. But its digest (`execir.Program.Digest`) folds into the workflow spec-hash via
-[`plan.WorkflowSpecHashWithExec`](../internal/plan/workflow_hash.go), so a lowering change
-with **no** resource-level change — e.g. swapping an `if`'s two arms — still changes the hash
-and invalidates a stale plan. A workflow with no execution IR (straight-line YAML) passes an
-empty digest and keeps its historical resource-only hash unchanged.
+`plan` diffs only the **resource projection**; the execution IR produces no diff lines of its
+own. The fold that would let a lowering-only change (e.g. swapping an `if`'s two arms)
+invalidate a stale plan is
+[`plan.WorkflowSpecHashWithExec`](../internal/plan/workflow_hash.go), which mixes
+`execir.Program.Digest` into the spec-hash. **This is the mechanism, not yet a live invariant**:
+no production path constructs an `execir.Program` for a workflow today — `project.LoadProject`
+does not read `.agent`, and `agentctl plan` hashes YAML resource envelopes through
+`WorkflowSpecHash` (empty digest). When `.agent` ingest is wired into plan/run, those call
+sites move to `WorkflowSpecHashWithExec`; the plain `WorkflowSpecHash` doc comment flags that.
+The fold is unit-tested (`internal/plan/workflow_hash_execir_test.go`).
 
-### Deferred: persistence (#207)
+### Deferred follow-ups
 
-Executing a compiled program end-to-end from the CLI — `apply` persisting the execution IR
-and `run --resume` pinning it so an in-flight run cannot be re-lowered underneath it — is the
-persistence half of #199. It builds on the immutable content-addressed deployment snapshot of
-**#207** and is deferred until that store lands (ADR 002 §5, round-3/round-4 amendments). Today
-`execir` executes as a library, driven by an injected `Invoker`, so control-flow semantics are
-unit-tested in isolation.
+- **YAML → execution IR convergence.** ADR 002 §5 requires both ingress paths to converge on
+  this IR. `.agent` lowering (`LowerExec`) exists; YAML still executes as a `WorkflowStep` DAG
+  in [`internal/engine`](../internal/engine). A `YAML → execir` lowering and running the engine
+  from `execir` are a follow-up — until then the convergence is a design target, not a shipped
+  property, and `execir`'s package comment says so.
+- **Persistence and resume (#207).** `apply` persisting the compiled program and `run --resume`
+  pinning it (so an in-flight run cannot be re-lowered underneath it) build on the immutable
+  content-addressed deployment snapshot of **#207** and are deferred until that store lands
+  (ADR 002 §5, round-3/round-4 amendments).
+
+Today `execir` executes as a library, driven by an injected `Invoker`, so control-flow
+semantics are unit-tested in isolation.
 
 ## Diagnostics
 

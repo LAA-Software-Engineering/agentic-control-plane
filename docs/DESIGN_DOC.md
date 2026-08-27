@@ -864,12 +864,16 @@ than authored and has no YAML surface — see ADR 002 §5.
 
 Conditionals, loops, and dynamic fan-out are **delivered** in the `.agent` frontend (#199):
 they parse, type/effect-check, lower to the execution IR ([`internal/execir`](../internal/execir)),
-and execute — see [`docs/LANGUAGE.md`](LANGUAGE.md#control-flow-and-the-execution-ir-199). The
-effect bound remains sound as the union over all branches, loops are bounded by
-`limits.maxLoopIterations`, and the execution-IR digest folds into the workflow spec-hash so
-`plan` still invalidates on a lowering-only change. Persisting the compiled program at `apply`
-and pinning it across `run --resume` is the remaining half of #199, deferred to the
-content-addressed deployment snapshot of #207.
+and execute as a library — see
+[`docs/LANGUAGE.md`](LANGUAGE.md#control-flow-and-the-execution-ir-199). The effect bound
+remains sound as the union over all branches, and loops are bounded by
+`limits.maxLoopIterations`. Three pieces are **follow-ups**, not shipped by #199: the
+execution-IR digest fold into the workflow spec-hash exists (`plan.WorkflowSpecHashWithExec`)
+but no production `plan`/`run` path constructs an `execir.Program` yet; the YAML ingress path
+still executes as a `WorkflowStep` DAG rather than converging on the execution IR; and
+persisting the compiled program at `apply` / pinning it across `run --resume` awaits the
+content-addressed deployment snapshot of #207. All three land with `.agent` ingest into the
+CLI/engine.
 
 | Addition | Surface | Status |
 |----------|---------|--------|

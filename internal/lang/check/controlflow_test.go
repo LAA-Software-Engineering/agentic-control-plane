@@ -97,6 +97,59 @@ workflow W(input: PR)
 	}
 }
 
+// TestCheckControlFlow_ExecRebindsPositionalWorkflowArgs proves positional
+// workflow: arguments are rebound to real parameter names on the EXECUTION IR,
+// not only on the resource projection — so the stored executable form binds its
+// Invoker args by parameter name rather than the arg0/arg1 placeholders
+// (review finding: rebind reached Graph but not Executables).
+func TestCheckControlFlow_ExecRebindsPositionalWorkflowArgs(t *testing.T) {
+	t.Parallel()
+	src := `
+workflow Sub(a: A, b: B) -> R {
+    return a
+}
+
+workflow W(input: X) {
+    r = Sub(input.a, input.b)
+}
+`
+	f := parseOrFatal(t, src)
+	prog, diags := Check(f, Options{})
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors: %v", diagMessages(diags))
+	}
+	ex := prog.Executables["W"]
+	if ex == nil {
+		t.Fatalf("expected execution IR for W")
+	}
+	var call *execir.InvokeWorkflow
+	for _, n := range ex.Body {
+		if iw, ok := n.(*execir.InvokeWorkflow); ok && iw.Workflow == "Sub" {
+			call = iw
+		}
+	}
+	if call == nil {
+		t.Fatalf("expected an InvokeWorkflow for Sub, got %#v", ex.Body)
+	}
+	if _, ok := call.Args["a"]; !ok {
+		t.Fatalf("expected positional arg rebound to parameter %q, got keys %v", "a", keysOf(call.Args))
+	}
+	if _, ok := call.Args["b"]; !ok {
+		t.Fatalf("expected positional arg rebound to parameter %q, got keys %v", "b", keysOf(call.Args))
+	}
+	if _, ok := call.Args["arg0"]; ok {
+		t.Fatalf("placeholder arg0 must not survive on the execution IR: %v", keysOf(call.Args))
+	}
+}
+
+func keysOf(m map[string]execir.Value) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 // TestCheckControlFlow_ExecutablesCarryControlFlow proves the checked program
 // exposes the execution IR with the control-flow node the surface authored.
 func TestCheckControlFlow_ExecutablesCarryControlFlow(t *testing.T) {

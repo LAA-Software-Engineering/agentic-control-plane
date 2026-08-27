@@ -46,6 +46,12 @@ type execLowerer struct {
 	diags     lang.Diagnostics
 	used      map[string]struct{} // reserved binding names, so temps never collide
 	tempN     int
+	// parallelDepth > 0 while lowering the body of a `parallel for` (or a nested
+	// loop inside one). A parallel body runs in an isolated per-iteration scope
+	// with no defined join target for a value, so `return` inside it is rejected
+	// here — the interpreter accordingly keeps that isolation without having to
+	// decide which racing iteration's return wins.
+	parallelDepth int
 }
 
 func (el *execLowerer) diag(p spec.Pos, format string, args ...any) {
@@ -125,9 +131,19 @@ func (el *execLowerer) lowerStmt(st lang.Stmt) []execir.Node {
 	case *lang.ForStmt:
 		loop := &execir.Loop{Pos: s.Pos, Var: identName(s.Var), Parallel: s.Parallel}
 		loop.Collection = el.lowerValue(s.In, &pre)
+		if s.Parallel {
+			el.parallelDepth++
+		}
 		loop.Body = el.lowerStmts(s.Body)
+		if s.Parallel {
+			el.parallelDepth--
+		}
 		return append(pre, loop)
 	case *lang.ReturnStmt:
+		if el.parallelDepth > 0 {
+			el.diag(s.Pos, "return is not allowed inside a parallel loop body; a parallel iteration has no join target for a return value")
+			return nil
+		}
 		val := el.lowerValue(s.Value, &pre)
 		return append(pre, &execir.Return{Pos: s.Pos, Value: val})
 	}

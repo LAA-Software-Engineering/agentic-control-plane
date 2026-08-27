@@ -264,6 +264,9 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 		diags = append(diags, wc.checkCompatible(s.Value.Position(), got, want, "return value")...)
 		return diags
 	case *lang.IfStmt:
+		// Sequential control flow uses one flat scope, matching the interpreter,
+		// which runs the taken arm on the enclosing scope: a binding introduced in
+		// an arm escapes the `if`.
 		var diags lang.Diagnostics
 		_, d := wc.checkExpr(s.Cond)
 		diags = append(diags, d...)
@@ -278,28 +281,44 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 		var diags lang.Diagnostics
 		_, d := wc.checkExpr(s.In)
 		diags = append(diags, d...)
-		// The loop variable is scoped to the body and untyped — element-type
-		// inference from the collection is a follow-up; gradual typing keeps a
-		// reference to it compatible with anything. Save and restore any outer
-		// binding of the same name so the scoping is correct.
+		// The loop variable is untyped — element-type inference from the
+		// collection is a follow-up; gradual typing keeps a reference to it
+		// compatible with anything. Scoping matches the interpreter exactly:
+		//   - a PARALLEL loop isolates each iteration, so neither the loop
+		//     variable nor any body binding escapes;
+		//   - a SEQUENTIAL loop shares the enclosing scope, so both escape (last
+		//     iteration wins).
 		name := identName(s.Var)
-		saved, had := wc.env[name]
+		if s.Parallel {
+			saved := snapshotEnv(wc.env)
+			if name != "" {
+				wc.env[name] = typeRef{}
+			}
+			for _, st := range s.Body {
+				diags = append(diags, wc.checkStmt(st)...)
+			}
+			wc.env = saved
+			return diags
+		}
 		if name != "" {
 			wc.env[name] = typeRef{}
 		}
 		for _, st := range s.Body {
 			diags = append(diags, wc.checkStmt(st)...)
 		}
-		if name != "" {
-			if had {
-				wc.env[name] = saved
-			} else {
-				delete(wc.env, name)
-			}
-		}
 		return diags
 	}
 	return nil
+}
+
+// snapshotEnv shallow-copies the binding environment so an isolated block (a
+// parallel loop body) can bind names that are discarded when the block ends.
+func snapshotEnv(env map[string]typeRef) map[string]typeRef {
+	out := make(map[string]typeRef, len(env))
+	for k, v := range env {
+		out[k] = v
+	}
+	return out
 }
 
 func (wc *wfChecker) checkExpr(e lang.Expr) (typeRef, lang.Diagnostics) {

@@ -226,12 +226,20 @@ func (r *runner) execLoop(scope map[string]any, l *Loop) error {
 	if l.Parallel {
 		return r.execLoopParallel(scope, l, items)
 	}
+	// A sequential loop shares the enclosing scope and runner: the loop variable
+	// and any body binding write to it (last iteration wins and escapes, like the
+	// straight-line body the type checker walks), and a Return inside the body
+	// fires on this runner — it returns from the workflow and halts the loop,
+	// rather than being swallowed as a per-iteration no-op. This is the SAME
+	// scope/Return rule the checker uses for sequential control flow; the parallel
+	// path below is the sole exception, and `return` is not lowered into it.
 	for _, item := range items {
-		child := childScope(scope)
-		child[l.Var] = item
-		sub := &runner{in: r.in, ctx: r.ctx}
-		if err := sub.execAll(child, l.Body); err != nil {
+		scope[l.Var] = item
+		if err := r.execAll(scope, l.Body); err != nil {
 			return err
+		}
+		if r.done {
+			break
 		}
 	}
 	return nil

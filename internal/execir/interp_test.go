@@ -265,6 +265,51 @@ func TestReturn_StopsSubsequentNodes(t *testing.T) {
 	}
 }
 
+// TestLoop_SequentialReturnHalts proves a Return inside a sequential loop body
+// returns from the workflow and stops both the loop and the nodes after it —
+// not swallowed as a per-iteration no-op (review finding: loop isolation).
+func TestLoop_SequentialReturnHalts(t *testing.T) {
+	t.Parallel()
+	prog := &Program{
+		Workflow: "W", Params: []string{"input"},
+		Body: []Node{
+			&Loop{Var: "item", Collection: Ref{Path: []string{"input", "items"}}, Body: []Node{
+				&Return{Value: Ref{Path: []string{"item"}}},
+			}},
+			&InvokeTool{Uses: "tool.t.after"},
+		},
+	}
+	rec := &recorder{}
+	out := runProg(t, &Interp{Invoker: rec}, prog, map[string]any{"items": []any{"first", "second"}})
+	if out != "first" {
+		t.Fatalf("return in loop should return the first item, got %v", out)
+	}
+	if len(rec.names()) != 0 {
+		t.Fatalf("nodes after a returning loop must not run, got %v", rec.names())
+	}
+}
+
+// TestLoop_SequentialCarriedBindingEscapes proves a body binding in a sequential
+// loop escapes with the last iteration's value (matches the checker's flat
+// scope), so a later reference sees "c", not the pre-loop value.
+func TestLoop_SequentialCarriedBindingEscapes(t *testing.T) {
+	t.Parallel()
+	prog := &Program{
+		Workflow: "W", Params: []string{"input"},
+		Body: []Node{
+			&Let{Bind: "last", Value: Lit{V: "init"}},
+			&Loop{Var: "item", Collection: Ref{Path: []string{"input", "items"}}, Body: []Node{
+				&Let{Bind: "last", Value: Ref{Path: []string{"item"}}},
+			}},
+			&Return{Value: Ref{Path: []string{"last"}}},
+		},
+	}
+	out := runProg(t, &Interp{Invoker: &recorder{}}, prog, map[string]any{"items": []any{"a", "b", "c"}})
+	if out != "c" {
+		t.Fatalf("loop-carried binding should escape with the last value, got %v", out)
+	}
+}
+
 func TestLoop_NonListCollectionErrors(t *testing.T) {
 	t.Parallel()
 	prog := &Program{

@@ -13,11 +13,16 @@
 //
 // The two projections are NOT a pipeline: the execution IR is lowered directly
 // from the checked program (internal/lang/lower.LowerExec), not derived from the
-// resource projection, which by design cannot represent control flow. Both
-// ingress paths converge here: YAML lowers to the same nodes minus the
-// constructs it cannot express (a straight-line YAML workflow lowers to a flat
-// node list with no Branch/Loop), so execution semantics never diverge between
-// `.agent` and YAML.
+// resource projection, which by design cannot represent control flow.
+//
+// Ingress convergence is the DESIGN target, not yet the implementation. ADR 002
+// §5 requires both ingress paths to converge on this IR — a straight-line YAML
+// workflow lowering to the same flat node list a straight-line `.agent` workflow
+// does, so execution semantics never diverge. This package provides the target
+// and the `.agent` lowering (LowerExec); the YAML side still executes as a
+// WorkflowStep DAG in internal/engine, and a YAML->execir lowering plus running
+// the engine from execir is a follow-up. Until that lands, do not read this
+// package as proof the two paths already share an interpreter.
 //
 // Runtime independence: nodes reference values by the source binding namespace
 // (parameter names, assignment targets, loop variables), not by resource-model
@@ -120,10 +125,20 @@ func (*Fork) node() {}
 
 // Loop iterates Body once per element of Collection with Var bound to the
 // element. Parallel marks dynamic fan-out — iterations run with bounded
-// concurrency (ADR 002 §1: dynamic fan-out is a loop, not a graph field). A
-// sequential Loop runs its iterations in order. There is no unbounded (`while`)
-// loop in the surface, and the interpreter caps the iteration count
-// (internal/spec MaxLoopIterations) so termination is always bounded (#199).
+// concurrency (ADR 002 §1: dynamic fan-out is a loop, not a graph field).
+//
+// Scope rules differ by kind, and match the type checker:
+//
+//   - A SEQUENTIAL Loop runs its iterations in order on the ENCLOSING scope. The
+//     loop variable and any body binding escape the loop (last iteration wins),
+//     and a Return in the body returns from the workflow and stops the loop.
+//   - A PARALLEL Loop runs each iteration in an ISOLATED child scope, so
+//     iterations never race and no body binding escapes; `return` is not lowered
+//     into a parallel body (LowerExec rejects it), so isolation loses nothing.
+//
+// There is no unbounded (`while`) loop in the surface, and the interpreter caps
+// the iteration count (internal/spec MaxLoopIterations) so termination is always
+// bounded (#199).
 type Loop struct {
 	Pos        Pos
 	Var        string

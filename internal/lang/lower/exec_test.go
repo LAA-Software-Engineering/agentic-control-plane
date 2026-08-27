@@ -229,6 +229,20 @@ workflow W(input: PR) {
 	}
 }
 
+func TestLowerExec_ReturnInParallelForRejected(t *testing.T) {
+	t.Parallel()
+	_, diags := lowerExecOrFatal(t, `
+workflow W(input: Batch) {
+    parallel for item in input.items {
+        return item
+    }
+}
+`, nil)
+	if !diags.HasErrors() {
+		t.Fatalf("expected a diagnostic for return inside a parallel loop body")
+	}
+}
+
 func TestLowerExec_CallInConditionDiagnosed(t *testing.T) {
 	t.Parallel()
 	_, diags := lowerExecOrFatal(t, `
