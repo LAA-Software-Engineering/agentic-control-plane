@@ -306,7 +306,8 @@ and backward compatible), not the operation count, so shrinking a manifest canno
 bit is part of identity (`ToolSpec.OperationsDeclared`, serialized into the normalized spec), so
 plan, apply, and the deployed manifest reconstructed from applied spec see the same closed world
 runtime enforces — deleting `operations:` from a locked tool is a visible plan change, not a silent
-reopen.
+reopen. YAML interchange preserves it as well (ADR 003): `ToolSpec.MarshalYAML` emits an explicit
+`operations: {}` for a declared-but-empty manifest so `terfyn export` → load does not drop it.
 Discovery merges only `spec.safety` and never adds operations, so it is never an authority source.
 `tools.CapabilityManifest.Digest` / `GraphManifestDigest` are manifest-identity primitives for
 comparison and the #207 run-pin, not a second plan/apply pin; an input schema per operation is not

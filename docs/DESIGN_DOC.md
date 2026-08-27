@@ -751,7 +751,10 @@ serialize away; the bit is therefore **part of identity** (`json:"operationsDecl
 into the normalized spec hash, plan diffs, `NormalizedSpecJSON`, and the deployed manifest
 reconstructed from applied spec (`graphFromApplied`, and the #207 snapshot). So deleting the
 `operations:` key from a locked tool is a visible plan change, and the deployed world matches what
-`CheckToolCall` enforces — closed-empty is not distinguishable from open only at runtime.
+`CheckToolCall` enforces — closed-empty is not distinguishable from open only at runtime. The YAML
+interchange path preserves it too (ADR 003): `ToolSpec.MarshalYAML` emits an explicit
+`operations: {}` for a declared-but-empty manifest, so `terfyn export` → load round-trips to the
+same closed world rather than dropping the empty mapping.
 
 Runtime enforcement is on the policy path
 (`[policy.PolicyEvaluator.CheckToolCall]` → `ReasonOperationNotInManifest`, in **both** the
