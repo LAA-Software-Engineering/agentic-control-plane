@@ -150,7 +150,7 @@ func TestApplyMCPSafetyDiscovery_nilGraph(t *testing.T) {
 func mockMCPBinary(t *testing.T) string {
 	t.Helper()
 	mockMCPOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "agentctl-mockmcp-")
+		dir, err := os.MkdirTemp("", "terfyn-mockmcp-")
 		if err != nil {
 			mockMCPBuild = err
 			return

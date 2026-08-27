@@ -21,7 +21,7 @@ import (
 )
 
 // EnvAutoApprove is read when true-like to skip the apply confirmation prompt (non-TTY / CI).
-const EnvAutoApprove = "AGENTCTL_AUTO_APPROVE"
+const EnvAutoApprove = "TERFYN_AUTO_APPROVE"
 
 func newApplyCmd() *cobra.Command {
 	var autoApprove bool

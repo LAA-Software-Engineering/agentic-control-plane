@@ -38,7 +38,7 @@ func TestResolve_precedenceLadder(t *testing.T) {
 	home := t.TempDir()
 	writeProject(t, root, map[string]string{"model": "project-model", "runtime": "local"})
 
-	writeYAML(t, filepath.Join(home, ".config", "agentctl", "config.yaml"), `
+	writeYAML(t, filepath.Join(home, ".config", "terfyn", "config.yaml"), `
 defaults:
   model: user-global-model
 state:
@@ -143,7 +143,7 @@ func TestResolve_unknownFieldInUserLocal(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	writeProject(t, root, nil)
-	writeYAML(t, filepath.Join(home, ".config", "agentctl", "config.yaml"), "defualts:\n  model: x\n")
+	writeYAML(t, filepath.Join(home, ".config", "terfyn", "config.yaml"), "defualts:\n  model: x\n")
 	_, err := Resolve(ResolveOptions{ProjectRoot: root, HomeDir: home})
 	if err == nil {
 		t.Fatal("expected error")

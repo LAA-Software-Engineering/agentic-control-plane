@@ -9,7 +9,7 @@ import (
 	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
 )
 
-// TestContract_runEvents_matchesLogsJSON ensures inspector /api/runs/{id} events match agentctl logs -o json.
+// TestContract_runEvents_matchesLogsJSON ensures inspector /api/runs/{id} events match terfyn logs -o json.
 func TestContract_runEvents_matchesLogsJSON(t *testing.T) {
 	ts := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 	events := []state.TraceEvent{

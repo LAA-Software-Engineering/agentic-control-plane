@@ -8,10 +8,10 @@ This note is the README diagram expanded. Field semantics and the engine interna
 
 ```mermaid
 flowchart TB
-  Source[Source graph] --> Validate[agentctl validate]
-  Validate --> Plan[agentctl plan]
+  Source[Source graph] --> Validate[terfyn validate]
+  Validate --> Plan[terfyn plan]
   Plan --> SQLite[(SQLite desired state)]
-  SQLite --> Apply[agentctl apply]
+  SQLite --> Apply[terfyn apply]
   Apply --> Engine[engine]
   Engine --> Tools[tools]
   Engine --> Models[models]
@@ -23,15 +23,15 @@ flowchart TB
 | **Source graph** | Versioned resources (`Project`, `Agent`, `Tool`, `Workflow`, `Policy`, `Environment`). Today that graph is YAML — interchange / compilation output, not the long-term authoring surface. [`.agent`](adr/002-language-frontend-and-ir-expressiveness.md) is planned ([#200](https://github.com/LAA-Software-Engineering/terfyn/issues/200)). |
 | **validate / plan** | Load, normalize, overlay environments, lint policy, then **diff** desired graph vs SQLite deployment state. Plan output includes field diffs, C1 `RiskItem`s (permissions, approvals, models, budgets, tool surface), the desired **effect bound**, and an **authority delta** vs deployed state. |
 | **SQLite desired state** | Applied resources live in `.agentic/state.db` (override with `--state`). Deployment rows are separate from run traces in the same file. |
-| **engine** | `agentctl run` executes a workflow against the applied snapshot. Policy gates tool calls; HITL / `--approve` / fail-closed denials are recorded. |
+| **engine** | `terfyn run` executes a workflow against the applied snapshot. Policy gates tool calls; HITL / `--approve` / fail-closed denials are recorded. |
 | **tools + models** | Native, HTTP, mock, and MCP tools; OpenAI / Anthropic / mock models. Agents may only call advertised `uses` strings. |
-| **trace / logs / audit** | Hash-linked `trace_events`. `agentctl logs` reads them; `agentctl audit verify` re-walks the chain. |
+| **trace / logs / audit** | Hash-linked `trace_events`. `terfyn logs` reads them; `terfyn audit verify` re-walks the chain. |
 
 ## Plan-time bounds
 
-The uncopyable capability is a **plan-time effect bound**: a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)). Compute over the desired graph is [`internal/effects.Compute`](../internal/effects) (#189); `agentctl plan` prints the bound and `bound(desired)` vs `bound(deployed)` authority delta (#191).
+The uncopyable capability is a **plan-time effect bound**: a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)). Compute over the desired graph is [`internal/effects.Compute`](../internal/effects) (#189); `terfyn plan` prints the bound and `bound(desired)` vs `bound(deployed)` authority delta (#191).
 
-**What `agentctl plan` diffs today:**
+**What `terfyn plan` diffs today:**
 
 - Tool **permissions** (`spec.permissions.allow`)
 - Policy **approvals** (`approvals.requiredFor`) and **budgets** (cost / wall-clock)

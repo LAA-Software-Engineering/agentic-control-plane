@@ -36,7 +36,7 @@ func RunCase(ctx context.Context, projectRoot string, opts RunOptions, suitePath
 		Workflow: suite.Workflow,
 		Case:     c.Name,
 	}
-	db, err := os.CreateTemp("", "agentctl-test-*.db")
+	db, err := os.CreateTemp("", "terfyn-test-*.db")
 	if err != nil {
 		out.Detail = fmt.Sprintf("temp db: %v", err)
 		return out

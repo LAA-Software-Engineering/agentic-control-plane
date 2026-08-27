@@ -17,7 +17,7 @@ const (
 	githubAcceptJSON     = "application/vnd.github+json"
 	githubAcceptDiff     = "application/vnd.github.diff"
 	githubAPIVersion     = "2022-11-28"
-	githubUserAgent      = "terfyn/agentctl (native-github-read)"
+	githubUserAgent      = "terfyn/terfyn (native-github-read)"
 	maxGitHubJSONBody    = 8 << 20  // 8 MiB
 	maxGitHubDiffBody    = 32 << 20 // 32 MiB
 	defaultGitHubAPIBase = "https://api.github.com"

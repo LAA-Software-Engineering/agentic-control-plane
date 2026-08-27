@@ -112,7 +112,7 @@ func (c *committer) resolveUnderRoot(path string) (string, error) {
 }
 
 func tempFileInDir(dir, base string) (string, error) {
-	f, err := os.CreateTemp(dir, "."+base+".agentctl-tmp-*")
+	f, err := os.CreateTemp(dir, "."+base+".terfyn-tmp-*")
 	if err != nil {
 		return "", fmt.Errorf("scaffold: create temp in %q: %w", dir, err)
 	}

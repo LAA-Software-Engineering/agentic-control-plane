@@ -7,7 +7,7 @@ This flagship example shows **why a declarative control plane beats ad-hoc glue 
 - **Agent-owned tools (Epic A)** — `agents/responder.yaml` lists `pager`, `logs`, `tracker`, and a pinned restart uses string. The model may only call those advertised operations.
 - **Fail-closed writes** — `policies/gated-remediation.yaml` requires `--approve` for `tool.restart.restart`. Inner agent-loop tools **do not HITL**; `CheckToolCall` denies with **exit 5** (`approval_required`) unless that exact uses string is pre-approved.
 - **Offline mock** — no API keys. The mock model requests a restart on the first Generate when a restart-like tool is advertised, then returns structured status JSON.
-- **Traceable behavior** — `agentctl logs` shows `system_error` / `approval_required` on the denied path, or `tool_selection` then `tool_execution` when approved. `agentctl audit verify` checks the hash chain.
+- **Traceable behavior** — `terfyn logs` shows `system_error` / `approval_required` on the denied path, or `tool_selection` then `tool_execution` when approved. `terfyn audit verify` checks the hash chain.
 
 ## Why this matters
 
@@ -28,22 +28,22 @@ In a typical script, “page the on-call, maybe bounce the box” is an `if` tha
 
 ## Prerequisites
 
-Build `agentctl` from the repo root (`make build`) or use a release binary on your `PATH`.
+Build `terfyn` from the repo root (`make build`) or use a release binary on your `PATH`.
 
 ## How to run
 
 From the **repository root** (paths below assume that):
 
 ```bash
-agentctl validate --project examples/incident-triage
-agentctl plan --project examples/incident-triage --state /tmp/incident-triage-state.db
-agentctl apply --project examples/incident-triage --state /tmp/incident-triage-state.db --auto-approve
+terfyn validate --project examples/incident-triage
+terfyn plan --project examples/incident-triage --state /tmp/incident-triage-state.db
+terfyn apply --project examples/incident-triage --state /tmp/incident-triage-state.db --auto-approve
 ```
 
 ### Default run (restart blocked)
 
 ```bash
-agentctl run workflow/incident-triage \
+terfyn run workflow/incident-triage \
   --project examples/incident-triage \
   --state /tmp/incident-triage-state.db \
   --input-file examples/incident-triage/fixtures/sample-alert.json
@@ -53,7 +53,7 @@ agentctl run workflow/incident-triage \
 - Inspect the trace (use the printed **Run ID**):
 
 ```bash
-agentctl logs --project examples/incident-triage --state /tmp/incident-triage-state.db --run <run-id>
+terfyn logs --project examples/incident-triage --state /tmp/incident-triage-state.db --run <run-id>
 ```
 
 You should see the triage step, then **`system_error`** with reason **`approval_required`** (and **no** `tool_execution` for restart).
@@ -61,13 +61,13 @@ You should see the triage step, then **`system_error`** with reason **`approval_
 Verify the trace chain was not tampered with:
 
 ```bash
-agentctl audit verify --project examples/incident-triage --state /tmp/incident-triage-state.db --run <run-id>
+terfyn audit verify --project examples/incident-triage --state /tmp/incident-triage-state.db --run <run-id>
 ```
 
 ### Allow the restart (full success)
 
 ```bash
-agentctl run workflow/incident-triage \
+terfyn run workflow/incident-triage \
   --project examples/incident-triage \
   --state /tmp/incident-triage-state.db \
   --input-file examples/incident-triage/fixtures/sample-alert.json \

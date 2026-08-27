@@ -31,9 +31,9 @@ are reported as unchained and do not fail verification.
 Without --run, verifies recent runs only (default --limit 50, max 500).
 
 Examples:
-  agentctl audit verify
-  agentctl audit verify --run <run-id>
-  agentctl audit verify --limit 200
+  terfyn audit verify
+  terfyn audit verify --run <run-id>
+  terfyn audit verify --limit 200
 
 Exit codes:
   0 — all checked chains valid (unchained rows allowed)

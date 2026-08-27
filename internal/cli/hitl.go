@@ -18,7 +18,7 @@ import (
 )
 
 // EnvHitlActor overrides the actor recorded on approval trace events.
-const EnvHitlActor = "AGENTCTL_HITL_ACTOR"
+const EnvHitlActor = "TERFYN_HITL_ACTOR"
 
 // maxDecisionEditJSONBytes caps --decision-edit-json size (well below checkpoint limits).
 const maxDecisionEditJSONBytes = 1 << 20

@@ -36,7 +36,7 @@ spec:
     backend: sqlite
     dsn: .agentic/state.db
 `)
-	writeFile(t, filepath.Join(home, ".config", "agentctl", "config.yaml"), `state:
+	writeFile(t, filepath.Join(home, ".config", "terfyn", "config.yaml"), `state:
   dsn: /tmp/user-global-state.db
 `)
 

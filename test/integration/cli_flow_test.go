@@ -480,7 +480,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		}
 	})
 
-	// examples/regression-test: agentctl test is green on requiredFor, red after dropping the gate.
+	// examples/regression-test: terfyn test is green on requiredFor, red after dropping the gate.
 	t.Run("regression_test_unsafe_policy_fails_fixture", func(t *testing.T) {
 		root := repoRoot(t)
 		src := filepath.Join(root, "examples", "regression-test")

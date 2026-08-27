@@ -33,7 +33,7 @@ type ResolveOptions struct {
 	ProjectRoot string
 	Env         string
 	StatePath   string // CLI --state override (highest precedence for state DSN)
-	HomeDir     string // user home for ~/.config/agentctl; empty uses os.UserHomeDir
+	HomeDir     string // user home for ~/.config/terfyn; empty uses os.UserHomeDir
 }
 
 // ResolvedConfig is a frozen snapshot of the fully resolved project configuration.

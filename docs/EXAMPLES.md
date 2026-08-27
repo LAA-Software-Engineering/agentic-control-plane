@@ -1,24 +1,24 @@
 # Examples
 
-Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML spec, CLI behaviour, and field semantics, see [**`DESIGN_DOC.md`**](DESIGN_DOC.md). For **`agentctl test`** fixture format, see [**`TESTING.md`**](TESTING.md).
+Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML spec, CLI behaviour, and field semantics, see [**`DESIGN_DOC.md`**](DESIGN_DOC.md). For **`terfyn test`** fixture format, see [**`TESTING.md`**](TESTING.md).
 
-A checked-in copy of the **OpenAI `support_snippet`** project from **section 4** lives under [**`examples/example1/`**](../examples/example1/). Its **`metadata.name`** is **`example1`**, matching that folder. From the repository root, pass **`--project examples/example1`** to **`agentctl`** (or **`cd` there** and use **`--project .`**).
+A checked-in copy of the **OpenAI `support_snippet`** project from **section 4** lives under [**`examples/example1/`**](../examples/example1/). Its **`metadata.name`** is **`example1`**, matching that folder. From the repository root, pass **`--project examples/example1`** to **`terfyn`** (or **`cd` there** and use **`--project .`**).
 
-### Formatting YAML (`agentctl fmt`)
+### Formatting YAML (`terfyn fmt`)
 
 Normalize indentation (2 spaces) for **`project.yaml`** / **`project.yml`** and every file in **`spec.imports`** (same closure as validate/load). **`--check`** exits **1** if any file would change (CI). **YAML comments may be lost** on rewrite—commit or branch before running.
 
 ```bash
-agentctl fmt --project my-agent-system
-agentctl fmt --check --project .
+terfyn fmt --project my-agent-system
+terfyn fmt --check --project .
 ```
 
 ---
 
-## 1. Scaffold with `agentctl init`
+## 1. Scaffold with `terfyn init`
 
 ```bash
-agentctl init my-agent-system
+terfyn init my-agent-system
 ```
 
 Creates a directory layout like:
@@ -117,10 +117,10 @@ spec:
 Run the usual loop from the parent of the project directory:
 
 ```bash
-agentctl validate --project my-agent-system
-agentctl plan   --project my-agent-system
-agentctl apply  --project my-agent-system --auto-approve
-agentctl run    workflow/hello --project my-agent-system
+terfyn validate --project my-agent-system
+terfyn plan   --project my-agent-system
+terfyn apply  --project my-agent-system --auto-approve
+terfyn run    workflow/hello --project my-agent-system
 ```
 
 ---
@@ -146,7 +146,7 @@ spec:
 **Security**
 
 - Prefer **HTTPS** in production. The default Go client performs **normal TLS certificate verification** against the system trust store; do not disable verification for MCP calls.
-- **`stdio`** and **`http`** are mutually exclusive in **`spec.mcp`**: set **`command`** only for stdio, **`url`** only for HTTP (validated at `agentctl validate`).
+- **`stdio`** and **`http`** are mutually exclusive in **`spec.mcp`**: set **`command`** only for stdio, **`url`** only for HTTP (validated at `terfyn validate`).
 - Workflow trace events for tool steps record **`uses`** and cost, not HTTP headers or resolved env values; keep custom logging of MCP traffic free of secrets.
 
 ---
@@ -155,7 +155,7 @@ spec:
 
 This is a small but **end-to-end** project: a **native echo** step supplies fixed “policy” text, then **`gpt-4o-mini`** drafts a one-line customer reply. You need a valid **[OpenAI API key](https://platform.openai.com/api-keys)** and outbound **HTTPS** to `api.openai.com`.
 
-**Repo copy:** [**`examples/example1/`**](../examples/example1/) — **`agentctl validate --project examples/example1`** from the repo root, or **`agentctl validate --project .`** after **`cd examples/example1`**.
+**Repo copy:** [**`examples/example1/`**](../examples/example1/) — **`terfyn validate --project examples/example1`** from the repo root, or **`terfyn validate --project .`** after **`cd examples/example1`**.
 
 The runtime calls OpenAI’s **`/v1/chat/completions`** endpoint. The agent **must** answer with a **single JSON object** (no markdown fences); the engine parses that object and exposes its fields to **`spec.output`**.
 
@@ -265,7 +265,7 @@ spec:
       line: ${steps.compose.output.line}
 ```
 
-**Zero-argument demo.** To run **`agentctl run workflow/support_snippet`** with no **`--input`**, put a literal product on the first step and thread it through **`steps.context.output.echo`** (the checked-in [**`examples/example1/`**](../examples/example1/) tree uses **`${input.product}`** instead, so it **requires** **`--input product=...`** unless you edit the YAML):
+**Zero-argument demo.** To run **`terfyn run workflow/support_snippet`** with no **`--input`**, put a literal product on the first step and thread it through **`steps.context.output.echo`** (the checked-in [**`examples/example1/`**](../examples/example1/) tree uses **`${input.product}`** instead, so it **requires** **`--input product=...`** unless you edit the YAML):
 
 ```yaml
     - id: context
@@ -292,12 +292,12 @@ If you copied the files to another folder, point **`--project`** at that path in
 ```bash
 export OPENAI_API_KEY="sk-..."   # required for any step that calls the model
 
-agentctl validate --project examples/example1
-agentctl plan   --project examples/example1
-agentctl apply  --project examples/example1 --auto-approve
+terfyn validate --project examples/example1
+terfyn plan   --project examples/example1
+terfyn apply  --project examples/example1 --auto-approve
 
 # Checked-in example1 workflow uses ${input.product} on the context step:
-agentctl run workflow/support_snippet --project examples/example1 --input product="ACME USB-C hub"
+terfyn run workflow/support_snippet --project examples/example1 --input product="ACME USB-C hub"
 
 # After switching the workflow to a literal product + steps.context... (see above), you can omit --input.
 ```
@@ -305,7 +305,7 @@ agentctl run workflow/support_snippet --project examples/example1 --input produc
 Default **`run`** output is still **Run ID + status**. To see the workflow **`spec.output`** object ( **`product`**, **`subject`**, **`line`**, etc.):
 
 ```bash
-agentctl logs --run <run-id> --project examples/example1
+terfyn logs --run <run-id> --project examples/example1
 ```
 
 After the trace table, the CLI prints **Workflow output (from spec.output)** as indented JSON when the run succeeded and **`output_json`** is non-empty.
@@ -313,15 +313,15 @@ After the trace table, the CLI prints **Workflow output (from spec.output)** as 
 Or list recent runs as JSON (includes **`output`** on each run):
 
 ```bash
-agentctl logs -o json --project examples/example1
+terfyn logs -o json --project examples/example1
 ```
 
-**`agentctl logs --run <id> -o json`** also includes top-level **`input`**, **`output`**, and **`workflowName`** alongside **`events`**. Chained events include **`prevHash`** and **`hash`** when present (issue #116).
+**`terfyn logs --run <id> -o json`** also includes top-level **`input`**, **`output`**, and **`workflowName`** alongside **`events`**. Chained events include **`prevHash`** and **`hash`** when present (issue #116).
 
 To verify trace integrity after a run:
 
 ```bash
-agentctl audit verify --project examples/example1 --run <run-id>
+terfyn audit verify --project examples/example1 --run <run-id>
 ```
 
 See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
@@ -354,7 +354,7 @@ spec:
 Add **`./environments/staging.yaml`** to **`spec.imports`** in `project.yaml`, then:
 
 ```bash
-agentctl validate --project my-agent-system -e staging
+terfyn validate --project my-agent-system -e staging
 ```
 
 ---
@@ -372,14 +372,14 @@ The segment before **`/`** must match a key under **`spec.providers.models`**. U
 
 ## 7. GitHub Actions
 
-To run **`agentctl`** on **`pull_request`** (install binary, **`validate` / `plan` / `apply` / `run`**,
+To run **`terfyn`** on **`pull_request`** (install binary, **`validate` / `plan` / `apply` / `run`**,
 with **`--approve tool.github.pull_request.post_comment`** so a real review comment is posted), see
 [**`GITHUB_ACTIONS.md`**](GITHUB_ACTIONS.md) and the template under
 [**`examples/pr-review-github-actions/`**](../examples/pr-review-github-actions/README.md) (includes
 **`project.yaml`** with **OpenAI `gpt-4o-mini`** and the Actions template). The
 template also appends a **job summary** (`GITHUB_STEP_SUMMARY`), optional **Actions cache** for the
 SQLite file, and an optional **`gh pr comment`** pointer job (skipped by default when disabled). In
-this repo the PR workflow is **`.github/workflows/agentctl-pr-review.yml`**; manual publish for an
-arbitrary **`owner` / `repo` / `number`** is **`.github/workflows/agentctl-pr-review-publish.yml`**.
+this repo the PR workflow is **`.github/workflows/terfyn-pr-review.yml`**; manual publish for an
+arbitrary **`owner` / `repo` / `number`** is **`.github/workflows/terfyn-pr-review-publish.yml`**.
 
-Fixture-style **`agentctl test`** (no API keys) is **[`examples/regression-test/`](../examples/regression-test/README.md)** with sample job **`.github/workflows/agentctl-test.yml`**. See **[`TESTING.md`](TESTING.md)**.
+Fixture-style **`terfyn test`** (no API keys) is **[`examples/regression-test/`](../examples/regression-test/README.md)** with sample job **`.github/workflows/terfyn-test.yml`**. See **[`TESTING.md`](TESTING.md)**.

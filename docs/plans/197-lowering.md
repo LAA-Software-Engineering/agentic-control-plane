@@ -148,5 +148,5 @@ composes: the named-arg key is the callee's input field — see `workflow_call.a
 Execution lowering / `Branch`/`Loop` (#199); type + effect checking of the effects clause
 (#198/#190); multi-operation-per-tool agent advertising (Epic F, #188/#204); a whole-input
 interpolation token + subworkflow input-document mapping (#194/#198, above); wiring `.agent`
-ingress into the project loader and `agentctl` (Epic H).
+ingress into the project loader and `terfyn` (Epic H).
 </content>

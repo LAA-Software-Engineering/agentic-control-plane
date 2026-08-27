@@ -17,7 +17,7 @@ import (
 const agentExt = ".agent"
 
 // IsAgentSource reports whether path names a .agent authoring source. It is the
-// single predicate discovery, the loader, and `agentctl fmt` share, so the set
+// single predicate discovery, the loader, and `terfyn fmt` share, so the set
 // of files formatted is exactly the set the loader ingests (case-insensitive on
 // the extension).
 func IsAgentSource(path string) bool {
@@ -170,7 +170,7 @@ func errorDiags(diags lang.Diagnostics) lang.Diagnostics {
 }
 
 // ListAgentFiles returns every .agent file under root (sorted, skipping
-// dot-directories) — the same discovery the loader uses, exposed for `agentctl
+// dot-directories) — the same discovery the loader uses, exposed for `terfyn
 // fmt`.
 func ListAgentFiles(root string) ([]string, error) {
 	abs, err := filepath.Abs(filepath.Clean(root))

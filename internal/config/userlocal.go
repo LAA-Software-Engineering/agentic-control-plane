@@ -13,7 +13,7 @@ import (
 
 const (
 	// GlobalUserLocalRel is the per-user config path under the XDG config directory.
-	GlobalUserLocalRel = "agentctl/config.yaml"
+	GlobalUserLocalRel = "terfyn/config.yaml"
 	// ProjectUserLocalRel is the project-scoped user-local overlay (git-ignored).
 	ProjectUserLocalRel = ".agentic/local.yaml"
 )
@@ -54,7 +54,7 @@ func fileExists(path string) bool {
 }
 
 // globalConfigDir returns the directory that contains the global user-local file
-// (…/agentctl/config.yaml). When explicitHome is set, only explicitHome/.config is used
+// (…/terfyn/config.yaml). When explicitHome is set, only explicitHome/.config is used
 // (test isolation). Otherwise XDG_CONFIG_HOME wins, then os.UserHomeDir()/.config.
 func globalConfigDir(explicitHome string) string {
 	if h := strings.TrimSpace(explicitHome); h != "" {

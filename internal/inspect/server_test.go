@@ -199,7 +199,7 @@ func TestServer_API_readOnly(t *testing.T) {
 		}
 		defer res.Body.Close()
 		b, _ := io.ReadAll(res.Body)
-		if !strings.Contains(string(b), "agentctl inspector") {
+		if !strings.Contains(string(b), "terfyn inspector") {
 			t.Fatalf("body=%q", b)
 		}
 	})

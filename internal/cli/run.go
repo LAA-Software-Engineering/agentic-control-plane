@@ -53,20 +53,20 @@ Workflow input is built from optional --input-file (JSON object) plus repeated -
 
 Resume an interrupted or incomplete run with --resume <run-id> (no workflow argument).
 When a run pauses for human approval (a workflow approval: step or a policy-gated tool call),
-resume with --decision and related flags, or use --auto-approve / AGENTCTL_AUTO_APPROVE=1 for
+resume with --decision and related flags, or use --auto-approve / TERFYN_AUTO_APPROVE=1 for
 non-interactive approval.
 
 Attribution flags (--tenant-id, --thread-id, --actor-id) scope runs for multi-tenant logs and
 compliance. When omitted, local defaults apply (tenant-1 / thread-1 / user-1) with a stderr
 warning. Never rely on defaults in CI or production; pass real actor ids, set
-AGENTCTL_REQUIRE_ATTRIBUTION=1, or use --require-attribution. Env overrides: AGENTCTL_TENANT_ID,
-AGENTCTL_THREAD_ID, AGENTCTL_ACTOR_ID. The idempotency-key field is stored metadata only (no dedupe yet).
+TERFYN_REQUIRE_ATTRIBUTION=1, or use --require-attribution. Env overrides: TERFYN_TENANT_ID,
+TERFYN_THREAD_ID, TERFYN_ACTOR_ID. The idempotency-key field is stored metadata only (no dedupe yet).
 
 Examples:
-  agentctl run workflow/demo --input topic=hello
-  agentctl run workflow/demo --tenant-id acme --thread-id prod-session-1 --actor-id ci-bot
-  agentctl run workflow/demo --input-file input.json
-  agentctl run --resume run-abc123
+  terfyn run workflow/demo --input topic=hello
+  terfyn run workflow/demo --tenant-id acme --thread-id prod-session-1 --actor-id ci-bot
+  terfyn run workflow/demo --input-file input.json
+  terfyn run --resume run-abc123
 
 When .agentic/resolved-config.json or .agentic/policy-snapshot.json exists (from a prior
 validate/plan/apply), run compares those digests and fails with exit 3 if inputs changed
@@ -109,7 +109,7 @@ Exit codes (section 11.2):
 	cmd.Flags().StringVar(&inputFile, "input-file", "", "path to JSON file with workflow input object")
 	cmd.Flags().StringArrayVar(&inputPairs, "input", nil, "workflow input as key=value (repeatable; values are strings)")
 	cmd.Flags().StringArrayVar(&approves, "approve", nil, "approve a policy-gated tool uses string (repeatable)")
-	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "auto-approve human-in-the-loop gates (or set AGENTCTL_AUTO_APPROVE=1)")
+	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "auto-approve human-in-the-loop gates (or set TERFYN_AUTO_APPROVE=1)")
 	cmd.Flags().StringVar(&decision, "decision", "", "HITL decision when resuming: approve, reject, edit, or switch")
 	cmd.Flags().StringVar(&decisionEditJSON, "decision-edit-json", "", "JSON object of edited tool args when --decision edit")
 	cmd.Flags().StringVar(&decisionSwitchTarget, "decision-switch-target", "", "target operation when --decision switch")
@@ -121,7 +121,7 @@ Exit codes (section 11.2):
 	cmd.Flags().StringVar(&requestID, "request-id", "", "per-invocation correlation id (generated when omitted)")
 	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "client reference key stored on the run (dedupe not enforced yet)")
 	cmd.Flags().StringVar(&source, "source", "", "run origin label (default: cli)")
-	cmd.Flags().BoolVar(&requireAttribution, "require-attribution", false, "require explicit --tenant-id, --thread-id, and --actor-id (or set AGENTCTL_REQUIRE_ATTRIBUTION=1)")
+	cmd.Flags().BoolVar(&requireAttribution, "require-attribution", false, "require explicit --tenant-id, --thread-id, and --actor-id (or set TERFYN_REQUIRE_ATTRIBUTION=1)")
 	return cmd
 }
 
@@ -438,7 +438,7 @@ func writeRunOutput(cmd *cobra.Command, ctx context.Context, st *sqlite.Store, e
 			if got != nil {
 				fmt.Fprintf(&b, "Status: %s\n", got.Status)
 				if got.Status == state.RunStatusInterrupted {
-					fmt.Fprintf(&b, "Resume with: agentctl run --resume %s --decision approve|reject|edit|switch ...\n", runID)
+					fmt.Fprintf(&b, "Resume with: terfyn run --resume %s --decision approve|reject|edit|switch ...\n", runID)
 				}
 				if got.ErrorText != "" {
 					fmt.Fprintf(&b, "Error: %s\n", got.ErrorText)

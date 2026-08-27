@@ -27,7 +27,7 @@ func (e *UnsupportedToolKindError) Is(target error) bool {
 	return target == ErrUnsupportedToolKind
 }
 
-// Tool kinds supported by agentctl new tool.
+// Tool kinds supported by terfyn new tool.
 const (
 	ToolKindNative = "native"
 	ToolKindHTTP   = "http"

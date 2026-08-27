@@ -46,7 +46,7 @@ type ErrorResponse struct {
 	Code  string `json:"code,omitempty"`
 }
 
-// StepRecord is one run_steps row (inspector-only; not in agentctl logs JSON).
+// StepRecord is one run_steps row (inspector-only; not in terfyn logs JSON).
 type StepRecord struct {
 	StepID     string          `json:"stepId"`
 	Status     string          `json:"status"`

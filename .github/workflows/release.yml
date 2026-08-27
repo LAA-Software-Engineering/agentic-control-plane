@@ -1,4 +1,4 @@
-# Auto-tag and publish cross-compiled agentctl binaries on each merge to main (patch bump),
+# Auto-tag and publish cross-compiled terfyn binaries on each merge to main (patch bump),
 # or manually with workflow_dispatch (patch / minor / major).
 name: Release
 
@@ -125,17 +125,17 @@ jobs:
           LDFLAGS="-s -w -X ${MODULE}.Version=${VERSION}"
           mkdir -p dist work/linux-amd64 work/linux-arm64 work/darwin-amd64 work/darwin-arm64 work/windows-amd64
 
-          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/linux-amd64/agentctl ./cmd/agentctl
-          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o work/linux-arm64/agentctl ./cmd/agentctl
-          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/darwin-amd64/agentctl ./cmd/agentctl
-          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o work/darwin-arm64/agentctl ./cmd/agentctl
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/windows-amd64/agentctl.exe ./cmd/agentctl
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/linux-amd64/terfyn ./cmd/terfyn
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o work/linux-arm64/terfyn ./cmd/terfyn
+          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/darwin-amd64/terfyn ./cmd/terfyn
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o work/darwin-arm64/terfyn ./cmd/terfyn
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o work/windows-amd64/terfyn.exe ./cmd/terfyn
 
-          (cd work/linux-amd64 && tar czf "../../dist/agentctl-${VERSION}-linux-amd64.tar.gz" agentctl)
-          (cd work/linux-arm64 && tar czf "../../dist/agentctl-${VERSION}-linux-arm64.tar.gz" agentctl)
-          (cd work/darwin-amd64 && tar czf "../../dist/agentctl-${VERSION}-darwin-amd64.tar.gz" agentctl)
-          (cd work/darwin-arm64 && tar czf "../../dist/agentctl-${VERSION}-darwin-arm64.tar.gz" agentctl)
-          (cd work/windows-amd64 && zip -q "../../dist/agentctl-${VERSION}-windows-amd64.zip" agentctl.exe)
+          (cd work/linux-amd64 && tar czf "../../dist/terfyn-${VERSION}-linux-amd64.tar.gz" terfyn)
+          (cd work/linux-arm64 && tar czf "../../dist/terfyn-${VERSION}-linux-arm64.tar.gz" terfyn)
+          (cd work/darwin-amd64 && tar czf "../../dist/terfyn-${VERSION}-darwin-amd64.tar.gz" terfyn)
+          (cd work/darwin-arm64 && tar czf "../../dist/terfyn-${VERSION}-darwin-arm64.tar.gz" terfyn)
+          (cd work/windows-amd64 && zip -q "../../dist/terfyn-${VERSION}-windows-amd64.zip" terfyn.exe)
 
           (cd dist && sha256sum *.tar.gz *.zip | tee SHA256SUMS.txt)
 

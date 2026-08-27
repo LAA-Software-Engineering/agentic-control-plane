@@ -2,7 +2,7 @@ package statejson
 
 import "encoding/json"
 
-// TraceEventRecord is one trace_events row (agentctl logs -o json, inspector /api/runs/{id}).
+// TraceEventRecord is one trace_events row (terfyn logs -o json, inspector /api/runs/{id}).
 type TraceEventRecord struct {
 	Seq           int64           `json:"seq"`
 	Timestamp     string          `json:"timestamp"`
@@ -20,7 +20,7 @@ type TraceEventRecord struct {
 	Data          json.RawMessage `json:"data"`
 }
 
-// RunRecord is one runs row (agentctl logs -o json, inspector /api/runs).
+// RunRecord is one runs row (terfyn logs -o json, inspector /api/runs).
 type RunRecord struct {
 	RunID          string          `json:"runId"`
 	Workflow       string          `json:"workflow"`
@@ -41,7 +41,7 @@ type RunRecord struct {
 	Error          string          `json:"error,omitempty"`
 }
 
-// AppliedResourceRecord is one applied_resources row (agentctl state list -o json).
+// AppliedResourceRecord is one applied_resources row (terfyn state list -o json).
 type AppliedResourceRecord struct {
 	Kind               string `json:"kind"`
 	Name               string `json:"name"`
@@ -59,13 +59,13 @@ type AppliedProjectRecord struct {
 	AppliedAt   string `json:"appliedAt"`
 }
 
-// RunListPayload is the JSON envelope for agentctl logs (no filters).
+// RunListPayload is the JSON envelope for terfyn logs (no filters).
 type RunListPayload struct {
 	StatePath string      `json:"statePath"`
 	Runs      []RunRecord `json:"runs"`
 }
 
-// RunEventsPayload is the JSON envelope for agentctl logs --run.
+// RunEventsPayload is the JSON envelope for terfyn logs --run.
 type RunEventsPayload struct {
 	StatePath string             `json:"statePath"`
 	RunID     string             `json:"runId"`
@@ -73,7 +73,7 @@ type RunEventsPayload struct {
 	Events    []TraceEventRecord `json:"events"`
 }
 
-// StateListPayload is the JSON envelope for agentctl state list -o json.
+// StateListPayload is the JSON envelope for terfyn state list -o json.
 type StateListPayload struct {
 	Environment    string                  `json:"environment"`
 	StatePath      string                  `json:"statePath"`

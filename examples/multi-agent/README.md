@@ -7,7 +7,7 @@ This example is the distinctive **two-agent** demo. A **triager** looks up conte
 - **Handoff** — `workflows/handoff.yaml` has two agent steps. `fixer` receives `${steps.triager.output.summary}` and `${steps.triager.output.findings}`.
 - **Per-agent tools (Epic A)** — triager advertises read-only `lookup`; fixer advertises trusted mock `patch`. Neither name contains `restart`, so the empty-Script mock `tool_use`s that first tool, then returns Registry JSON (`summary` / `findings`).
 - **Distinct policies** — `triage-readonly` gates `tool.patch.default`; `apply-fix` does **not** (trusted write, not `requiredFor`). Both ceilings are **$5**, so four mock Generates at **$0.02** each stay under budget.
-- **Trace** — `agentctl logs` shows both step ids (`triager`, `fixer`) and at least two `llm_completion` events (one per Generate; each agent loops twice).
+- **Trace** — `terfyn logs` shows both step ids (`triager`, `fixer`) and at least two `llm_completion` events (one per Generate; each agent loops twice).
 
 ## Project layout
 
@@ -28,20 +28,20 @@ Do not commit `.agentic/` state from a local walkthrough.
 
 ## Prerequisites
 
-Build `agentctl` from the repo root (`make build`) or use a release binary on your `PATH`.
+Build `terfyn` from the repo root (`make build`) or use a release binary on your `PATH`.
 
 ## How to run
 
 From the **repository root**:
 
 ```bash
-agentctl validate --project examples/multi-agent
-agentctl plan --project examples/multi-agent --state /tmp/multi-agent.db
-agentctl apply --project examples/multi-agent --state /tmp/multi-agent.db --auto-approve
+terfyn validate --project examples/multi-agent
+terfyn plan --project examples/multi-agent --state /tmp/multi-agent.db
+terfyn apply --project examples/multi-agent --state /tmp/multi-agent.db --auto-approve
 ```
 
 ```bash
-agentctl run workflow/handoff \
+terfyn run workflow/handoff \
   --project examples/multi-agent \
   --state /tmp/multi-agent.db \
   --input-file examples/multi-agent/fixtures/sample-ticket.json
@@ -51,13 +51,13 @@ agentctl run workflow/handoff \
 - Inspect the trace (printed **Run ID**):
 
 ```bash
-agentctl logs --project examples/multi-agent --state /tmp/multi-agent.db --run <run-id>
+terfyn logs --project examples/multi-agent --state /tmp/multi-agent.db --run <run-id>
 ```
 
 You should see **both** step ids, **`llm_completion`** for each Generate, and `tool_selection` / `tool_execution` for `lookup` then `patch`. There is no `hitl_request_created`.
 
 ```bash
-agentctl audit verify --project examples/multi-agent --state /tmp/multi-agent.db --run <run-id>
+terfyn audit verify --project examples/multi-agent --state /tmp/multi-agent.db --run <run-id>
 ```
 
 ## Expected highlights

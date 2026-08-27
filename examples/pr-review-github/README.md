@@ -37,10 +37,10 @@ From the repository root:
 
 ```bash
 export GITHUB_TOKEN=ghp_...
-agentctl validate --project examples/pr-review-github
-agentctl plan   --project examples/pr-review-github --state /tmp/pr-github.db
-agentctl apply  --project examples/pr-review-github --state /tmp/pr-github.db --auto-approve
-agentctl run workflow/pr-review-github \
+terfyn validate --project examples/pr-review-github
+terfyn plan   --project examples/pr-review-github --state /tmp/pr-github.db
+terfyn apply  --project examples/pr-review-github --state /tmp/pr-github.db --auto-approve
+terfyn run workflow/pr-review-github \
   --project examples/pr-review-github \
   --state /tmp/pr-github.db \
   --input '{"owner":"YOUR_ORG","repo":"YOUR_REPO","number":123}'
@@ -52,7 +52,7 @@ Without `--approve tool.github.pull_request.post_comment`, the final step is **b
 To **publish** the review comment (after policy review of your YAML / process):
 
 ```bash
-agentctl run workflow/pr-review-github \
+terfyn run workflow/pr-review-github \
   --project examples/pr-review-github \
   --state /tmp/pr-github.db \
   --input '{"owner":"YOUR_ORG","repo":"YOUR_REPO","number":123}' \
@@ -66,4 +66,4 @@ without touching GitHub, including an **approved** run that exercises the live c
 
 ## GitHub Actions
 
-See **[`examples/pr-review-github-actions/`](../pr-review-github-actions/README.md)** and the PR workflow **[`.github/workflows/agentctl-pr-review.yml`](../../.github/workflows/agentctl-pr-review.yml)** (optional manual publish: **[`agentctl-pr-review-publish.yml`](../../.github/workflows/agentctl-pr-review-publish.yml)**). **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** covers exit code **5**, permissions, and fork PR notes.
+See **[`examples/pr-review-github-actions/`](../pr-review-github-actions/README.md)** and the PR workflow **[`.github/workflows/terfyn-pr-review.yml`](../../.github/workflows/terfyn-pr-review.yml)** (optional manual publish: **[`terfyn-pr-review-publish.yml`](../../.github/workflows/terfyn-pr-review-publish.yml)**). **[`docs/GITHUB_ACTIONS.md`](../../docs/GITHUB_ACTIONS.md)** covers exit code **5**, permissions, and fork PR notes.

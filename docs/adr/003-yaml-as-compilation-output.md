@@ -42,7 +42,7 @@ plus the hash-linked chain described in [`docs/AUDIT_CHAIN.md`](../AUDIT_CHAIN.m
 file that anyone could have edited after the fact.
 
 - Default path: `.agent` → in-memory resource graph → plan / apply. No YAML materializes.
-- `agentctl export --format yaml` produces it on demand, for inspection or handoff to other
+- `terfyn export --format yaml` produces it on demand, for inspection or handoff to other
   tools.
 
 ### 2. The YAML loader remains supported ingress to the IR — demoted in docs, not in code
@@ -98,9 +98,9 @@ binding name, AST child path); location comes from `Pos`. The two must stay sepa
   [`internal/spec/yamlhint.go`](../../internal/spec/yamlhint.go) and
   [`internal/project/yamlpaths.go`](../../internal/project/yamlpaths.go) should be maintained to
   preserve current behavior but not extended.
-- **Negative:** `agentctl fmt` currently formats YAML. It eventually formats `.agent`. Further
+- **Negative:** `terfyn fmt` currently formats YAML. It eventually formats `.agent`. Further
   investment in the YAML formatter is not worthwhile.
-- **Negative:** `agentctl init` scaffolds YAML today and must eventually scaffold `.agent`.
+- **Negative:** `terfyn init` scaffolds YAML today and must eventually scaffold `.agent`.
   Until Epic H ships, it keeps scaffolding YAML.
 - **Negative:** Existing users and all four `examples/` projects are YAML. Because the loader
   stays supported (decision 2), no migration is forced — but README and docs must be re-led on
@@ -118,5 +118,5 @@ remains, in practice, the only authoring surface.
 
 - ADR 002 — language frontend and IR expressiveness
 - ADR 001 — control plane vs runtime boundary
-- `docs/DESIGN_DOC.md` §3.5 (reviewable changes), §7 (YAML spec v0), §10 (`agentctl fmt`, `init`)
+- `docs/DESIGN_DOC.md` §3.5 (reviewable changes), §7 (YAML spec v0), §10 (`terfyn fmt`, `init`)
 - `docs/AUDIT_CHAIN.md` — tamper-evident applied state

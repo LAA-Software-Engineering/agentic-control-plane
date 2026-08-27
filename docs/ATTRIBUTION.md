@@ -18,7 +18,7 @@ Trace events duplicate `tenant_id`, `thread_id`, and `actor_id` from the parent 
 
 ## CLI defaults (local only)
 
-When flags are omitted, `agentctl run` stores:
+When flags are omitted, `terfyn run` stores:
 
 - `tenant_id`: `tenant-1`
 - `thread_id`: `thread-1`
@@ -28,14 +28,14 @@ When flags are omitted, `agentctl run` stores:
 **Do not rely on these defaults in CI or production.** A stderr warning is emitted when defaults apply. For CI/prod, pass real actor ids, set env vars, or enable the guardrail:
 
 ```bash
-export AGENTCTL_REQUIRE_ATTRIBUTION=1
-# or: agentctl run ... --require-attribution --tenant-id ... --thread-id ... --actor-id ...
+export TERFYN_REQUIRE_ATTRIBUTION=1
+# or: terfyn run ... --require-attribution --tenant-id ... --thread-id ... --actor-id ...
 ```
 
-Env overrides when flags are omitted: `AGENTCTL_TENANT_ID`, `AGENTCTL_THREAD_ID`, `AGENTCTL_ACTOR_ID`.
+Env overrides when flags are omitted: `TERFYN_TENANT_ID`, `TERFYN_THREAD_ID`, `TERFYN_ACTOR_ID`.
 
 ```bash
-agentctl run workflow/demo \
+terfyn run workflow/demo \
   --tenant-id acme \
   --thread-id prod-review-42 \
   --actor-id github-actions@acme
@@ -44,12 +44,12 @@ agentctl run workflow/demo \
 Filter history:
 
 ```bash
-agentctl logs --tenant-id acme --thread-id prod-review-42
+terfyn logs --tenant-id acme --thread-id prod-review-42
 ```
 
 ## Resume
 
-`agentctl run --resume <run-id>` reuses the original `run_id` and `thread_id` from the persisted run row. Attribution flags on resume are ignored so thread timelines stay coherent. `--parent-run-id` is for genuine sub-runs, not resumes.
+`terfyn run --resume <run-id>` reuses the original `run_id` and `thread_id` from the persisted run row. Attribution flags on resume are ignored so thread timelines stay coherent. `--parent-run-id` is for genuine sub-runs, not resumes.
 
 ## Inspector API
 

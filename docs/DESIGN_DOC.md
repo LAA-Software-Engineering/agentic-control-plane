@@ -164,9 +164,9 @@ This is intentionally Kubernetes-like because agent systems are graph-shaped and
 ## 5.1 High-level layout
 
 ```text
-agentctl/
+terfyn/
   cmd/
-    agentctl/
+    terfyn/
       main.go
 
   internal/
@@ -343,7 +343,7 @@ agentctl/
 
 ## 5.2 Package responsibilities
 
-### `cmd/agentctl`
+### `cmd/terfyn`
 
 Binary entrypoint.
 
@@ -487,7 +487,7 @@ End goal later:
 > workflow until the execution IR runs on the engine (a #207 follow-up), because the resource
 > graph cannot represent `if`/`for`. **YAML is the compilation output and interchange
 > format**, not the primary authoring surface: the loader still accepts it (machine-generated
-> resources, existing fixtures, and interchange all depend on it), `agentctl export --format yaml`
+> resources, existing fixtures, and interchange all depend on it), `terfyn export --format yaml`
 > materializes the compiled graph on demand, and nothing generated is written to disk by default.
 > Tools, policies, environments, and the `Project` config below have no `.agent` surface and are
 > authored in YAML. The kinds and fields in this section describe the resource model both surfaces
@@ -836,7 +836,7 @@ A `workflow:` step invokes another Workflow by static name (ADR 002 graph struct
 * Nesting is bounded by `spec.limits.maxWorkflowNesting` (default [`DefaultMaxWorkflowNesting`](../internal/spec/limits.go) = 8; 0/omitted uses the default). Exceeding the cap fails validate (and run) with a clear `maxWorkflowNesting` message.
 * **Policy (fail-closed):** a `workflow:` step enforces **both** the caller's and the callee's `spec.policy` ([`policy.StricterOf`](../internal/policy/stricter.go)). Either evaluator may deny. Merged `PolicySpec` for HITL uses the tighter cost/time ceilings, the **union** of `hitl.interruptOn` keys and `redactKeys`, and the **intersection** of allowed decisions / edit allowances. Nested DAGs admit and commit cost against the parent's live `totalCostUsd`.
 * Effect bounds walk `workflow:` steps; the caller's bound includes the callee's effects and the witness path shows the nesting (caller workflow → call step → callee workflow → …).
-* Traces emit `workflow_call_started` / `workflow_call_finished` and stamp `data_json.callStack` (callee names from the root) so `agentctl logs` shows the call structure. Nested `run_steps` use qualified ids `parentStep/childStep`. Step ids must not contain `/` (validate + engine) so those ids stay injective.
+* Traces emit `workflow_call_started` / `workflow_call_finished` and stamp `data_json.callStack` (callee names from the root) so `terfyn logs` shows the call structure. Nested `run_steps` use qualified ids `parentStep/childStep`. Step ids must not contain `/` (validate + engine) so those ids stay injective.
 * Checkpoints stack in-flight callee progress (`nested`) plus the outer DAG completion set. Resume continues **mid-subworkflow** without replaying completed inner or outer steps. Each nested frame is validated against the named callee (workflow exists, parent step is `workflow:`, inner ids belong to the callee) using the resolved `maxWorkflowNesting` cap.
 
 ### Human approval steps (issue #195)
@@ -1114,12 +1114,12 @@ Commands should be boring, stable, and scriptable.
 
 ## 10.2 Core commands
 
-## `agentctl init`
+## `terfyn init`
 
 Create starter project.
 
 ```bash
-agentctl init my-agent-system
+terfyn init my-agent-system
 ```
 
 Creates:
@@ -1134,14 +1134,14 @@ yes
 
 ---
 
-## `agentctl export`
+## `terfyn export`
 
 Materialize the compiled resource graph as YAML (ADR 003): compilation output produced on
 demand, never written to disk by default.
 
 ```bash
-agentctl export --format yaml            # multi-document YAML stream to stdout
-agentctl export --format yaml --output out/   # a loadable project (round-trips through the loader)
+terfyn export --format yaml            # multi-document YAML stream to stdout
+terfyn export --format yaml --output out/   # a loadable project (round-trips through the loader)
 ```
 
 The generated YAML is not the trustworthy record (applied deployment state plus the audit chain
@@ -1154,7 +1154,7 @@ yes
 
 ---
 
-## `agentctl fmt`
+## `terfyn fmt`
 
 Format `.agent` sources to canonical form and normalize project YAML. Idempotent. The YAML
 formatter is retained for the interchange path but not extended (ADR 003); comments are not
@@ -1166,13 +1166,13 @@ yes
 
 ---
 
-## `agentctl validate`
+## `terfyn validate`
 
 Validate project.
 
 ```bash
-agentctl validate
-agentctl validate -e prod
+terfyn validate
+terfyn validate -e prod
 ```
 
 Checks:
@@ -1204,13 +1204,13 @@ yes
 
 ---
 
-## `agentctl plan`
+## `terfyn plan`
 
 Show desired vs current diff.
 
 ```bash
-agentctl plan
-agentctl plan -e prod
+terfyn plan
+terfyn plan -e prod
 ```
 
 ### Output example
@@ -1267,14 +1267,14 @@ MVP does not support:
 
 ---
 
-## `agentctl apply`
+## `terfyn apply`
 
 Apply desired state.
 
 ```bash
-agentctl apply
-agentctl apply -e prod
-agentctl apply --auto-approve
+terfyn apply
+terfyn apply -e prod
+terfyn apply --auto-approve
 ```
 
 Behavior:
@@ -1290,13 +1290,13 @@ yes, but local only
 
 ---
 
-## `agentctl diff`
+## `terfyn diff`
 
 Show detailed resource diff.
 
 ```bash
-agentctl diff
-agentctl diff Agent/reviewer
+terfyn diff
+terfyn diff Agent/reviewer
 ```
 
 ### MVP
@@ -1305,13 +1305,13 @@ optional but strongly recommended
 
 ---
 
-## `agentctl run`
+## `terfyn run`
 
 Execute workflow ad hoc.
 
 ```bash
-agentctl run workflow/pr-review --input repo=acme/api --input number=42
-agentctl run workflow/pr-review --input-file input.json
+terfyn run workflow/pr-review --input repo=acme/api --input number=42
+terfyn run workflow/pr-review --input-file input.json
 ```
 
 Behavior:
@@ -1327,14 +1327,14 @@ yes
 
 ---
 
-## `agentctl logs`
+## `terfyn logs`
 
 Show execution traces.
 
 ```bash
-agentctl logs
-agentctl logs --run <run-id>
-agentctl logs --workflow pr-review
+terfyn logs
+terfyn logs --run <run-id>
+terfyn logs --workflow pr-review
 ```
 
 ### MVP
@@ -1343,14 +1343,14 @@ yes, basic trace/event view
 
 ---
 
-## `agentctl audit`
+## `terfyn audit`
 
 Verify tamper-evident hash chains over `trace_events`.
 
 ```bash
-agentctl audit verify
-agentctl audit verify --run <run-id>
-agentctl audit verify --limit 200
+terfyn audit verify
+terfyn audit verify --run <run-id>
+terfyn audit verify --limit 200
 ```
 
 Re-derives each stored `hash` and checks `prev_hash` linkage. Without `--run`, scans recent runs only (`--limit`, default 50, max 500). Pre-migration rows without hashes are reported as **unchained** and do not fail verification. Exit **1** on chain break. See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
@@ -1361,13 +1361,13 @@ yes (issue #116)
 
 ---
 
-## `agentctl inspect`
+## `terfyn inspect`
 
 Print normalized resource.
 
 ```bash
-agentctl inspect Workflow/pr-review
-agentctl inspect Agent/reviewer -o yaml
+terfyn inspect Workflow/pr-review
+terfyn inspect Agent/reviewer -o yaml
 ```
 
 Useful for debugging defaults and env overrides.
@@ -1378,13 +1378,13 @@ optional but useful
 
 ---
 
-## `agentctl test`
+## `terfyn test`
 
 Run fixture-based tests.
 
 ```bash
-agentctl test
-agentctl test workflow/pr-review
+terfyn test
+terfyn test workflow/pr-review
 ```
 
 ### Test file example
@@ -1414,12 +1414,12 @@ stretch MVP or early post-MVP
 
 ---
 
-## `agentctl fmt`
+## `terfyn fmt`
 
 Normalize YAML formatting.
 
 ```bash
-agentctl fmt
+terfyn fmt
 ```
 
 ### MVP
@@ -1428,13 +1428,13 @@ nice-to-have
 
 ---
 
-## `agentctl state`
+## `terfyn state`
 
 Inspect stored state.
 
 ```bash
-agentctl state list
-agentctl state show Agent/reviewer
+terfyn state list
+terfyn state show Agent/reviewer
 ```
 
 ### MVP
@@ -1687,9 +1687,9 @@ Responsibilities:
 * invoke provider
 * return structured output
 
-The engine implements the bounded tool-calling loop (issue #160). Each agent-declared Tool resource is advertised as one `ToolDef` (name = Tool metadata.name, permissive object schema). `agent.spec.tools` entries may be the Tool metadata name or a pinned uses string `tool.<name>.<operation>`. `ToolChoice` is `auto`. Type defaults when only the name is listed: native → `tool.<name>.echo`; mock/mcp → `tool.<name>.default`. HTTP has no default (`parseOperation` would treat `default` as `GET /default`); list `tool.<name>.<method.path>` — pinned `tool.<name>.default` is rejected the same way as a bare HTTP name. `agentctl validate` / `plan` apply these advertised-uses rules (unknown tools, HTTP method.path, conflicting ops on one Tool name). Only the ToolDef name is accepted as a `ToolCall.Name` (ADR 002: no operation is agent-callable unless it was advertised). Aliases such as `helper.echo`, `tool.helper.echo`, `helper.command.run`, or HTTP `delete.users` fail before `CheckToolCall` / `Tools.Call`. On `StopReason: tool_use`, each accepted call is checked with `CheckToolCall`, then executed via `Tools.Call` on the agent `constraints.timeoutSeconds` context. Results are appended as `ChatMessage.ToolResults` (with the assistant `ToolCalls` replayed) and the loop continues. Agents that declare no tools stay a single `Generate` with no `Tools` field. Loop cost (model + tool) accumulates into the step `GenerateMeta`; `policy.CheckRun` runs after each Generate and tool turn so `execution.maxTotalCostUsd` / wall-clock apply inside a single agent step. `constraints.maxIterations` (default 8, hard cap 32) counts **Generate turns**; `tool_use` on the last turn fails without executing those calls (`maxIterations: 1` is one completion, tools never run). A cutoff emits `limit_hit` (`kind: max_iterations`) and fails the step. HITL interrupt is **not** consulted inside the loop: inner uses must already be pre-approved (`agentctl run --approve` / `ApprovedActions`) or `CheckToolCall` fails closed. Policy denial uses the existing `DeniedError` path (CLI exit **5**).
+The engine implements the bounded tool-calling loop (issue #160). Each agent-declared Tool resource is advertised as one `ToolDef` (name = Tool metadata.name, permissive object schema). `agent.spec.tools` entries may be the Tool metadata name or a pinned uses string `tool.<name>.<operation>`. `ToolChoice` is `auto`. Type defaults when only the name is listed: native → `tool.<name>.echo`; mock/mcp → `tool.<name>.default`. HTTP has no default (`parseOperation` would treat `default` as `GET /default`); list `tool.<name>.<method.path>` — pinned `tool.<name>.default` is rejected the same way as a bare HTTP name. `terfyn validate` / `plan` apply these advertised-uses rules (unknown tools, HTTP method.path, conflicting ops on one Tool name). Only the ToolDef name is accepted as a `ToolCall.Name` (ADR 002: no operation is agent-callable unless it was advertised). Aliases such as `helper.echo`, `tool.helper.echo`, `helper.command.run`, or HTTP `delete.users` fail before `CheckToolCall` / `Tools.Call`. On `StopReason: tool_use`, each accepted call is checked with `CheckToolCall`, then executed via `Tools.Call` on the agent `constraints.timeoutSeconds` context. Results are appended as `ChatMessage.ToolResults` (with the assistant `ToolCalls` replayed) and the loop continues. Agents that declare no tools stay a single `Generate` with no `Tools` field. Loop cost (model + tool) accumulates into the step `GenerateMeta`; `policy.CheckRun` runs after each Generate and tool turn so `execution.maxTotalCostUsd` / wall-clock apply inside a single agent step. `constraints.maxIterations` (default 8, hard cap 32) counts **Generate turns**; `tool_use` on the last turn fails without executing those calls (`maxIterations: 1` is one completion, tools never run). A cutoff emits `limit_hit` (`kind: max_iterations`) and fails the step. HITL interrupt is **not** consulted inside the loop: inner uses must already be pre-approved (`terfyn run --approve` / `ApprovedActions`) or `CheckToolCall` fails closed. Policy denial uses the existing `DeniedError` path (CLI exit **5**).
 
-`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `agentctl plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is only sound against a pinned operation manifest (#204), which is **not shipped** (`tools/list` can still expand the world). Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
+`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `terfyn plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is only sound against a pinned operation manifest (#204), which is **not shipped** (`tools/list` can still expand the world). Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
 
 Abstraction:
 
@@ -1819,7 +1819,7 @@ Issue #116 adds a **tamper-evident hash chain** per run: each persisted event st
 
 [`internal/effects.Compute`](../internal/effects) walks an already-resolved **desired**
 `ProjectGraph` and returns a bound for every Agent and Workflow. It does not apply
-Environment overlays, call MCP `tools/list`, or change `CheckToolCall`. `agentctl plan`
+Environment overlays, call MCP `tools/list`, or change `CheckToolCall`. `terfyn plan`
 renders the bound and the authority delta vs stored deployment state (issue #191) in
 table/JSON/YAML.
 
@@ -2370,7 +2370,7 @@ Language frontend. See [ADR 002](adr/002-language-frontend-and-ir-expressiveness
 * lowering to the resource model with source maps
 * type and effect checking, including the checked `effects` clause
 * conditional steps and loops
-* YAML demoted to compilation output and interchange (`agentctl export`)
+* YAML demoted to compilation output and interchange (`terfyn export`)
 
 ---
 
@@ -2405,13 +2405,13 @@ User writes:
 ## Validate
 
 ```bash
-agentctl validate
+terfyn validate
 ```
 
 ## Plan
 
 ```bash
-agentctl plan
+terfyn plan
 ```
 
 Output:
@@ -2427,19 +2427,19 @@ Plan: 4 to add, 0 to change, 0 to delete
 ## Apply
 
 ```bash
-agentctl apply
+terfyn apply
 ```
 
 ## Run
 
 ```bash
-agentctl run workflow/pr-review --input repo=acme/api --input number=42
+terfyn run workflow/pr-review --input repo=acme/api --input number=42
 ```
 
 ## Inspect logs
 
 ```bash
-agentctl logs --workflow pr-review
+terfyn logs --workflow pr-review
 ```
 
 That is enough to prove the product.

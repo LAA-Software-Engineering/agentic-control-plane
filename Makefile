@@ -20,12 +20,12 @@ help: ## Show available targets
 
 all: fmt vet test build ## Format, vet, test, and build (local pre-push)
 
-build: ## Build agentctl into bin/agentctl
+build: ## Build terfyn into bin/terfyn
 	mkdir -p bin
-	go build -trimpath -o bin/agentctl ./cmd/agentctl
+	go build -trimpath -o bin/terfyn ./cmd/terfyn
 
-install: ## Install agentctl with go install (honours GOBIN / GOPATH/bin)
-	go install -trimpath ./cmd/agentctl
+install: ## Install terfyn with go install (honours GOBIN / GOPATH/bin)
+	go install -trimpath ./cmd/terfyn
 
 clean: ## Remove bin/ and coverage.out
 	rm -rf bin/

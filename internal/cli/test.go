@@ -19,7 +19,7 @@ func newTestCmd() *cobra.Command {
 		Short: "Run YAML fixture tests under tests/",
 		Long: `Discover YAML files under <project>/tests/ (recursive), parse workflow test cases,
 and execute each case with the same project load, normalization, and environment overlay as
-agentctl run (issue #73, design doc §10.2, §17.4).
+terfyn run (issue #73, design doc §10.2, §17.4).
 
 Use mock/native providers in project YAML for deterministic runs. Assertions: expect.outputContains
 (substrings on the workflow output JSON) and expectError.
@@ -27,9 +27,9 @@ Use mock/native providers in project YAML for deterministic runs. Assertions: ex
 Optional argument filters to one workflow by metadata name: workflow/demo or demo (both accepted).
 
 Exit codes (§11.2): 0 all passed, 1 failures or I/O errors, 2 validation (bad project, bad suite, unknown workflow filter).`,
-		Example: `  agentctl test
-  agentctl test workflow/demo
-  agentctl test demo -o json`,
+		Example: `  terfyn test
+  terfyn test workflow/demo
+  terfyn test demo -o json`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {

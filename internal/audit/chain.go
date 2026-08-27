@@ -10,7 +10,7 @@ import (
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
-const genesisPrefix = "acp-audit-genesis-v1:"
+const genesisPrefix = "terfyn-audit-genesis-v1:"
 
 func hashHex(b []byte) string {
 	sum := sha256.Sum256(b)

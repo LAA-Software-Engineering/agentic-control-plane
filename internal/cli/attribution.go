@@ -11,16 +11,16 @@ import (
 )
 
 // EnvRequireAttribution, when set to a truthy value, requires explicit tenant/thread/actor ids on run.
-const EnvRequireAttribution = "AGENTCTL_REQUIRE_ATTRIBUTION"
+const EnvRequireAttribution = "TERFYN_REQUIRE_ATTRIBUTION"
 
 // EnvTenantID overrides --tenant-id when the flag is omitted.
-const EnvTenantID = "AGENTCTL_TENANT_ID"
+const EnvTenantID = "TERFYN_TENANT_ID"
 
 // EnvThreadID overrides --thread-id when the flag is omitted.
-const EnvThreadID = "AGENTCTL_THREAD_ID"
+const EnvThreadID = "TERFYN_THREAD_ID"
 
 // EnvActorID overrides --actor-id when the flag is omitted.
-const EnvActorID = "AGENTCTL_ACTOR_ID"
+const EnvActorID = "TERFYN_ACTOR_ID"
 
 type runAttributionFields struct {
 	TenantID           string
@@ -66,7 +66,7 @@ func warnAttributionDefaults(w io.Writer, attr state.RunAttribution) {
 	if w == nil || !state.UsesAttributionDefaults(attr) {
 		return
 	}
-	_, _ = fmt.Fprintf(w, "warning: run attribution using local defaults (tenant-1/thread-1/user-1); set --tenant-id, --thread-id, and --actor-id or AGENTCTL_REQUIRE_ATTRIBUTION=1 in CI/prod\n")
+	_, _ = fmt.Fprintf(w, "warning: run attribution using local defaults (tenant-1/thread-1/user-1); set --tenant-id, --thread-id, and --actor-id or TERFYN_REQUIRE_ATTRIBUTION=1 in CI/prod\n")
 }
 
 func firstNonEmpty(values ...string) string {
