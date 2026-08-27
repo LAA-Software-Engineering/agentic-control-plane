@@ -58,6 +58,7 @@ func preserveDerivedGraphFields(src, dst *ProjectGraph) {
 			continue
 		}
 		tr.Pos = srcTr.Pos
+		tr.Spec.OperationsDeclared = srcTr.Spec.OperationsDeclared
 		copyToolDiagnosticPos(srcTr, tr)
 	}
 	for name, wr := range dst.Workflows {

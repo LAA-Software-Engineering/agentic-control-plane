@@ -732,17 +732,28 @@ that set cannot grow after the bound is computed, so the manifest is authoritati
 *populate* a desired manifest during authoring, but it merges only `spec.safety`; it never adds
 operations. The deployed manifest is reconstructed from the applied Tool spec.
 
-`[tools.DeriveManifest]` builds the manifest and `[tools.CapabilityManifest.Digest]` /
-`[tools.GraphManifestDigest]` pin its identity, so an operation appearing, disappearing, or
-changing its effects is **manifest drift** — reported by `plan` as a Tool state change, not
-silently absorbed.
+`[tools.DeriveManifest]` builds the manifest. **Manifest drift** — an operation appearing,
+disappearing, or changing its effects — is reported by `plan` as a Tool state change because
+`spec.operations` lives in the Tool's normalized spec, so it already changes the resource spec hash
+that `plan`/`apply` diff; #204 coordinates with that existing pin rather than adding a second one.
+`[tools.CapabilityManifest.Digest]` / `[tools.GraphManifestDigest]` are manifest-identity
+primitives for direct comparison and the forthcoming #207 run-pin, not a separate plan/apply pin.
+An input schema per operation is not yet modeled on `ToolOperation`, so schema drift is out of
+scope until it is.
+
+**Closed vs open.** Enforcement is opt-in per tool. An **omitted** `operations` key is an *open*
+callable set (backward compatible — existing MCP/HTTP examples dispatch every operation). A
+*declared* `operations` manifest — including an empty `operations: {}` — is a **closed** world:
+only its declared operations are callable, and an empty one denies all. Closedness is a presence
+bit (`ToolSpec.OperationsDeclared`, preserved across the resolve-freeze), not the operation count,
+so shrinking a manifest to empty cannot silently widen it to the universe.
 
 Runtime enforcement is on the policy path
-(`[policy.PolicyEvaluator.CheckToolCall]` → `ReasonOperationNotInManifest`): an operation absent
-from the deployed manifest is **denied**, traced (`system_error`), and exits **5**. A tool that
-declares no operations keeps an **open** callable set (backward compatible), so closed-world
-enforcement is opt-in via `spec.operations`. The manifest is a hard authority boundary: it binds
-even a nil or permissive policy, before any approval short-circuit.
+(`[policy.PolicyEvaluator.CheckToolCall]` → `ReasonOperationNotInManifest`, in **both** the
+compiled snapshot evaluator that `terfyn run` uses and the legacy evaluator): an operation absent
+from the deployed manifest is **denied**, traced (`system_error`), and exits **5**. The manifest is
+a hard authority boundary: it binds even a nil or permissive policy, before any approval or
+`DecisionAllow` short-circuit.
 
 **Not yet shipped (#207).** Enforcement currently uses the run's *resolved* graph, whose manifest
 is the declared `spec.operations`. The **run-pinned** guarantee — a resumed run enforcing the

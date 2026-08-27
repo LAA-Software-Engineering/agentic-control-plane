@@ -83,11 +83,16 @@ func stampAgentTools(file string, specNode *yaml.Node, s *AgentSpec) {
 }
 
 func stampToolOperations(file string, specNode *yaml.Node, s *ToolSpec) {
-	if s == nil || len(s.Operations) == 0 {
+	if s == nil {
 		return
 	}
 	ops := yamlMapValue(specNode, "operations")
-	if ops == nil || ops.Kind != yaml.MappingNode {
+	if ops == nil {
+		return
+	}
+	// The `operations` key is present (even if empty): closed-world manifest presence bit (#204).
+	s.OperationsDeclared = true
+	if ops.Kind != yaml.MappingNode || len(s.Operations) == 0 {
 		return
 	}
 	for i := 0; i+1 < len(ops.Content); i += 2 {

@@ -46,7 +46,17 @@ func (e *compiledEvaluator) CheckStep(ctx context.Context, step StepContext) err
 
 func (e *compiledEvaluator) CheckToolCall(ctx context.Context, call ToolCallContext) error {
 	_ = ctx
-	if e == nil || e.cp == nil {
+	if e == nil {
+		return checkSafetyDerived(nil, call)
+	}
+	// Closed-world capability manifest (#204) is a hard authority boundary: it binds before any
+	// residual short-circuit (Permissive, DecisionAllow) and a nil snapshot, so a live tools/list
+	// can never widen the callable set beyond the deployed manifest. This is the production path
+	// (terfyn run builds this evaluator via NewCompiledEvaluator).
+	if err := checkOperationInManifest(e.graph, call.Uses); err != nil {
+		return err
+	}
+	if e.cp == nil {
 		return checkSafetyDerived(e.graph, call)
 	}
 	res := e.cp.Residual

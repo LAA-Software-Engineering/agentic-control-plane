@@ -22,6 +22,13 @@ import (
 type CapabilityManifest struct {
 	// Tool is the Tool resource name (the <name> in tool.<name>.<operation>).
 	Tool string `json:"tool" yaml:"tool"`
+	// Closed is the presence bit for the closed callable world: true when the Tool declares an
+	// `operations` manifest at all (including an empty `operations: {}`). It is NOT len(Operations)
+	// > 0 — an empty declared manifest is a *closed* world that denies every operation, while an
+	// omitted manifest is an *open* world (backward compatible). Deriving closedness from the
+	// operation count would invert the relation: shrinking a manifest to empty would widen it to
+	// the universe.
+	Closed bool `json:"closed" yaml:"closed"`
 	// Operations are the allowed operations, sorted by name.
 	Operations []ManifestOperation `json:"operations,omitempty" yaml:"operations,omitempty"`
 }
@@ -39,7 +46,14 @@ type ManifestOperation struct {
 // The result is order-stable: operations sorted by name, each effect set sorted and unique.
 func DeriveManifest(name string, ts *spec.ToolSpec) CapabilityManifest {
 	m := CapabilityManifest{Tool: strings.TrimSpace(name)}
-	if ts == nil || len(ts.Operations) == 0 {
+	if ts == nil {
+		return m
+	}
+	// Closed when the author declared an `operations` key (OperationsDeclared, preserved across the
+	// resolve-freeze) or when any operation is present (covers programmatically built graphs and the
+	// .agent lowering path, which do not run the YAML stamp pass).
+	m.Closed = ts.OperationsDeclared || len(ts.Operations) > 0
+	if len(ts.Operations) == 0 {
 		return m
 	}
 	re := spec.ResolveToolEffects(name, ts)
@@ -58,11 +72,12 @@ func DeriveManifest(name string, ts *spec.ToolSpec) CapabilityManifest {
 	return m
 }
 
-// IsClosed reports whether the Tool declares a manifest at all. A tool that declares no
-// operations has an open callable set: closed-world enforcement is opt-in via spec.operations,
-// so existing MCP/HTTP examples without an operation manifest keep dispatching every operation.
+// IsClosed reports whether the Tool declares a manifest at all (the presence bit, not the operation
+// count). A tool that declares no `operations` key has an open callable set: closed-world
+// enforcement is opt-in, so existing MCP/HTTP examples without an operation manifest keep
+// dispatching every operation. A declared-but-empty `operations: {}` is closed and denies all.
 func (m CapabilityManifest) IsClosed() bool {
-	return len(m.Operations) > 0
+	return m.Closed
 }
 
 // Allows reports whether op is a member of a closed manifest. An open manifest (no declared
@@ -80,13 +95,23 @@ func (m CapabilityManifest) Allows(op string) bool {
 	return false
 }
 
-// Digest returns a stable SHA-256 hex digest of the manifest identity (tool, operations, and
-// each operation's effects). It is the value pinned so plan/apply can detect manifest drift —
-// an operation appearing, disappearing, or changing its declared effects — as a state change
-// rather than silently widening the callable set.
+// Digest returns a stable SHA-256 hex digest of the manifest identity (tool, closed bit,
+// operations, and each operation's effects).
+//
+// This is a manifest-identity primitive, not a second pinning mechanism. Manifest drift — an
+// operation appearing, disappearing, or changing its declared effects — is already reported by
+// plan because spec.operations lives in the Tool's normalized spec, so it changes the resource
+// spec hash that plan/apply already diff (issue #204 coordinates with the #112 resolved-config
+// digest rather than adding a parallel pin). The digest exists for direct manifest comparison and
+// for the forthcoming run-pinned deployment snapshot (#207). Note: an input schema per operation
+// is not yet modeled on ToolOperation, so schema drift is out of scope until it is.
 func (m CapabilityManifest) Digest() string {
 	var b strings.Builder
 	b.WriteString(m.Tool)
+	b.WriteByte(0)
+	if m.Closed {
+		b.WriteString("closed")
+	}
 	b.WriteByte(0)
 	// Operations are already sorted by DeriveManifest; sort defensively for hand-built values.
 	ops := append([]ManifestOperation(nil), m.Operations...)
@@ -103,9 +128,10 @@ func (m CapabilityManifest) Digest() string {
 	return hex.EncodeToString(sum[:])
 }
 
-// GraphManifestDigest returns a stable digest over every Tool's capability manifest in g.
-// It is a single authority value for the closed callable universe of a resolved graph; comparing
-// it across desired and deployed graphs (reconstructed from applied specs) detects manifest drift.
+// GraphManifestDigest returns a stable digest over every Tool's capability manifest in g. It is a
+// single manifest-identity value for the closed callable universe of a resolved graph, for direct
+// comparison across graphs. It is not the plan/apply pin (see [CapabilityManifest.Digest]):
+// operation drift already changes each Tool's normalized spec hash.
 func GraphManifestDigest(g *spec.ProjectGraph) string {
 	var b strings.Builder
 	if g != nil {

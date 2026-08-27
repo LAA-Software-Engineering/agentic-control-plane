@@ -290,19 +290,23 @@ plan→run digests" — a manual workaround for a known instability, with no enf
 deployed capability manifest.*
 
 Each `Tool` resource therefore carries an allowed-operation manifest with per-operation effects
-(`spec.operations`), derived by `tools.DeriveManifest` and digested by
-`tools.CapabilityManifest.Digest`. Runtime `tools/list` may return anything; operations absent
-from the deployed manifest are denied on the policy path (`CheckToolCall` →
-`operation_not_in_manifest`, exit 5, traced), and manifest drift — an operation appearing,
-disappearing, or changing effects — surfaces as a Tool state change in `plan` rather than silently
-expanding the callable set. This is tracked as a first-class Epic F issue (#204), not an
-afterthought.
+(`spec.operations`), derived by `tools.DeriveManifest`. Runtime `tools/list` may return anything;
+operations absent from the deployed manifest are denied on the policy path (`CheckToolCall` →
+`operation_not_in_manifest`, exit 5, traced), in **both** the compiled snapshot evaluator that
+`terfyn run` uses and the legacy evaluator, before any `Permissive`/`DecisionAllow` short-circuit.
+Manifest drift — an operation appearing, disappearing, or changing effects — surfaces as a Tool
+state change in `plan` because `spec.operations` is part of the Tool's normalized spec hash (the
+existing pin, per the note above about not adding a second pinning mechanism), rather than silently
+expanding the callable set. This is tracked as a first-class Epic F issue (#204).
 
-**Shipped by #204:** the desired/deployed manifest model, the digest, `validate`/`plan` bounding
-over the desired manifest, and runtime closed-world denial of operations outside the declared
-manifest. Enforcement is opt-in per tool: a tool that declares no `spec.operations` keeps an open
-callable set. Discovery merges only `spec.safety` and never adds operations, so it is never an
-authority source.
+**Shipped by #204:** the desired/deployed manifest model, `validate`/`plan` bounding over the
+desired manifest, and runtime closed-world denial of operations outside the declared manifest.
+Closedness is a presence bit (`operations: {}` is a closed, deny-all world; an omitted key is open
+and backward compatible), not the operation count, so shrinking a manifest cannot reopen it.
+Discovery merges only `spec.safety` and never adds operations, so it is never an authority source.
+`tools.CapabilityManifest.Digest` / `GraphManifestDigest` are manifest-identity primitives for
+comparison and the #207 run-pin, not a second plan/apply pin; an input schema per operation is not
+yet modeled, so schema drift is out of scope here.
 
 **Not shipped by #204 (deferred to #207):** the *run-pinned* deployed manifest below. Enforcement
 today uses the run's resolved graph; pinning the manifest a suspended run started with requires a

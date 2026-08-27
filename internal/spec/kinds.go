@@ -118,6 +118,13 @@ type ToolSpec struct {
 	Safety *ToolSafety `yaml:"safety,omitempty" json:"safety,omitempty"`
 	// Operations declares per-operation named effects (issue #188, ADR 002). Additive to Safety.
 	Operations map[string]ToolOperation `yaml:"operations,omitempty" json:"operations,omitempty"`
+	// OperationsDeclared is true when the YAML mapping included an `operations` key (even if
+	// empty). It is the presence bit for the closed-world capability manifest (issue #204): an
+	// empty `operations: {}` is a *closed* manifest that denies every operation, distinct from an
+	// omitted `operations` (an open callable set, backward compatible). The distinction cannot
+	// survive the JSON round-trip in [CloneProjectGraph] because `Operations` is omitempty, so this
+	// derived bit carries it — mirroring [WorkflowStep.NeedsDeclared]. Diagnostic; not identity.
+	OperationsDeclared bool `yaml:"-" json:"-"`
 	// Limits optionally overrides project execution byte limits for this tool (issue #117).
 	Limits *ExecutionLimits `yaml:"limits,omitempty" json:"limits,omitempty"`
 }

@@ -94,6 +94,56 @@ func TestGraphManifestDigest_driftOnOperationChange(t *testing.T) {
 	}
 }
 
+func TestManifest_emptyDeclaredManifestIsClosed(t *testing.T) {
+	// operations: {} (declared but empty) is a closed world that denies every operation — distinct
+	// from an omitted operations key. Shrinking a manifest to empty must not widen it to the universe.
+	closedEmpty := DeriveManifest("locked", &spec.ToolSpec{Type: "mcp", OperationsDeclared: true})
+	if !closedEmpty.IsClosed() {
+		t.Fatal("operations: {} must be a closed manifest")
+	}
+	if closedEmpty.Allows("anything") {
+		t.Fatal("an empty closed manifest must deny every operation")
+	}
+
+	omitted := DeriveManifest("legacy", &spec.ToolSpec{Type: "mcp"})
+	if omitted.IsClosed() {
+		t.Fatal("an omitted operations key is an open manifest (backward compatible)")
+	}
+	if !omitted.Allows("anything") {
+		t.Fatal("an open manifest allows every operation")
+	}
+
+	// The two must not share a digest: locking down to empty is not the same as never declaring.
+	if closedEmpty.Digest() == omitted.Digest() {
+		t.Fatal("closed-empty and omitted manifests must digest differently")
+	}
+}
+
+func TestManifest_closedBitSurvivesResolveFreeze(t *testing.T) {
+	// config.Resolve freezes the graph via CloneProjectGraph (a JSON round-trip). Operations is
+	// omitempty, so an empty map would serialize away — the OperationsDeclared presence bit must
+	// carry closedness across the freeze, or shrink-to-empty silently reopens the world.
+	g := &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
+		"locked": {
+			APIVersion: spec.APIVersionV0,
+			Kind:       spec.KindTool,
+			Metadata:   spec.Metadata{Name: "locked"},
+			Spec:       spec.ToolSpec{Type: "mcp", OperationsDeclared: true, Operations: map[string]spec.ToolOperation{}},
+		},
+	}}
+	frozen, err := spec.CloneProjectGraph(g)
+	if err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	m := ManifestFor(frozen, "locked")
+	if !m.IsClosed() {
+		t.Fatalf("closed-empty manifest lost its presence bit across the resolve-freeze: %+v", m)
+	}
+	if m.Allows("delete_repo") {
+		t.Fatal("closed-empty manifest must still deny after the freeze")
+	}
+}
+
 // Discovery may populate a desired manifest during authoring, but it is never an authority source:
 // a live tools/list must not widen the manifest. Here the mock MCP server advertises read_file and
 // write_file, yet the tool declares only read_file — the manifest still permits only read_file.
