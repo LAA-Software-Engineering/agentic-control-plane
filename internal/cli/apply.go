@@ -13,8 +13,11 @@ import (
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/apply"
 	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/deploy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
 	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -97,6 +100,9 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 		if err := writeApplyEmptyOutput(cmd, env, dsn, pl, rc, g); err != nil {
 			return err
 		}
+		if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env); err != nil {
+			return err
+		}
 		return persistSnapshots(rc)
 	}
 
@@ -137,7 +143,25 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 	if err := writeApplySuccessOutput(cmd, env, dsn, pl, rc, g, at); err != nil {
 		return err
 	}
+	if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env); err != nil {
+		return err
+	}
 	return persistSnapshots(rc)
+}
+
+// persistDeploymentSnapshot retains the immutable, content-addressed deployment snapshot for the
+// applied graph (issue #207) so later runs can pin it and inspect/logs can detect superseded runs.
+// Literal-secret warnings are printed to stderr; the snapshot preserves env: references verbatim
+// and never stores resolved secret values.
+func persistDeploymentSnapshot(ctx context.Context, cmd *cobra.Command, st state.ArtifactStore, graph *spec.ProjectGraph, env string) error {
+	_, warnings, err := deploy.BuildAndPersist(ctx, st, graph, env, Version)
+	if err != nil {
+		return fmt.Errorf("apply: persist deployment snapshot: %w", err)
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
+	}
+	return nil
 }
 
 func readApplyConfirmation(r io.Reader) (bool, error) {

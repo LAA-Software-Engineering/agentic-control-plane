@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/deploy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/render"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
@@ -228,12 +229,14 @@ func writeLogsRunList(cmd *cobra.Command, ctx context.Context, st *sqlite.Store,
 	if err != nil {
 		return fmt.Errorf("logs: list runs: %w", err)
 	}
+	records := statejson.Runs(runs)
+	deploy.MarkSupersededRuns(ctx, st, records)
 	out := cmd.OutOrStdout()
 	switch g.Output {
 	case render.FormatJSON:
-		return render.WriteJSON(out, statejson.RunListPayload{StatePath: dsn, Runs: statejson.Runs(runs)})
+		return render.WriteJSON(out, statejson.RunListPayload{StatePath: dsn, Runs: records})
 	case render.FormatYAML:
-		return render.WriteYAML(out, statejson.RunListPayload{StatePath: dsn, Runs: statejson.Runs(runs)})
+		return render.WriteYAML(out, statejson.RunListPayload{StatePath: dsn, Runs: records})
 	default:
 		var b strings.Builder
 		fmt.Fprintf(&b, "State: %s\n\n", dsn)
@@ -244,10 +247,14 @@ func writeLogsRunList(cmd *cobra.Command, ctx context.Context, st *sqlite.Store,
 		}
 		w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "RUN ID\tWORKFLOW\tENV\tSTATUS\tTENANT\tTHREAD\tACTOR\tSTARTED")
-		for _, r := range runs {
+		for _, r := range records {
+			status := r.Status
+			if r.Superseded {
+				status += " (superseded)"
+			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				r.RunID, r.WorkflowName, r.Env, r.Status, r.TenantID, r.ThreadID, r.ActorID,
-				r.StartedAt.UTC().Format(time.RFC3339),
+				r.RunID, r.Workflow, r.Env, status, r.TenantID, r.ThreadID, r.ActorID,
+				r.StartedAt,
 			)
 		}
 		if err := w.Flush(); err != nil {

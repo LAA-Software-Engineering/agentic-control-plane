@@ -20,6 +20,42 @@ type AppliedProject struct {
 	AppliedAt   time.Time
 }
 
+// DeploymentArtifact is one immutable, content-addressed payload in deployment_artifacts
+// (design doc §14, issue #207). Digest is the SHA-256 of Payload; identical payloads dedupe.
+// FormatVersion says how to decode Payload and must be checked before use — never reinterpret an
+// unknown format.
+type DeploymentArtifact struct {
+	Digest        string
+	Kind          string
+	FormatVersion string
+	Payload       []byte
+	CreatedAt     time.Time
+}
+
+// DeploymentSnapshot is one row in deployment_snapshots (design doc §14, issue #207): the
+// content-addressed root of the immutable configuration a run executed under. Digest is over the
+// canonical snapshot identity (format_version, compiler_version, environment, and the three
+// artifact digests) — not over timestamps or paths, so it is stable across a change of --state path
+// or project directory. CompilerVersion is provenance for the compilation as a whole; each
+// referenced artifact carries its own FormatVersion.
+type DeploymentSnapshot struct {
+	Digest                   string
+	FormatVersion            string
+	CompilerVersion          string
+	Environment              string
+	GraphDigest              string
+	ExecutionIRDigest        string
+	CapabilityManifestDigest string
+	CreatedAt                time.Time
+}
+
+// Artifact kind values for deployment_artifacts (issue #207).
+const (
+	ArtifactKindResolvedGraph      = "resolved_graph"
+	ArtifactKindExecutionIR        = "execution_ir"
+	ArtifactKindCapabilityManifest = "capability_manifest"
+)
+
 // Run status values stored on runs (design doc §14.2, issue #105).
 const (
 	RunStatusRunning     = "running"
@@ -42,13 +78,19 @@ type Run struct {
 	TotalCostUSD     float64
 	WorkflowSpecHash string
 	EnvironmentName  string
-	TenantID         string
-	ThreadID         string
-	ActorID          string
-	ParentRunID      string
-	RequestID        string
-	IdempotencyKey   string
-	Source           string
+	// DeploymentSnapshotDigest pins the immutable deployment snapshot this run executes under
+	// (issue #207). Resume hydrates configuration and authority from this snapshot rather than
+	// re-resolving current config, so a policy/tool/manifest edit landing mid-run cannot change an
+	// in-flight run's authority. Empty for runs created before #207 (resume falls back to current
+	// config for those).
+	DeploymentSnapshotDigest string
+	TenantID                 string
+	ThreadID                 string
+	ActorID                  string
+	ParentRunID              string
+	RequestID                string
+	IdempotencyKey           string
+	Source                   string
 }
 
 // RunStep is one row in run_steps (design doc §14.2).

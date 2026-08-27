@@ -72,6 +72,14 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		envLabel = "local"
 	}
 
+	// Pin the deployment snapshot (#207): resume enforces this exact configuration and authority,
+	// not whatever is deployed at resume time. Uses the effective environment label (cfg.Environment)
+	// so an identical config applied and run under the same env dedupes to one snapshot.
+	snapshotDigest, snapWarnings, err := r.pinDeploymentSnapshot(ctx, prep.graph, cfg.Environment())
+	if err != nil {
+		return runtime.RunResult{}, err
+	}
+
 	started := r.now()
 	attr := state.RunAttribution{
 		TenantID:       opts.TenantID,
@@ -88,15 +96,16 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		}
 	}
 	runRow := state.Run{
-		RunID:            runID,
-		WorkflowName:     wfName,
-		Env:              envLabel,
-		Status:           state.RunStatusRunning,
-		StartedAt:        started,
-		InputJSON:        string(inputBytes),
-		TotalCostUSD:     0,
-		WorkflowSpecHash: wfHash,
-		EnvironmentName:  strings.TrimSpace(opts.EnvironmentName),
+		RunID:                    runID,
+		WorkflowName:             wfName,
+		Env:                      envLabel,
+		Status:                   state.RunStatusRunning,
+		StartedAt:                started,
+		InputJSON:                string(inputBytes),
+		TotalCostUSD:             0,
+		WorkflowSpecHash:         wfHash,
+		EnvironmentName:          strings.TrimSpace(opts.EnvironmentName),
+		DeploymentSnapshotDigest: snapshotDigest,
 	}
 	state.ApplyAttribution(&runRow, attr)
 	if err := r.Store.StartRun(ctx, runRow); err != nil {
@@ -104,15 +113,19 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	}
 
 	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
-	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, trace.ActorAgent, map[string]any{
-		"workflow": wfName, "environment": cfg.Environment(),
-	}); err != nil {
+	startedData := map[string]any{"workflow": wfName, "environment": cfg.Environment()}
+	if snapshotDigest != "" {
+		// Cover the pinned deployment identity by the run's tamper-evident audit chain (#207): the
+		// event sequence now proves not just what happened but what configuration and authority ran.
+		startedData["deploymentSnapshot"] = snapshotDigest
+	}
+	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, trace.ActorAgent, startedData); err != nil {
 		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: trace run_started: %w", err)
 	}
 
 	runCfg := engineRunConfigFromInvoke(opts)
 	_, runErr := r.executeEngine(ctx, prep, runID, wfName, envLabel, started, input, runCfg, false, state.AttributionFromRun(&runRow), rec)
-	return runtime.RunResult{RunID: runID}, runErr
+	return runtime.RunResult{RunID: runID, Warnings: snapWarnings}, runErr
 }
 
 // Resume continues an existing run from its latest checkpoint.
@@ -149,7 +162,7 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		return runtime.RunResult{RunID: runID}, err
 	}
 
-	prep, err := r.prepareFromConfig(ctx, cfg)
+	prep, pinned, err := r.prepareForResume(ctx, run, cfg)
 	if err != nil {
 		return runtime.RunResult{RunID: runID}, err
 	}
@@ -170,8 +183,13 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	if input == nil {
 		input = map[string]any{}
 	}
-	if err := engine.ValidateWorkflowInput(prep.root, wf, input); err != nil {
-		return runtime.RunResult{RunID: runID}, err
+	// On the pinned-snapshot path the stored input was already validated at run start against the
+	// pinned schema; re-validating would re-read possibly-changed schema files, reintroducing the
+	// drift the snapshot exists to prevent. Only re-validate on the legacy (unpinned) fallback.
+	if !pinned {
+		if err := engine.ValidateWorkflowInput(prep.root, wf, input); err != nil {
+			return runtime.RunResult{RunID: runID}, err
+		}
 	}
 
 	if err := r.Store.UpdateRunStatus(ctx, runID, state.RunStatusRunning); err != nil {

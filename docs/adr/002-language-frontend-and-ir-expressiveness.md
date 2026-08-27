@@ -313,9 +313,10 @@ Discovery merges only `spec.safety` and never adds operations, so it is never an
 comparison and the #207 run-pin, not a second plan/apply pin; an input schema per operation is not
 yet modeled, so schema drift is out of scope here.
 
-**Not shipped by #204 (deferred to #207):** the *run-pinned* deployed manifest below. Enforcement
-today uses the run's resolved graph; pinning the manifest a suspended run started with requires a
-retained deployment snapshot.
+**Run-pinned manifest (shipped by #207):** a run pins its deployment snapshot
+(`runs.deployment_snapshot_digest`), and `run --resume` hydrates the resolved graph — including the
+capability manifest — from that snapshot rather than the run's live resolved graph, so a suspended
+run enforces the manifest it started with.
 
 ### Three kinds of manifest, and one authority per phase
 
@@ -349,8 +350,11 @@ resulting invariant:
 > An in-flight nondeterministic program cannot acquire new authority merely because the control
 > plane changed underneath it.
 
-This requires a retained, run-pinned deployment snapshot, not just pinned digests (#207) — and it
-is not true today.
+This requires a retained, run-pinned deployment snapshot, not just pinned digests — **shipped in
+#207**: `apply` and run-start retain immutable, content-addressed artifacts (resolved graph +
+capability manifest) rooted by a `deployment_snapshots` row, and `run --resume` hydrates authority
+from the run's pinned snapshot. Reproducibility limits still apply (below): a snapshot reproduces
+the *configuration* a run executed under, never the *execution*.
 
 **Reproducibility has the same kind of limit as soundness.** A snapshot reproduces the
 *configuration* a run executed under — graph, policy, manifest, lowered program. It does not

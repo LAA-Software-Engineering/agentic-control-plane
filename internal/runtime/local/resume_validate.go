@@ -27,6 +27,12 @@ func resolveConfigForResume(run *state.Run, cliEnv string) (string, error) {
 }
 
 // ResolvedConfigForRun resolves configuration for resume using the run's pinned environment.
+//
+// Since #207 this is no longer the authority source for a pinned run: [Runtime.Resume] hydrates the
+// graph (policy, tools, capability manifest) from the run's deployment snapshot, so a policy/tool
+// edit landing between suspend and resume cannot widen an in-flight run's authority. The resolved
+// config returned here supplies the project root and is the fallback graph for legacy runs created
+// before #207 (empty snapshot digest).
 func ResolvedConfigForRun(run *state.Run, base config.ResolveOptions, cliEnv string) (*config.ResolvedConfig, error) {
 	env, err := resolveConfigForResume(run, cliEnv)
 	if err != nil {

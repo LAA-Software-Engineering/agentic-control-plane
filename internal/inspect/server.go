@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/deploy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
@@ -174,13 +175,15 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list runs")
 		return
 	}
+	runRecords := statejson.Runs(runs)
+	deploy.MarkSupersededRuns(ctx, s.store, runRecords)
 	writeJSON(w, http.StatusOK, ListRunsResponse{
 		StatePath: s.cfg.StatePath,
 		Workflow:  filter.WorkflowName,
 		TenantID:  filter.TenantID,
 		ThreadID:  filter.ThreadID,
 		ActorID:   filter.ActorID,
-		Runs:      statejson.Runs(runs),
+		Runs:      runRecords,
 	})
 }
 
@@ -213,9 +216,11 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	}
 	events = trace.NormalizeEvents(events)
 
+	runRecords := []statejson.RunRecord{statejson.Run(*run)}
+	deploy.MarkSupersededRuns(ctx, s.store, runRecords)
 	resp := RunDetailResponse{
 		StatePath: s.cfg.StatePath,
-		Run:       statejson.Run(*run),
+		Run:       runRecords[0],
 		Steps:     stepsToRecords(steps),
 		Events:    statejson.TraceEvents(events),
 	}

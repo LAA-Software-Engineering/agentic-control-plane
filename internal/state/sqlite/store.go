@@ -79,3 +79,33 @@ func (s *Store) UpsertAppliedProject(ctx context.Context, p state.AppliedProject
 func (s *Store) GetAppliedProject(ctx context.Context, env, projectName string) (*state.AppliedProject, error) {
 	return getAppliedProject(ctx, s.db, env, projectName)
 }
+
+// PutArtifact stores an immutable content-addressed artifact, deduped by digest (issue #207).
+func (s *Store) PutArtifact(ctx context.Context, a state.DeploymentArtifact) error {
+	return putArtifact(ctx, s.db, a)
+}
+
+// GetArtifact returns the artifact for digest, or sql.ErrNoRows.
+func (s *Store) GetArtifact(ctx context.Context, digest string) (*state.DeploymentArtifact, error) {
+	return getArtifact(ctx, s.db, digest)
+}
+
+// PutSnapshot stores a deployment snapshot row, deduped by digest (issue #207).
+func (s *Store) PutSnapshot(ctx context.Context, snap state.DeploymentSnapshot) error {
+	return putSnapshot(ctx, s.db, snap)
+}
+
+// GetSnapshot returns the snapshot for digest, or sql.ErrNoRows.
+func (s *Store) GetSnapshot(ctx context.Context, digest string) (*state.DeploymentSnapshot, error) {
+	return getSnapshot(ctx, s.db, digest)
+}
+
+// LatestSnapshotDigestForEnv returns the newest snapshot digest for env, or sql.ErrNoRows.
+func (s *Store) LatestSnapshotDigestForEnv(ctx context.Context, env string) (string, error) {
+	return latestSnapshotDigestForEnv(ctx, s.db, env)
+}
+
+// PruneUnreferencedArtifacts removes snapshots/artifacts no run references (issue #207).
+func (s *Store) PruneUnreferencedArtifacts(ctx context.Context) (int64, error) {
+	return pruneUnreferencedArtifacts(ctx, s.db)
+}

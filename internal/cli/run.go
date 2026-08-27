@@ -332,6 +332,9 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 			var result runtime.RunResult
 			result, runErr = rtExec.Invoke(ctx, activeRC, invOpts)
 			runID = result.RunID
+			for _, w := range result.Warnings {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
+			}
 		}
 
 		outWfName := wfName

@@ -46,20 +46,21 @@ func Run(r state.Run) RunRecord {
 		in = "{}"
 	}
 	rec := RunRecord{
-		RunID:          r.RunID,
-		Workflow:       r.WorkflowName,
-		Env:            r.Env,
-		Status:         r.Status,
-		StartedAt:      r.StartedAt.UTC().Format(time.RFC3339Nano),
-		TotalCostUsd:   r.TotalCostUSD,
-		TenantID:       r.TenantID,
-		ThreadID:       r.ThreadID,
-		ActorID:        r.ActorID,
-		ParentRunID:    r.ParentRunID,
-		RequestID:      r.RequestID,
-		IdempotencyKey: r.IdempotencyKey,
-		Source:         r.Source,
-		Input:          json.RawMessage(in),
+		RunID:                    r.RunID,
+		Workflow:                 r.WorkflowName,
+		Env:                      r.Env,
+		Status:                   r.Status,
+		StartedAt:                r.StartedAt.UTC().Format(time.RFC3339Nano),
+		TotalCostUsd:             r.TotalCostUSD,
+		TenantID:                 r.TenantID,
+		ThreadID:                 r.ThreadID,
+		ActorID:                  r.ActorID,
+		ParentRunID:              r.ParentRunID,
+		RequestID:                r.RequestID,
+		IdempotencyKey:           r.IdempotencyKey,
+		Source:                   r.Source,
+		Input:                    json.RawMessage(in),
+		DeploymentSnapshotDigest: r.DeploymentSnapshotDigest,
 	}
 	if r.FinishedAt != nil {
 		rec.FinishedAt = r.FinishedAt.UTC().Format(time.RFC3339Nano)
@@ -80,6 +81,21 @@ func Runs(runs []state.Run) []RunRecord {
 		out = append(out, Run(r))
 	}
 	return out
+}
+
+// MarkSuperseded flags every record whose pinned deployment snapshot is not the latest one deployed
+// for its environment (issue #207). latestByEnv maps an environment label to its latest snapshot
+// digest; a record with an empty digest (pre-#207 run) or a matching digest is left unmarked.
+func MarkSuperseded(records []RunRecord, latestByEnv map[string]string) {
+	for i := range records {
+		d := records[i].DeploymentSnapshotDigest
+		if d == "" {
+			continue
+		}
+		if latest, ok := latestByEnv[records[i].Env]; ok && latest != "" && latest != d {
+			records[i].Superseded = true
+		}
+	}
 }
 
 // AppliedResource maps one applied_resources row.
