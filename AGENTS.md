@@ -56,6 +56,7 @@ Code reviews must determine whether a change deserves to merge, not whether it d
 - Findings must be posted as inline code comments on the PR diff whenever a diff line can anchor the issue. The top-level review should contain only the verdict and concise summary unless an issue cannot be attached inline.
 - Do not praise effort. Acknowledge good engineering only when it conveys useful technical contrast.
 - If no meaningful defect can be demonstrated, approve. Never manufacture a blocker.
+- **Authority TCB (raised standard).** For changes touching `internal/{effects,policy,deploy,tools,state,runtime,engine,plan,lang/lower}` or identity/manifest/schema fields in `internal/spec`, review against the soundness invariants in [`docs/SOUNDNESS.md`](docs/SOUNDNESS.md), not just local correctness. First question: *which invariants (S1–S8) can this change affect, and where are the regression tests?* A policy path that consults live disk during a pinned resume makes the central product claim false while everything looks green — that is not the same class of risk as a renderer bug. Scope decisions for new subsystems follow [ADR 004](docs/adr/004-scope-and-non-goals.md)'s necessity test.
 
 ## Pull requests (required for agents)
 
