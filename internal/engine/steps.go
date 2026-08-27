@@ -10,30 +10,11 @@ import (
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/models"
 	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
-	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
 	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
 	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 )
-
-func validateAgentOutput(projectRoot string, agent *spec.AgentResource, content string) error {
-	if agent == nil || agent.Spec.Output == nil {
-		return nil
-	}
-	sref := strings.TrimSpace(agent.Spec.Output.Schema)
-	if sref == "" {
-		return nil
-	}
-	path, err := schema.ResolveSchemaPath(projectRoot, sref)
-	if err != nil {
-		return fmt.Errorf("engine: agent output schema: %w", err)
-	}
-	if err := schema.Validate(path, []byte(strings.TrimSpace(content))); err != nil {
-		return fmt.Errorf("engine: agent output: %w", err)
-	}
-	return nil
-}
 
 func parseAgentJSONObject(content string) (map[string]any, error) {
 	content = strings.TrimSpace(content)
@@ -368,11 +349,9 @@ func costLimitHitData(d *policy.DeniedError, stepID string) map[string]any {
 }
 
 func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {
-	if !e.PinnedGraph {
-		// Pinned resume does not re-read agent output schema files under the current ProjectRoot.
-		if err := validateAgentOutput(e.ProjectRoot, agent, content); err != nil {
-			return nil, meta, err
-		}
+	// Validates against the pinned schema bundle on resume, or the on-disk schema on a fresh run.
+	if err := e.validateAgentOutputSchema(agent, content); err != nil {
+		return nil, meta, err
 	}
 	out, err := parseAgentJSONObject(content)
 	if err != nil {

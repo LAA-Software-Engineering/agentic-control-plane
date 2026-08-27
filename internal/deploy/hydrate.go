@@ -15,6 +15,10 @@ import (
 type Hydrated struct {
 	Graph    *spec.ProjectGraph
 	Snapshot *state.DeploymentSnapshot
+	// Schemas maps a schema ref (as the engine looks it up) to the JSON Schema content captured at
+	// run start. A pinned resume validates against these rather than re-reading files on disk. Nil
+	// or empty when the run captured no schemas.
+	Schemas map[string]string
 }
 
 // HydrateGraph reconstructs the resolved graph a run pinned at start from its deployment snapshot,
@@ -54,7 +58,25 @@ func HydrateGraph(ctx context.Context, store state.ArtifactStore, snapshotDigest
 	if err != nil {
 		return nil, err
 	}
-	return &Hydrated{Graph: graph, Snapshot: snap}, nil
+
+	schemas := map[string]string{}
+	if strings.TrimSpace(snap.SchemaBundleDigest) != "" {
+		bundle, err := store.GetArtifact(ctx, snap.SchemaBundleDigest)
+		if err != nil {
+			return nil, fmt.Errorf("deploy: load schema bundle %s: %w", short(snap.SchemaBundleDigest), err)
+		}
+		if bundle.FormatVersion != FormatSchemaBundleV1 {
+			return nil, fmt.Errorf(
+				"%w: cannot resume: schema bundle format %s is not supported by this runtime (supports %s)",
+				ErrUnsupportedFormat, bundle.FormatVersion, FormatSchemaBundleV1,
+			)
+		}
+		schemas, err = UnmarshalSchemaBundle(bundle.Payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &Hydrated{Graph: graph, Snapshot: snap, Schemas: schemas}, nil
 }
 
 func short(digest string) string {

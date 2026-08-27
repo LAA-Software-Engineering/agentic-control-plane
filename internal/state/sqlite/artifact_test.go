@@ -39,6 +39,24 @@ func TestArtifact_putGetDedupe(t *testing.T) {
 	}
 }
 
+func TestSnapshot_schemaBundleDigestRoundTrips(t *testing.T) {
+	st, ctx := openTestStore(t)
+	in := state.DeploymentSnapshot{
+		Digest: "s1", FormatVersion: "v1", Environment: "local", GraphDigest: "g1",
+		CapabilityManifestDigest: "m1", SchemaBundleDigest: "sb1",
+	}
+	if err := st.PutSnapshot(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetSnapshot(ctx, "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SchemaBundleDigest != "sb1" {
+		t.Fatalf("schema_bundle_digest = %q, want sb1", got.SchemaBundleDigest)
+	}
+}
+
 func TestCurrentSnapshot_pointerFollowsLastApplyIncludingRollback(t *testing.T) {
 	st, ctx := openTestStore(t)
 	// Content-addressed snapshot rows are immutable; the current pointer is a separate mutable row.

@@ -35,11 +35,11 @@ func graphWithPolicy(permit []string) *spec.ProjectGraph {
 
 func TestBuild_snapshotDigestStableAndManifestDigestPopulated(t *testing.T) {
 	g := graphWithPolicy([]string{"github.read"})
-	a, err := Build(g, "local", "v1")
+	a, err := Build(g, "local", "v1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := Build(g, "local", "v1")
+	b, err := Build(g, "local", "v1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,8 +63,8 @@ func TestBuild_snapshotDigestStableAndManifestDigestPopulated(t *testing.T) {
 }
 
 func TestBuild_digestChangesWhenPolicyWidens(t *testing.T) {
-	narrow, _ := Build(graphWithPolicy([]string{"github.read"}), "local", "v1")
-	wide, _ := Build(graphWithPolicy([]string{"github.read", "github.write"}), "local", "v1")
+	narrow, _ := Build(graphWithPolicy([]string{"github.read"}), "local", "v1", nil)
+	wide, _ := Build(graphWithPolicy([]string{"github.read", "github.write"}), "local", "v1", nil)
 	if narrow.Snapshot.GraphDigest == wide.Snapshot.GraphDigest {
 		t.Fatal("widening policy must change the graph digest")
 	}
@@ -76,8 +76,8 @@ func TestBuild_digestChangesWhenPolicyWidens(t *testing.T) {
 func TestBuild_snapshotDigestIndependentOfCompilerVersionExcludedFields(t *testing.T) {
 	// compiler_version is part of identity (provenance), but the graph payload/digest is not.
 	g := graphWithPolicy([]string{"github.read"})
-	a, _ := Build(g, "local", "v1")
-	b, _ := Build(g, "local", "v2")
+	a, _ := Build(g, "local", "v1", nil)
+	b, _ := Build(g, "local", "v2", nil)
 	if a.Snapshot.GraphDigest != b.Snapshot.GraphDigest {
 		t.Fatal("graph digest must not depend on compiler version")
 	}
@@ -265,7 +265,7 @@ func TestHydrateGraph_roundTripThroughStore(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore()
 	g := graphWithPolicy([]string{"github.read"})
-	digest, _, err := BuildAndPersist(ctx, store, g, "local", "v1")
+	digest, _, err := BuildAndPersist(ctx, store, g, "local", "v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,8 +298,8 @@ func TestBuildAndPersist_dedupes(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore()
 	g := graphWithPolicy([]string{"github.read"})
-	d1, _, _ := BuildAndPersist(ctx, store, g, "local", "v1")
-	d2, _, _ := BuildAndPersist(ctx, store, g, "local", "v1")
+	d1, _, _ := BuildAndPersist(ctx, store, g, "local", "v1", "")
+	d2, _, _ := BuildAndPersist(ctx, store, g, "local", "v1", "")
 	if d1 != d2 {
 		t.Fatal("identical build must produce identical digest")
 	}
