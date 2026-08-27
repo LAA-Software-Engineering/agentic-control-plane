@@ -1,8 +1,15 @@
 # Implementation plan — #198: Type and effect checking, including the checked `effects` clause
 
-Status: proposed (plan only — no implementation in this PR). Depends on #197 (lowering,
-merged), #189 (effect bounds, merged), #190 (policy enforcement, merged), #193 (typed step
-outputs, merged) — all landed, so this issue is unblocked.
+Status: in progress. Depends on #197 (lowering, merged), #189 (effect bounds, merged), #190
+(policy enforcement, merged), #193 (typed step outputs, merged) — all landed.
+
+**Delivered so far** (slices 1–3 below, combined into one PR rather than three): the
+`internal/lang/check` package as specified — symbol/type resolution, the checked `effects`
+clause (design decision 6), and invocation-argument/value-flow type checking (design
+decisions 4–5) — plus the differential test and the `docs/LANGUAGE.md` section (slice 4).
+Remaining: wiring `.agent` ingress into `agentctl`/`project.LoadProject` (explicitly out of
+scope per design decision 8) and full YAML-schema interop for cross-ingress type checking
+(noted as a follow-up in `internal/lang/check/types.go`'s `typeUniverse` doc comment).
 
 ## Goal
 

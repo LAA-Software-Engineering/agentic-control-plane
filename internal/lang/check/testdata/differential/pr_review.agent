@@ -1,0 +1,19 @@
+// Differential fixture: the YAML equivalent lives at ./yaml/. Both sides must
+// produce identical effects.Compute bounds for Workflow/PRReview
+// (TestDifferential_AgentAndYAMLProduceIdenticalEffectBounds).
+agent Reviewer {
+    policy guarded-writes
+    grants {
+        tool.github.merge_pr
+    }
+    input  ReviewRequest
+    output Review
+}
+
+workflow PRReview(input: PullRequest)
+    effects { github.read, github.write, destructive }
+{
+    pr = github.get_pr()
+    result = Reviewer(pr)
+    return result
+}

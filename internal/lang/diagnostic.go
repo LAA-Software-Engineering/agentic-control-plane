@@ -6,21 +6,45 @@ import (
 	"strings"
 )
 
-// Diagnostic is one positioned parse or lex error. The parser recovers after
-// each error (see parser.synchronize) so a single file yields every diagnostic
-// it can find in one pass rather than stopping at the first.
+// Severity distinguishes a fatal diagnostic from an advisory one. The zero
+// value is SeverityError so every pre-existing call site (lexer, parser,
+// lowering) that constructs a Diagnostic{Pos, Msg} without setting Severity is
+// unaffected — every diagnostic before #198 was an error.
+type Severity int
+
+const (
+	SeverityError Severity = iota
+	SeverityWarning
+)
+
+func (s Severity) String() string {
+	if s == SeverityWarning {
+		return "warning"
+	}
+	return "error"
+}
+
+// Diagnostic is one positioned parse, lowering, or checking problem. The parser
+// recovers after each error (see parser.synchronize) so a single file yields
+// every diagnostic it can find in one pass rather than stopping at the first.
 type Diagnostic struct {
-	Pos Pos
-	Msg string
+	Pos      Pos
+	Msg      string
+	Severity Severity
 }
 
 // Error formats the diagnostic as "file:line:col: message" using the shared
-// spec.Pos formatting; the location prefix is omitted when unknown.
+// spec.Pos formatting; the location prefix is omitted when unknown. A warning
+// is prefixed so it reads distinctly from an error in combined output.
 func (d Diagnostic) Error() string {
-	if loc := d.Pos.String(); loc != "" {
-		return loc + ": " + d.Msg
+	msg := d.Msg
+	if d.Severity == SeverityWarning {
+		msg = "warning: " + msg
 	}
-	return d.Msg
+	if loc := d.Pos.String(); loc != "" {
+		return loc + ": " + msg
+	}
+	return msg
 }
 
 // Diagnostics is an ordered collection of parse diagnostics.
@@ -42,6 +66,17 @@ func (ds Diagnostics) Sorted() Diagnostics {
 		return a.Column < b.Column
 	})
 	return out
+}
+
+// HasErrors reports whether ds contains at least one SeverityError diagnostic.
+// A caller should treat a Diagnostics value with only warnings as non-fatal.
+func (ds Diagnostics) HasErrors() bool {
+	for _, d := range ds {
+		if d.Severity != SeverityWarning {
+			return true
+		}
+	}
+	return false
 }
 
 // Error joins every diagnostic on its own line so Diagnostics satisfies the

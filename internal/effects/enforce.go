@@ -263,7 +263,7 @@ func (v *Violation) Error() string {
 		}
 		b.WriteByte('\n')
 	}
-	b.WriteString(formatWitness(v.Witness, v.Ident, v.Unknown, v.Uses))
+	b.WriteString(FormatWitness(v.Witness, v.Ident, v.Unknown, v.Uses))
 	fmt.Fprintf(&b, "\n  Policy/%s permits: %s", v.Policy, v.Permits)
 	return b.String()
 }
@@ -279,7 +279,8 @@ func rootLabel(kind HopKind, name string) string {
 	}
 }
 
-func formatWitness(hops []Hop, ident string, unknown bool, uses string) string {
+// FormatWitness renders a witness path as "  reachable via:\n    Workflow/...\n      -> step ...  (Agent/..., AUTONOMOUS)\n        -> tool.op  [effect]". Exported so internal/lang/check (issue #198) can render an identically-shaped message for a checked effects{} clause violation, reusing this formatter rather than reimplementing it.
+func FormatWitness(hops []Hop, ident string, unknown bool, uses string) string {
 	if len(hops) == 0 {
 		return ""
 	}

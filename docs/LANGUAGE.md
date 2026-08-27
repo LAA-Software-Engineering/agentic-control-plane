@@ -4,9 +4,12 @@
 [ADR 002](adr/002-language-frontend-and-ir-expressiveness.md). This document is the
 grammar reference for the **frontend as shipped in issue #196: lexing, parsing, and
 the typed AST only** — plus the **resource-model lowering added in #197** (see
-[Lowering to the resource model](#lowering-to-the-resource-model-197) below). There is no
-type or effect checking yet (#198), no execution lowering / `Branch`/`Loop` (#199), and no
-conditionals, loops, or dynamic fan-out.
+[Lowering to the resource model](#lowering-to-the-resource-model-197) below) and **type and
+effect checking, added in #198** (see [Type and effect checking](#type-and-effect-checking-198)
+below). There is no execution lowering / `Branch`/`Loop` yet (#199), no conditionals, loops,
+or dynamic fan-out, and `.agent` files are not yet ingested by `agentctl` or
+`project.LoadProject` — the checker is a library today, wired into a CLI command as a
+follow-up.
 
 The reference implementation is [`internal/lang`](../internal/lang):
 `lang.Parse(file, src) (*lang.File, lang.Diagnostics)`.
@@ -197,8 +200,105 @@ on every axis lowering owns (steps, `needs`, references) but does not yet pass f
 agent-spec validation. Lifting the one-operation-per-tool limit is tracked for Epic F
 (#188/#204); lowering already preserves every grant.
 
+## Type and effect checking (#198)
+
+[`internal/lang/check`](../internal/lang/check) implements the ADR 002 §5 "checked
+program" — the pass between the typed AST and the two sibling projections (the resource
+projection above, and a future execution lowering, #199):
+
+```go
+prog, diags := check.Check(f, check.Options{
+    Project:   yamlSiblingGraph, // already-loaded YAML resources this .agent file references
+    Files:     otherAgentFiles,  // other .agent ASTs in the same compilation unit
+    SchemaDir: dir,              // base dir for the TypeRef -> schema convention below
+})
+```
+
+`Check` always returns a non-nil `*check.Program`; `diags.HasErrors()` is the authority on
+pass/fail (a `check.Program` from a failing `Check` still holds whatever it managed to
+resolve, for tools that want partial results).
+
+### The checked `effects` clause
+
+`Check` computes the workflow's actual reachable effect set by **lowering the AST through
+the existing `lower.LowerFile` and calling the existing, unmodified `effects.Compute`**
+(#189) on the resulting graph — the same function the YAML ingress path already uses.
+There is exactly one effect-bound algorithm in the codebase either way, which is what makes
+the frontend and YAML paths agree on a bound by construction rather than by two
+independently-tested implementations (`TestDifferential_AgentAndYAMLProduceIdenticalEffectBounds`
+in `internal/lang/check` proves this for a paired `.agent`/YAML fixture).
+
+The declared `effects { }` clause is then checked against that computed bound:
+
+- **A computed effect the clause does not cover is an error.** This is the differentiating
+  claim from ADR 002: the check covers autonomous tool selection exactly as `effects.Compute`
+  does, so granting an agent a `destructive` tool fails compilation for every workflow that
+  can transitively reach it. The diagnostic reuses `effects.FormatWitness` — the same witness
+  rendering `internal/effects` uses for a policy violation (#190) — so the message shape,
+  including the `AUTONOMOUS` tag on an agent-selection edge, is identical:
+
+  ```text
+  workflow "PRReview" may perform effect `destructive`, which its effects clause does not declare
+
+    reachable via:
+      Workflow/PRReview
+        → step result  (Agent/Reviewer, AUTONOMOUS)
+          → tool.github.merge_pr  [destructive]
+  ```
+
+- **A declared effect the body cannot reach is a warning, not an error.** The clause is an
+  asserted upper bound; an over-broad one is not by itself a defect. This needed a
+  `Severity` on `lang.Diagnostic` (`SeverityError` — the zero value, so every pre-existing
+  diagnostic is unaffected — or `SeverityWarning`; `Diagnostics.HasErrors()` distinguishes
+  them).
+- **A reachable operation with no declared tool effects is always a violation**, matching
+  `effects.Check`'s fail-closed stance — no clause can cover an unknown effect.
+- A workflow with no `effects` clause is unchecked, matching how a YAML workflow with no
+  `Policy.spec.effects` is unaffected by `effects.Check`.
+
+### Type checking (agent invocation args, value flow)
+
+`Check` also resolves `TypeRef` names (`ReviewRequest`, `PullRequest`, `Review`, …) and
+checks call arguments and value flow between bindings against them, reusing the same
+`schema.Document` / `schema.TypeSet.Compatible` primitives `internal/spec/wiring.go` uses
+for YAML step wiring (#193) — but walking `CallExpr.Args` / `RefExpr.Parts` directly, so a
+mismatch reports the `.agent` call-site position rather than a synthesized step name.
+
+**A `TypeRef` name resolves to `<SchemaDir>/schemas/<Name>.json`** (`SchemaDir` defaults to
+the directory of the `.agent` file being checked). This is a new naming convention
+introduced by #198 — no earlier ADR or grammar text specifies how a type name becomes a
+schema, and it is the one design decision most likely to need revisiting; see
+[`docs/plans/198-type-effect-checking.md`](plans/198-type-effect-checking.md) design
+decision 4. A name with no matching schema file checks as **untyped**, consistent with
+#193's gradual typing — an unresolved or absent schema is always compatible, never an error.
+
+What is checked:
+
+- An agent invocation's **single positional argument** against the callee's declared
+  `input` type (the unambiguous case — an agent's `input` is one type, not a named
+  parameter list, so multiple positional or named arguments to an agent call have no
+  declared per-field mapping yet; lowering placeholder-keys them `arg0`, `arg1`, … pending a
+  rebind, and this checker leaves that case gradual rather than guessing a mapping).
+- A workflow invocation's arguments against the callee's declared, **ordered** parameters —
+  named arguments by name, positional arguments by declared position.
+- **Value flow through bindings**: `result = Synthesizer(...)` binds `result` to
+  `Synthesizer`'s declared output type; a later `result.summary` walks that type through
+  `schema.Document.Lookup`, and a field the schema declares forbidden
+  (`additionalProperties: false`) is a positioned error.
+- A `return <expr>` against the enclosing workflow's declared result type.
+- A dotted (tool) callee's arguments are checked for their own internal well-formedness
+  (nested calls, member access) but not against a declared parameter type — there is no
+  `.agent`-visible tool schema.
+- Only agents and workflows declared in the same compilation unit (`f` plus `Options.Files`)
+  get resolved types; a callee that resolves only through `Options.Project` (a YAML-only
+  sibling) is treated as untyped today — full YAML schema interop is a follow-up, not
+  silently assumed.
+
 ## Diagnostics
 
 `Parse` always returns a non-nil `*File` (possibly partial) plus a
-`lang.Diagnostics` slice sorted by position. Each `lang.Diagnostic` carries a `Pos` and
-a message and formats as `file:line:col: message`.
+`lang.Diagnostics` slice sorted by position. Each `lang.Diagnostic` carries a `Pos`, a
+message, and a `Severity` (`SeverityError`, the zero value, or `SeverityWarning` — added by
+#198 for the over-broad-effects-clause case above) and formats as
+`file:line:col: message` (a warning is prefixed `warning:`). `Diagnostics.HasErrors()`
+reports whether at least one entry is fatal.

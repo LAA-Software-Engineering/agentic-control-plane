@@ -1,0 +1,15 @@
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: PRReview
+spec:
+  policy: guarded-writes
+  steps:
+    - id: pr
+      uses: tool.github.get_pr
+    - id: result
+      agent: Reviewer
+      needs: [pr]
+  output:
+    value:
+      value: ${steps.result.output}

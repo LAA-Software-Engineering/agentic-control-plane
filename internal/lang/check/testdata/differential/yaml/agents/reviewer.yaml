@@ -1,0 +1,8 @@
+apiVersion: agentic.dev/v0
+kind: Agent
+metadata:
+  name: Reviewer
+spec:
+  policy: guarded-writes
+  tools:
+    - tool.github.merge_pr
