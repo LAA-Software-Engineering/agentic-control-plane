@@ -22,6 +22,11 @@ import (
 type Executor struct {
 	Graph       *spec.ProjectGraph
 	ProjectRoot string
+	// PinnedGraph marks that Graph was hydrated from a run's pinned deployment snapshot (issue
+	// #207). When set, policy authority is compiled from Graph (not the on-disk policy snapshot) and
+	// schema validation does not re-read live files under ProjectRoot, so a run resumes under the
+	// exact authority it started with even after a widening apply.
+	PinnedGraph bool
 	Tools       tools.ToolExecutor
 	Models      *models.Registry
 	// ModelResolve, if set, is used instead of Models.ClientFor (tests inject mocks).
@@ -100,11 +105,15 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := validateWorkflowInput(e.ProjectRoot, wf, in.Input); err != nil {
-		return e.failRun(ctx, in, err, 0)
+	if !e.PinnedGraph {
+		// Pinned resume: the input was validated at run start; re-reading schema files under the
+		// current ProjectRoot would reintroduce the drift the snapshot exists to prevent.
+		if err := validateWorkflowInput(e.ProjectRoot, wf, in.Input); err != nil {
+			return e.failRun(ctx, in, err, 0)
+		}
 	}
 
-	wfPol, err := compiledWorkflowEvaluator(e.ProjectRoot, e.Graph, strings.TrimSpace(wf.Spec.Policy))
+	wfPol, err := compiledWorkflowEvaluator(e.ProjectRoot, e.Graph, strings.TrimSpace(wf.Spec.Policy), e.PinnedGraph)
 	if err != nil {
 		return e.failRun(ctx, in, err, 0)
 	}

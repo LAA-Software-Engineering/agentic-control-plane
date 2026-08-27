@@ -368,8 +368,11 @@ func costLimitHitData(d *policy.DeniedError, stepID string) map[string]any {
 }
 
 func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {
-	if err := validateAgentOutput(e.ProjectRoot, agent, content); err != nil {
-		return nil, meta, err
+	if !e.PinnedGraph {
+		// Pinned resume does not re-read agent output schema files under the current ProjectRoot.
+		if err := validateAgentOutput(e.ProjectRoot, agent, content); err != nil {
+			return nil, meta, err
+		}
 	}
 	out, err := parseAgentJSONObject(content)
 	if err != nil {

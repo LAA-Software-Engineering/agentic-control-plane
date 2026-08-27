@@ -763,12 +763,20 @@ from the deployed manifest is **denied**, traced (`system_error`), and exits **5
 a hard authority boundary: it binds even a nil or permissive policy, before any approval or
 `DecisionAllow` short-circuit.
 
-**Not yet shipped (#207).** Enforcement currently uses the run's *resolved* graph, whose manifest
-is the declared `spec.operations`. The **run-pinned** guarantee — a resumed run enforcing the
-manifest it started with, reached through the run's deployment snapshot, rather than whatever is
-deployed at resume time — depends on retained deployment artifacts (#207). Until then an `apply`
-that lands mid-run can change an in-flight run's authority. See ADR 002, *Soundness assumptions
-and limits*.
+**Run-pinned (shipped by #207).** A run pins its deployment snapshot at start
+(`runs.deployment_snapshot_digest`); `run --resume` hydrates the resolved graph from that snapshot,
+and the engine takes its authority from the hydrated graph — `Executor.PinnedGraph` compiles the
+policy from the pinned graph instead of reading the on-disk `.agentic/policy-snapshot.json` (which
+`apply` overwrites), and skips live schema I/O under the current project root. So a resumed run
+enforces the policy **and** manifest it started with — approvals, presets, and safety-derived
+`CheckToolCall` decisions included — and an `apply` that lands mid-run cannot widen an in-flight
+run's authority. The canonical graph payload is a semantic projection: `WorkflowStep.NeedsDeclared`
+(the graph-vs-sequential signal) is part of identity and round-trips, so a resumed parallel-only
+workflow keeps its concurrent roots. **Known limit:** input/output JSON Schemas are referenced by
+path, not captured in the artifact, so a pinned resume *skips* schema re-validation rather than
+enforcing the pinned schema (schemas are gradual and the input was validated at start); capturing
+schema files in the snapshot is future work. See §14 and ADR 002, *Soundness assumptions and
+limits*.
 
 The scope limit still holds: the manifest bounds the callable *set* and each operation's *declared*
 effects. It does not verify what a remote endpoint actually does — the trust anchor is human review
@@ -1014,7 +1022,7 @@ Projects with no declared tool effects skip this check so existing examples stil
 Enforcement is `internal/effects.Check` at validate/plan command paths (exit **2**), not
 shared `config.Resolve`. Runtime `CheckToolCall` separately enforces the #204 closed-world
 capability manifest (an operation outside declared `spec.operations` is denied, exit **5**); the
-run-pinned deployed manifest is deferred to #207.
+run-pinned deployed manifest ships in #207 (the run resumes from its `deployment_snapshot_digest`).
 
 ### End goal
 
@@ -1742,7 +1750,7 @@ Responsibilities:
 
 The engine implements the bounded tool-calling loop (issue #160). Each agent-declared Tool resource is advertised as one `ToolDef` (name = Tool metadata.name, permissive object schema). `agent.spec.tools` entries may be the Tool metadata name or a pinned uses string `tool.<name>.<operation>`. `ToolChoice` is `auto`. Type defaults when only the name is listed: native → `tool.<name>.echo`; mock/mcp → `tool.<name>.default`. HTTP has no default (`parseOperation` would treat `default` as `GET /default`); list `tool.<name>.<method.path>` — pinned `tool.<name>.default` is rejected the same way as a bare HTTP name. `terfyn validate` / `plan` apply these advertised-uses rules (unknown tools, HTTP method.path, conflicting ops on one Tool name). Only the ToolDef name is accepted as a `ToolCall.Name` (ADR 002: no operation is agent-callable unless it was advertised). Aliases such as `helper.echo`, `tool.helper.echo`, `helper.command.run`, or HTTP `delete.users` fail before `CheckToolCall` / `Tools.Call`. On `StopReason: tool_use`, each accepted call is checked with `CheckToolCall`, then executed via `Tools.Call` on the agent `constraints.timeoutSeconds` context. Results are appended as `ChatMessage.ToolResults` (with the assistant `ToolCalls` replayed) and the loop continues. Agents that declare no tools stay a single `Generate` with no `Tools` field. Loop cost (model + tool) accumulates into the step `GenerateMeta`; `policy.CheckRun` runs after each Generate and tool turn so `execution.maxTotalCostUsd` / wall-clock apply inside a single agent step. `constraints.maxIterations` (default 8, hard cap 32) counts **Generate turns**; `tool_use` on the last turn fails without executing those calls (`maxIterations: 1` is one completion, tools never run). A cutoff emits `limit_hit` (`kind: max_iterations`) and fails the step. HITL interrupt is **not** consulted inside the loop: inner uses must already be pre-approved (`terfyn run --approve` / `ApprovedActions`) or `CheckToolCall` fails closed. Policy denial uses the existing `DeniedError` path (CLI exit **5**).
 
-`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `terfyn plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is sound against the pinned operation manifest (#204): runtime `CheckToolCall` denies any operation outside the tool's declared `spec.operations`, so a live `tools/list` can no longer expand the callable world (see §7.3, *Capability manifest*). The run-**pinned** deployed manifest — enforcing what a resumed run started with — remains deferred to #207. Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
+`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `terfyn plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is sound against the pinned operation manifest (#204): runtime `CheckToolCall` denies any operation outside the tool's declared `spec.operations`, so a live `tools/list` can no longer expand the callable world (see §7.3, *Capability manifest*). The run-**pinned** deployed manifest — enforcing what a resumed run started with, via `runs.deployment_snapshot_digest` (§14) — ships in #207. Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
 
 Abstraction:
 
@@ -2098,6 +2106,54 @@ Suggested tables:
 * `version`
 * `applied_at`
 
+### `deployment_artifacts` (issue #207)
+
+Immutable, content-addressed payloads, deduped by content. Retained until no snapshot references
+them; never mutated once written (`INSERT … ON CONFLICT(digest) DO NOTHING`). `format_version` says
+how to decode the payload — an unknown format fails loudly, never reinterpreted.
+
+* `digest` (PRIMARY KEY — SHA-256 of `payload`)
+* `kind` (`resolved_graph` | `execution_ir` | `capability_manifest`)
+* `format_version`
+* `payload` (BLOB)
+* `created_at`
+
+### `deployment_snapshots` (issue #207)
+
+The content-addressed root of the immutable configuration a run executed under. `digest` is over
+the canonical snapshot identity (`format_version`, `compiler_version`, `environment`, and the three
+artifact digests) — **not** timestamps or paths — so it is stable across a change of `--state` path
+or project directory. `compiler_version` is provenance for the compilation as a whole.
+
+* `digest` (PRIMARY KEY)
+* `format_version`
+* `compiler_version`
+* `environment`
+* `graph_digest` → `deployment_artifacts`
+* `execution_ir_digest` → `deployment_artifacts` (empty until execir runs on the engine)
+* `capability_manifest_digest` → `deployment_artifacts`
+* `created_at`
+
+### `deployment_env_current` (issue #207)
+
+The **current deployed** snapshot per environment — a mutable pointer, distinct from the immutable
+content-addressed rows above. `apply` upserts it on **every** apply (including a re-apply of an
+earlier digest, a rollback `A → B → A`), so `superseded` on a run means "differs from what is
+deployed now", not "not the newest `created_at` row". Content-addressed rows cannot double as a
+recency index.
+
+* `environment` (PRIMARY KEY)
+* `snapshot_digest` → `deployment_snapshots`
+* `updated_at`
+
+```text
+                 DeploymentSnapshot
+                 /          |          \
+        resolved graph  execution IR  capability manifest
+        (policy, tools,   (deferred)   (#204 authority boundary)
+         agents, models)
+```
+
 ---
 
 ## 14.2 Runtime state schema
@@ -2114,6 +2170,12 @@ Suggested tables:
 * `output_json`
 * `error_text`
 * `total_cost_usd`
+* `workflow_spec_hash`, `environment_name`
+* `deployment_snapshot_digest` → `deployment_snapshots` (issue #207): the pinned deployment the run
+  executes under. **Resume hydrates configuration and authority from this snapshot, not from
+  re-resolved current config**, so a policy/tool/manifest edit landing mid-run cannot change an
+  in-flight run's authority (the invariant ADR 002 states). Empty for runs created before #207,
+  which fall back to current config.
 
 ### `run_steps`
 

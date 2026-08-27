@@ -30,6 +30,9 @@ type HealthStatus struct {
 // RunResult is the outcome of [Runtime.Invoke] or [Runtime.Resume].
 type RunResult struct {
 	RunID string
+	// Warnings are advisory messages from run setup (e.g. literal secrets in snapshot-persisted
+	// fields, issue #207). Not fatal; surfaced to the operator.
+	Warnings []string
 }
 
 // Deps are control-plane supplied dependencies shared by all runtime implementations.

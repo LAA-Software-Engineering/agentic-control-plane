@@ -12,7 +12,7 @@ import (
 	"github.com/LAA-Software-Engineering/terfyn/internal/util"
 )
 
-const runSelectColumns = `run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name, tenant_id, thread_id, actor_id, parent_run_id, request_id, idempotency_key, source`
+const runSelectColumns = `run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name, deployment_snapshot_digest, tenant_id, thread_id, actor_id, parent_run_id, request_id, idempotency_key, source`
 
 // StartRun inserts a new row in runs (design doc §14.2).
 func (s *Store) StartRun(ctx context.Context, r state.Run) error {
@@ -42,9 +42,9 @@ func (s *Store) StartRun(ctx context.Context, r state.Run) error {
 		idem = attr.IdempotencyKey
 	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO runs (run_id, workflow_name, env, status, started_at, input_json, total_cost_usd, workflow_spec_hash, environment_name, tenant_id, thread_id, actor_id, parent_run_id, request_id, idempotency_key, source)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, r.RunID, r.WorkflowName, r.Env, r.Status, at, in, r.TotalCostUSD, r.WorkflowSpecHash, r.EnvironmentName,
+INSERT INTO runs (run_id, workflow_name, env, status, started_at, input_json, total_cost_usd, workflow_spec_hash, environment_name, deployment_snapshot_digest, tenant_id, thread_id, actor_id, parent_run_id, request_id, idempotency_key, source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, r.RunID, r.WorkflowName, r.Env, r.Status, at, in, r.TotalCostUSD, r.WorkflowSpecHash, r.EnvironmentName, r.DeploymentSnapshotDigest,
 		attr.TenantID, attr.ThreadID, attr.ActorID, parent, attr.RequestID, idem, attr.Source)
 	return err
 }
@@ -200,7 +200,7 @@ func scanRunRow(sc rowScanner) (*state.Run, error) {
 	var outJ, errT, parent, idem sql.NullString
 	if err := sc.Scan(
 		&r.RunID, &r.WorkflowName, &r.Env, &r.Status, &started, &finished,
-		&r.InputJSON, &outJ, &errT, &r.TotalCostUSD, &r.WorkflowSpecHash, &r.EnvironmentName,
+		&r.InputJSON, &outJ, &errT, &r.TotalCostUSD, &r.WorkflowSpecHash, &r.EnvironmentName, &r.DeploymentSnapshotDigest,
 		&r.TenantID, &r.ThreadID, &r.ActorID, &parent, &r.RequestID, &idem, &r.Source,
 	); err != nil {
 		return nil, err

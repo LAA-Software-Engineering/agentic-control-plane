@@ -20,6 +20,33 @@ type DeploymentStore interface {
 	GetAppliedProject(ctx context.Context, env, projectName string) (*AppliedProject, error)
 }
 
+// ArtifactStore persists immutable, content-addressed deployment artifacts and snapshots
+// (design doc §14, issue #207). Writes are insert-if-absent (dedupe by content); artifacts and
+// snapshots are never mutated once written.
+type ArtifactStore interface {
+	// PutArtifact stores a immutable payload, deduped by Digest. Re-putting an identical digest is
+	// a no-op and never overwrites the stored payload.
+	PutArtifact(ctx context.Context, a DeploymentArtifact) error
+	// GetArtifact returns the artifact for digest, or sql.ErrNoRows.
+	GetArtifact(ctx context.Context, digest string) (*DeploymentArtifact, error)
+	// PutSnapshot stores a snapshot row, deduped by Digest. Re-putting is a no-op.
+	PutSnapshot(ctx context.Context, s DeploymentSnapshot) error
+	// GetSnapshot returns the snapshot for digest, or sql.ErrNoRows.
+	GetSnapshot(ctx context.Context, digest string) (*DeploymentSnapshot, error)
+	// SetCurrentSnapshot points env at digest — the snapshot deployed now. Called on every apply,
+	// including a re-apply of an earlier digest (rollback), so the pointer always reflects the last
+	// apply, not first-insert order.
+	SetCurrentSnapshot(ctx context.Context, env, digest string) error
+	// CurrentSnapshotDigestForEnv returns the snapshot digest currently deployed for env (the apply
+	// pointer), or sql.ErrNoRows. Used to flag a run as executing a superseded artifact
+	// (inspect/logs): superseded == run's pinned digest differs from this.
+	CurrentSnapshotDigestForEnv(ctx context.Context, env string) (string, error)
+	// PruneUnreferencedArtifacts deletes snapshots not referenced by any run and artifacts not
+	// referenced by any surviving snapshot. Trace pruning must not orphan an artifact a run still
+	// references, so this is reference-guarded. Returns rows removed.
+	PruneUnreferencedArtifacts(ctx context.Context) (removed int64, err error)
+}
+
 // TransactionalDeployment runs deployment mutations in a single atomic transaction when supported
 // (design doc §12.2 D apply, issue #15).
 type TransactionalDeployment interface {

@@ -39,6 +39,12 @@ type RunRecord struct {
 	Input          json.RawMessage `json:"input"`
 	Output         json.RawMessage `json:"output,omitempty"`
 	Error          string          `json:"error,omitempty"`
+	// DeploymentSnapshotDigest is the immutable snapshot this run pinned (issue #207). Empty for
+	// runs created before #207.
+	DeploymentSnapshotDigest string `json:"deploymentSnapshotDigest,omitempty"`
+	// Superseded is true when the run is executing a snapshot that is no longer the latest deployed
+	// one for its environment — i.e. an apply has landed since the run started. Advisory.
+	Superseded bool `json:"superseded,omitempty"`
 }
 
 // AppliedResourceRecord is one applied_resources row (terfyn state list -o json).

@@ -68,13 +68,24 @@ func TestWorkflowSpecHash_needsIsIdentityAndStable(t *testing.T) {
 	}
 	posWF := wf([]string{"a"})
 	posWF.Spec.Steps[1].NeedsPos = []spec.Pos{{File: "w.yaml", Line: 4, Column: 2}}
-	posWF.Spec.Steps[1].NeedsDeclared = true
 	h4, err := WorkflowSpecHash(posWF)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if h4 != h1 {
 		t.Fatal("NeedsPos must not affect workflow spec hash")
+	}
+
+	// NeedsDeclared IS identity (#207): an empty declared `needs:` is the DAG-mode signal and must
+	// change the hash, so a snapshot reproduces graph vs sequential execution on resume.
+	declared := wf(nil)
+	declared.Spec.Steps[1].NeedsDeclared = true
+	h5, err := WorkflowSpecHash(declared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h5 == h3 {
+		t.Fatal("NeedsDeclared (empty declared needs) must participate in the workflow spec hash")
 	}
 }
 

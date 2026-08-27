@@ -66,6 +66,17 @@ Migration `007_trace_audit_chain.sql` adds nullable `prev_hash` and `hash` colum
 - They do **not** fail verification
 - New events appended after unchained rows link from genesis (if no prior chained tip) or from the last chained event's hash
 
+## Deployment provenance in the chain (issue #207)
+
+The `run_started` event records the run's pinned `deploymentSnapshot` digest in its `data_json`, so
+the tamper-evident chain proves not only *what happened* but *what configuration and authority were
+in force*. The snapshot roots immutable, content-addressed artifacts (resolved graph + capability
+manifest, §14) retained until no run references them, so the digest in the chain is resolvable to
+the exact policy, tools, and manifest the run executed under. This is the stronger half of the audit
+story: the event chain proves the sequence was not edited; the snapshot proves which program ran.
+The trust limit is unchanged — this is configuration provenance, not execution replay (model
+sampling and remote API behavior are outside the snapshot).
+
 ## JSON / inspector
 
 `terfyn logs --run <id> -o json` and inspector trace payloads include optional `prevHash` and `hash` on each event when present.
