@@ -289,11 +289,24 @@ plan→run digests" — a manual workaround for a known instability, with no enf
 **Required invariant:** *no operation may become agent-callable unless it was present in the
 deployed capability manifest.*
 
-Each `Tool` resource therefore carries an allowed-operation manifest with per-operation effects,
-digested and pinned into deployment state at apply. Runtime `tools/list` may return anything;
-operations absent from the deployed manifest are denied, and manifest or schema drift makes
-deployment state dirty rather than silently expanding the callable set. This is tracked as a
-first-class Epic F issue (#204), not an afterthought.
+Each `Tool` resource therefore carries an allowed-operation manifest with per-operation effects
+(`spec.operations`), derived by `tools.DeriveManifest` and digested by
+`tools.CapabilityManifest.Digest`. Runtime `tools/list` may return anything; operations absent
+from the deployed manifest are denied on the policy path (`CheckToolCall` →
+`operation_not_in_manifest`, exit 5, traced), and manifest drift — an operation appearing,
+disappearing, or changing effects — surfaces as a Tool state change in `plan` rather than silently
+expanding the callable set. This is tracked as a first-class Epic F issue (#204), not an
+afterthought.
+
+**Shipped by #204:** the desired/deployed manifest model, the digest, `validate`/`plan` bounding
+over the desired manifest, and runtime closed-world denial of operations outside the declared
+manifest. Enforcement is opt-in per tool: a tool that declares no `spec.operations` keeps an open
+callable set. Discovery merges only `spec.safety` and never adds operations, so it is never an
+authority source.
+
+**Not shipped by #204 (deferred to #207):** the *run-pinned* deployed manifest below. Enforcement
+today uses the run's resolved graph; pinning the manifest a suspended run started with requires a
+retained deployment snapshot.
 
 ### Three kinds of manifest, and one authority per phase
 

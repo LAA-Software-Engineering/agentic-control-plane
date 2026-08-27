@@ -58,6 +58,12 @@ func (e *evaluator) CheckStep(ctx context.Context, step StepContext) error {
 
 func (e *evaluator) CheckToolCall(ctx context.Context, call ToolCallContext) error {
 	_ = ctx
+	// Closed-world capability manifest (#204) is a hard authority boundary: it binds even a nil or
+	// permissive policy, before any approval short-circuit, so a live tools/list can never widen
+	// the callable set beyond the deployed manifest.
+	if err := checkOperationInManifest(e.graph, call.Uses); err != nil {
+		return err
+	}
 	p := e.spec()
 	if p != nil {
 		if err := checkKnownTool(e.graph, call.Uses, p.Tools); err != nil {
