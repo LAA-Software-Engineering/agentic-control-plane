@@ -1,4 +1,8 @@
-package check
+// This test lives in the external test package (check_test) because it loads a
+// YAML project via internal/project, which now imports internal/lang/check (the
+// loader compiles .agent through the checker). An internal `package check` test
+// importing project would be a cycle.
+package check_test
 
 import (
 	"os"
@@ -9,9 +13,26 @@ import (
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/effects"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/check"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
+
+// diffProjectWith builds a minimal project graph holding the given tools (a
+// local copy of the internal-test helper, since this file is an external test).
+func diffProjectWith(tools ...*spec.ToolResource) *spec.ProjectGraph {
+	g := &spec.ProjectGraph{
+		Tools:        map[string]*spec.ToolResource{},
+		Agents:       map[string]*spec.AgentResource{},
+		Workflows:    map[string]*spec.WorkflowResource{},
+		Policies:     map[string]*spec.PolicyResource{},
+		Environments: map[string]*spec.EnvironmentResource{},
+	}
+	for _, tr := range tools {
+		g.Tools[tr.Metadata.Name] = tr
+	}
+	return g
+}
 
 // TestDifferential_AgentAndYAMLProduceIdenticalEffectBounds is issue #198's
 // required differential test: an .agent program (testdata/differential/pr_review.agent)
@@ -46,7 +67,7 @@ func TestDifferential_AgentAndYAMLProduceIdenticalEffectBounds(t *testing.T) {
 			},
 		},
 	}
-	agentProg, checkDiags := Check(f, Options{Project: projectWith(tool)})
+	agentProg, checkDiags := check.Check(f, check.Options{Project: diffProjectWith(tool)})
 	if checkDiags.HasErrors() {
 		t.Fatalf(".agent side reported errors: %s", checkDiags.Error())
 	}

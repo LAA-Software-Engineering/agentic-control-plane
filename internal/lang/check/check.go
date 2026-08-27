@@ -5,7 +5,6 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/execir"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/lower"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
@@ -48,11 +47,13 @@ type Program struct {
 	// Positional workflow: arguments are rebound to real parameter names here
 	// (applyExecRebinds), the same rewrite Graph receives.
 	//
-	// Not yet on a production path: wiring these programs (and the plan-hash fold
-	// of execir.Program.Digest via plan.WorkflowSpecHashWithExec) into apply/run
-	// is deferred with the rest of `.agent` ingest — LoadProject does not read
-	// `.agent` yet, and no planner or runner constructs a Program. Populated even
-	// when diagnostics are present (best-effort, like Graph).
+	// Not yet on a production path: project.LoadProject (#200) runs Check and uses
+	// its Graph (the resource projection), but no planner or runner constructs an
+	// execir.Program — the loader instead REFUSES control-flow workflows, and the
+	// plan-hash fold of execir.Program.Digest (plan.WorkflowSpecHashWithExec) is
+	// unused. Wiring these programs onto the engine is the remaining work (with the
+	// persistence half of #199, #207). Populated even when diagnostics are present
+	// (best-effort, like Graph).
 	Executables map[string]*execir.Program
 }
 
@@ -107,7 +108,7 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 		result, lowerDiags := lower.LowerFile(file, lower.Options{Workflows: workflowNames})
 		diags = append(diags, lowerDiags...)
 		lowered = append(lowered, result.Workflows...)
-		if err := project.MergeLowered(graph, result); err != nil {
+		if err := lower.MergeLowered(graph, result); err != nil {
 			diags = append(diags, lang.Diagnostic{Pos: file.Pos, Msg: err.Error()})
 		}
 		// Execution lowering is the sibling projection (ADR 002 §5): lowered

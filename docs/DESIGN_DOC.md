@@ -478,6 +478,21 @@ End goal later:
 
 # 7. YAML Spec v0
 
+> **Authoring surface (ADR 002 / ADR 003).** Agents and workflows are authored in
+> [`.agent`](LANGUAGE.md). `.agent` files anywhere under the project root are discovered and
+> compiled through the checker (type/effect checking plus the workflow-argument rebind) into the
+> resource graph by the loader, alongside any YAML resources. Straight-line workflows (including
+> `parallel { }` static fan-out) execute end-to-end; **conditionals, loops, and dynamic fan-out
+> (#199) parse and type-check but do not execute yet** — the loader refuses a control-flow
+> workflow until the execution IR runs on the engine (a #207 follow-up), because the resource
+> graph cannot represent `if`/`for`. **YAML is the compilation output and interchange
+> format**, not the primary authoring surface: the loader still accepts it (machine-generated
+> resources, existing fixtures, and interchange all depend on it), `agentctl export --format yaml`
+> materializes the compiled graph on demand, and nothing generated is written to disk by default.
+> Tools, policies, environments, and the `Project` config below have no `.agent` surface and are
+> authored in YAML. The kinds and fields in this section describe the resource model both surfaces
+> compile to.
+
 ## 7.1 Project
 
 Defines root project settings and imports.
@@ -872,8 +887,10 @@ execution-IR digest fold into the workflow spec-hash exists (`plan.WorkflowSpecH
 but no production `plan`/`run` path constructs an `execir.Program` yet; the YAML ingress path
 still executes as a `WorkflowStep` DAG rather than converging on the execution IR; and
 persisting the compiled program at `apply` / pinning it across `run --resume` awaits the
-content-addressed deployment snapshot of #207. All three land with `.agent` ingest into the
-CLI/engine.
+content-addressed deployment snapshot of #207. `.agent` CLI ingest (#200) landed the loader,
+`export`, `fmt`, and `init`, but it compiles to the resource graph and **refuses control-flow
+workflows** rather than executing the execution IR; running `execir` on the engine (which these
+three follow-ups require) is still pending.
 
 | Addition | Surface | Status |
 |----------|---------|--------|
@@ -1107,9 +1124,41 @@ agentctl init my-agent-system
 
 Creates:
 
-* project.yaml
-* sample dirs
-* example workflow
+* `project.yaml` (config)
+* `main.agent` — the workflow, authored in the `.agent` surface (ADR 003)
+* YAML `policies/` and `tools/`
+
+### MVP
+
+yes
+
+---
+
+## `agentctl export`
+
+Materialize the compiled resource graph as YAML (ADR 003): compilation output produced on
+demand, never written to disk by default.
+
+```bash
+agentctl export --format yaml            # multi-document YAML stream to stdout
+agentctl export --format yaml --output out/   # a loadable project (round-trips through the loader)
+```
+
+The generated YAML is not the trustworthy record (applied deployment state plus the audit chain
+is) and is not committed. It round-trips: `export --output` writes a project that
+`LoadProject` reconstructs to an identical graph (positions and the import list are not identity).
+
+### MVP
+
+yes
+
+---
+
+## `agentctl fmt`
+
+Format `.agent` sources to canonical form and normalize project YAML. Idempotent. The YAML
+formatter is retained for the interchange path but not extended (ADR 003); comments are not
+preserved on either surface.
 
 ### MVP
 

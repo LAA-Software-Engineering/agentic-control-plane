@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
 	"github.com/spf13/cobra"
@@ -15,14 +16,18 @@ func newFmtCmd() *cobra.Command {
 	var check bool
 	cmd := &cobra.Command{
 		Use:   "fmt",
-		Short: "Normalize YAML formatting for project.yaml and imports",
-		Long: `Reformat every YAML file in the project closure (root project.yaml or project.yml plus
-all paths from spec.imports), using the same discovery rules as validate/load (design doc §10.2).
+		Short: "Format .agent sources and normalize project YAML",
+		Long: `Format every .agent source under the project root (the authoring surface, ADR 003) and
+normalize every YAML file in the project closure (root project.yaml or project.yml plus all
+paths from spec.imports), using the same discovery rules as validate/load (design doc §10.2).
 
-Writes 2-space indented YAML. Running fmt twice should make no further changes (idempotent).
+.agent files are reformatted to canonical form (4-space indent, single spaces around
+operators); YAML is written 2-space indented. Running fmt twice makes no further changes
+(idempotent).
 
 WARNING: commit or back up your work before formatting. YAML comments may be dropped or moved
-because formatting round-trips through gopkg.in/yaml.v3.
+because formatting round-trips through gopkg.in/yaml.v3, and .agent comments are not preserved
+because the formatter reprints from the parsed AST.
 
 With --check, no files are modified; the command exits with status 1 if any file would change
 (useful in CI).
@@ -46,10 +51,15 @@ func runFmt(cmd *cobra.Command, check bool) error {
 	if err != nil {
 		return NewExitError(ExitValidationError, fmt.Errorf("fmt: project root: %w", err))
 	}
-	paths, err := project.ListProjectYAMLFiles(root)
+	yamlPaths, err := project.ListProjectYAMLFiles(root)
 	if err != nil {
 		return NewExitError(ExitValidationError, fmt.Errorf("fmt: %w", err))
 	}
+	agentPaths, err := project.ListAgentFiles(root)
+	if err != nil {
+		return NewExitError(ExitValidationError, fmt.Errorf("fmt: %w", err))
+	}
+	paths := append(append([]string{}, yamlPaths...), agentPaths...)
 
 	wouldChange := 0
 	written := 0
@@ -58,7 +68,7 @@ func runFmt(cmd *cobra.Command, check bool) error {
 		if err != nil {
 			return fmt.Errorf("fmt: read %s: %w", p, err)
 		}
-		norm, err := project.NormalizeYAML(b)
+		norm, err := normalizeForFmt(p, b)
 		if err != nil {
 			return NewExitError(ExitValidationError, fmt.Errorf("fmt: %s: %w", p, err))
 		}
@@ -107,7 +117,7 @@ func runFmt(cmd *cobra.Command, check bool) error {
 			if wouldChange > 0 {
 				_, _ = fmt.Fprintf(out, "%d file(s) would be reformatted\n", wouldChange)
 			} else {
-				_, _ = fmt.Fprintln(out, "All YAML files already formatted.")
+				_, _ = fmt.Fprintln(out, "All files already formatted.")
 			}
 		} else {
 			_, _ = fmt.Fprintf(out, "Formatted %d file(s); %d unchanged (%d total).\n", written, len(paths)-wouldChange, len(paths))
@@ -118,4 +128,19 @@ func runFmt(cmd *cobra.Command, check bool) error {
 		return NewExitError(ExitGenericFailure, fmt.Errorf("fmt: %d file(s) need formatting (run without --check)", wouldChange))
 	}
 	return nil
+}
+
+// normalizeForFmt formats one file by extension: .agent through the language
+// printer (lang.Format), everything else through the YAML normalizer. A .agent
+// file that does not parse is a formatting failure (exit 2), the same class as
+// unparseable YAML — fmt must not silently rewrite or drop a malformed source.
+func normalizeForFmt(path string, b []byte) ([]byte, error) {
+	if project.IsAgentSource(path) {
+		out, diags := lang.Format(path, string(b))
+		if diags.HasErrors() {
+			return nil, fmt.Errorf("cannot format unparseable .agent source:\n%s", diags.Error())
+		}
+		return []byte(out), nil
+	}
+	return project.NormalizeYAML(b)
 }

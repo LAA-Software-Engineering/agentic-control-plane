@@ -75,6 +75,13 @@ func LoadProject(root string) (*spec.ProjectGraph, error) {
 		}
 	}
 
+	// .agent authoring surface (ADR 003): compile every .agent file under the
+	// project root and merge its checked resource projection. Runs after YAML so
+	// .agent may reference YAML-declared resources.
+	if err := compileAgentSources(g, rootAbs); err != nil {
+		return nil, err
+	}
+
 	return g, nil
 }
 

@@ -8,12 +8,24 @@ the typed AST only** — plus the **resource-model lowering added in #197** (see
 effect checking, added in #198** (see [Type and effect checking](#type-and-effect-checking-198)
 below), and **conditionals, loops, dynamic fan-out, and the execution IR, added in
 #199** (see [Control flow and the execution IR](#control-flow-and-the-execution-ir-199)
-below). `.agent` files are not yet ingested by `agentctl` or `project.LoadProject` — the
-checker and the execution-IR interpreter are libraries today
-([`internal/lang/check`](../internal/lang/check), [`internal/execir`](../internal/execir)),
-wired into the CLI/engine as a follow-up (the persistence half of #199 — `apply` persisting
-the execution IR and `run --resume` pinning it — is deferred to the content-addressed
-artifact store of #207).
+below), and **CLI ingestion added in #200**: `project.LoadProject` discovers every `.agent`
+file under the project root (skipping dot-directories) and compiles the set through the
+checker ([`internal/lang/check`](../internal/lang/check)) — type and effect checking plus the
+positional workflow-argument rebind — merging the CHECKED resource projection into the graph
+that `validate`/`plan`/`apply`/`run` consume. `agentctl export --format yaml` materializes that
+graph (ADR 003), `agentctl fmt` formats `.agent`, and `agentctl init` scaffolds a `.agent`
+project.
+
+**Straight-line `.agent` workflows execute end-to-end; control-flow ones do not yet.** The
+resource projection cannot represent `if`/`for` — it flattens both arms into steps for effect
+analysis — and the execution IR that can ([`internal/execir`](../internal/execir)) is not wired
+into the engine. So the loader **refuses** a workflow that uses a conditional or loop (a
+compile error naming the construct); only straight-line steps and `parallel { }` static
+fan-out reach the run path. Conditionals, loops, and dynamic fan-out still parse and
+type-check (#199) and are usable as a library, but wiring `execir` onto the engine — with the
+persistence half of #199 (`apply` persisting the execution IR, `run --resume` pinning it,
+deferred to the content-addressed artifact store of #207) — is the remaining work before they
+run through `agentctl`.
 
 The reference implementation is [`internal/lang`](../internal/lang):
 `lang.Parse(file, src) (*lang.File, lang.Diagnostics)`.
@@ -467,9 +479,10 @@ own. The fold that would let a lowering-only change (e.g. swapping an `if`'s two
 invalidate a stale plan is
 [`plan.WorkflowSpecHashWithExec`](../internal/plan/workflow_hash.go), which mixes
 `execir.Program.Digest` into the spec-hash. **This is the mechanism, not yet a live invariant**:
-no production path constructs an `execir.Program` for a workflow today — `project.LoadProject`
-does not read `.agent`, and `agentctl plan` hashes YAML resource envelopes through
-`WorkflowSpecHash` (empty digest). When `.agent` ingest is wired into plan/run, those call
+no production path constructs an `execir.Program` for a workflow today. `project.LoadProject`
+compiles `.agent` (#200) but uses the checked resource graph and refuses control-flow
+workflows, so it never builds an `execir.Program`; `agentctl plan` hashes resource envelopes
+through `WorkflowSpecHash` (empty digest). When `execir` is wired onto the engine, those call
 sites move to `WorkflowSpecHashWithExec`; the plain `WorkflowSpecHash` doc comment flags that.
 The fold is unit-tested (`internal/plan/workflow_hash_execir_test.go`).
 
