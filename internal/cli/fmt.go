@@ -26,7 +26,8 @@ operators); YAML is written 2-space indented. Running fmt twice makes no further
 (idempotent).
 
 WARNING: commit or back up your work before formatting. YAML comments may be dropped or moved
-because formatting round-trips through gopkg.in/yaml.v3.
+because formatting round-trips through gopkg.in/yaml.v3, and .agent comments are not preserved
+because the formatter reprints from the parsed AST.
 
 With --check, no files are modified; the command exits with status 1 if any file would change
 (useful in CI).

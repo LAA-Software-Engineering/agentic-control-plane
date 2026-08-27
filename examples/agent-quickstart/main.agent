@@ -1,0 +1,23 @@
+// The .agent authoring surface (ADR 003). Agents and workflows are authored
+// here; tools, policies, and project.yaml stay YAML (the interchange format).
+//
+// Run:  agentctl validate
+//       agentctl export --format yaml     # materialize the compiled graph
+//       agentctl plan
+
+agent Summarizer {
+    model mock/gpt-4
+}
+
+// A conditional (issue #199): high-severity alerts are summarized by the agent,
+// everything else takes the cheap path. `summary` is bound in both arms, so it
+// is in scope for the return.
+workflow triage(input: Alert) -> Summary {
+    enriched = notes.lookup(id: input.id)
+    if input.severity >= 3 {
+        summary = Summarizer(enriched)
+    } else {
+        summary = notes.lookup(id: input.id)
+    }
+    return summary
+}

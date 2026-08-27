@@ -8,12 +8,17 @@ the typed AST only** — plus the **resource-model lowering added in #197** (see
 effect checking, added in #198** (see [Type and effect checking](#type-and-effect-checking-198)
 below), and **conditionals, loops, dynamic fan-out, and the execution IR, added in
 #199** (see [Control flow and the execution IR](#control-flow-and-the-execution-ir-199)
-below). `.agent` files are not yet ingested by `agentctl` or `project.LoadProject` — the
-checker and the execution-IR interpreter are libraries today
-([`internal/lang/check`](../internal/lang/check), [`internal/execir`](../internal/execir)),
-wired into the CLI/engine as a follow-up (the persistence half of #199 — `apply` persisting
-the execution IR and `run --resume` pinning it — is deferred to the content-addressed
-artifact store of #207).
+below), and **CLI ingestion added in #200**: `project.LoadProject` discovers and compiles
+every `.agent` file under the project root (skipping dot-directories) and merges its resource
+projection, so `validate`, `plan`, `apply`, and `run` operate on `.agent` projects;
+`agentctl export --format yaml` materializes the compiled graph (ADR 003), `agentctl fmt`
+formats `.agent` sources, and `agentctl init` scaffolds a `.agent`-led project. The loader is
+structural (parse + lower + merge, surfacing parse/lowering diagnostics); the type/effect
+checker ([`internal/lang/check`](../internal/lang/check)) and the execution-IR interpreter
+([`internal/execir`](../internal/execir)) remain libraries, not yet wired into `validate`/the
+engine — that, plus the persistence half of #199 (`apply` persisting the execution IR and
+`run --resume` pinning it, deferred to the content-addressed artifact store of #207), is the
+remaining wiring.
 
 The reference implementation is [`internal/lang`](../internal/lang):
 `lang.Parse(file, src) (*lang.File, lang.Diagnostics)`.

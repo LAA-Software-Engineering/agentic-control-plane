@@ -73,7 +73,7 @@ Authority:
   autonomous  -> WIDENED
 ```
 
-Specs today are YAML (interchange / compilation output). The long-term authoring surface is [`.agent`](docs/adr/002-language-frontend-and-ir-expressiveness.md) ([#200](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/200)); until then you still write YAML — lead on **capability**, not format.
+Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md) — including conditionals, loops, and dynamic fan-out. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the 58 existing fixtures work), and `agentctl export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
 
 ## Flagship: incident triage
 
@@ -115,7 +115,7 @@ ACP is the **declarative governance/config layer** for agent systems — not a r
 |---|---|---|---|---|---|
 | Role | Governance/config: versioned resources, plan/apply, policy | Code-first agent runtime | Code-first graph orchestration | Durable workflow execution | Infrastructure as code |
 | Durable execution / distributed scheduling | No | No | Optional checkpointers; not a durable-execution engine | Yes | N/A |
-| Code-first agent runtime | No (resource graph; YAML today) | Yes | Yes | Workflow SDK, not an agent runtime | No |
+| Code-first agent runtime | No (resource graph; `.agent` authoring, YAML compilation output) | Yes | Yes | Workflow SDK, not an agent runtime | No |
 | Desired-state plan / apply | Yes (`agentctl plan` / `apply` vs SQLite) | No | No | No | Yes |
 | Plan-time effect bound | **Shipped** ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#190](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/190) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `agentctl plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
 
@@ -125,7 +125,9 @@ The bound is not over what those operations do at the far end; the trust anchor 
 
 ## Features (MVP today)
 
-- **`agentctl init`** — scaffold `project.yaml`, policies, tools, and a sample workflow  
+- **`agentctl init`** — scaffold a `.agent`-led project (`main.agent` workflow plus `project.yaml`, policies, tools)  
+- **`agentctl export --format yaml`** — materialize the compiled resource graph as YAML on demand (nothing written to disk by default; `--output DIR` writes a loadable project)  
+- **`agentctl fmt`** — format `.agent` sources to canonical form (and normalize project YAML)  
 - **`agentctl validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references; runs **policy lint** (ungated sensitive tools, invalid HITL config, etc.) as **advisory** output — use **`--strict`** to exit **2** on high-severity lint findings (fail-closed safety metadata still gates at **run** even when lint passes)  
 - **`agentctl plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint, effect bound, and authority delta; JSON/YAML output includes **`policyLint`**, **`deploymentBaseline`**, **`effectBound`**, and **`authority`**
 - **`agentctl apply`** — persist plan (TTY confirm or `--auto-approve` / `AGENTCTL_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
@@ -192,9 +194,17 @@ agentctl inspect --web --project my-agent-system   # read-only local UI on http:
 
 `inspect --web` binds to **localhost only** and opens the state DB read-only. Avoid running it while `agentctl run` is writing the same SQLite file (you may see `database is locked` without WAL); use it when runs are idle or on a copy of the DB.
 
-### Example `project.yaml`
+### Authoring: `.agent` plus `project.yaml`
 
-Until [`.agent`](docs/adr/002-language-frontend-and-ir-expressiveness.md) lands, you author the resource graph in YAML (interchange / compilation output — not the long-term surface). The project root is a **`Project`** resource: `apiVersion`, `kind`, `metadata.name`, and **`spec.imports`** listing other YAML files (policies, tools, workflows). After **`agentctl init my-agent-system`**, `my-agent-system/project.yaml` looks like this:
+Agents and workflows are authored in `.agent` ([grammar reference](docs/LANGUAGE.md)); `.agent` files anywhere under the project root are discovered and compiled automatically. Tools, policies, and project configuration stay YAML (the interchange format). After **`agentctl init my-agent-system`**, `my-agent-system/main.agent` is:
+
+```text
+workflow hello() {
+    helper.echo(message: "hello")
+}
+```
+
+and `my-agent-system/project.yaml` holds the config — a **`Project`** resource with **`spec.imports`** listing the YAML resources (policies, tools); `.agent` sources are not imported, they are discovered:
 
 ```yaml
 apiVersion: agentic.dev/v0
@@ -205,7 +215,6 @@ spec:
   imports:
     - ./policies/default.yaml
     - ./tools/helper.yaml
-    - ./workflows/hello.yaml
   defaults:
     policy: default
     model: openai/gpt-4o-mini
@@ -220,6 +229,8 @@ spec:
       #   type: anthropic
       #   apiKeyFrom: env:ANTHROPIC_API_KEY
 ```
+
+To see the compiled resource graph as YAML — for inspection or handoff to another tool — run `agentctl export --format yaml` (it prints to stdout; nothing is written to disk unless you pass `--output DIR`). YAML remains valid ingress, so you can still author or generate resources directly in it.
 
 Field-by-field rules, extra kinds, env overlays, MCP HTTP tools, and **`defaults.runtime`** are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for Anthropic fragments, MCP over HTTP, and structured-output notes.
 
