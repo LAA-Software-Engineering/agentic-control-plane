@@ -479,9 +479,13 @@ End goal later:
 # 7. YAML Spec v0
 
 > **Authoring surface (ADR 002 / ADR 003).** Agents and workflows are authored in
-> [`.agent`](LANGUAGE.md) — including conditionals, loops, and dynamic fan-out (#199). `.agent`
-> files anywhere under the project root are discovered and compiled into the resource graph by
-> the loader, alongside any YAML resources. **YAML is the compilation output and interchange
+> [`.agent`](LANGUAGE.md). `.agent` files anywhere under the project root are discovered and
+> compiled through the checker (type/effect checking plus the workflow-argument rebind) into the
+> resource graph by the loader, alongside any YAML resources. Straight-line workflows (including
+> `parallel { }` static fan-out) execute end-to-end; **conditionals, loops, and dynamic fan-out
+> (#199) parse and type-check but do not execute yet** — the loader refuses a control-flow
+> workflow until the execution IR runs on the engine (a #207 follow-up), because the resource
+> graph cannot represent `if`/`for`. **YAML is the compilation output and interchange
 > format**, not the primary authoring surface: the loader still accepts it (machine-generated
 > resources, existing fixtures, and interchange all depend on it), `agentctl export --format yaml`
 > materializes the compiled graph on demand, and nothing generated is written to disk by default.
@@ -883,8 +887,10 @@ execution-IR digest fold into the workflow spec-hash exists (`plan.WorkflowSpecH
 but no production `plan`/`run` path constructs an `execir.Program` yet; the YAML ingress path
 still executes as a `WorkflowStep` DAG rather than converging on the execution IR; and
 persisting the compiled program at `apply` / pinning it across `run --resume` awaits the
-content-addressed deployment snapshot of #207. All three land with `.agent` ingest into the
-CLI/engine.
+content-addressed deployment snapshot of #207. `.agent` CLI ingest (#200) landed the loader,
+`export`, `fmt`, and `init`, but it compiles to the resource graph and **refuses control-flow
+workflows** rather than executing the execution IR; running `execir` on the engine (which these
+three follow-ups require) is still pending.
 
 | Addition | Surface | Status |
 |----------|---------|--------|

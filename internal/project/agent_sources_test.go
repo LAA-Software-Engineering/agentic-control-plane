@@ -54,7 +54,11 @@ workflow Review(input: PullRequest) -> Review {
 	}
 }
 
-func TestLoadProject_agentControlFlowLowers(t *testing.T) {
+func TestLoadProject_agentControlFlowRefused(t *testing.T) {
+	// The resource projection cannot represent control flow (it flattens both
+	// arms), and the execution IR that can is not on the engine yet, so a
+	// control-flow workflow is refused at load rather than silently deployed as a
+	// program that runs every arm.
 	root := t.TempDir()
 	writeFile(t, root, "project.yaml", minimalProjectYAML)
 	writeFile(t, root, "flow.agent", `
@@ -62,18 +66,41 @@ workflow Deploy(input: Batch) {
     if input.dry_run {
         github.summarize(input.repos)
     } else {
-        parallel for repo in input.repos {
-            github.deploy(repo)
-        }
+        github.deploy(input.repos)
     }
+}
+`)
+	_, err := LoadProject(root)
+	if err == nil {
+		t.Fatalf("expected a control-flow workflow to be refused at load")
+	}
+	if !strings.Contains(err.Error(), "control flow") {
+		t.Fatalf("expected a control-flow refusal error, got: %v", err)
+	}
+}
+
+func TestLoadProject_agentStraightLineExecutable(t *testing.T) {
+	// A straight-line workflow (incl. parallel { } static fan-out) is executable
+	// and loads.
+	root := t.TempDir()
+	writeFile(t, root, "project.yaml", minimalProjectYAML)
+	writeFile(t, root, "flow.agent", `
+agent Reviewer { model openai/gpt-5 }
+
+workflow Review(input: PullRequest) {
+    pr = github.get_pr(input.repo)
+    parallel {
+        sec = Reviewer(pr)
+    }
+    return sec
 }
 `)
 	g, err := LoadProject(root)
 	if err != nil {
-		t.Fatalf("LoadProject with control flow: %v", err)
+		t.Fatalf("LoadProject straight-line: %v", err)
 	}
-	if _, ok := g.Workflows["Deploy"]; !ok {
-		t.Fatalf("expected workflow Deploy, got %v", keys(g.Workflows))
+	if _, ok := g.Workflows["Review"]; !ok {
+		t.Fatalf("expected workflow Review, got %v", keys(g.Workflows))
 	}
 }
 

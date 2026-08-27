@@ -9,29 +9,41 @@ import (
 	"strings"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/lower"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/check"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
 // agentExt is the authoring-surface source extension (ADR 002 / ADR 003).
 const agentExt = ".agent"
 
-// mergeAgentSources discovers every .agent file under rootAbs, lowers the whole
-// set to its resource projection, and merges it into g (ADR 003 decision 1:
-// ".agent -> in-memory resource graph"). It runs after the YAML resources are
-// merged, so a .agent file may reference YAML-declared tools/policies and a
-// single-identifier call resolves against YAML-declared workflows.
+// compileAgentSources discovers every .agent file under rootAbs, compiles the
+// whole set through internal/lang/check (type and effect checking, plus the
+// positional workflow-argument rebind), and merges the CHECKED resource
+// projection into g (ADR 003 decision 1: ".agent -> in-memory resource graph").
+// It runs after the YAML resources are merged, so a .agent file may reference
+// YAML-declared tools/policies and a single-identifier call resolves against
+// YAML-declared workflows.
 //
-// This is the structural ingress: it surfaces parse and lowering diagnostics
-// (with file:line:col positions) as load errors, mirroring what YAML decoding
-// does. Type and effect checking of .agent (internal/lang/check) is a semantic
-// pass run by `validate`, not the loader — and it cannot live here regardless,
-// because internal/lang/check imports this package.
+// Why the checker, not just lowering: the graph produced here is what
+// validate/plan/apply/run consume, so it must be the EXECUTABLE form. Bare
+// lower.LowerFile produces the effect-analysis over-approximation — positional
+// workflow: arguments are placeholder-keyed (arg0/arg1) and never rebound to the
+// callee's parameter names — which the engine cannot run correctly. check.Check
+// applies those rebinds (applyRebinds) and reports type/effect errors, which the
+// loader surfaces as compilation failures. This does not create an import cycle:
+// check no longer imports this package (MergeLowered moved to internal/lang/lower).
+//
+// Control flow is refused (see controlFlowGate): the resource projection cannot
+// represent if/for — it flattens both arms into steps — and the execution IR that
+// can (internal/execir) is not wired into the engine yet. Merging a flattened
+// control-flow workflow would put a program on the run path that executes every
+// arm and returns whichever the merge wrote last, so such workflows are a load
+// error until execir executes on the engine (#207 follow-up).
 //
 // Discovery scans the project tree and skips dot-directories (e.g. .agentic
 // deployment state), so authors drop .agent files anywhere in the project rather
 // than wiring each into spec.imports the way machine-generated YAML is.
-func mergeAgentSources(g *spec.ProjectGraph, rootAbs string) error {
+func compileAgentSources(g *spec.ProjectGraph, rootAbs string) error {
 	paths, err := discoverAgentFiles(rootAbs)
 	if err != nil {
 		return err
@@ -52,26 +64,89 @@ func mergeAgentSources(g *spec.ProjectGraph, rootAbs string) error {
 		parsed = append(parsed, f)
 	}
 
-	// Workflow names across the whole .agent set plus YAML workflows already in
-	// g, so a single-identifier call classifies as a workflow: step rather than
-	// defaulting to agent: (the same set internal/lang/check assembles).
-	workflows := collectAgentWorkflowNames(parsed, g)
+	// Refuse workflows the engine cannot execute yet, before type checking, so
+	// the diagnostic names the construct rather than a downstream symptom.
+	diags = append(diags, controlFlowGate(parsed)...)
 
-	for _, f := range parsed {
-		res, d := lower.LowerFile(f, lower.Options{Workflows: workflows})
-		diags = append(diags, d...)
-		if res == nil {
-			continue
-		}
-		if err := MergeLowered(g, res); err != nil {
-			return err
-		}
-	}
+	// Compile the whole unit: the checker lowers every file, merges onto a clone
+	// of g (the YAML resources), rebinds positional workflow arguments, and
+	// type/effect-checks. prog.Graph is the executable projection.
+	prog, checkDiags := check.Check(parsed[0], check.Options{
+		Files:     parsed[1:],
+		Project:   g,
+		SchemaDir: rootAbs,
+	})
+	diags = append(diags, checkDiags...)
 
 	if diags.HasErrors() {
 		return fmt.Errorf(".agent compilation failed:\n%s", formatDiagnostics(errorDiags(diags)))
 	}
+
+	// Fold the checked .agent resources into g. Names already present are YAML
+	// resources check cloned by pointer; a genuine cross-ingress duplicate was
+	// already reported by check above (MergeLowered inside Check), so only new,
+	// checked resources reach here.
+	if prog != nil && prog.Graph != nil {
+		for name, a := range prog.Graph.Agents {
+			if _, ok := g.Agents[name]; !ok {
+				g.Agents[name] = a
+			}
+		}
+		for name, w := range prog.Graph.Workflows {
+			if _, ok := g.Workflows[name]; !ok {
+				g.Workflows[name] = w
+			}
+		}
+	}
 	return nil
+}
+
+// controlFlowGate reports a diagnostic for every workflow that uses a
+// conditional or loop. The outermost control-flow construct is always at
+// statement level in the workflow body (an inner if/for is nested inside an
+// outer one), so a single top-level scan finds every control-flow workflow.
+func controlFlowGate(files []*lang.File) lang.Diagnostics {
+	var diags lang.Diagnostics
+	for _, f := range files {
+		if f == nil {
+			continue
+		}
+		for _, decl := range f.Decls {
+			wd, ok := decl.(*lang.WorkflowDecl)
+			if !ok {
+				continue
+			}
+			pos, found := firstControlFlow(wd.Body)
+			if !found {
+				continue
+			}
+			name := "?"
+			if wd.Name != nil {
+				name = wd.Name.Name
+			}
+			diags = append(diags, lang.Diagnostic{
+				Pos: pos,
+				Msg: fmt.Sprintf("workflow %q uses control flow (if/for), which is not executable yet: "+
+					"the execution IR that represents conditionals and loops (internal/execir) is not wired into "+
+					"the engine (#207 follow-up). Use straight-line steps and parallel { } here, or keep the "+
+					"branching inside an agent, until .agent control flow executes end-to-end.", name),
+			})
+		}
+	}
+	return diags
+}
+
+// firstControlFlow returns the position of the first if/for statement in body.
+func firstControlFlow(body []lang.Stmt) (spec.Pos, bool) {
+	for _, st := range body {
+		switch s := st.(type) {
+		case *lang.IfStmt:
+			return s.Pos, true
+		case *lang.ForStmt:
+			return s.Pos, true
+		}
+	}
+	return spec.Pos{}, false
 }
 
 // errorDiags returns only the error-severity diagnostics (warnings do not fail a
@@ -122,28 +197,6 @@ func discoverAgentFiles(rootAbs string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
-}
-
-// collectAgentWorkflowNames gathers workflow names declared in the .agent files
-// and the YAML workflows already merged into g.
-func collectAgentWorkflowNames(files []*lang.File, g *spec.ProjectGraph) map[string]bool {
-	out := map[string]bool{}
-	for _, f := range files {
-		if f == nil {
-			continue
-		}
-		for _, decl := range f.Decls {
-			if wd, ok := decl.(*lang.WorkflowDecl); ok && wd.Name != nil {
-				out[wd.Name.Name] = true
-			}
-		}
-	}
-	if g != nil {
-		for name := range g.Workflows {
-			out[name] = true
-		}
-	}
-	return out
 }
 
 // formatDiagnostics renders diagnostics as sorted "file:line:col: message" lines.

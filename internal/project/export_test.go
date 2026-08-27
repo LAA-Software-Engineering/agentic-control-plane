@@ -3,6 +3,7 @@ package project
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
@@ -28,8 +29,8 @@ func canonicalGraph(t *testing.T, g *spec.ProjectGraph) string {
 		Agents: g.Agents, Tools: g.Tools, Workflows: g.Workflows,
 		Policies: g.Policies, Environments: g.Environments,
 	}
-	// Imports are a loading detail (the exported project imports resources.yaml),
-	// not identity — exclude them from the comparison.
+	// Imports are a loading detail (the exported project imports the resources/
+	// directory), not identity — exclude them from the comparison.
 	v.Spec.Imports = nil
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -56,9 +57,6 @@ workflow Review(input: PullRequest) -> Review {
     parallel {
         sec = Reviewer(pr)
     }
-    if input.urgent {
-        github.notify(pr)
-    }
     return sec
 }
 `)
@@ -80,6 +78,57 @@ workflow Review(input: PullRequest) -> Review {
 
 	if a, b := canonicalGraph(t, g1), canonicalGraph(t, g2); a != b {
 		t.Fatalf("graph changed across export round-trip:\n before: %s\n after:  %s", a, b)
+	}
+}
+
+// TestWriteProjectDir_ReExportSmallerGraphLeavesNoLeftovers proves the output
+// directory is a closed set: exporting a smaller graph into a directory a larger
+// graph was exported to does not leave an orphaned resource that reloads.
+func TestWriteProjectDir_ReExportSmallerGraphLeavesNoLeftovers(t *testing.T) {
+	base := &spec.ProjectGraph{
+		Meta: spec.Metadata{Name: "demo"},
+		Agents: map[string]*spec.AgentResource{
+			"A": {APIVersion: spec.APIVersionV0, Kind: spec.KindAgent, Metadata: spec.Metadata{Name: "A"}},
+			"B": {APIVersion: spec.APIVersionV0, Kind: spec.KindAgent, Metadata: spec.Metadata{Name: "B"}},
+		},
+	}
+	out := filepath.Join(t.TempDir(), "out")
+	if err := WriteProjectDir(out, base); err != nil {
+		t.Fatalf("first export: %v", err)
+	}
+
+	smaller := &spec.ProjectGraph{
+		Meta:   spec.Metadata{Name: "demo"},
+		Agents: map[string]*spec.AgentResource{"A": base.Agents["A"]},
+	}
+	if err := WriteProjectDir(out, smaller); err != nil {
+		t.Fatalf("re-export: %v", err)
+	}
+
+	g, err := LoadProject(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if _, ok := g.Agents["B"]; ok {
+		t.Fatalf("agent B leaked across a re-export of a smaller graph")
+	}
+	if _, ok := g.Agents["A"]; !ok {
+		t.Fatalf("agent A missing after re-export")
+	}
+}
+
+// TestWriteProjectDir_RefusesAgentSourceDest proves export refuses a directory
+// that already holds .agent files (LoadProject would duplicate every resource).
+func TestWriteProjectDir_RefusesAgentSourceDest(t *testing.T) {
+	out := t.TempDir()
+	writeFile(t, out, "existing.agent", "workflow W() { return }")
+	g := &spec.ProjectGraph{Meta: spec.Metadata{Name: "demo"}}
+	err := WriteProjectDir(out, g)
+	if err == nil {
+		t.Fatalf("expected export into a .agent-containing directory to be refused")
+	}
+	if !strings.Contains(err.Error(), ".agent") {
+		t.Fatalf("expected the refusal to mention .agent sources, got: %v", err)
 	}
 }
 

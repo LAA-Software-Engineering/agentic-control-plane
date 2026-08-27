@@ -4,20 +4,18 @@
 // Run:  agentctl validate
 //       agentctl export --format yaml     # materialize the compiled graph
 //       agentctl plan
+//
+// Note: this workflow is straight-line. Conditionals and loops parse and
+// type-check (issue #199), but do not execute end-to-end yet — the loader
+// refuses control-flow workflows until the execution IR runs on the engine
+// (#207 follow-up). See docs/LANGUAGE.md.
 
 agent Summarizer {
     model mock/gpt-4
 }
 
-// A conditional (issue #199): high-severity alerts are summarized by the agent,
-// everything else takes the cheap path. `summary` is bound in both arms, so it
-// is in scope for the return.
 workflow triage(input: Alert) -> Summary {
     enriched = notes.lookup(id: input.id)
-    if input.severity >= 3 {
-        summary = Summarizer(enriched)
-    } else {
-        summary = notes.lookup(id: input.id)
-    }
+    summary = Summarizer(enriched)
     return summary
 }

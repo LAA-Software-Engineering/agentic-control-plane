@@ -8,17 +8,24 @@ the typed AST only** — plus the **resource-model lowering added in #197** (see
 effect checking, added in #198** (see [Type and effect checking](#type-and-effect-checking-198)
 below), and **conditionals, loops, dynamic fan-out, and the execution IR, added in
 #199** (see [Control flow and the execution IR](#control-flow-and-the-execution-ir-199)
-below), and **CLI ingestion added in #200**: `project.LoadProject` discovers and compiles
-every `.agent` file under the project root (skipping dot-directories) and merges its resource
-projection, so `validate`, `plan`, `apply`, and `run` operate on `.agent` projects;
-`agentctl export --format yaml` materializes the compiled graph (ADR 003), `agentctl fmt`
-formats `.agent` sources, and `agentctl init` scaffolds a `.agent`-led project. The loader is
-structural (parse + lower + merge, surfacing parse/lowering diagnostics); the type/effect
-checker ([`internal/lang/check`](../internal/lang/check)) and the execution-IR interpreter
-([`internal/execir`](../internal/execir)) remain libraries, not yet wired into `validate`/the
-engine — that, plus the persistence half of #199 (`apply` persisting the execution IR and
-`run --resume` pinning it, deferred to the content-addressed artifact store of #207), is the
-remaining wiring.
+below), and **CLI ingestion added in #200**: `project.LoadProject` discovers every `.agent`
+file under the project root (skipping dot-directories) and compiles the set through the
+checker ([`internal/lang/check`](../internal/lang/check)) — type and effect checking plus the
+positional workflow-argument rebind — merging the CHECKED resource projection into the graph
+that `validate`/`plan`/`apply`/`run` consume. `agentctl export --format yaml` materializes that
+graph (ADR 003), `agentctl fmt` formats `.agent`, and `agentctl init` scaffolds a `.agent`
+project.
+
+**Straight-line `.agent` workflows execute end-to-end; control-flow ones do not yet.** The
+resource projection cannot represent `if`/`for` — it flattens both arms into steps for effect
+analysis — and the execution IR that can ([`internal/execir`](../internal/execir)) is not wired
+into the engine. So the loader **refuses** a workflow that uses a conditional or loop (a
+compile error naming the construct); only straight-line steps and `parallel { }` static
+fan-out reach the run path. Conditionals, loops, and dynamic fan-out still parse and
+type-check (#199) and are usable as a library, but wiring `execir` onto the engine — with the
+persistence half of #199 (`apply` persisting the execution IR, `run --resume` pinning it,
+deferred to the content-addressed artifact store of #207) — is the remaining work before they
+run through `agentctl`.
 
 The reference implementation is [`internal/lang`](../internal/lang):
 `lang.Parse(file, src) (*lang.File, lang.Diagnostics)`.

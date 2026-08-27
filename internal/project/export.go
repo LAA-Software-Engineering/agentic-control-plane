@@ -52,11 +52,30 @@ func ExportYAML(g *spec.ProjectGraph) ([]byte, error) {
 // LoadProject(dir) reconstructs an identical graph (modulo source positions and
 // the rewritten import list, which are not identity). Each resource is its own
 // file because the loader rejects multi-document files.
+//
+// dir is treated as generated output, so it must form a CLOSED set on reload:
+//
+//   - a dir that already contains .agent sources is refused — LoadProject scans
+//     the whole tree for .agent and would merge those alongside the exported
+//     YAML, duplicating every resource;
+//   - the resources/ directory is fully replaced, so re-exporting a smaller graph
+//     into the same dir cannot leave an orphaned resource file that reloads;
+//   - two resources that would sanitize to the same filename are an error rather
+//     than a silent overwrite.
 func WriteProjectDir(dir string, g *spec.ProjectGraph) error {
 	if g == nil {
 		return fmt.Errorf("project: nil graph")
 	}
+	if agents, err := discoverAgentFiles(dir); err == nil && len(agents) > 0 {
+		return fmt.Errorf("project: refusing to export into %q: it contains .agent sources, which LoadProject would merge alongside the exported YAML (duplicate resources) — export to an empty or non-source directory", dir)
+	}
+
 	resDir := filepath.Join(dir, exportResourcesDir)
+	// Treat resources/ as generated output: remove any prior contents so a
+	// re-export of a smaller graph leaves no orphaned resource files.
+	if err := os.RemoveAll(resDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(resDir, 0o755); err != nil {
 		return err
 	}
@@ -71,12 +90,17 @@ func WriteProjectDir(dir string, g *spec.ProjectGraph) error {
 		return err
 	}
 
+	written := map[string]string{}
 	for _, r := range nonProjectResourceEntries(g) {
+		name := r.kind + "-" + sanitizeFilename(r.name) + ".yaml"
+		if prev, clash := written[name]; clash {
+			return fmt.Errorf("project: resources %q and %q both map to file %q; rename one to export", prev, r.kind+"/"+r.name, name)
+		}
+		written[name] = r.kind + "/" + r.name
 		body, err := marshalDocs([]any{r.resource})
 		if err != nil {
 			return err
 		}
-		name := r.kind + "-" + sanitizeFilename(r.name) + ".yaml"
 		if err := os.WriteFile(filepath.Join(resDir, name), body, 0o644); err != nil {
 			return err
 		}

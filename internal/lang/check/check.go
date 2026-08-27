@@ -5,7 +5,6 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/execir"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/lower"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
@@ -107,7 +106,7 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 		result, lowerDiags := lower.LowerFile(file, lower.Options{Workflows: workflowNames})
 		diags = append(diags, lowerDiags...)
 		lowered = append(lowered, result.Workflows...)
-		if err := project.MergeLowered(graph, result); err != nil {
+		if err := lower.MergeLowered(graph, result); err != nil {
 			diags = append(diags, lang.Diagnostic{Pos: file.Pos, Msg: err.Error()})
 		}
 		// Execution lowering is the sibling projection (ADR 002 §5): lowered

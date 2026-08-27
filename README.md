@@ -73,7 +73,7 @@ Authority:
   autonomous  -> WIDENED
 ```
 
-Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md) — including conditionals, loops, and dynamic fan-out. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the 58 existing fixtures work), and `agentctl export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
+Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Straight-line workflows run end-to-end today; conditionals, loops, and dynamic fan-out parse and type-check ([#199](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/199)) but do not execute yet, so the loader refuses control-flow workflows until the execution IR runs on the engine. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the 58 existing fixtures work), and `agentctl export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
 
 ## Flagship: incident triage
 
