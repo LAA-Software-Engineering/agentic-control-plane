@@ -73,6 +73,75 @@ func TestFmt_writeThenCheckClean(t *testing.T) {
 	}
 }
 
+func TestFmt_formatsAgentSources(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "project.yaml"),
+		[]byte("apiVersion: agentic.dev/v0\nkind: Project\nmetadata:\n  name: demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately messy indentation and spacing.
+	messy := "workflow W(input: X)   {\n" +
+		"if input.a&&input.b {\n" +
+		"github.get_pr(input.repo)\n" +
+		"}\n" +
+		"}\n"
+	agentPath := filepath.Join(root, "flow.agent")
+	if err := os.WriteFile(agentPath, []byte(messy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// First format writes canonical form.
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"fmt", "--project", root})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("fmt: %v", err)
+	}
+
+	got, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "    if input.a && input.b {") {
+		t.Fatalf("expected canonical .agent formatting, got:\n%s", got)
+	}
+
+	// Second run with --check must be clean (idempotent).
+	ResetGlobalsForTest()
+	cmd = NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"fmt", "--check", "--project", root})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("expected formatted .agent to pass --check, got: %v", err)
+	}
+}
+
+func TestFmt_malformedAgentFails(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "project.yaml"),
+		[]byte("apiVersion: agentic.dev/v0\nkind: Project\nmetadata:\n  name: demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bad.agent"), []byte("workflow W( {"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"fmt", "--project", root})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected fmt to fail on a malformed .agent source")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("expected exit %d, got %d (%v)", ExitValidationError, ExitCodeOf(err), err)
+	}
+}
+
 func TestFmt_secondRunNoop(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{"project.yaml", "tool.yaml", "policy.yaml"} {

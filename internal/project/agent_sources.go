@@ -86,6 +86,17 @@ func errorDiags(diags lang.Diagnostics) lang.Diagnostics {
 	return out
 }
 
+// ListAgentFiles returns every .agent file under root (sorted, skipping
+// dot-directories) — the same discovery the loader uses, exposed for `agentctl
+// fmt`.
+func ListAgentFiles(root string) ([]string, error) {
+	abs, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return nil, err
+	}
+	return discoverAgentFiles(abs)
+}
+
 // discoverAgentFiles returns every .agent file under rootAbs, sorted, skipping
 // dot-directories.
 func discoverAgentFiles(rootAbs string) ([]string, error) {

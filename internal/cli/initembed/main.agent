@@ -1,0 +1,10 @@
+// This is the .agent authoring surface (ADR 003): agents and workflows are
+// written here. Tools, policies, and project.yaml stay YAML — the interchange
+// format and where machine-generated or config-shaped resources live.
+//
+// `agentctl export --format yaml` materializes the compiled resource graph as
+// YAML on demand; nothing is written to disk by default.
+
+workflow hello() {
+    helper.echo(message: "hello")
+}

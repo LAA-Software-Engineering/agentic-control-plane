@@ -3,10 +3,11 @@ kind: Project
 metadata:
   name: {{.ProjectName}}
 spec:
+  # .agent sources under the project root are discovered automatically; only
+  # YAML resources (tools, policies, config) are imported here.
   imports:
     - ./policies/default.yaml
     - ./tools/helper.yaml
-    - ./workflows/hello.yaml
   defaults:
     policy: default
     model: mock/gpt-4

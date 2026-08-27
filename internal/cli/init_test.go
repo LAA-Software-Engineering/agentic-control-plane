@@ -26,6 +26,11 @@ func TestInit_thenValidateSucceeds(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(proj, "project.yaml")); err != nil {
 		t.Fatal(err)
 	}
+	// The scaffold leads on the .agent authoring surface (ADR 003 / #200): the
+	// workflow is a .agent source, not YAML.
+	if _, err := os.Stat(filepath.Join(proj, "main.agent")); err != nil {
+		t.Fatalf("expected init to scaffold a .agent source: %v", err)
+	}
 
 	ResetGlobalsForTest()
 	v := NewRootCmd()
