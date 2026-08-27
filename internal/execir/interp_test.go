@@ -310,6 +310,49 @@ func TestLoop_SequentialCarriedBindingEscapes(t *testing.T) {
 	}
 }
 
+// TestBranch_EqualityOverObjectsAndArrays proves `==` is total and panic-free
+// over the JSON objects and arrays a workflow input actually holds — a bare Go
+// `==` on those operands would panic (review finding).
+func TestBranch_EqualityOverObjectsAndArrays(t *testing.T) {
+	t.Parallel()
+	prog := &Program{
+		Workflow: "W", Params: []string{"input"},
+		Body: []Node{
+			&Branch{
+				Cond: BinOp{Op: "==", X: Leaf{V: Ref{Path: []string{"input", "a"}}}, Y: Leaf{V: Ref{Path: []string{"input", "b"}}}},
+				Then: []Node{&InvokeTool{Uses: "tool.t.equal"}},
+				Else: []Node{&InvokeTool{Uses: "tool.t.notequal"}},
+			},
+		},
+	}
+	run := func(a, b any) string {
+		rec := &recorder{}
+		runProg(t, &Interp{Invoker: rec}, prog, map[string]any{"a": a, "b": b})
+		names := rec.names()
+		if len(names) != 1 {
+			t.Fatalf("expected one branch to run, got %v", names)
+		}
+		return names[0]
+	}
+
+	// Equal maps -> then; different maps -> else; equal/unequal arrays; type mismatch.
+	if got := run(map[string]any{"k": "v"}, map[string]any{"k": "v"}); got != "tool.t.equal" {
+		t.Fatalf("equal maps should be ==, got %s", got)
+	}
+	if got := run(map[string]any{"k": "v"}, map[string]any{"k": "w"}); got != "tool.t.notequal" {
+		t.Fatalf("different maps should be !=, got %s", got)
+	}
+	if got := run([]any{int64(1), int64(2)}, []any{int64(1), float64(2)}); got != "tool.t.equal" {
+		t.Fatalf("arrays [1,2] and [1,2.0] should be == (numeric normalization), got %s", got)
+	}
+	if got := run([]any{int64(1)}, []any{int64(1), int64(2)}); got != "tool.t.notequal" {
+		t.Fatalf("arrays of different length should be !=, got %s", got)
+	}
+	if got := run(map[string]any{"k": "v"}, "scalar"); got != "tool.t.notequal" {
+		t.Fatalf("map vs scalar should be != (and must not panic), got %s", got)
+	}
+}
+
 func TestLoop_NonListCollectionErrors(t *testing.T) {
 	t.Parallel()
 	prog := &Program{

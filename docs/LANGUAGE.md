@@ -381,10 +381,15 @@ workflow ReleaseAll(input: Batch)
         parallel for repo in input.repos {
             github.deploy(repo, channel: "stable")
         }
+        report = github.summarize(input.repos)
     }
     return report
 }
 ```
+
+`report` is bound in **both** arms, so it is definitely assigned after the `if` and `return
+report` is well-formed. A binding made in only one arm is not in scope after the `if` (see the
+scope rules below); return it inside that arm, or bind it in both.
 
 - **`if` / `else` / `else if`** — a conditional; the condition is a boolean expression over
   already-bound values and literals (no calls; see the grammar note).
@@ -399,10 +404,15 @@ Sequential and parallel constructs scope bindings differently, and the type chec
 interpreter implement the **same** rule so a program cannot type-check under one model and run
 under another:
 
-- **Sequential** (top level, `if`/`else` arms, sequential `for`): one flat scope. A binding
-  introduced in an arm or a loop body **escapes** (last iteration wins), and a `return` inside
-  returns from the workflow and halts the loop and everything after it. `if c { x = A() } else
-  { x = B() }` followed by a use of `x` is the intended idiom.
+- **`if` is exclusive choice with a definite-assignment join.** The two arms never see each
+  other's bindings (each is checked against the pre-`if` scope), and a binding is in scope
+  after the `if` only if it is bound in **both** arms — `if c { x = A() } else { x = B() }`
+  then a use of `x` is the intended idiom. A name bound in only one arm is not in scope
+  afterward. When the two arms give a name different types the join is a union, represented as
+  untyped/gradual (permissive) rather than whichever arm the checker walked last.
+- **Sequential `for`**: one flat scope — the loop variable and body bindings **escape** (last
+  iteration wins), and a `return` inside returns from the workflow and halts the loop and
+  everything after it.
 - **Parallel** (`parallel { … }`, `parallel for`): each branch/iteration runs in an **isolated**
   scope; only a `parallel {}` branch's own binding is published at the join, and a `parallel
   for` body's bindings do not escape. A `return` inside a parallel body is a **compile error**

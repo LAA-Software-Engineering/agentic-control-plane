@@ -1,6 +1,9 @@
 package execir
 
-import "fmt"
+import (
+	"fmt"
+	"reflect"
+)
 
 // evalArgs resolves each argument value against scope.
 func evalArgs(scope map[string]any, args map[string]Value) (map[string]any, error) {
@@ -161,17 +164,45 @@ func truthy(v any) bool {
 	}
 }
 
-// valuesEqual compares two scalars for equality. Numbers compare numerically
-// across int64/float64; other types compare by Go equality after a numeric
-// normalization, so 1 == 1.0 holds.
+// valuesEqual is a total, panic-free equality over every value this IR can
+// carry, so `==` is defined on the JSON objects and arrays a workflow input
+// holds — a bare `a == b` on `any` would panic ("comparing uncomparable type")
+// for a map or slice operand. Numbers compare numerically across int64/float64
+// (1 == 1.0), strings/bools by value, arrays and objects structurally (element-
+// and key-wise, recursively, with the same numeric normalization), and anything
+// else via reflect.DeepEqual, which never panics. A type mismatch is unequal.
 func valuesEqual(a, b any) bool {
 	if af, aok := toFloat(a); aok {
-		if bf, bok := toFloat(b); bok {
-			return af == bf
-		}
-		return false
+		bf, bok := toFloat(b)
+		return bok && af == bf
 	}
-	return a == b
+	switch av := a.(type) {
+	case []any:
+		bv, ok := b.([]any)
+		if !ok || len(av) != len(bv) {
+			return false
+		}
+		for i := range av {
+			if !valuesEqual(av[i], bv[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		bv, ok := b.(map[string]any)
+		if !ok || len(av) != len(bv) {
+			return false
+		}
+		for k, va := range av {
+			vb, present := bv[k]
+			if !present || !valuesEqual(va, vb) {
+				return false
+			}
+		}
+		return true
+	default:
+		return reflect.DeepEqual(a, b)
+	}
 }
 
 // compareOrdered evaluates <, <=, >, >= over numeric operands. A non-numeric

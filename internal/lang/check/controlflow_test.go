@@ -97,6 +97,76 @@ workflow W(input: PR)
 	}
 }
 
+// TestCheckControlFlow_IfJoinIsExclusiveNotLastArmWins proves an `if` is
+// type-checked as exclusive choice with a definite-assignment join, not as
+// sequential mutation of one env (review finding).
+func TestCheckControlFlow_IfJoinIsExclusiveNotLastArmWins(t *testing.T) {
+	t.Parallel()
+
+	// Positive control: the schema wiring really does forbid an undeclared field,
+	// so the negative assertions below are not vacuously passing.
+	t.Run("forbidden field on a definite type errors", func(t *testing.T) {
+		t.Parallel()
+		src := `
+agent PRSrc { output PullRequest }
+workflow W(input: PullRequest) {
+    p = PRSrc()
+    z = p.summary
+}
+`
+		f := parseOrFatal(t, src)
+		_, diags := Check(f, Options{SchemaDir: "testdata"})
+		if !hasSeverity(diags, lang.SeverityError, "summary") {
+			t.Fatalf("expected PullRequest to forbid .summary, got %v", diagMessages(diags))
+		}
+	})
+
+	// Both arms bind x to DIFFERENT types. Old behavior typed x as whatever the
+	// else arm last wrote (Review), so x.repo — valid for PullRequest, forbidden
+	// by Review — errored. The join is a union (untyped/gradual), so no error.
+	t.Run("differing arm types join to a union, not the else arm", func(t *testing.T) {
+		t.Parallel()
+		src := `
+agent PRSrc { output PullRequest }
+agent RevSrc { output Review }
+workflow W(input: PullRequest) {
+    if input.number {
+        x = PRSrc()
+    } else {
+        x = RevSrc()
+    }
+    z = x.repo
+}
+`
+		f := parseOrFatal(t, src)
+		_, diags := Check(f, Options{SchemaDir: "testdata"})
+		if diags.HasErrors() {
+			t.Fatalf("a union join must not be typed as the else arm; got %v", diagMessages(diags))
+		}
+	})
+
+	// A binding made only in the then arm is NOT definitely assigned, so it is
+	// dropped from the join. Old behavior leaked it as PullRequest, so a later
+	// forbidden-field access errored; now the reference is untyped/gradual.
+	t.Run("then-only binding is not definitely assigned", func(t *testing.T) {
+		t.Parallel()
+		src := `
+agent PRSrc { output PullRequest }
+workflow W(input: PullRequest) {
+    if input.number {
+        r = PRSrc()
+    }
+    z = r.summary
+}
+`
+		f := parseOrFatal(t, src)
+		_, diags := Check(f, Options{SchemaDir: "testdata"})
+		if diags.HasErrors() {
+			t.Fatalf("a then-only binding must not leak its type past the if; got %v", diagMessages(diags))
+		}
+	})
+}
+
 // TestCheckControlFlow_ExecRebindsPositionalWorkflowArgs proves positional
 // workflow: arguments are rebound to real parameter names on the EXECUTION IR,
 // not only on the resource projection — so the stored executable form binds its

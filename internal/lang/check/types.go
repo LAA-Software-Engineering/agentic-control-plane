@@ -264,18 +264,30 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 		diags = append(diags, wc.checkCompatible(s.Value.Position(), got, want, "return value")...)
 		return diags
 	case *lang.IfStmt:
-		// Sequential control flow uses one flat scope, matching the interpreter,
-		// which runs the taken arm on the enclosing scope: a binding introduced in
-		// an arm escapes the `if`.
+		// An `if` is EXCLUSIVE choice, not sequential composition: the two arms
+		// never see each other's bindings, and a binding is in scope after the
+		// `if` only if it is definitely assigned — bound in BOTH arms (or already
+		// bound before). Each arm is checked against its own snapshot of the
+		// pre-`if` environment, then the arms are joined (joinEnv). This matches
+		// the interpreter, which runs exactly one arm on the enclosing scope.
 		var diags lang.Diagnostics
 		_, d := wc.checkExpr(s.Cond)
 		diags = append(diags, d...)
+
+		base := wc.env
+		wc.env = snapshotEnv(base)
 		for _, st := range s.Then {
 			diags = append(diags, wc.checkStmt(st)...)
 		}
+		thenEnv := wc.env
+
+		wc.env = snapshotEnv(base)
 		for _, st := range s.Else {
 			diags = append(diags, wc.checkStmt(st)...)
 		}
+		elseEnv := wc.env
+
+		wc.env = joinEnv(thenEnv, elseEnv)
 		return diags
 	case *lang.ForStmt:
 		var diags lang.Diagnostics
@@ -312,13 +324,57 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 }
 
 // snapshotEnv shallow-copies the binding environment so an isolated block (a
-// parallel loop body) can bind names that are discarded when the block ends.
+// parallel loop body) or one `if` arm can bind names that are discarded or
+// joined when the block ends.
 func snapshotEnv(env map[string]typeRef) map[string]typeRef {
 	out := make(map[string]typeRef, len(env))
 	for k, v := range env {
 		out[k] = v
 	}
 	return out
+}
+
+// joinEnv computes the environment after an `if` from the two arms'
+// environments, each already derived from a copy of the pre-`if` env. A name is
+// in scope after the `if` only if it is present in BOTH arms — i.e. bound before
+// the `if` (arms start from the same base, so a pre-existing name is in both) or
+// newly bound in both arms. A name bound in only one arm is NOT definitely
+// assigned and is dropped, so a later reference to it is not silently well-typed.
+// When both arms agree on a name's type it is kept; when they disagree (either
+// arm rebound it, or two arms bound it to different types) the joined type is
+// untyped/gradual — the honest representation of a union without a union type,
+// which stays permissive rather than picking whichever arm ran last.
+func joinEnv(thenEnv, elseEnv map[string]typeRef) map[string]typeRef {
+	out := make(map[string]typeRef, len(thenEnv))
+	for name, tThen := range thenEnv {
+		tElse, inElse := elseEnv[name]
+		if !inElse {
+			continue // bound in the then arm only: not definitely assigned
+		}
+		out[name] = mergeType(tThen, tElse)
+	}
+	return out
+}
+
+// mergeType joins a name's type across the two arms: identical types are kept,
+// differing types collapse to untyped (gradual), never to one arm's value.
+func mergeType(a, b typeRef) typeRef {
+	if a.doc == b.doc && samePath(a.path, b.path) {
+		return a
+	}
+	return typeRef{}
+}
+
+func samePath(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (wc *wfChecker) checkExpr(e lang.Expr) (typeRef, lang.Diagnostics) {
