@@ -132,14 +132,17 @@ remaining validation error.
 The interpolation language addresses workflow input only as `input.<field>`
 (`engine.resolvePath` requires ≥2 segments); there is no token for the whole input object,
 unlike a step's whole output (`${steps.<id>.output}`). Lowering a bare single-parameter
-reference (`return input`, `Util(input)`) would emit `${input}`, which skip-passes validation
+reference (`return input`) would emit `${input}`, which skip-passes validation
 (`spec.checkInterpPath` returns nil for <2 segments) and fail-closes at run time. Lowering
-therefore **diagnoses** the bare whole-input reference instead of emitting invalid IR. Closing
-it properly needs a whole-input token in the engine/validator **and** a subworkflow
-input-document mapping (a single-param callee should receive the object as its input document,
-not as a one-key `with:` map) — the latter is #194/#198, and #198's `arg0`-rebind does not
-compose with the current whole-document convention on its own. Tracked as a follow-up; not the
-resource projection's job.
+therefore **diagnoses** it. The best-effort `${input}` is still emitted into the Result — a
+Result that carries diagnostics is best-effort by contract (it may also hold duplicate names),
+and lowering does not silently drop a written construct; callers check diagnostics before use.
+Closing the gap properly needs a whole-input token in the engine/validator **and** a
+subworkflow input-document mapping (a single-param callee should receive the object as its
+input document, not a one-key `with:` map) — the latter is #194/#198, and #198's `arg0`-rebind
+does not compose with the current whole-document convention on its own. Tracked as a follow-up;
+not the resource projection's job. (A *field* access like `Util(text: input.body)` already
+composes: the named-arg key is the callee's input field — see `workflow_call.agent`.)
 
 ## Out of scope (follow-ups)
 Execution lowering / `Branch`/`Loop` (#199); type + effect checking of the effects clause

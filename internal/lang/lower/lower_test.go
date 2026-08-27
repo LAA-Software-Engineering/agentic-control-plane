@@ -108,6 +108,12 @@ func TestLower_SameFileWorkflowCalleeIsWorkflowStep(t *testing.T) {
 	if st.Workflow != "Util" || st.Agent != "" {
 		t.Errorf("same-file workflow callee lowered wrong: workflow=%q agent=%q (want workflow=Util, agent empty)", st.Workflow, st.Agent)
 	}
+	// The named argument's key is the callee's input field, so the with: map is
+	// the callee's actual input document (engine.runSubworkflowStep sets the child
+	// input to this map) — not a positional arg0 wrapper the callee cannot read.
+	if _, ok := st.With["text"]; !ok || len(st.With) != 1 {
+		t.Errorf("named-arg call should lower to with={text: ...}; got %v", st.With)
+	}
 	// The whole graph must validate its references — the callee is a Workflow, so
 	// no Agent/Util is invented.
 	if err := spec.ResolveReferences(r.ToGraph()); err != nil {

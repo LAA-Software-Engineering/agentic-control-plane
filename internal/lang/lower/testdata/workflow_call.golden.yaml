@@ -7,7 +7,7 @@ spec:
     - id: x
       workflow: Util
       with:
-        arg0: ${input.body}
+        text: ${input.body}
   output:
     value:
       value: ${steps.x.output}

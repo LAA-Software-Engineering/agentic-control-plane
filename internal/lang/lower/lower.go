@@ -24,11 +24,15 @@ type Options struct {
 // Agent/Tool/Policy/Workflow resources plan/apply/policy analysis run against. It
 // is deliberately NOT an input to the execution lowering (#199) — see doc.go.
 //
-// Agents and Workflows have unique names whenever LowerFile returned no
-// diagnostics: LowerFile is the authority for resource identity in a file and
-// reports a duplicate agent/workflow name, or a name declared as both, as a
-// diagnostic. ToGraph and project.MergeLowered rely on that invariant; behavior
-// on a Result built despite duplicate-name diagnostics is unspecified.
+// A Result is a valid resource projection only when LowerFile returned NO
+// diagnostics. When diagnostics are present the Result is best-effort: it may
+// carry duplicate resource names and invalid interpolation tokens (e.g. a
+// whole-input ${input} that engine.resolvePath rejects), because lowering does
+// not drop a written construct without a diagnostic. Callers must check the
+// diagnostics before using a Result. In particular LowerFile is the authority for
+// resource identity in a file — it reports a duplicate agent/workflow name, or a
+// name declared as both — so ToGraph and project.MergeLowered may assume unique
+// names on a diagnostic-free Result.
 type Result struct {
 	Agents    []*spec.AgentResource
 	Workflows []*spec.WorkflowResource
@@ -483,11 +487,14 @@ func (wl *workflowLowerer) lowerValue(e lang.Expr, idBase string, predNeeds []st
 // "input" alone, and the resource-model interpolation language has no token for
 // the whole workflow input — engine.resolvePath requires input.<field> (a step's
 // whole output is reachable as ${steps.<id>.output}, but the input root is not).
-// Emitting ${input} would skip-pass validation and fail-closed at run time, so it
-// is a diagnostic here rather than silent invalid IR. Whole-input pass-through
-// (including handing a subworkflow its entire input) needs both a whole-input
-// token and a callee input-document mapping; both are follow-ups (see
-// docs/plans/197-lowering.md), not part of the resource projection.
+// ${input} would skip-pass validation and fail-closed at run time, so it is
+// reported as a diagnostic. The best-effort ${input} is STILL returned: like a
+// duplicate name, an invalid token lives in a Result that carries diagnostics
+// (see the Result doc), and a caller must check diagnostics before use rather
+// than trust that only-valid IR was produced. Whole-input pass-through (handing a
+// subworkflow its entire input) additionally needs a callee input-document
+// mapping; both are follow-ups (docs/plans/197-lowering.md), not the resource
+// projection's job.
 func (wl *workflowLowerer) token(r *lang.RefExpr) any {
 	path := wl.prefixOf(r)
 	if path == "input" {

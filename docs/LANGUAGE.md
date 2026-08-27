@@ -181,8 +181,10 @@ diagnostic on lowered IR underlines the `.agent` call site, not a synthesized na
 The interpolation language addresses a workflow's input only as `input.<field>`
 (`engine.resolvePath` requires at least two path segments), so there is no token for the
 *entire* input object — unlike a step, whose whole output is `${steps.<id>.output}`. A bare
-reference to a single-parameter workflow's input therefore cannot be lowered and is a
-diagnostic. Supporting it needs two things that are out of scope for the resource projection:
+reference to a single-parameter workflow's input therefore is a diagnostic (lowering still
+emits a best-effort `${input}` into a Result that, carrying a diagnostic, is not a valid
+projection — callers check diagnostics before use). Supporting it needs two things that are
+out of scope for the resource projection:
 a whole-input interpolation token in the engine/validator, and — for passing a whole input to
 a subworkflow — a callee input-document mapping rather than a one-key `with:` map (#194/#198).
 

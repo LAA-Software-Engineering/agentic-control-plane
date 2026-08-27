@@ -1,9 +1,14 @@
 // A workflow that calls another workflow declared later in the SAME file. The
 // callee must lower to a workflow: step, not an agent: step (#194), with no
-// caller-supplied Options.Workflows hint. Fields are accessed (input.body,
-// input.text) so every lowered token is valid resource-model interpolation.
+// caller-supplied Options.Workflows hint.
+//
+// The call uses a NAMED argument whose key (text) is the field the callee reads
+// (input.text), so the lowered with: map is the callee's actual input document —
+// engine.runSubworkflowStep sets the child input to this map. Positional args
+// would wrap the value under arg0 and the callee's input.text would miss; this
+// fixture is executable, not merely valid-looking tokens.
 workflow Main(input: Ticket) -> Summary {
-    x = Util(input.body)
+    x = Util(text: input.body)
     return x
 }
 
