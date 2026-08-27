@@ -74,14 +74,26 @@ WHERE digest = ?
 	return &s, nil
 }
 
-func latestSnapshotDigestForEnv(ctx context.Context, q querier, env string) (string, error) {
-	row := q.QueryRowContext(ctx, `
-SELECT digest
-FROM deployment_snapshots
-WHERE environment = ?
-ORDER BY created_at DESC, digest DESC
-LIMIT 1
-`, env)
+// setCurrentSnapshot points env at digest, overwriting any prior pointer. Called on every apply,
+// including a re-apply of an earlier digest, so the pointer tracks what is deployed now.
+func setCurrentSnapshot(ctx context.Context, q querier, env, digest string, at time.Time) error {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	_, err := q.ExecContext(ctx, `
+INSERT INTO deployment_env_current (environment, snapshot_digest, updated_at)
+VALUES (?, ?, ?)
+ON CONFLICT(environment) DO UPDATE SET
+  snapshot_digest = excluded.snapshot_digest,
+  updated_at = excluded.updated_at
+`, env, digest, at.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+// currentSnapshotDigestForEnv returns the snapshot digest currently deployed for env (the apply
+// pointer), or sql.ErrNoRows when nothing has been applied to env.
+func currentSnapshotDigestForEnv(ctx context.Context, q querier, env string) (string, error) {
+	row := q.QueryRowContext(ctx, `SELECT snapshot_digest FROM deployment_env_current WHERE environment = ?`, env)
 	var digest string
 	if err := row.Scan(&digest); err != nil {
 		return "", err
@@ -89,14 +101,18 @@ LIMIT 1
 	return digest, nil
 }
 
-// pruneUnreferencedArtifacts removes snapshots no run references and artifacts no surviving
-// snapshot references. Reference-guarded so trace pruning (which deletes runs) cannot orphan an
-// artifact a surviving run still needs to resume.
+// pruneUnreferencedArtifacts removes snapshots no run references AND that are not the current
+// deployed snapshot for any environment, plus artifacts no surviving snapshot references.
+// Reference-guarded so trace pruning (which deletes runs) can neither orphan an artifact a surviving
+// run needs to resume, nor delete the current env identity that superseded detection depends on.
 func pruneUnreferencedArtifacts(ctx context.Context, q querier) (int64, error) {
 	snapRes, err := q.ExecContext(ctx, `
 DELETE FROM deployment_snapshots
 WHERE digest NOT IN (
   SELECT deployment_snapshot_digest FROM runs WHERE deployment_snapshot_digest <> ''
+)
+AND digest NOT IN (
+  SELECT snapshot_digest FROM deployment_env_current
 )
 `)
 	if err != nil {

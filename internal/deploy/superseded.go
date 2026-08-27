@@ -24,7 +24,7 @@ func MarkSupersededRuns(ctx context.Context, store state.ArtifactStore, records 
 		if _, seen := latest[env]; seen {
 			continue
 		}
-		d, err := store.LatestSnapshotDigestForEnv(ctx, env)
+		d, err := store.CurrentSnapshotDigestForEnv(ctx, env)
 		if err != nil {
 			d = ""
 		}

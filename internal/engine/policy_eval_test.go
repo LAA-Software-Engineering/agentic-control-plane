@@ -16,7 +16,7 @@ func TestCompiledWorkflowEvaluator_unknownPolicyErrors(t *testing.T) {
 			},
 		},
 	}
-	_, err := compiledWorkflowEvaluator("", g, "missing")
+	_, err := compiledWorkflowEvaluator("", g, "missing", false)
 	if err == nil {
 		t.Fatal("expected error for unknown policy")
 	}
@@ -27,7 +27,7 @@ func TestCompiledWorkflowEvaluator_unknownPolicyErrors(t *testing.T) {
 
 func TestCompiledWorkflowEvaluator_compilesWithoutSnapshot(t *testing.T) {
 	g := demoWorkflowGraph(t)
-	ev, err := compiledWorkflowEvaluator("", g, "default")
+	ev, err := compiledWorkflowEvaluator("", g, "default", false)
 	if err != nil {
 		t.Fatal(err)
 	}

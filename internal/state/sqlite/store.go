@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
@@ -100,9 +101,14 @@ func (s *Store) GetSnapshot(ctx context.Context, digest string) (*state.Deployme
 	return getSnapshot(ctx, s.db, digest)
 }
 
-// LatestSnapshotDigestForEnv returns the newest snapshot digest for env, or sql.ErrNoRows.
-func (s *Store) LatestSnapshotDigestForEnv(ctx context.Context, env string) (string, error) {
-	return latestSnapshotDigestForEnv(ctx, s.db, env)
+// SetCurrentSnapshot points env at the snapshot deployed now (issue #207).
+func (s *Store) SetCurrentSnapshot(ctx context.Context, env, digest string) error {
+	return setCurrentSnapshot(ctx, s.db, env, digest, time.Now())
+}
+
+// CurrentSnapshotDigestForEnv returns the snapshot digest currently deployed for env, or sql.ErrNoRows.
+func (s *Store) CurrentSnapshotDigestForEnv(ctx context.Context, env string) (string, error) {
+	return currentSnapshotDigestForEnv(ctx, s.db, env)
 }
 
 // PruneUnreferencedArtifacts removes snapshots/artifacts no run references (issue #207).

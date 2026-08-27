@@ -39,23 +39,38 @@ func TestArtifact_putGetDedupe(t *testing.T) {
 	}
 }
 
-func TestSnapshot_latestForEnv(t *testing.T) {
+func TestCurrentSnapshot_pointerFollowsLastApplyIncludingRollback(t *testing.T) {
 	st, ctx := openTestStore(t)
-	old := state.DeploymentSnapshot{Digest: "s1", FormatVersion: "v1", Environment: "prod", GraphDigest: "g1", CreatedAt: time.Now().Add(-time.Hour)}
-	newer := state.DeploymentSnapshot{Digest: "s2", FormatVersion: "v1", Environment: "prod", GraphDigest: "g2", CreatedAt: time.Now()}
-	other := state.DeploymentSnapshot{Digest: "s3", FormatVersion: "v1", Environment: "dev", GraphDigest: "g3", CreatedAt: time.Now()}
-	for _, s := range []state.DeploymentSnapshot{old, newer, other} {
-		if err := st.PutSnapshot(ctx, s); err != nil {
+	// Content-addressed snapshot rows are immutable; the current pointer is a separate mutable row.
+	for _, d := range []string{"A", "B"} {
+		if err := st.PutSnapshot(ctx, state.DeploymentSnapshot{Digest: d, FormatVersion: "v1", Environment: "prod", GraphDigest: "g" + d}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	latest, err := st.LatestSnapshotDigestForEnv(ctx, "prod")
-	if err != nil {
+	mustCurrent := func(want string) {
+		t.Helper()
+		got, err := st.CurrentSnapshotDigestForEnv(ctx, "prod")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("current for prod = %q, want %q", got, want)
+		}
+	}
+	// apply A -> B -> A (rollback). "latest by created_at" would wrongly report B after rollback;
+	// the pointer must report A.
+	if err := st.SetCurrentSnapshot(ctx, "prod", "A"); err != nil {
 		t.Fatal(err)
 	}
-	if latest != "s2" {
-		t.Fatalf("latest for prod = %q, want s2", latest)
+	mustCurrent("A")
+	if err := st.SetCurrentSnapshot(ctx, "prod", "B"); err != nil {
+		t.Fatal(err)
 	}
+	mustCurrent("B")
+	if err := st.SetCurrentSnapshot(ctx, "prod", "A"); err != nil { // re-apply earlier digest
+		t.Fatal(err)
+	}
+	mustCurrent("A")
 }
 
 func TestPruneUnreferencedArtifacts_referencedSurvive(t *testing.T) {
@@ -74,6 +89,18 @@ func TestPruneUnreferencedArtifacts_referencedSurvive(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// A current-deployed snapshot that NO run references (e.g. applied, not yet run) must also
+	// survive — the env identity superseded detection depends on.
+	current := state.DeploymentSnapshot{Digest: "current", FormatVersion: "v1", Environment: "local", GraphDigest: "graphCurrent", CreatedAt: time.Now()}
+	if err := st.PutSnapshot(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutArtifact(ctx, state.DeploymentArtifact{Digest: "graphCurrent", Kind: state.ArtifactKindResolvedGraph, FormatVersion: "v1", Payload: []byte("graphCurrent"), CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetCurrentSnapshot(ctx, "local", "current"); err != nil {
+		t.Fatal(err)
+	}
 	// A surviving run references only "keep".
 	if err := st.StartRun(ctx, state.Run{RunID: "r1", WorkflowName: "wf", Env: "local", Status: state.RunStatusInterrupted, StartedAt: time.Now(), DeploymentSnapshotDigest: "keep"}); err != nil {
 		t.Fatal(err)
@@ -83,12 +110,17 @@ func TestPruneUnreferencedArtifacts_referencedSurvive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The referenced snapshot and its artifact survive; the orphan and its artifact are gone.
-	if _, err := st.GetSnapshot(ctx, "keep"); err != nil {
-		t.Fatalf("referenced snapshot must survive prune: %v", err)
+	// The run-referenced snapshot and the current-env pointer snapshot survive with their artifacts;
+	// the orphan and its artifact are gone.
+	for _, keep := range []string{"keep", "current"} {
+		if _, err := st.GetSnapshot(ctx, keep); err != nil {
+			t.Fatalf("snapshot %q must survive prune: %v", keep, err)
+		}
 	}
-	if _, err := st.GetArtifact(ctx, "graphKeep"); err != nil {
-		t.Fatalf("artifact of a referenced snapshot must survive prune: %v", err)
+	for _, keep := range []string{"graphKeep", "graphCurrent"} {
+		if _, err := st.GetArtifact(ctx, keep); err != nil {
+			t.Fatalf("artifact %q must survive prune: %v", keep, err)
+		}
 	}
 	if _, err := st.GetSnapshot(ctx, "orphan"); err == nil {
 		t.Fatal("unreferenced snapshot should have been pruned")

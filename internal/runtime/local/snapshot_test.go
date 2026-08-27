@@ -6,26 +6,41 @@ import (
 	"testing"
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/deploy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 )
 
-func policyGraph(permit []string) *spec.ProjectGraph {
+// policyGraph builds a graph whose policy CheckToolCall actually consults: requireAllTools (narrow,
+// denies tool calls without approval) vs permissive (wide, allows them).
+func policyGraph(permissive bool) *spec.ProjectGraph {
+	approvals := &spec.PolicyApprovals{RequireAllTools: spec.BoolPtr(true)}
+	if permissive {
+		approvals = &spec.PolicyApprovals{Permissive: spec.BoolPtr(true)}
+	}
 	return &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{
+			"slack": {Metadata: spec.Metadata{Name: "slack"}, Spec: spec.ToolSpec{Type: "mock", Safety: &spec.ToolSafety{
+				Trusted: spec.BoolPtr(true), SideEffects: spec.BoolPtr(false), RequiresApproval: spec.BoolPtr(false),
+			}}},
+		},
 		Workflows: map[string]*spec.WorkflowResource{
 			"wf": {Metadata: spec.Metadata{Name: "wf"}, Spec: spec.WorkflowSpec{Policy: "default"}},
 		},
 		Policies: map[string]*spec.PolicyResource{
-			"default": {Metadata: spec.Metadata{Name: "default"}, Spec: spec.PolicySpec{Effects: &spec.PolicyEffects{Permit: permit}}},
+			"default": {Metadata: spec.Metadata{Name: "default"}, Spec: spec.PolicySpec{Approvals: approvals}},
 		},
 	}
 }
 
-// The core #207 invariant: a run suspended under a narrow policy resumes under that narrow policy,
-// even after a policy-widening apply lands a newer snapshot. Resume hydrates authority from the
-// run's pinned snapshot, never current config.
+// The core #207 invariant, asserted at the production policy boundary (CheckToolCall): a run
+// suspended under a narrow policy resumes under that narrow policy — the compiled evaluator built
+// from the hydrated graph denies a tool call — even after a policy-widening apply lands a newer
+// (permissive) snapshot. Resume hydrates authority from the run's pinned snapshot, never current
+// config. See also engine.TestCompiledWorkflowEvaluator_pinnedIgnoresWidenedDiskSnapshot, which
+// covers the on-disk policy-snapshot leak.
 func TestPrepareForResume_enforcesPinnedAuthorityAfterWideningApply(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume.db"))
@@ -35,12 +50,12 @@ func TestPrepareForResume_enforcesPinnedAuthorityAfterWideningApply(t *testing.T
 	t.Cleanup(func() { _ = st.Close() })
 
 	// Run starts under a narrow policy; pin its snapshot.
-	narrowDigest, _, err := deploy.BuildAndPersist(ctx, st, policyGraph([]string{"github.read"}), "local", "v1")
+	narrowDigest, _, err := deploy.BuildAndPersist(ctx, st, policyGraph(false), "local", "v1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A later apply widens the policy and lands a newer snapshot for the same env.
-	if _, _, err := deploy.BuildAndPersist(ctx, st, policyGraph([]string{"github.read", "github.write"}), "local", "v1"); err != nil {
+	// A later apply widens the policy (permissive) and lands a newer snapshot for the same env.
+	if _, _, err := deploy.BuildAndPersist(ctx, st, policyGraph(true), "local", "v1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -54,9 +69,15 @@ func TestPrepareForResume_enforcesPinnedAuthorityAfterWideningApply(t *testing.T
 	if !pinned {
 		t.Fatal("run with a pinned snapshot must resume from it, not current config")
 	}
-	permit := prep.graph.Policies["default"].Spec.Effects.Permit
-	if len(permit) != 1 || permit[0] != "github.read" {
-		t.Fatalf("resume enforced widened authority instead of the pinned narrow policy: %v", permit)
+	// Build the evaluator the pinned run uses (compiled from the hydrated graph) and assert it
+	// enforces the narrow authority CheckToolCall actually checks.
+	cp, err := policy.Compile(prep.graph, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := policy.NewCompiledEvaluator(prep.graph, cp)
+	if err := ev.CheckToolCall(ctx, policy.ToolCallContext{Uses: "tool.slack.message.send"}); err == nil {
+		t.Fatal("resume enforced widened authority instead of the pinned narrow policy")
 	}
 }
 

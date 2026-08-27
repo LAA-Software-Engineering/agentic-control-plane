@@ -25,5 +25,15 @@ CREATE TABLE IF NOT EXISTS deployment_snapshots (
 CREATE INDEX IF NOT EXISTS idx_deployment_snapshots_env_created
   ON deployment_snapshots (environment, created_at);
 
+-- Current deployed snapshot per environment. Updated on EVERY apply (including a re-apply of an
+-- earlier digest — a rollback A -> B -> A), so "superseded" means "differs from what is deployed
+-- now", not "differs from the oldest-max created_at row". Content-addressed snapshot rows are
+-- immutable and cannot double as a recency index, so this pointer is a separate, mutable row.
+CREATE TABLE IF NOT EXISTS deployment_env_current (
+  environment TEXT NOT NULL PRIMARY KEY,
+  snapshot_digest TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 -- One column on runs, forever: the pinned deployment snapshot root.
 ALTER TABLE runs ADD COLUMN deployment_snapshot_digest TEXT NOT NULL DEFAULT '';

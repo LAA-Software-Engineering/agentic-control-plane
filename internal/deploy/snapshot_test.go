@@ -2,9 +2,11 @@ package deploy
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
@@ -121,6 +123,41 @@ func TestMarshalGraph_ignoresSourcePositions(t *testing.T) {
 	}
 }
 
+// A pinned run compiles its policy from the hydrated graph (not the on-disk snapshot). Preset
+// policies must survive that round-trip: ResolvedPreset is json:"-" and dropped, but the `preset`
+// string is preserved and policy.Compile re-resolves it, so approvals/presets/safety are faithful.
+func TestGraphRoundTrip_presetPolicyCompilesIdentically(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Spec:      spec.ProjectSpec{Defaults: &spec.ProjectDefaults{Policy: "default"}},
+		Tools:     map[string]*spec.ToolResource{"sh": {Metadata: spec.Metadata{Name: "sh"}, Spec: spec.ToolSpec{Type: "native"}}},
+		Policies:  map[string]*spec.PolicyResource{"default": {Metadata: spec.Metadata{Name: "default"}, Spec: spec.PolicySpec{Preset: "shell_safe"}}},
+		Workflows: map[string]*spec.WorkflowResource{"wf": {Metadata: spec.Metadata{Name: "wf"}, Spec: spec.WorkflowSpec{Policy: "default"}}},
+	}
+	spec.NormalizeProjectGraph(g)
+	before, err := policy.Compile(g, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := MarshalGraph(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := UnmarshalGraph(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := policy.Compile(got, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before.Residual, after.Residual) {
+		t.Fatalf("preset residual not preserved: before=%+v after=%+v", before.Residual, after.Residual)
+	}
+	if !after.Residual.ShellSafe {
+		t.Fatal("shell_safe preset lost through the snapshot round-trip")
+	}
+}
+
 func TestScanLiteralSecrets(t *testing.T) {
 	g := &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
 		"api": {Metadata: spec.Metadata{Name: "api"}, Spec: spec.ToolSpec{Type: "http", HTTP: &spec.ToolHTTP{
@@ -182,7 +219,8 @@ func (m *memArtifactStore) GetSnapshot(_ context.Context, digest string) (*state
 	}
 	return &s, nil
 }
-func (m *memArtifactStore) LatestSnapshotDigestForEnv(context.Context, string) (string, error) {
+func (m *memArtifactStore) SetCurrentSnapshot(context.Context, string, string) error { return nil }
+func (m *memArtifactStore) CurrentSnapshotDigestForEnv(context.Context, string) (string, error) {
 	return "", errNoRows
 }
 func (m *memArtifactStore) PruneUnreferencedArtifacts(context.Context) (int64, error) { return 0, nil }

@@ -108,11 +108,13 @@ func (e *Executor) runSubworkflowStep(
 	if depth > maxDepth {
 		return nil, 0, false, fmt.Errorf("engine: step %q: workflow nesting depth %d exceeds maxWorkflowNesting %d", step.ID, depth, maxDepth)
 	}
-	if err := validateWorkflowInput(e.ProjectRoot, callee, with); err != nil {
-		return nil, 0, false, fmt.Errorf("engine: step %q subworkflow %q input: %w", step.ID, calleeName, err)
+	if !e.PinnedGraph {
+		if err := validateWorkflowInput(e.ProjectRoot, callee, with); err != nil {
+			return nil, 0, false, fmt.Errorf("engine: step %q subworkflow %q input: %w", step.ID, calleeName, err)
+		}
 	}
 
-	calleePol, err := compiledWorkflowEvaluator(e.ProjectRoot, e.Graph, strings.TrimSpace(callee.Spec.Policy))
+	calleePol, err := compiledWorkflowEvaluator(e.ProjectRoot, e.Graph, strings.TrimSpace(callee.Spec.Policy), e.PinnedGraph)
 	if err != nil {
 		return nil, 0, false, err
 	}

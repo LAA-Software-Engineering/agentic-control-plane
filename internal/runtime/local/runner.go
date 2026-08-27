@@ -231,6 +231,7 @@ func (r *Runtime) executeEngine(
 	ex := &engine.Executor{
 		Graph:       prep.graph,
 		ProjectRoot: prep.root,
+		PinnedGraph: prep.pinned,
 		Tools:       tools.NewRegistry(prep.graph),
 		Models:      models.NewRegistry(prep.graph),
 		Store:       r.Store,

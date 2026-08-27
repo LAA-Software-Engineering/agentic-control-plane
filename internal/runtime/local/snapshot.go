@@ -46,7 +46,7 @@ func (r *Runtime) prepareForResume(ctx context.Context, run *state.Run, cfg *con
 	if cfg != nil {
 		root = cfg.ProjectRoot()
 	}
-	return &preparedProject{root: root, graph: h.Graph}, true, nil
+	return &preparedProject{root: root, graph: h.Graph, pinned: true}, true, nil
 }
 
 // pinDeploymentSnapshot builds and persists the deployment snapshot for graph and returns its

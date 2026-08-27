@@ -13,6 +13,9 @@ import (
 type preparedProject struct {
 	root  string
 	graph *spec.ProjectGraph
+	// pinned marks that graph was hydrated from a run's deployment snapshot (issue #207), so the
+	// engine must take its policy and schema authority from graph, not from files under root.
+	pinned bool
 }
 
 // prepareFromConfig builds execution state from a resolved config snapshot.
@@ -33,6 +36,15 @@ func (r *Runtime) prepareFromConfig(ctx context.Context, cfg *config.ResolvedCon
 		cutoff := r.now().UTC().AddDate(0, 0, -n)
 		if _, err := r.Store.DeleteRunsStartedBefore(ctx, cutoff); err != nil {
 			return nil, fmt.Errorf("local: prune trace runs: %w", err)
+		}
+		// #207: after deleting old runs, GC deployment artifacts no surviving run references and
+		// that are not the current env pointer, so retention does not grow artifacts unbounded. The
+		// prune is reference-guarded, so it can never orphan an artifact a surviving run still needs
+		// to resume (nor delete the current env identity superseded detection depends on).
+		if as, ok := r.artifactStore(); ok {
+			if _, err := as.PruneUnreferencedArtifacts(ctx); err != nil {
+				return nil, fmt.Errorf("local: prune deployment artifacts: %w", err)
+			}
 		}
 	}
 	return &preparedProject{root: root, graph: graph}, nil

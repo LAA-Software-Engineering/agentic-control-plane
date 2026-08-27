@@ -764,9 +764,12 @@ a hard authority boundary: it binds even a nil or permissive policy, before any 
 `DecisionAllow` short-circuit.
 
 **Run-pinned (shipped by #207).** A run pins its deployment snapshot at start
-(`runs.deployment_snapshot_digest`); `run --resume` hydrates the resolved graph — policy, tools, and
-capability manifest — from that snapshot, not from re-resolved current config. So a resumed run
-enforces the manifest it started with, and an `apply` that lands mid-run cannot widen an in-flight
+(`runs.deployment_snapshot_digest`); `run --resume` hydrates the resolved graph from that snapshot,
+and the engine takes its authority from the hydrated graph — `Executor.PinnedGraph` compiles the
+policy from the pinned graph instead of reading the on-disk `.agentic/policy-snapshot.json` (which
+`apply` overwrites), and skips live schema I/O under the current project root. So a resumed run
+enforces the policy **and** manifest it started with — approvals, presets, and safety-derived
+`CheckToolCall` decisions included — and an `apply` that lands mid-run cannot widen an in-flight
 run's authority. See §14 and ADR 002, *Soundness assumptions and limits*.
 
 The scope limit still holds: the manifest bounds the callable *set* and each operation's *declared*
@@ -2124,6 +2127,18 @@ or project directory. `compiler_version` is provenance for the compilation as a 
 * `execution_ir_digest` → `deployment_artifacts` (empty until execir runs on the engine)
 * `capability_manifest_digest` → `deployment_artifacts`
 * `created_at`
+
+### `deployment_env_current` (issue #207)
+
+The **current deployed** snapshot per environment — a mutable pointer, distinct from the immutable
+content-addressed rows above. `apply` upserts it on **every** apply (including a re-apply of an
+earlier digest, a rollback `A → B → A`), so `superseded` on a run means "differs from what is
+deployed now", not "not the newest `created_at` row". Content-addressed rows cannot double as a
+recency index.
+
+* `environment` (PRIMARY KEY)
+* `snapshot_digest` → `deployment_snapshots`
+* `updated_at`
 
 ```text
                  DeploymentSnapshot

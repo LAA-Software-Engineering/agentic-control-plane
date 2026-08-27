@@ -154,9 +154,14 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 // Literal-secret warnings are printed to stderr; the snapshot preserves env: references verbatim
 // and never stores resolved secret values.
 func persistDeploymentSnapshot(ctx context.Context, cmd *cobra.Command, st state.ArtifactStore, graph *spec.ProjectGraph, env string) error {
-	_, warnings, err := deploy.BuildAndPersist(ctx, st, graph, env, Version)
+	digest, warnings, err := deploy.BuildAndPersist(ctx, st, graph, env, Version)
 	if err != nil {
 		return fmt.Errorf("apply: persist deployment snapshot: %w", err)
+	}
+	// Point the environment at what was just applied — on every apply, including a re-apply of an
+	// earlier digest (rollback) — so superseded detection reflects the current deployment.
+	if err := st.SetCurrentSnapshot(ctx, env, digest); err != nil {
+		return fmt.Errorf("apply: set current deployment snapshot: %w", err)
 	}
 	for _, w := range warnings {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)

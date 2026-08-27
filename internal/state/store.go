@@ -33,9 +33,14 @@ type ArtifactStore interface {
 	PutSnapshot(ctx context.Context, s DeploymentSnapshot) error
 	// GetSnapshot returns the snapshot for digest, or sql.ErrNoRows.
 	GetSnapshot(ctx context.Context, digest string) (*DeploymentSnapshot, error)
-	// LatestSnapshotDigestForEnv returns the most recently created snapshot digest for env, or
-	// sql.ErrNoRows. Used to flag a run as executing a superseded artifact (inspect/logs).
-	LatestSnapshotDigestForEnv(ctx context.Context, env string) (string, error)
+	// SetCurrentSnapshot points env at digest — the snapshot deployed now. Called on every apply,
+	// including a re-apply of an earlier digest (rollback), so the pointer always reflects the last
+	// apply, not first-insert order.
+	SetCurrentSnapshot(ctx context.Context, env, digest string) error
+	// CurrentSnapshotDigestForEnv returns the snapshot digest currently deployed for env (the apply
+	// pointer), or sql.ErrNoRows. Used to flag a run as executing a superseded artifact
+	// (inspect/logs): superseded == run's pinned digest differs from this.
+	CurrentSnapshotDigestForEnv(ctx context.Context, env string) (string, error)
 	// PruneUnreferencedArtifacts deletes snapshots not referenced by any run and artifacts not
 	// referenced by any surviving snapshot. Trace pruning must not orphan an artifact a run still
 	// references, so this is reference-guarded. Returns rows removed.
