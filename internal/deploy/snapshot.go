@@ -25,9 +25,10 @@ import (
 // Format versions. FormatVersion says how to decode a payload; an unknown value must fail loudly
 // rather than be reinterpreted. Bump when a payload's encoding changes incompatibly.
 const (
-	FormatSnapshotV1 = "agentic.dev/snapshot/v1"
-	FormatGraphV1    = "agentic.dev/graph/v1"
-	FormatManifestV1 = "agentic.dev/manifest/v1"
+	FormatSnapshotV1     = "agentic.dev/snapshot/v1"
+	FormatGraphV1        = "agentic.dev/graph/v1"
+	FormatManifestV1     = "agentic.dev/manifest/v1"
+	FormatSchemaBundleV1 = "agentic.dev/schemabundle/v1"
 )
 
 // ErrUnsupportedFormat is returned when an artifact or snapshot format_version is not decodable by
@@ -44,6 +45,9 @@ type snapshotIdentityV1 struct {
 	GraphDigest              string `json:"graphDigest"`
 	ExecutionIRDigest        string `json:"executionIrDigest"`
 	CapabilityManifestDigest string `json:"capabilityManifestDigest"`
+	// SchemaBundleDigest is omitempty so a project with no captured schemas keeps the same snapshot
+	// digest it had before schema capture (backward compatible for the common schema-less case).
+	SchemaBundleDigest string `json:"schemaBundleDigest,omitempty"`
 }
 
 // Built is the result of building a snapshot: the snapshot row plus the artifacts it references,
@@ -124,9 +128,9 @@ func snapshotDigest(id snapshotIdentityV1) (string, error) {
 }
 
 // Build assembles the deployment snapshot and its artifacts for a resolved graph. It is pure (no
-// I/O): callers persist the result with [Persist]. compilerVersion is provenance for the
-// compilation as a whole.
-func Build(g *spec.ProjectGraph, environment, compilerVersion string) (Built, error) {
+// I/O): callers collect schemas with [CollectSchemas] (authoring-time I/O) and pass them here.
+// compilerVersion is provenance for the compilation as a whole.
+func Build(g *spec.ProjectGraph, environment, compilerVersion string, schemas map[string]string) (Built, error) {
 	if g == nil {
 		return Built{}, fmt.Errorf("deploy: nil project graph")
 	}
@@ -141,6 +145,23 @@ func Build(g *spec.ProjectGraph, environment, compilerVersion string) (Built, er
 	graphDigest := contentDigest(graphPayload)
 	manifestDigest := contentDigest(manifestPayload)
 
+	artifacts := []state.DeploymentArtifact{
+		{Digest: graphDigest, Kind: state.ArtifactKindResolvedGraph, FormatVersion: FormatGraphV1, Payload: graphPayload},
+		{Digest: manifestDigest, Kind: state.ArtifactKindCapabilityManifest, FormatVersion: FormatManifestV1, Payload: manifestPayload},
+	}
+
+	schemaBundleDigest := ""
+	if len(schemas) > 0 {
+		bundlePayload, err := MarshalSchemaBundle(schemas)
+		if err != nil {
+			return Built{}, err
+		}
+		schemaBundleDigest = contentDigest(bundlePayload)
+		artifacts = append(artifacts, state.DeploymentArtifact{
+			Digest: schemaBundleDigest, Kind: state.ArtifactKindSchemaBundle, FormatVersion: FormatSchemaBundleV1, Payload: bundlePayload,
+		})
+	}
+
 	id := snapshotIdentityV1{
 		FormatVersion:            FormatSnapshotV1,
 		CompilerVersion:          strings.TrimSpace(compilerVersion),
@@ -148,6 +169,7 @@ func Build(g *spec.ProjectGraph, environment, compilerVersion string) (Built, er
 		GraphDigest:              graphDigest,
 		ExecutionIRDigest:        "", // execution IR is not yet wired into the engine (execir).
 		CapabilityManifestDigest: manifestDigest,
+		SchemaBundleDigest:       schemaBundleDigest,
 	}
 	digest, err := snapshotDigest(id)
 	if err != nil {
@@ -163,12 +185,10 @@ func Build(g *spec.ProjectGraph, environment, compilerVersion string) (Built, er
 			GraphDigest:              graphDigest,
 			ExecutionIRDigest:        "",
 			CapabilityManifestDigest: manifestDigest,
+			SchemaBundleDigest:       schemaBundleDigest,
 		},
-		Artifacts: []state.DeploymentArtifact{
-			{Digest: graphDigest, Kind: state.ArtifactKindResolvedGraph, FormatVersion: FormatGraphV1, Payload: graphPayload},
-			{Digest: manifestDigest, Kind: state.ArtifactKindCapabilityManifest, FormatVersion: FormatManifestV1, Payload: manifestPayload},
-		},
-		Warnings: ScanLiteralSecrets(g),
+		Artifacts: artifacts,
+		Warnings:  ScanLiteralSecrets(g),
 	}, nil
 }
 
@@ -189,10 +209,19 @@ func Persist(ctx context.Context, store state.ArtifactStore, b Built) (string, e
 	return b.Snapshot.Digest, nil
 }
 
-// BuildAndPersist builds the snapshot for g and persists it, returning the snapshot digest and any
-// warnings. Both run-start pinning and apply use this.
-func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.ProjectGraph, environment, compilerVersion string) (digest string, warnings []string, err error) {
-	b, err := Build(g, environment, compilerVersion)
+// BuildAndPersist collects schemas under projectRoot, builds the snapshot for g, and persists it,
+// returning the snapshot digest and any warnings. Both run-start pinning and apply use this. An
+// empty projectRoot skips schema capture (no schemas pinned).
+func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.ProjectGraph, environment, compilerVersion, projectRoot string) (digest string, warnings []string, err error) {
+	var schemas map[string]string
+	var schemaWarnings []string
+	if strings.TrimSpace(projectRoot) != "" {
+		schemas, schemaWarnings, err = CollectSchemas(g, projectRoot)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	b, err := Build(g, environment, compilerVersion, schemas)
 	if err != nil {
 		return "", nil, err
 	}
@@ -200,5 +229,5 @@ func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.Pro
 	if err != nil {
 		return "", nil, err
 	}
-	return d, b.Warnings, nil
+	return d, append(schemaWarnings, b.Warnings...), nil
 }

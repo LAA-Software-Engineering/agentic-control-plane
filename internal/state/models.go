@@ -46,6 +46,7 @@ type DeploymentSnapshot struct {
 	GraphDigest              string
 	ExecutionIRDigest        string
 	CapabilityManifestDigest string
+	SchemaBundleDigest       string
 	CreatedAt                time.Time
 }
 
@@ -54,6 +55,7 @@ const (
 	ArtifactKindResolvedGraph      = "resolved_graph"
 	ArtifactKindExecutionIR        = "execution_ir"
 	ArtifactKindCapabilityManifest = "capability_manifest"
+	ArtifactKindSchemaBundle       = "schema_bundle"
 )
 
 // Run status values stored on runs (design doc §14.2, issue #105).

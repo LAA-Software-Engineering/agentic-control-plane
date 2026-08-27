@@ -48,22 +48,22 @@ func putSnapshot(ctx context.Context, q querier, s state.DeploymentSnapshot) err
 	}
 	_, err := q.ExecContext(ctx, `
 INSERT INTO deployment_snapshots
-  (digest, format_version, compiler_version, environment, graph_digest, execution_ir_digest, capability_manifest_digest, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  (digest, format_version, compiler_version, environment, graph_digest, execution_ir_digest, capability_manifest_digest, schema_bundle_digest, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(digest) DO NOTHING
-`, s.Digest, s.FormatVersion, s.CompilerVersion, s.Environment, s.GraphDigest, s.ExecutionIRDigest, s.CapabilityManifestDigest, at.Format(time.RFC3339Nano))
+`, s.Digest, s.FormatVersion, s.CompilerVersion, s.Environment, s.GraphDigest, s.ExecutionIRDigest, s.CapabilityManifestDigest, s.SchemaBundleDigest, at.Format(time.RFC3339Nano))
 	return err
 }
 
 func getSnapshot(ctx context.Context, q querier, digest string) (*state.DeploymentSnapshot, error) {
 	row := q.QueryRowContext(ctx, `
-SELECT digest, format_version, compiler_version, environment, graph_digest, execution_ir_digest, capability_manifest_digest, created_at
+SELECT digest, format_version, compiler_version, environment, graph_digest, execution_ir_digest, capability_manifest_digest, schema_bundle_digest, created_at
 FROM deployment_snapshots
 WHERE digest = ?
 `, digest)
 	var s state.DeploymentSnapshot
 	var at string
-	if err := row.Scan(&s.Digest, &s.FormatVersion, &s.CompilerVersion, &s.Environment, &s.GraphDigest, &s.ExecutionIRDigest, &s.CapabilityManifestDigest, &at); err != nil {
+	if err := row.Scan(&s.Digest, &s.FormatVersion, &s.CompilerVersion, &s.Environment, &s.GraphDigest, &s.ExecutionIRDigest, &s.CapabilityManifestDigest, &s.SchemaBundleDigest, &at); err != nil {
 		return nil, err
 	}
 	t, err := parseSQLiteTime(at)
@@ -126,6 +126,7 @@ WHERE digest NOT IN (
   SELECT graph_digest FROM deployment_snapshots WHERE graph_digest <> ''
   UNION SELECT execution_ir_digest FROM deployment_snapshots WHERE execution_ir_digest <> ''
   UNION SELECT capability_manifest_digest FROM deployment_snapshots WHERE capability_manifest_digest <> ''
+  UNION SELECT schema_bundle_digest FROM deployment_snapshots WHERE schema_bundle_digest <> ''
 )
 `)
 	if err != nil {

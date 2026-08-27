@@ -100,7 +100,7 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 		if err := writeApplyEmptyOutput(cmd, env, dsn, pl, rc, g); err != nil {
 			return err
 		}
-		if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env); err != nil {
+		if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env, rc.ProjectRoot()); err != nil {
 			return err
 		}
 		return persistSnapshots(rc)
@@ -143,7 +143,7 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 	if err := writeApplySuccessOutput(cmd, env, dsn, pl, rc, g, at); err != nil {
 		return err
 	}
-	if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env); err != nil {
+	if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env, rc.ProjectRoot()); err != nil {
 		return err
 	}
 	return persistSnapshots(rc)
@@ -153,8 +153,8 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 // applied graph (issue #207) so later runs can pin it and inspect/logs can detect superseded runs.
 // Literal-secret warnings are printed to stderr; the snapshot preserves env: references verbatim
 // and never stores resolved secret values.
-func persistDeploymentSnapshot(ctx context.Context, cmd *cobra.Command, st state.ArtifactStore, graph *spec.ProjectGraph, env string) error {
-	digest, warnings, err := deploy.BuildAndPersist(ctx, st, graph, env, Version)
+func persistDeploymentSnapshot(ctx context.Context, cmd *cobra.Command, st state.ArtifactStore, graph *spec.ProjectGraph, env, projectRoot string) error {
+	digest, warnings, err := deploy.BuildAndPersist(ctx, st, graph, env, Version, projectRoot)
 	if err != nil {
 		return fmt.Errorf("apply: persist deployment snapshot: %w", err)
 	}

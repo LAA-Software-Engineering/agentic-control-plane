@@ -75,7 +75,7 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	// Pin the deployment snapshot (#207): resume enforces this exact configuration and authority,
 	// not whatever is deployed at resume time. Uses the effective environment label (cfg.Environment)
 	// so an identical config applied and run under the same env dedupes to one snapshot.
-	snapshotDigest, snapWarnings, err := r.pinDeploymentSnapshot(ctx, prep.graph, cfg.Environment())
+	snapshotDigest, snapWarnings, err := r.pinDeploymentSnapshot(ctx, prep.graph, cfg.Environment(), prep.root)
 	if err != nil {
 		return runtime.RunResult{}, err
 	}
@@ -232,6 +232,7 @@ func (r *Runtime) executeEngine(
 		Graph:       prep.graph,
 		ProjectRoot: prep.root,
 		PinnedGraph: prep.pinned,
+		Schemas:     prep.schemas,
 		Tools:       tools.NewRegistry(prep.graph),
 		Models:      models.NewRegistry(prep.graph),
 		Store:       r.Store,

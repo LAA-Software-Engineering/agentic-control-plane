@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -36,6 +37,40 @@ func (r *Registry) getOrCompile(abs string) (*jsonschema.Schema, error) {
 	}
 	r.compiled[abs] = sch
 	return sch, nil
+}
+
+// ValidateContent compiles a JSON Schema from schemaContent (rather than a file path) and validates
+// instance against it (issue: pinned-resume schema capture). ref is a stable label used for the
+// synthetic resource URL and in error paths. A pinned run resumes against the schema bytes captured
+// in its deployment snapshot, so it never re-reads a possibly-changed schema file on disk.
+//
+// Self-contained schemas only: an external `$ref` to another file is not resolved from bytes.
+func ValidateContent(ref string, schemaContent, instance []byte) error {
+	label := strings.TrimSpace(ref)
+	if label == "" {
+		label = "schema"
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaContent))
+	if err != nil {
+		return &CompileError{Path: label, Err: err}
+	}
+	c := newCompiler()
+	url := "mem:///" + label
+	if err := c.AddResource(url, doc); err != nil {
+		return &CompileError{Path: label, Err: err}
+	}
+	sch, err := c.Compile(url)
+	if err != nil {
+		return &CompileError{Path: label, Err: err}
+	}
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(instance))
+	if err != nil {
+		return &InstanceError{Path: label, Err: err}
+	}
+	if err := sch.Validate(inst); err != nil {
+		return &ValidationError{Path: label, Err: err}
+	}
+	return nil
 }
 
 // Validate compiles the schema at schemaPath (if needed), parses instance as JSON, and validates.

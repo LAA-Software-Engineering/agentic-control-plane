@@ -772,11 +772,13 @@ enforces the policy **and** manifest it started with — approvals, presets, and
 `CheckToolCall` decisions included — and an `apply` that lands mid-run cannot widen an in-flight
 run's authority. The canonical graph payload is a semantic projection: `WorkflowStep.NeedsDeclared`
 (the graph-vs-sequential signal) is part of identity and round-trips, so a resumed parallel-only
-workflow keeps its concurrent roots. **Known limit:** input/output JSON Schemas are referenced by
-path, not captured in the artifact, so a pinned resume *skips* schema re-validation rather than
-enforcing the pinned schema (schemas are gradual and the input was validated at start); capturing
-schema files in the snapshot is future work. See §14 and ADR 002, *Soundness assumptions and
-limits*.
+workflow keeps its concurrent roots. Referenced JSON Schemas are **captured** into the snapshot (a
+`schema_bundle` artifact) at run start, so a pinned resume validates workflow input and agent output
+against the schema bytes it started with — never a re-read of a changed file; a schema uncaptured at
+start (e.g. a missing file) stays gradual (allowed). **Limits:** only self-contained schemas are
+captured — an external `$ref` to another file is not resolved from the bundle — and the execution IR
+(`execution_ir_digest`) is still empty until execir runs on the engine. See §14 and ADR 002,
+*Soundness assumptions and limits*.
 
 The scope limit still holds: the manifest bounds the callable *set* and each operation's *declared*
 effects. It does not verify what a remote endpoint actually does — the trust anchor is human review
@@ -2132,6 +2134,9 @@ or project directory. `compiler_version` is provenance for the compilation as a 
 * `graph_digest` → `deployment_artifacts`
 * `execution_ir_digest` → `deployment_artifacts` (empty until execir runs on the engine)
 * `capability_manifest_digest` → `deployment_artifacts`
+* `schema_bundle_digest` → `deployment_artifacts` (the `schema_bundle` artifact: referenced JSON
+  Schemas captured at run start; empty when the project references none). A pinned resume validates
+  workflow input / agent output against these bytes, not a re-read of the file on disk.
 * `created_at`
 
 ### `deployment_env_current` (issue #207)

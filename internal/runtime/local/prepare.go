@@ -16,6 +16,9 @@ type preparedProject struct {
 	// pinned marks that graph was hydrated from a run's deployment snapshot (issue #207), so the
 	// engine must take its policy and schema authority from graph, not from files under root.
 	pinned bool
+	// schemas is the schema ref→content bundle captured in the pinned snapshot; the engine validates
+	// against it on resume instead of re-reading files. Nil on fresh runs.
+	schemas map[string]string
 }
 
 // prepareFromConfig builds execution state from a resolved config snapshot.

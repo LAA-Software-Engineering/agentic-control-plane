@@ -46,18 +46,18 @@ func (r *Runtime) prepareForResume(ctx context.Context, run *state.Run, cfg *con
 	if cfg != nil {
 		root = cfg.ProjectRoot()
 	}
-	return &preparedProject{root: root, graph: h.Graph, pinned: true}, true, nil
+	return &preparedProject{root: root, graph: h.Graph, pinned: true, schemas: h.Schemas}, true, nil
 }
 
 // pinDeploymentSnapshot builds and persists the deployment snapshot for graph and returns its
 // digest, so the run row can pin the exact configuration and authority it starts under. Returns an
 // empty digest (and no error) when the backend does not support artifacts.
-func (r *Runtime) pinDeploymentSnapshot(ctx context.Context, graph *spec.ProjectGraph, env string) (digest string, warnings []string, err error) {
+func (r *Runtime) pinDeploymentSnapshot(ctx context.Context, graph *spec.ProjectGraph, env, projectRoot string) (digest string, warnings []string, err error) {
 	store, ok := r.artifactStore()
 	if !ok {
 		return "", nil, nil
 	}
-	digest, warnings, err = deploy.BuildAndPersist(ctx, store, graph, env, r.agentVersion())
+	digest, warnings, err = deploy.BuildAndPersist(ctx, store, graph, env, r.agentVersion(), projectRoot)
 	if err != nil {
 		return "", nil, fmt.Errorf("local: pin deployment snapshot: %w", err)
 	}
