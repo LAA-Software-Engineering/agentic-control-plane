@@ -232,8 +232,15 @@ type WorkflowStep struct {
 	WorkflowPos Pos   `yaml:"-" json:"-"`
 	ApprovalPos Pos   `yaml:"-" json:"-"`
 	NeedsPos    []Pos `yaml:"-" json:"-"`
-	// NeedsDeclared is true when the YAML mapping included a `needs` key (even if empty).
-	NeedsDeclared bool `yaml:"-" json:"-"`
+	// NeedsDeclared is true when the mapping included a `needs` key (even if empty). Because `Needs`
+	// is omitempty, an empty declared list would serialize away, so this bit is **part of identity**
+	// (`json:"needsDeclared"`), not merely diagnostic: it is the DAG-mode signal
+	// ([WorkflowUsesExplicitNeeds]) — an empty `needs:` opts the whole workflow into graph mode /
+	// concurrent roots — and a deployment snapshot (#207) must reproduce graph vs sequential
+	// execution on resume. Mirrors [ToolSpec.OperationsDeclared]. Not author-settable (`yaml:"-"`);
+	// derived from key presence during load. `omitempty` keeps JSON unchanged for the common
+	// implicit-sequential step.
+	NeedsDeclared bool `yaml:"-" json:"needsDeclared,omitempty"`
 }
 
 type WorkflowOutput struct {

@@ -24,6 +24,15 @@ func (s ToolSpec) MarshalYAML() (any, error) {
 
 // injectEmptyMapping appends key: {} to a mapping node when key is not already present.
 func injectEmptyMapping(node *yaml.Node, key string) {
+	injectEmptyContainer(node, key, yaml.MappingNode, "!!map")
+}
+
+// injectEmptySequence appends key: [] to a mapping node when key is not already present.
+func injectEmptySequence(node *yaml.Node, key string) {
+	injectEmptyContainer(node, key, yaml.SequenceNode, "!!seq")
+}
+
+func injectEmptyContainer(node *yaml.Node, key string, kind yaml.Kind, tag string) {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return
 	}
@@ -34,6 +43,6 @@ func injectEmptyMapping(node *yaml.Node, key string) {
 	}
 	node.Content = append(node.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-		&yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Style: yaml.FlowStyle},
+		&yaml.Node{Kind: kind, Tag: tag, Style: yaml.FlowStyle},
 	)
 }

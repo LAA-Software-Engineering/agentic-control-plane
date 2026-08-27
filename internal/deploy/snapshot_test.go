@@ -158,6 +158,36 @@ func TestGraphRoundTrip_presetPolicyCompilesIdentically(t *testing.T) {
 	}
 }
 
+// A workflow whose ONLY graph-mode signal is an empty declared `needs:` (a parallel-only workflow,
+// or an .agent `parallel { }` where the lowerer sets NeedsDeclared with empty Needs) must reproduce
+// graph mode after hydration — otherwise resume silently switches concurrent roots to a sequential
+// chain, changing side-effect order and fan-out. Needs is omitempty, so this depends on
+// NeedsDeclared being JSON identity (#207), the same fix #204 applied to OperationsDeclared.
+func TestGraphRoundTrip_parallelOnlyWorkflowKeepsGraphMode(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Workflows: map[string]*spec.WorkflowResource{
+			"wf": {Metadata: spec.Metadata{Name: "wf"}, Spec: spec.WorkflowSpec{Steps: []spec.WorkflowStep{
+				{ID: "a", Uses: "tool.x.y", NeedsDeclared: true}, // empty needs, declared -> a root in graph mode
+				{ID: "b", Uses: "tool.x.y", NeedsDeclared: true},
+			}}},
+		},
+	}
+	if !spec.WorkflowUsesExplicitNeeds(g.Workflows["wf"].Spec.Steps) {
+		t.Fatal("precondition: source workflow should be in graph mode")
+	}
+	payload, err := MarshalGraph(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := UnmarshalGraph(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !spec.WorkflowUsesExplicitNeeds(got.Workflows["wf"].Spec.Steps) {
+		t.Fatal("hydrated workflow lost graph mode: NeedsDeclared did not survive the snapshot round-trip")
+	}
+}
+
 func TestScanLiteralSecrets(t *testing.T) {
 	g := &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
 		"api": {Metadata: spec.Metadata{Name: "api"}, Spec: spec.ToolSpec{Type: "http", HTTP: &spec.ToolHTTP{

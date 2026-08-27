@@ -8,6 +8,7 @@ spec:
       uses: tool.triage.classify
       with:
         arg0: ${input.body}
+      needs: []
     - id: result
       uses: tool.report.render
       with:

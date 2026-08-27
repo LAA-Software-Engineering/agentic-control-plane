@@ -106,6 +106,11 @@ func runLogs(cmd *cobra.Command, runID, workflow, tenantID, threadID, actorID st
 		if _, err := st.DeleteRunsStartedBefore(ctx, cutoff); err != nil {
 			return fmt.Errorf("logs: prune trace runs: %w", err)
 		}
+		// GC deployment artifacts orphaned by the deleted runs (#207), same reference-guarded prune
+		// the run path uses — so retention doesn't leave artifacts behind until the next run.
+		if _, err := st.PruneUnreferencedArtifacts(ctx); err != nil {
+			return fmt.Errorf("logs: prune deployment artifacts: %w", err)
+		}
 	}
 
 	filter := state.RunListFilter{

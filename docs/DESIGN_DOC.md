@@ -770,7 +770,13 @@ policy from the pinned graph instead of reading the on-disk `.agentic/policy-sna
 `apply` overwrites), and skips live schema I/O under the current project root. So a resumed run
 enforces the policy **and** manifest it started with — approvals, presets, and safety-derived
 `CheckToolCall` decisions included — and an `apply` that lands mid-run cannot widen an in-flight
-run's authority. See §14 and ADR 002, *Soundness assumptions and limits*.
+run's authority. The canonical graph payload is a semantic projection: `WorkflowStep.NeedsDeclared`
+(the graph-vs-sequential signal) is part of identity and round-trips, so a resumed parallel-only
+workflow keeps its concurrent roots. **Known limit:** input/output JSON Schemas are referenced by
+path, not captured in the artifact, so a pinned resume *skips* schema re-validation rather than
+enforcing the pinned schema (schemas are gradual and the input was validated at start); capturing
+schema files in the snapshot is future work. See §14 and ADR 002, *Soundness assumptions and
+limits*.
 
 The scope limit still holds: the manifest bounds the callable *set* and each operation's *declared*
 effects. It does not verify what a remote endpoint actually does — the trust anchor is human review

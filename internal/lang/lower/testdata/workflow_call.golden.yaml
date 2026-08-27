@@ -8,6 +8,7 @@ spec:
       workflow: Util
       with:
         text: ${input.body}
+      needs: []
   output:
     value:
       value: ${steps.x.output}

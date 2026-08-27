@@ -157,7 +157,7 @@ func TestResolvedGraphDigest_ignoresPos(t *testing.T) {
 	wf.Spec.Steps[0].Pos = spec.Pos{File: "workflow.yaml", Line: 8, Column: 5}
 	wf.Spec.Steps[0].UsesPos = spec.Pos{File: "workflow.yaml", Line: 9, Column: 13}
 	wf.Spec.Steps[0].NeedsPos = []spec.Pos{{File: "workflow.yaml", Line: 10, Column: 7}}
-	wf.Spec.Steps[0].NeedsDeclared = true
+	// NeedsDeclared is identity (DAG-mode signal, #207), not a diagnostic Pos; not mutated here.
 	g.Pos = spec.Pos{File: "project.yaml", Line: 1, Column: 1}
 	pol := g.Policies["default"]
 	pol.Pos = spec.Pos{File: "policy.yaml", Line: 1, Column: 1}
