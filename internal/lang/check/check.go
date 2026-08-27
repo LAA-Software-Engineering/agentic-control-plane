@@ -2,6 +2,7 @@ package check
 
 import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/effects"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/execir"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/lower"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
@@ -41,6 +42,12 @@ type Program struct {
 	File   *lang.File
 	Graph  *spec.ProjectGraph
 	Bounds effects.GraphBounds
+	// Executables is the execution-IR projection of every workflow in the
+	// compilation unit, keyed by workflow name (ADR 002 §5, #199). This is the
+	// form control flow (Branch/Loop/Fork) lives in and the engine executes; its
+	// per-program Digest folds into the workflow hash (internal/plan). Populated
+	// even when diagnostics are present (best-effort, like Graph).
+	Executables map[string]*execir.Program
 }
 
 // Check resolves, type-checks, and effect-checks the WHOLE compilation unit
@@ -89,6 +96,7 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	workflowNames := collectWorkflowNames(unit, opts.Project)
 
 	graph := cloneGraph(opts.Project)
+	executables := map[string]*execir.Program{}
 	for _, file := range unit {
 		result, lowerDiags := lower.LowerFile(file, lower.Options{Workflows: workflowNames})
 		diags = append(diags, lowerDiags...)
@@ -96,8 +104,24 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 		if err := project.MergeLowered(graph, result); err != nil {
 			diags = append(diags, lang.Diagnostic{Pos: file.Pos, Msg: err.Error()})
 		}
+		// Execution lowering is the sibling projection (ADR 002 §5): lowered
+		// directly from the AST, in parallel with the resource projection above,
+		// never from it. Its diagnostics (e.g. a call inside a condition) are
+		// part of the compilation unit's result.
+		for _, d := range file.Decls {
+			wd, ok := d.(*lang.WorkflowDecl)
+			if !ok {
+				continue
+			}
+			execProg, execDiags := lower.LowerExec(wd, workflowNames)
+			diags = append(diags, execDiags...)
+			if execProg != nil && execProg.Workflow != "" {
+				executables[execProg.Workflow] = execProg
+			}
+		}
 	}
 	prog.Graph = graph
+	prog.Executables = executables
 	prog.Bounds = effects.Compute(graph)
 
 	tu, typeDiags := resolveTypes(f, opts)

@@ -862,16 +862,25 @@ frontend and must never become an expression field on `WorkflowStep`. Conditiona
 lower to an internal **execution IR** (`Branch`, `Loop`, `Fork`, `Join`) that is derived rather
 than authored and has no YAML surface — see ADR 002 §5.
 
-| Addition | Surface |
-|----------|---------|
-| parallel branches | YAML / IR |
-| subworkflows | YAML / IR |
-| human approval steps | YAML / IR |
-| scheduled triggers | YAML / IR |
-| event triggers | YAML / IR |
-| fan-out/fan-in | static fan-out is YAML / IR; dynamic fan-out over a runtime collection is a loop and belongs to the frontend |
-| conditional steps | `.agent` frontend |
-| loops | `.agent` frontend |
+Conditionals, loops, and dynamic fan-out are **delivered** in the `.agent` frontend (#199):
+they parse, type/effect-check, lower to the execution IR ([`internal/execir`](../internal/execir)),
+and execute — see [`docs/LANGUAGE.md`](LANGUAGE.md#control-flow-and-the-execution-ir-199). The
+effect bound remains sound as the union over all branches, loops are bounded by
+`limits.maxLoopIterations`, and the execution-IR digest folds into the workflow spec-hash so
+`plan` still invalidates on a lowering-only change. Persisting the compiled program at `apply`
+and pinning it across `run --resume` is the remaining half of #199, deferred to the
+content-addressed deployment snapshot of #207.
+
+| Addition | Surface | Status |
+|----------|---------|--------|
+| parallel branches | YAML / IR | delivered (#192) |
+| subworkflows | YAML / IR | delivered (#194) |
+| human approval steps | YAML / IR | delivered |
+| scheduled triggers | YAML / IR | planned |
+| event triggers | YAML / IR | planned |
+| fan-out/fan-in | static fan-out is YAML / IR; dynamic fan-out over a runtime collection is a loop and belongs to the frontend | static delivered; dynamic delivered (#199) |
+| conditional steps | `.agent` frontend | delivered (#199) |
+| loops | `.agent` frontend | delivered (#199) |
 
 ---
 

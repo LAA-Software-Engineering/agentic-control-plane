@@ -263,6 +263,41 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 		want := typeRef{doc: wc.tu.workflows[identName(wc.wf.Name)].Result}
 		diags = append(diags, wc.checkCompatible(s.Value.Position(), got, want, "return value")...)
 		return diags
+	case *lang.IfStmt:
+		var diags lang.Diagnostics
+		_, d := wc.checkExpr(s.Cond)
+		diags = append(diags, d...)
+		for _, st := range s.Then {
+			diags = append(diags, wc.checkStmt(st)...)
+		}
+		for _, st := range s.Else {
+			diags = append(diags, wc.checkStmt(st)...)
+		}
+		return diags
+	case *lang.ForStmt:
+		var diags lang.Diagnostics
+		_, d := wc.checkExpr(s.In)
+		diags = append(diags, d...)
+		// The loop variable is scoped to the body and untyped — element-type
+		// inference from the collection is a follow-up; gradual typing keeps a
+		// reference to it compatible with anything. Save and restore any outer
+		// binding of the same name so the scoping is correct.
+		name := identName(s.Var)
+		saved, had := wc.env[name]
+		if name != "" {
+			wc.env[name] = typeRef{}
+		}
+		for _, st := range s.Body {
+			diags = append(diags, wc.checkStmt(st)...)
+		}
+		if name != "" {
+			if had {
+				wc.env[name] = saved
+			} else {
+				delete(wc.env, name)
+			}
+		}
+		return diags
 	}
 	return nil
 }
@@ -273,6 +308,17 @@ func (wc *wfChecker) checkExpr(e lang.Expr) (typeRef, lang.Diagnostics) {
 		return wc.checkRef(v)
 	case *lang.CallExpr:
 		return wc.checkCall(v)
+	case *lang.BinaryExpr:
+		// A comparison or logical connective (#199): its operands are checked
+		// for reference well-formedness; the result is an untyped boolean.
+		_, dx := wc.checkExpr(v.X)
+		_, dy := wc.checkExpr(v.Y)
+		return typeRef{}, append(dx, dy...)
+	case *lang.UnaryExpr:
+		_, d := wc.checkExpr(v.X)
+		return typeRef{}, d
+	case *lang.LitExpr:
+		return typeRef{}, nil
 	}
 	return typeRef{}, nil
 }

@@ -107,8 +107,9 @@ func (g *Grant) OperationName() string { return dottedName(g.Operation) }
 // --- Workflow declarations --------------------------------------------------
 
 // WorkflowDecl is `workflow <Name>(<params>) -> <Result> effects { ... } { body }`.
-// Result and the effects clause are optional in the grammar; the body is a flat
-// statement list (no conditionals or loops — those are #199).
+// Result and the effects clause are optional in the grammar; the body is a
+// statement list that may include conditionals and loops (IfStmt, ForStmt; #199)
+// in addition to assignments, calls, parallel blocks, and a return.
 type WorkflowDecl struct {
 	Pos     Pos
 	Name    *Ident
@@ -197,13 +198,84 @@ type ReturnStmt struct {
 func (s *ReturnStmt) Position() Pos { return s.Pos }
 func (s *ReturnStmt) stmtNode()     {}
 
+// IfStmt is `if <Cond> { <Then> } (else ({ <Else> } | <IfStmt>))?` (#199). Cond
+// is a boolean expression; Then and Else are statement lists. An `else if` chain
+// parses as an Else holding a single nested IfStmt. Control flow never becomes a
+// field on the resource-model WorkflowStep (ADR 002 §4): it lowers to the
+// execution IR's Branch, and its two arms both flatten into the resource
+// projection so the effect bound is the union over branches (ADR 002 §5).
+type IfStmt struct {
+	Pos  Pos
+	Cond Expr
+	Then []Stmt
+	Else []Stmt
+}
+
+func (s *IfStmt) Position() Pos { return s.Pos }
+func (s *IfStmt) stmtNode()     {}
+
+// ForStmt is `for <Var> in <In> { <Body> }` (#199): iteration over a runtime
+// collection. Parallel marks the dynamic fan-out form `parallel for <Var> in
+// <In> { }` — ADR 002 §1 classifies dynamic fan-out over a runtime collection as
+// "a loop wearing a graph costume," so it is language work, not a graph field.
+// Both forms lower to the execution IR's Loop; only Parallel runs its iterations
+// with bounded concurrency. Var binds inside Body only.
+type ForStmt struct {
+	Pos      Pos
+	Var      *Ident
+	In       Expr
+	Body     []Stmt
+	Parallel bool
+}
+
+func (s *ForStmt) Position() Pos { return s.Pos }
+func (s *ForStmt) stmtNode()     {}
+
 // --- Expressions ------------------------------------------------------------
 
-// Expr is a workflow expression: a CallExpr or a RefExpr.
+// Expr is a workflow expression: a CallExpr, a RefExpr, or — in a condition or
+// call argument (#199) — a LitExpr, UnaryExpr, or BinaryExpr.
 type Expr interface {
 	Node
 	exprNode()
 }
+
+// LitExpr is a literal operand: a string, a number, or a boolean (#199). Kind is
+// one of KindString, KindNumber, or a boolean (recorded as KindIdent with a
+// bool Value). Value holds the decoded Go value: string, int64, float64, or
+// bool. Literals appear in conditions and as call arguments; the surface has no
+// arithmetic, so numbers are only ever compared or passed, never combined.
+type LitExpr struct {
+	Pos   Pos
+	Kind  Kind
+	Value any
+}
+
+func (e *LitExpr) Position() Pos { return e.Pos }
+func (e *LitExpr) exprNode()     {}
+
+// UnaryExpr is `<Op> <X>` — only `!` (logical negation) exists in the surface.
+type UnaryExpr struct {
+	Pos Pos
+	Op  Kind // KindBang
+	X   Expr
+}
+
+func (e *UnaryExpr) Position() Pos { return e.Pos }
+func (e *UnaryExpr) exprNode()     {}
+
+// BinaryExpr is `<X> <Op> <Y>`: a comparison (== != < <= > >=) or a logical
+// connective (&& ||). Comparisons do not chain (a < b < c is a syntax error);
+// logical connectives are left-associative with && binding tighter than ||.
+type BinaryExpr struct {
+	Pos Pos
+	Op  Kind
+	X   Expr
+	Y   Expr
+}
+
+func (e *BinaryExpr) Position() Pos { return e.Pos }
+func (e *BinaryExpr) exprNode()     {}
 
 // RefExpr is a dotted reference path: a bare name (pr), a member access
 // (input.repo, result.summary), or a callee path (github.get_pr). Parts holds

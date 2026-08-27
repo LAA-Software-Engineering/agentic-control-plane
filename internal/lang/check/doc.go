@@ -1,6 +1,7 @@
 // Package check implements the ADR 002 §5 "checked program": the pass that
 // sits between the #196 typed AST and the two sibling projections (the #197
-// resource projection and a future #199 execution lowering).
+// resource projection and the #199 execution lowering, internal/execir). Check
+// lowers both projections and exposes the execution IR on Program.Executables.
 //
 //	.agent  ->  typed AST  ->  checked program  ->  { resource projection, execution lowering }
 //	                           (resolved refs · types · effect bound)

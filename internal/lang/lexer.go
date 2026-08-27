@@ -1,6 +1,9 @@
 package lang
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Lexer scans .agent source into a token stream. It is newline-insensitive:
 // statement and field boundaries are recovered by the grammar (each construct
@@ -68,6 +71,10 @@ func (l *Lexer) Next() Token {
 	switch {
 	case isIdentStart(r):
 		return l.scanIdent(start)
+	case isDigit(r):
+		return l.scanNumber(start)
+	case r == '"':
+		return l.scanString(start)
 	case r == '{':
 		l.advance()
 		return Token{Kind: KindLBrace, Lit: "{", Pos: start}
@@ -94,7 +101,48 @@ func (l *Lexer) Next() Token {
 		return Token{Kind: KindColon, Lit: ":", Pos: start}
 	case r == '=':
 		l.advance()
+		if next, nw := l.peek(); nw != 0 && next == '=' {
+			l.advance()
+			return Token{Kind: KindEqEq, Lit: "==", Pos: start}
+		}
 		return Token{Kind: KindEquals, Lit: "=", Pos: start}
+	case r == '!':
+		l.advance()
+		if next, nw := l.peek(); nw != 0 && next == '=' {
+			l.advance()
+			return Token{Kind: KindBangEq, Lit: "!=", Pos: start}
+		}
+		return Token{Kind: KindBang, Lit: "!", Pos: start}
+	case r == '<':
+		l.advance()
+		if next, nw := l.peek(); nw != 0 && next == '=' {
+			l.advance()
+			return Token{Kind: KindLte, Lit: "<=", Pos: start}
+		}
+		return Token{Kind: KindLt, Lit: "<", Pos: start}
+	case r == '>':
+		l.advance()
+		if next, nw := l.peek(); nw != 0 && next == '=' {
+			l.advance()
+			return Token{Kind: KindGte, Lit: ">=", Pos: start}
+		}
+		return Token{Kind: KindGt, Lit: ">", Pos: start}
+	case r == '&':
+		l.advance()
+		if next, nw := l.peek(); nw != 0 && next == '&' {
+			l.advance()
+			return Token{Kind: KindAndAnd, Lit: "&&", Pos: start}
+		}
+		l.errorf(start, "unexpected %q (did you mean '&&'?)", "&")
+		return Token{Kind: KindError, Lit: "&", Pos: start}
+	case r == '|':
+		l.advance()
+		if next, nw := l.peek(); nw != 0 && next == '|' {
+			l.advance()
+			return Token{Kind: KindOrOr, Lit: "||", Pos: start}
+		}
+		l.errorf(start, "unexpected %q (did you mean '||'?)", "|")
+		return Token{Kind: KindError, Lit: "|", Pos: start}
 	case r == '-':
 		// The only multi-rune operator: -> . A lone '-' is not an identifier
 		// start (isIdentStart excludes it) and is a lexer error.
@@ -129,6 +177,84 @@ func (l *Lexer) scanIdent(start Pos) Token {
 		return Token{Kind: kind, Lit: lit, Pos: start}
 	}
 	return Token{Kind: KindIdent, Lit: lit, Pos: start}
+}
+
+// scanNumber reads an integer or decimal literal: [0-9]+ ('.' [0-9]+)?. A '.'
+// is consumed into the number only when a digit follows it, so `steps.0` (were
+// it ever written) keeps the dot as its own token. The raw text is carried in
+// Token.Lit; the parser converts it to an int64 or float64. The language has no
+// arithmetic, so numbers appear only as condition operands and call arguments.
+func (l *Lexer) scanNumber(start Pos) Token {
+	begin := l.offset
+	for {
+		r, w := l.peek()
+		if w == 0 || !isDigit(r) {
+			break
+		}
+		l.advance()
+	}
+	// Fractional part only if a digit follows the '.'.
+	if r, w := l.peek(); w != 0 && r == '.' && l.offset+1 < len(l.src) && isDigit(rune(l.src[l.offset+1])) {
+		l.advance() // '.'
+		for {
+			r, w := l.peek()
+			if w == 0 || !isDigit(r) {
+				break
+			}
+			l.advance()
+		}
+	}
+	return Token{Kind: KindNumber, Lit: l.src[begin:l.offset], Pos: start}
+}
+
+// scanString reads a double-quoted string literal with the escapes \" \\ \n \t
+// \r. Token.Lit holds the DECODED value. An unterminated string or an unknown
+// escape is a lexer diagnostic; the best-effort decoded prefix is still
+// returned so the parser can continue.
+func (l *Lexer) scanString(start Pos) Token {
+	l.advance() // opening quote
+	var b strings.Builder
+	for {
+		r, w := l.peek()
+		if w == 0 {
+			l.errorf(start, "unterminated string literal")
+			return Token{Kind: KindString, Lit: b.String(), Pos: start}
+		}
+		if r == '"' {
+			l.advance()
+			return Token{Kind: KindString, Lit: b.String(), Pos: start}
+		}
+		if r == '\n' {
+			l.errorf(start, "unterminated string literal (newline before closing quote)")
+			return Token{Kind: KindString, Lit: b.String(), Pos: start}
+		}
+		if r == '\\' {
+			l.advance()
+			esc, ew := l.peek()
+			if ew == 0 {
+				continue
+			}
+			switch esc {
+			case '"':
+				b.WriteByte('"')
+			case '\\':
+				b.WriteByte('\\')
+			case 'n':
+				b.WriteByte('\n')
+			case 't':
+				b.WriteByte('\t')
+			case 'r':
+				b.WriteByte('\r')
+			default:
+				l.errorf(l.pos(), "unknown escape %q in string literal", "\\"+string(esc))
+				b.WriteRune(esc)
+			}
+			l.advance()
+			continue
+		}
+		b.WriteRune(r)
+		l.advance()
+	}
 }
 
 // skipTrivia consumes whitespace (including newlines) and // line comments.
@@ -180,3 +306,6 @@ func isIdentStart(r rune) bool {
 func isIdentPart(r rune) bool {
 	return isIdentStart(r) || (r >= '0' && r <= '9') || r == '-'
 }
+
+// isDigit reports whether r is an ASCII decimal digit.
+func isDigit(r rune) bool { return r >= '0' && r <= '9' }
