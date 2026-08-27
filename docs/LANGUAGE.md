@@ -156,7 +156,11 @@ Lowering rules:
   (or listed in `Options.Workflows` for workflows in other files) and an `agent:` step
   otherwise. A name declared as both an agent and a workflow is a diagnostic, never a silent
   `agent:`. Named arguments become `with:` keys; positional arguments become placeholder
-  `arg0`, `arg1`, … keys pending parameter binding (#198).
+  `arg0`, `arg1`, … keys. For a `workflow:` step the checker (#198, below) resolves these
+  against the callee's declared, ordered parameters. For an `agent:` step there is no such
+  parameter list to resolve against — an agent's `input` is one type, not named fields — so
+  a multi-argument agent call's placeholder keys stay a real, open gap: #198 reports it
+  loudly (a warning) rather than silently guessing a field mapping, but does not resolve it.
 - **References.** A workflow parameter field lowers to `${input.…}`; a binding lowers to
   `${steps.<id>.output.…}`. `return <expr>` lowers to `output.value.value`. A **bare**
   reference to a single-parameter workflow's input (the whole input object, e.g.
@@ -220,13 +224,19 @@ resolve, for tools that want partial results).
 
 ### The checked `effects` clause
 
-`Check` computes the workflow's actual reachable effect set by **lowering the AST through
-the existing `lower.LowerFile` and calling the existing, unmodified `effects.Compute`**
-(#189) on the resulting graph — the same function the YAML ingress path already uses.
-There is exactly one effect-bound algorithm in the codebase either way, which is what makes
-the frontend and YAML paths agree on a bound by construction rather than by two
-independently-tested implementations (`TestDifferential_AgentAndYAMLProduceIdenticalEffectBounds`
-in `internal/lang/check` proves this for a paired `.agent`/YAML fixture).
+`Check` computes the workflow's actual reachable effect set by **lowering every file in
+the compilation unit (`f` plus `Options.Files`) through the existing `lower.LowerFile`,
+merging all of them into one graph, and calling the existing, unmodified
+`effects.Compute`** (#189) on the result — the same function the YAML ingress path already
+uses. There is exactly one effect-bound algorithm in the codebase either way, which is what
+makes the frontend and YAML paths agree on a bound by construction rather than by two
+independently-tested implementations
+(`TestDifferential_AgentAndYAMLProduceIdenticalEffectBounds` in `internal/lang/check` proves
+this for a paired `.agent`/YAML fixture). Lowering the **whole** unit, not just `f`, matters
+as soon as a callee lives in another `.agent` file: a callee classified but never lowered
+would leave `effects.Compute` walking a resource that is not actually in the graph — a
+workflow callee would then silently contribute no effects, and an agent callee would report
+`Unknown` instead of its real grants.
 
 The declared `effects { }` clause is then checked against that computed bound:
 
@@ -253,8 +263,12 @@ The declared `effects { }` clause is then checked against that computed bound:
   them).
 - **A reachable operation with no declared tool effects is always a violation**, matching
   `effects.Check`'s fail-closed stance — no clause can cover an unknown effect.
-- A workflow with no `effects` clause is unchecked, matching how a YAML workflow with no
-  `Policy.spec.effects` is unaffected by `effects.Check`.
+- A workflow with no `effects` clause is unchecked by this pass. This is a deliberate,
+  independent product decision for this checker — **not** an analogue of `effects.Check`'s
+  YAML behavior: that function is fail-closed (a workflow whose Policy carries no permit
+  list permits *nothing* once any tool in the graph declares operation effects), which is
+  the opposite of "unaffected." Whether an `.agent` workflow should be required to declare
+  an effects clause at all is a separate lint decision.
 
 ### Type checking (agent invocation args, value flow)
 
@@ -266,21 +280,31 @@ mismatch reports the `.agent` call-site position rather than a synthesized step 
 
 **A `TypeRef` name resolves to `<SchemaDir>/schemas/<Name>.json`** (`SchemaDir` defaults to
 the directory of the `.agent` file being checked). This is a new naming convention
-introduced by #198 — no earlier ADR or grammar text specifies how a type name becomes a
-schema, and it is the one design decision most likely to need revisiting; see
-[`docs/plans/198-type-effect-checking.md`](plans/198-type-effect-checking.md) design
-decision 4. A name with no matching schema file checks as **untyped**, consistent with
-#193's gradual typing — an unresolved or absent schema is always compatible, never an error.
+introduced by this package — no earlier ADR or grammar text specifies how a type name
+becomes a schema, and it is the design decision most likely to need revisiting. A name with
+**no matching file** checks as **untyped**, consistent with #193's gradual typing — a
+missing schema is always compatible, never an error. A file that **exists but fails to
+compile** is a different, louder case: `schema.LoadDocument` distinguishes a missing file
+(`FileError`) from a broken one (`CompileError`), and only the former is gradual — a
+present-but-invalid schema is reported as an error, since the author named a real file and
+it did not parse.
 
 What is checked:
 
 - An agent invocation's **single positional argument** against the callee's declared
   `input` type (the unambiguous case — an agent's `input` is one type, not a named
-  parameter list, so multiple positional or named arguments to an agent call have no
-  declared per-field mapping yet; lowering placeholder-keys them `arg0`, `arg1`, … pending a
-  rebind, and this checker leaves that case gradual rather than guessing a mapping).
-- A workflow invocation's arguments against the callee's declared, **ordered** parameters —
-  named arguments by name, positional arguments by declared position.
+  parameter list). A call with **more than one** argument to an agent — the ADR 002
+  normative surface's own `Synthesizer(security, quality, tests)` shape — has no defined
+  field-order binding yet (lowering placeholder-keys those arguments `arg0`, `arg1`, … with
+  no declared meaning for the receiving agent to bind against); type-checking such a call
+  emits an explicit **warning** naming the unchecked call rather than silently passing with
+  no signal that nothing was verified.
+- A workflow invocation's arguments against the callee's declared, **ordered** parameters.
+  Named and positional arguments may be mixed at one call site: a positional argument binds
+  to the next declared parameter slot **not already claimed by a named argument anywhere in
+  the call** (not to its raw position), so a named argument earlier in the call correctly
+  "uses up" its slot instead of leaving a later positional argument double-checked against
+  it.
 - **Value flow through bindings**: `result = Synthesizer(...)` binds `result` to
   `Synthesizer`'s declared output type; a later `result.summary` walks that type through
   `schema.Document.Lookup`, and a field the schema declares forbidden

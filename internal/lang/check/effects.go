@@ -9,8 +9,7 @@ import (
 )
 
 // checkEffectsClauses checks every WorkflowDecl in f that declares an
-// `effects { }` clause against its computed bound (design decision 6 of
-// docs/plans/198-type-effect-checking.md):
+// `effects { }` clause against its computed bound:
 //
 //   - a computed effect the clause does not cover is an error, with a witness
 //     path rendered by the same effects.FormatWitness the #190 policy
@@ -19,8 +18,13 @@ import (
 //     the declared clause is an asserted upper bound, and an over-broad bound
 //     is not by itself a defect.
 //
-// A workflow with no effects clause is unchecked by this pass, matching how a
-// YAML workflow with no Policy.spec.effects is unaffected by effects.Check.
+// A workflow with no effects clause is unchecked by this pass. This is a
+// deliberate, independent product decision for this checker — it is NOT an
+// analogue of effects.Check's YAML behavior: that function is fail-closed
+// (a workflow whose Policy carries no permit list permits NOTHING once any
+// tool in the graph declares operation effects), the opposite of
+// "unaffected." Whether an .agent workflow should be required to declare an
+// effects clause at all is a separate lint decision, not this pass's job.
 func checkEffectsClauses(f *lang.File, bounds effects.GraphBounds) lang.Diagnostics {
 	var diags lang.Diagnostics
 	for _, d := range f.Decls {

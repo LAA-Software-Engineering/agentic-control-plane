@@ -79,8 +79,28 @@ func (ds Diagnostics) HasErrors() bool {
 	return false
 }
 
-// Error joins every diagnostic on its own line so Diagnostics satisfies the
-// error interface for callers that only need a combined message.
+// AsError returns ds as an error, or nil when ds has no SeverityError entry —
+// including when ds is a non-empty slice holding only warnings.
+//
+// This is the ONLY safe way to convert a Diagnostics value to a plain error
+// for a pass/fail check. Diagnostics is a slice type, so a bare interface
+// conversion (`var err error = ds`), `len(ds) != 0`, or `fmt.Errorf("%w", ds)`
+// all produce a non-nil error whenever ds is non-empty, warnings included —
+// none of those consult Severity. Error() does not fix this either: it still
+// renders every diagnostic (warnings included) for a caller that wants a full
+// human-readable dump, and a warning-only Error() string is merely prefixed
+// "warning:", not absent — the slice itself is still non-empty and would
+// still test as a "failure" under any of the patterns above. Use AsError (or
+// HasErrors directly) wherever "did this fail" matters.
+func (ds Diagnostics) AsError() error {
+	if !ds.HasErrors() {
+		return nil
+	}
+	return ds
+}
+
+// Error joins every diagnostic on its own line. This renders ds for display —
+// including warnings — and is NOT a pass/fail signal; see AsError.
 func (ds Diagnostics) Error() string {
 	parts := make([]string, len(ds))
 	for i, d := range ds {

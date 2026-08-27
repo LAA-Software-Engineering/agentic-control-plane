@@ -16,23 +16,28 @@ type Options struct {
 	// it computes against a shallow clone.
 	Project *spec.ProjectGraph
 
-	// Files supplies other .agent ASTs in the same compilation unit, so a
-	// cross-file agent/workflow reference resolves to the right step kind. This
-	// is the project-wide symbol table internal/lang/lower/lower.go's
-	// Options.Workflows doc comment names as this package's replacement.
+	// Files supplies other .agent ASTs in the same compilation unit — a
+	// cross-file agent/workflow reference resolves to the right step kind, AND
+	// every file listed here is lowered and merged into the graph Check
+	// computes the effect bound against (not merely classified for callee-kind
+	// purposes). This is the project-wide symbol table
+	// internal/lang/lower/lower.go's Options.Workflows doc comment names as
+	// this package's replacement.
 	Files []*lang.File
 
 	// SchemaDir overrides where TypeRef names resolve to schema files
 	// (<SchemaDir>/schemas/<Name>.json). Defaults to the directory of f's own
-	// position (f.Pos.File) when empty. See docs/plans/198-type-effect-checking.md
-	// design decision 4.
+	// position (f.Pos.File) when empty.
 	SchemaDir string
 }
 
 // Program is the checked program: f plus the resolved graph and effect bound
 // it type/effect-checks against. A non-nil Program is always returned, even
-// when Check reports errors, so a caller can inspect partial results —
-// Diagnostics (via Diagnostics.HasErrors) is the authority on pass/fail.
+// when Check reports errors, so a caller can inspect partial results — the
+// returned Diagnostics is the authority on pass/fail via HasErrors (or
+// AsError to get a plain error, nil for a warning-only result). Do not treat
+// a non-empty Diagnostics or a bare error-interface conversion of it as
+// failure on its own — see Diagnostics.AsError.
 type Program struct {
 	File   *lang.File
 	Graph  *spec.ProjectGraph
@@ -41,10 +46,18 @@ type Program struct {
 
 // Check resolves, type-checks, and effect-checks f.
 //
-// The effect bound is computed by lowering f through lower.LowerFile into a
-// *spec.ProjectGraph (merged with Options.Project) and calling
-// effects.Compute on the result — see doc.go for why this package never walks
-// the AST for effects on its own.
+// The effect bound is computed by lowering EVERY file in the compilation unit
+// (f plus Options.Files) through lower.LowerFile into one merged
+// *spec.ProjectGraph (with Options.Project) and calling effects.Compute on
+// the result — see doc.go for why this package never walks the AST for
+// effects on its own. Lowering only f and merely classifying Options.Files'
+// declarations for callee-kind purposes would leave a cross-file callee's own
+// body out of the graph: effects.Compute would then walk a workflow callee
+// that resolves to nothing (silently contributing no effects — fail-open) or
+// an agent callee that resolves to nothing (contributing Unknown — fail-closed
+// but still not the real grant set). Lowering the whole unit is what makes
+// "the frontend and YAML paths agree on a bound" true when a program spans
+// more than one .agent file.
 func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	prog := &Program{File: f}
 	if f == nil {
@@ -53,36 +66,55 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 
 	var diags lang.Diagnostics
 
-	workflowNames := collectWorkflowNames(f, opts)
-	result, lowerDiags := lower.LowerFile(f, lower.Options{Workflows: workflowNames})
-	diags = append(diags, lowerDiags...)
+	unit := compilationUnit(f, opts.Files)
+	workflowNames := collectWorkflowNames(unit, opts.Project)
 
 	graph := cloneGraph(opts.Project)
-	if err := project.MergeLowered(graph, result); err != nil {
-		diags = append(diags, lang.Diagnostic{Pos: f.Pos, Msg: err.Error()})
+	for _, file := range unit {
+		result, lowerDiags := lower.LowerFile(file, lower.Options{Workflows: workflowNames})
+		diags = append(diags, lowerDiags...)
+		if err := project.MergeLowered(graph, result); err != nil {
+			diags = append(diags, lang.Diagnostic{Pos: file.Pos, Msg: err.Error()})
+		}
 	}
 	prog.Graph = graph
 	prog.Bounds = effects.Compute(graph)
 
-	tu := resolveTypes(f, opts)
+	tu, typeDiags := resolveTypes(f, opts)
+	diags = append(diags, typeDiags...)
 	diags = append(diags, checkTypes(f, tu)...)
 	diags = append(diags, checkEffectsClauses(f, prog.Bounds)...)
 
 	return prog, diags.Sorted()
 }
 
-// collectWorkflowNames gathers workflow names declared OUTSIDE f — in
-// Options.Files or the already-loaded YAML project — so a single-identifier
-// callee in f classifies as a workflow: step rather than defaulting to
-// agent:. Names f declares itself are detected by lower.LowerFile directly and
-// need not be listed here.
-func collectWorkflowNames(f *lang.File, opts Options) map[string]bool {
-	out := map[string]bool{}
-	for _, other := range opts.Files {
-		if other == nil || other == f {
+// compilationUnit returns f followed by every distinct, non-nil file in
+// files, so every file in the unit is lowered exactly once (f first, so its
+// own diagnostics are unaffected by Options.Files ordering).
+func compilationUnit(f *lang.File, files []*lang.File) []*lang.File {
+	unit := make([]*lang.File, 0, len(files)+1)
+	unit = append(unit, f)
+	seen := map[*lang.File]bool{f: true}
+	for _, other := range files {
+		if other == nil || seen[other] {
 			continue
 		}
-		for _, d := range other.Decls {
+		seen[other] = true
+		unit = append(unit, other)
+	}
+	return unit
+}
+
+// collectWorkflowNames gathers every workflow name declared anywhere in the
+// compilation unit or the already-loaded YAML project, so a single-identifier
+// callee in ANY file of the unit classifies as a workflow: step rather than
+// defaulting to agent:. Passing this full set to every file's LowerFile call
+// is safe even for names a file declares itself: lower.go's classifyDecls
+// gives a file's own declarations priority over Options.Workflows.
+func collectWorkflowNames(unit []*lang.File, project *spec.ProjectGraph) map[string]bool {
+	out := map[string]bool{}
+	for _, file := range unit {
+		for _, d := range file.Decls {
 			if wd, ok := d.(*lang.WorkflowDecl); ok {
 				if name := identName(wd.Name); name != "" {
 					out[name] = true
@@ -90,8 +122,8 @@ func collectWorkflowNames(f *lang.File, opts Options) map[string]bool {
 			}
 		}
 	}
-	if opts.Project != nil {
-		for name := range opts.Project.Workflows {
+	if project != nil {
+		for name := range project.Workflows {
 			out[name] = true
 		}
 	}

@@ -156,7 +156,10 @@ workflow W() {
     github.get_pr()
 }
 `)
-	tu := resolveTypes(f, Options{SchemaDir: "testdata"})
+	tu, diags := resolveTypes(f, Options{SchemaDir: "testdata"})
+	if diags.HasErrors() {
+		t.Fatalf("expected no errors for a missing schema file, got %v", diagMessages(diags))
+	}
 	info, ok := tu.agents["A"]
 	if !ok {
 		t.Fatalf("expected agent A to be indexed")
@@ -174,7 +177,10 @@ agent A {
     output Review
 }
 `)
-	tu := resolveTypes(f, Options{SchemaDir: "testdata"})
+	tu, diags := resolveTypes(f, Options{SchemaDir: "testdata"})
+	if diags.HasErrors() {
+		t.Fatalf("expected no errors, got %v", diagMessages(diags))
+	}
 	info := tu.agents["A"]
 	if info.Input == nil || info.Output == nil {
 		t.Fatalf("expected resolved schema documents, got %+v", info)
