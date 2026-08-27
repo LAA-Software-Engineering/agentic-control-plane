@@ -1,6 +1,9 @@
 package lang
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // Parse lexes and parses src into a typed AST. It always returns a non-nil
 // *File (possibly with a partial or empty Decls slice) plus every diagnostic
@@ -277,7 +280,7 @@ func (p *parser) parseWorkflow() *WorkflowDecl {
 		p.advance()
 		decl.Effects = p.parseEffects()
 	}
-	decl.Body = p.parseBlock()
+	decl.Body = p.parseBlock("to open workflow body")
 	return decl
 }
 
@@ -350,11 +353,13 @@ func (p *parser) parseEffectRef() *EffectRef {
 	return e
 }
 
-// parseBlock parses a `{ statement* }` workflow body. When the opening brace is
-// absent it records a diagnostic and returns nil rather than consuming unrelated
-// tokens (top-level recovery then takes over).
-func (p *parser) parseBlock() []Stmt {
-	if _, ok := p.expect(KindLBrace, "to open workflow body"); !ok {
+// parseBlock parses a `{ statement* }` block (a workflow body, or a conditional
+// or loop body, #199). context describes what the opening brace opens, for the
+// diagnostic. When the opening brace is absent it records a diagnostic and
+// returns nil rather than consuming unrelated tokens (top-level recovery then
+// takes over).
+func (p *parser) parseBlock(context string) []Stmt {
+	if _, ok := p.expect(KindLBrace, context); !ok {
 		return nil
 	}
 	var stmts []Stmt
@@ -366,7 +371,7 @@ func (p *parser) parseBlock() []Stmt {
 		}
 		stmts = append(stmts, s)
 	}
-	p.expect(KindRBrace, "to close workflow body")
+	p.expect(KindRBrace, "to close block")
 	return stmts
 }
 
@@ -376,7 +381,18 @@ func (p *parser) parseStmt() Stmt {
 		pos := p.cur.Pos
 		p.advance()
 		return &ReturnStmt{Pos: pos, Value: p.parseExpr()}
+	case KindIf:
+		return p.parseIf()
+	case KindFor:
+		return p.parseFor(false, p.cur.Pos)
 	case KindParallel:
+		// `parallel for x in coll { }` is dynamic fan-out (a loop, #199);
+		// `parallel { a = ...; b = ... }` is static fan-out (#192).
+		if p.peekt.Kind == KindFor {
+			pos := p.cur.Pos
+			p.advance() // consume 'parallel'
+			return p.parseFor(true, pos)
+		}
 		return p.parseParallel()
 	case KindIdent:
 		// `name = expr` is an assignment; anything else is an expression
@@ -417,17 +433,164 @@ func (p *parser) parseParallel() *ParallelStmt {
 	return stmt
 }
 
+// parseIf parses `if <cond> { then } (else ({ else } | if ...))?` (#199). An
+// `else if` chain is represented as an Else holding one nested IfStmt.
+func (p *parser) parseIf() *IfStmt {
+	stmt := &IfStmt{Pos: p.cur.Pos}
+	p.advance() // consume 'if'
+	stmt.Cond = p.parseExpr()
+	stmt.Then = p.parseBlock("to open 'if' body")
+	if p.cur.Kind == KindElse {
+		p.advance() // consume 'else'
+		if p.cur.Kind == KindIf {
+			stmt.Else = []Stmt{p.parseIf()}
+		} else {
+			stmt.Else = p.parseBlock("to open 'else' body")
+		}
+	}
+	return stmt
+}
+
+// parseFor parses `for <var> in <collection> { body }` (#199). pos is the
+// keyword position (the `for`, or the `parallel` for the fan-out form).
+// `in` is a contextual keyword matched here, not a reserved word, so a parameter
+// may still be named `in`.
+func (p *parser) parseFor(parallel bool, pos Pos) *ForStmt {
+	stmt := &ForStmt{Pos: pos, Parallel: parallel}
+	p.advance() // consume 'for'
+	stmt.Var = p.ident("as loop variable after 'for'")
+	if p.cur.Kind == KindIdent && p.cur.Lit == "in" {
+		p.advance()
+	} else {
+		p.errorf(p.cur.Pos, "expected 'in' after loop variable, got %s", p.cur)
+	}
+	stmt.In = p.parseExpr()
+	stmt.Body = p.parseBlock("to open loop body")
+	return stmt
+}
+
 // --- Expressions ------------------------------------------------------------
 
-func (p *parser) parseExpr() Expr {
-	ref := p.parseRef("in expression")
-	if ref == nil {
+// parseExpr parses a full expression with operator precedence, lowest first:
+//
+//	or          := and ('||' and)*
+//	and         := comparison ('&&' comparison)*
+//	comparison  := unary (('==' | '!=' | '<' | '<=' | '>' | '>=') unary)?   // non-chaining
+//	unary       := '!' unary | primary
+//	primary     := number | string | 'true' | 'false' | '(' expr ')' | ref | ref '(' args ')'
+//
+// A plain reference or call (the only expression forms before #199) is just a
+// primary, so every earlier caller — assignment RHS, argument, return value,
+// parallel branch — keeps working unchanged. The richer forms appear in `if`
+// conditions and as call arguments.
+func (p *parser) parseExpr() Expr { return p.parseOr() }
+
+func (p *parser) parseOr() Expr {
+	left := p.parseAnd()
+	for left != nil && p.cur.Kind == KindOrOr {
+		p.advance()
+		right := p.parseAnd()
+		left = &BinaryExpr{Pos: left.Position(), Op: KindOrOr, X: left, Y: right}
+	}
+	return left
+}
+
+func (p *parser) parseAnd() Expr {
+	left := p.parseComparison()
+	for left != nil && p.cur.Kind == KindAndAnd {
+		p.advance()
+		right := p.parseComparison()
+		left = &BinaryExpr{Pos: left.Position(), Op: KindAndAnd, X: left, Y: right}
+	}
+	return left
+}
+
+func isComparisonOp(k Kind) bool {
+	switch k {
+	case KindEqEq, KindBangEq, KindLt, KindLte, KindGt, KindGte:
+		return true
+	}
+	return false
+}
+
+func (p *parser) parseComparison() Expr {
+	left := p.parseUnary()
+	if left == nil || !isComparisonOp(p.cur.Kind) {
+		return left
+	}
+	op := p.cur.Kind
+	p.advance()
+	right := p.parseUnary()
+	expr := &BinaryExpr{Pos: left.Position(), Op: op, X: left, Y: right}
+	if isComparisonOp(p.cur.Kind) {
+		p.errorf(p.cur.Pos, "comparisons do not chain; parenthesize or use '&&' (got %s)", p.cur)
+	}
+	return expr
+}
+
+func (p *parser) parseUnary() Expr {
+	if p.cur.Kind == KindBang {
+		pos := p.cur.Pos
+		p.advance()
+		return &UnaryExpr{Pos: pos, Op: KindBang, X: p.parseUnary()}
+	}
+	return p.parsePrimary()
+}
+
+// parsePrimary parses a literal, a parenthesized expression, or a
+// reference/call. `true` and `false` are recognized as boolean literals only in
+// primary position and only when not immediately followed by `.` or `(`, so a
+// (hypothetical) reference whose head is `true` is still reachable as a member
+// access; the surface has no other use for those words.
+func (p *parser) parsePrimary() Expr {
+	switch p.cur.Kind {
+	case KindNumber:
+		return p.parseNumber()
+	case KindString:
+		lit := &LitExpr{Pos: p.cur.Pos, Kind: KindString, Value: p.cur.Lit}
+		p.advance()
+		return lit
+	case KindLParen:
+		p.advance()
+		e := p.parseExpr()
+		p.expect(KindRParen, "to close parenthesized expression")
+		return e
+	case KindIdent:
+		if (p.cur.Lit == "true" || p.cur.Lit == "false") && p.peekt.Kind != KindDot && p.peekt.Kind != KindLParen {
+			lit := &LitExpr{Pos: p.cur.Pos, Kind: KindIdent, Value: p.cur.Lit == "true"}
+			p.advance()
+			return lit
+		}
+		ref := p.parseRef("in expression")
+		if ref == nil {
+			return nil
+		}
+		if p.cur.Kind == KindLParen {
+			return &CallExpr{Pos: ref.Pos, Callee: ref, Args: p.parseArgs()}
+		}
+		return ref
+	default:
+		p.errorf(p.cur.Pos, "expected expression, got %s", p.cur)
 		return nil
 	}
-	if p.cur.Kind == KindLParen {
-		return &CallExpr{Pos: ref.Pos, Callee: ref, Args: p.parseArgs()}
+}
+
+// parseNumber converts the current KindNumber token to an int64 (no fractional
+// part) or float64. A literal that overflows int64 falls back to float64.
+func (p *parser) parseNumber() Expr {
+	tok := p.cur
+	p.advance()
+	if !strings.Contains(tok.Lit, ".") {
+		if i, err := strconv.ParseInt(tok.Lit, 10, 64); err == nil {
+			return &LitExpr{Pos: tok.Pos, Kind: KindNumber, Value: i}
+		}
 	}
-	return ref
+	f, err := strconv.ParseFloat(tok.Lit, 64)
+	if err != nil {
+		p.errorf(tok.Pos, "invalid number literal %q", tok.Lit)
+		return &LitExpr{Pos: tok.Pos, Kind: KindNumber, Value: float64(0)}
+	}
+	return &LitExpr{Pos: tok.Pos, Kind: KindNumber, Value: f}
 }
 
 // parseRef parses a dotted reference path (pr, input.repo, github.get_pr).

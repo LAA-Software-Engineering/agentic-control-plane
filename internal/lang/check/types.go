@@ -263,8 +263,137 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 		want := typeRef{doc: wc.tu.workflows[identName(wc.wf.Name)].Result}
 		diags = append(diags, wc.checkCompatible(s.Value.Position(), got, want, "return value")...)
 		return diags
+	case *lang.IfStmt:
+		// An `if` is EXCLUSIVE choice, not sequential composition: the two arms
+		// never see each other's bindings, and a binding is in scope after the
+		// `if` only if it is definitely assigned — bound in BOTH arms (or already
+		// bound before). Each arm is checked against its own snapshot of the
+		// pre-`if` environment, then the arms are joined (joinEnv). This matches
+		// the interpreter, which runs exactly one arm on the enclosing scope.
+		var diags lang.Diagnostics
+		_, d := wc.checkExpr(s.Cond)
+		diags = append(diags, d...)
+
+		base := wc.env
+		wc.env = snapshotEnv(base)
+		for _, st := range s.Then {
+			diags = append(diags, wc.checkStmt(st)...)
+		}
+		thenEnv := wc.env
+
+		wc.env = snapshotEnv(base)
+		for _, st := range s.Else {
+			diags = append(diags, wc.checkStmt(st)...)
+		}
+		elseEnv := wc.env
+
+		wc.env = joinEnv(thenEnv, elseEnv)
+		return diags
+	case *lang.ForStmt:
+		var diags lang.Diagnostics
+		_, d := wc.checkExpr(s.In)
+		diags = append(diags, d...)
+		// The loop variable is untyped — element-type inference from the
+		// collection is a follow-up; gradual typing keeps a reference to it
+		// compatible with anything. Scoping matches the interpreter exactly, and
+		// the body runs with the loop variable bound in BOTH kinds:
+		//   - a PARALLEL loop isolates each iteration, so nothing the body binds
+		//     escapes (the interpreter runs each iteration in a child scope);
+		//   - a SEQUENTIAL loop may run ZERO times, so a name it first binds
+		//     (including the loop variable) is NOT definitely assigned afterward
+		//     and does not escape; a name that existed BEFORE the loop survives,
+		//     but reassignment inside it collapses to a union (untyped), never the
+		//     last iteration's type. loopJoin computes exactly that.
+		name := identName(s.Var)
+		pre := wc.env
+		wc.env = snapshotEnv(pre)
+		if name != "" {
+			wc.env[name] = typeRef{}
+		}
+		for _, st := range s.Body {
+			diags = append(diags, wc.checkStmt(st)...)
+		}
+		if s.Parallel {
+			wc.env = pre
+		} else {
+			wc.env = loopJoin(pre, wc.env)
+		}
+		return diags
 	}
 	return nil
+}
+
+// snapshotEnv shallow-copies the binding environment so an isolated block (a
+// parallel loop body) or one `if` arm can bind names that are discarded or
+// joined when the block ends.
+func snapshotEnv(env map[string]typeRef) map[string]typeRef {
+	out := make(map[string]typeRef, len(env))
+	for k, v := range env {
+		out[k] = v
+	}
+	return out
+}
+
+// joinEnv computes the environment after an `if` from the two arms'
+// environments, each already derived from a copy of the pre-`if` env. A name is
+// in scope after the `if` only if it is present in BOTH arms — i.e. bound before
+// the `if` (arms start from the same base, so a pre-existing name is in both) or
+// newly bound in both arms. A name bound in only one arm is NOT definitely
+// assigned and is dropped, so a later reference to it is not silently well-typed.
+// When both arms agree on a name's type it is kept; when they disagree (either
+// arm rebound it, or two arms bound it to different types) the joined type is
+// untyped/gradual — the honest representation of a union without a union type,
+// which stays permissive rather than picking whichever arm ran last.
+func joinEnv(thenEnv, elseEnv map[string]typeRef) map[string]typeRef {
+	out := make(map[string]typeRef, len(thenEnv))
+	for name, tThen := range thenEnv {
+		tElse, inElse := elseEnv[name]
+		if !inElse {
+			continue // bound in the then arm only: not definitely assigned
+		}
+		out[name] = mergeType(tThen, tElse)
+	}
+	return out
+}
+
+// loopJoin computes the environment after a sequential loop from the pre-loop
+// env and the env after one symbolic body pass (which started as a copy of the
+// pre-loop env plus the loop variable). Only names that existed BEFORE the loop
+// survive — a name the body first binds (the loop variable included) is not
+// definitely assigned, since the loop may run zero times. A surviving name whose
+// type the body changed collapses to untyped (its post-loop value is either the
+// pre-loop value or the last iteration's), never the body's type.
+func loopJoin(pre, after map[string]typeRef) map[string]typeRef {
+	out := make(map[string]typeRef, len(pre))
+	for name, tPre := range pre {
+		if tAfter, ok := after[name]; ok {
+			out[name] = mergeType(tPre, tAfter)
+		} else {
+			out[name] = tPre
+		}
+	}
+	return out
+}
+
+// mergeType joins a name's type across the two arms: identical types are kept,
+// differing types collapse to untyped (gradual), never to one arm's value.
+func mergeType(a, b typeRef) typeRef {
+	if a.doc == b.doc && samePath(a.path, b.path) {
+		return a
+	}
+	return typeRef{}
+}
+
+func samePath(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (wc *wfChecker) checkExpr(e lang.Expr) (typeRef, lang.Diagnostics) {
@@ -273,15 +402,35 @@ func (wc *wfChecker) checkExpr(e lang.Expr) (typeRef, lang.Diagnostics) {
 		return wc.checkRef(v)
 	case *lang.CallExpr:
 		return wc.checkCall(v)
+	case *lang.BinaryExpr:
+		// A comparison or logical connective (#199): its operands are checked
+		// for reference well-formedness; the result is an untyped boolean.
+		_, dx := wc.checkExpr(v.X)
+		_, dy := wc.checkExpr(v.Y)
+		return typeRef{}, append(dx, dy...)
+	case *lang.UnaryExpr:
+		_, d := wc.checkExpr(v.X)
+		return typeRef{}, d
+	case *lang.LitExpr:
+		return typeRef{}, nil
 	}
 	return typeRef{}, nil
 }
 
 // checkRef resolves a dotted reference (pr, input.repo, result.summary)
-// against the environment, reporting a diagnostic only when the schema
-// positively forbids the path (additionalProperties: false); an untyped head
-// or an unresolved head (already lowering's diagnostic — see prefixOf in
-// internal/lang/lower/lower.go) is silently gradual here.
+// against the environment. An unresolved head — a name the scope model says is
+// not in scope at this point — is a compile error, so a reference the runtime
+// would fail on is rejected here rather than passing under one model and
+// panicking under another (#199). This is the same condition and message
+// lowering's prefixOf reports for the resource projection, but the checker's
+// env is the AUTHORITY: it is the definite-assignment scope (a one-arm `if`
+// binding and a sequential loop's body locals are absent, since a zero-iteration
+// loop or the untaken arm never binds them), whereas the resource-flatten env is
+// an effect over-approximation that keeps every name any branch binds. Check
+// dedups the two when they coincide on a straight-line reference (dedupDiags).
+// A member access past a resolved head is an error only when the schema
+// positively forbids the path (additionalProperties: false); an untyped head is
+// otherwise gradual.
 func (wc *wfChecker) checkRef(r *lang.RefExpr) (typeRef, lang.Diagnostics) {
 	if r == nil || len(r.Parts) == 0 {
 		return typeRef{}, nil
@@ -289,7 +438,10 @@ func (wc *wfChecker) checkRef(r *lang.RefExpr) (typeRef, lang.Diagnostics) {
 	head := r.Parts[0].Name
 	cur, ok := wc.env[head]
 	if !ok {
-		return typeRef{}, nil
+		return typeRef{}, lang.Diagnostics{{
+			Pos: r.Pos,
+			Msg: fmt.Sprintf("unresolved reference %q", head),
+		}}
 	}
 	for _, p := range r.Parts[1:] {
 		if cur.doc == nil {

@@ -4,12 +4,16 @@
 [ADR 002](adr/002-language-frontend-and-ir-expressiveness.md). This document is the
 grammar reference for the **frontend as shipped in issue #196: lexing, parsing, and
 the typed AST only** — plus the **resource-model lowering added in #197** (see
-[Lowering to the resource model](#lowering-to-the-resource-model-197) below) and **type and
+[Lowering to the resource model](#lowering-to-the-resource-model-197) below), **type and
 effect checking, added in #198** (see [Type and effect checking](#type-and-effect-checking-198)
-below). There is no execution lowering / `Branch`/`Loop` yet (#199), no conditionals, loops,
-or dynamic fan-out, and `.agent` files are not yet ingested by `agentctl` or
-`project.LoadProject` — the checker is a library today, wired into a CLI command as a
-follow-up.
+below), and **conditionals, loops, dynamic fan-out, and the execution IR, added in
+#199** (see [Control flow and the execution IR](#control-flow-and-the-execution-ir-199)
+below). `.agent` files are not yet ingested by `agentctl` or `project.LoadProject` — the
+checker and the execution-IR interpreter are libraries today
+([`internal/lang/check`](../internal/lang/check), [`internal/execir`](../internal/execir)),
+wired into the CLI/engine as a follow-up (the persistence half of #199 — `apply` persisting
+the execution IR and `run --resume` pinning it — is deferred to the content-addressed
+artifact store of #207).
 
 The reference implementation is [`internal/lang`](../internal/lang):
 `lang.Parse(file, src) (*lang.File, lang.Diagnostics)`.
@@ -76,16 +80,28 @@ Param       = Ident ":" Ident ;                 (* name : Type *)
 Effects     = Effect { [ "," ] Effect } ;       (* commas optional *)
 Effect      = Ident { "." Ident } ;             (* bare dotted; no "tool." prefix *)
 
-Statement   = Assign | Parallel | Return | ExprStmt ;
+Statement   = Assign | Parallel | If | For | Return | ExprStmt ;
 Assign      = Ident "=" Expr ;
-Parallel    = "parallel" "{" { Assign } "}" ;
+Parallel    = "parallel" "{" { Assign } "}" ;   (* static fan-out, #192 *)
+If          = "if" Cond Block [ "else" ( If | Block ) ] ;            (* #199 *)
+For         = [ "parallel" ] "for" Ident "in" Expr Block ;           (* #199 *)
+Block       = "{" { Statement } "}" ;
 Return      = "return" Expr ;
 ExprStmt    = Expr ;                            (* a call for its effect *)
 
-Expr        = Ref [ "(" [ Args ] ")" ] ;        (* Ref, or a call on Ref *)
-Ref         = Ident { "." Ident } ;             (* pr, input.repo, github.get_pr *)
+Expr        = Ref [ "(" [ Args ] ")" ] | Literal ;
 Args        = Arg { "," Arg } ;
 Arg         = [ Ident ":" ] Expr ;              (* named or positional *)
+Ref         = Ident { "." Ident } ;             (* pr, input.repo, github.get_pr *)
+Literal     = String | Number | "true" | "false" ;
+
+(* Boolean expression language for conditions, #199. No arithmetic. *)
+Cond        = Or ;
+Or          = And { "||" And } ;
+And         = Compare { "&&" Compare } ;
+Compare     = Unary [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) Unary ] ;  (* non-chaining *)
+Unary       = "!" Unary | Primary ;
+Primary     = Literal | "(" Cond ")" | Ref [ "(" [ Args ] ")" ] ;
 ```
 
 Notes:
@@ -94,6 +110,14 @@ Notes:
   whether comma- or newline-separated. Grants are newline-separated (a comma between
   grants is tolerated for symmetry).
 - A `parallel` block admits only assignments: each branch binds a name for fan-in.
+- `if`, `else`, `for`, and the operators/literals are the #199 additions. `in` is a
+  **contextual** keyword (matched only in loop position), so a parameter may still be
+  named `in`; `true`/`false` are contextual boolean literals. `parallel for` is dynamic
+  fan-out — a loop, not a graph field (ADR 002 §1).
+- **Conditions are pure**: a call is not allowed inside an `if` (or a comparison
+  operand). Bind a call's result to a name and test the name. This keeps conditions
+  effect-free and the effect bound trivially the union over both arms.
+- Comparisons do not chain: `a < b < c` is a syntax error (parenthesize or use `&&`).
 - Each agent field (`model`, `policy`, `grants`, `input`, `output`) may appear at most
   once; a repeated field keeps the first occurrence and yields a duplicate-field
   diagnostic rather than silently overwriting.
@@ -214,7 +238,7 @@ agent-spec validation. Lifting the one-operation-per-tool limit is tracked for E
 
 [`internal/lang/check`](../internal/lang/check) implements the ADR 002 §5 "checked
 program" — the pass between the typed AST and the two sibling projections (the resource
-projection above, and a future execution lowering, #199):
+projection above, and the execution lowering of [#199](#control-flow-and-the-execution-ir-199)):
 
 ```go
 prog, diags := check.Check(f, check.Options{
@@ -334,6 +358,135 @@ What is checked:
   get resolved types; a callee that resolves only through `Options.Project` (a YAML-only
   sibling) is treated as untyped today — full YAML schema interop is a follow-up, not
   silently assumed.
+
+## Control flow and the execution IR (#199)
+
+Conditionals, loops, and dynamic fan-out are **computation**, not graph structure, so ADR
+002 §4 forbids them from ever becoming a field on the resource-model `WorkflowStep`. They
+live only in the **execution IR** — [`internal/execir`](../internal/execir) — the second of
+the two sibling projections. `check.Check` populates `Program.Executables` with one
+`execir.Program` per workflow; [`lower.LowerExec`](../internal/lang/lower/exec.go) produces
+it by reading the AST directly (never the resource projection, which cannot represent
+control flow).
+
+### The surface
+
+```text
+workflow ReleaseAll(input: Batch)
+    effects { github.read, github.write }
+{
+    if input.dry_run {
+        report = github.summarize(input.repos)
+    } else {
+        parallel for repo in input.repos {
+            github.deploy(repo, channel: "stable")
+        }
+        report = github.summarize(input.repos)
+    }
+    return report
+}
+```
+
+`report` is bound in **both** arms, so it is definitely assigned after the `if` and `return
+report` is well-formed. A binding made in only one arm is not in scope after the `if` (see the
+scope rules below); return it inside that arm, or bind it in both.
+
+- **`if` / `else` / `else if`** — a conditional; the condition is a boolean expression over
+  already-bound values and literals (no calls; see the grammar note).
+- **`for x in <collection>`** — a sequential loop over a runtime collection.
+- **`parallel for x in <collection>`** — dynamic fan-out: one iteration per element, run
+  with **bounded concurrency**. Each iteration has an isolated scope, so iterations never
+  race and a body binding does not escape the loop.
+
+### Scope and `return` — one model, in the checker and the interpreter
+
+Sequential and parallel constructs scope bindings differently, and the type checker and the
+interpreter implement the **same** rule so a program cannot type-check under one model and run
+under another:
+
+- **`if` is exclusive choice with a definite-assignment join.** The two arms never see each
+  other's bindings (each is checked against the pre-`if` scope), and a binding is in scope
+  after the `if` only if it is bound in **both** arms — `if c { x = A() } else { x = B() }`
+  then a use of `x` is the intended idiom. A name bound in only one arm is not in scope
+  afterward. When the two arms give a name different types the join is a union, represented as
+  untyped/gradual (permissive) rather than whichever arm the checker walked last.
+- **Sequential `for` may run zero times.** The loop variable is in scope inside the body, and a
+  `return` inside returns from the workflow and halts the loop. But a name the loop **first**
+  binds — the loop variable, or a binding introduced in the body — is **not** in scope after
+  the loop, because an empty collection never binds it. A name that existed **before** the loop
+  survives it (reassignment inside collapses its type to a union, never the last iteration's).
+
+A reference to a name the scope model says is absent — a one-arm `if` binding used after the
+`if`, a loop variable or body-local used after the loop, or any never-bound name — is a
+**compile error** (`unresolved reference "…"`), reported by the type checker from the same
+scope model the interpreter runs. This is what makes "the checker and interpreter share one
+rule" a checked property rather than a claim: a program the scope model rejects does not
+type-check, so it cannot reach the interpreter and fail there on an untaken path.
+- **Parallel** (`parallel { … }`, `parallel for`): each branch/iteration runs in an **isolated**
+  scope; only a `parallel {}` branch's own binding is published at the join, and a `parallel
+  for` body's bindings do not escape. A `return` inside a parallel body is a **compile error**
+  (there is no join target for a racing iteration's return value).
+
+### Lowering targets (execution IR)
+
+| Surface | `execir` node |
+|---|---|
+| `agent`/tool/`workflow` call | `InvokeAgent` / `InvokeTool` / `InvokeWorkflow` |
+| `x = y` (alias) | `Let` |
+| `parallel { … }` | `Fork` (branches run concurrently, join at the block's end) |
+| `if … else …` | `Branch` |
+| `for` / `parallel for` | `Loop` (`Parallel` set for fan-out) |
+| `return e` | `Return` |
+
+Nested-call arguments are hoisted into their own preceding `Invoke` bound to a fresh
+temporary, so evaluation order matches source order. References use the **source binding
+namespace** (parameter names, assignment targets, loop variables), not resource-model
+`${steps.x}` tokens — the execution IR is independent of how the resource projection renders
+interpolation.
+
+### Effect soundness is the union over branches
+
+The effect bound is **not** recomputed for control flow. `LowerFile` flattens every
+conditional arm and loop body into resource steps (a sound over-approximation), and the
+existing [`internal/effects`](../internal/effects) walk over those steps therefore yields the
+**union over all reachable branches**. A branch that reaches an operation the workflow's
+`effects { }` clause does not declare fails compilation exactly as a straight-line reach
+would — a conditional cannot smuggle an unpermitted effect past the clause (ADR 002 §5).
+
+### Bounded termination
+
+The surface has no unbounded (`while`) loop: every loop is bounded by its collection. The
+interpreter additionally caps the element count at `limits.maxLoopIterations`
+(`spec.DefaultMaxLoopIterations` = 1000; overridable per project/workflow), so a runtime
+collection cannot make a run unbounded — a loop over more elements fails loudly.
+
+### `plan` under control flow — the fold mechanism, not yet wired
+
+`plan` diffs only the **resource projection**; the execution IR produces no diff lines of its
+own. The fold that would let a lowering-only change (e.g. swapping an `if`'s two arms)
+invalidate a stale plan is
+[`plan.WorkflowSpecHashWithExec`](../internal/plan/workflow_hash.go), which mixes
+`execir.Program.Digest` into the spec-hash. **This is the mechanism, not yet a live invariant**:
+no production path constructs an `execir.Program` for a workflow today — `project.LoadProject`
+does not read `.agent`, and `agentctl plan` hashes YAML resource envelopes through
+`WorkflowSpecHash` (empty digest). When `.agent` ingest is wired into plan/run, those call
+sites move to `WorkflowSpecHashWithExec`; the plain `WorkflowSpecHash` doc comment flags that.
+The fold is unit-tested (`internal/plan/workflow_hash_execir_test.go`).
+
+### Deferred follow-ups
+
+- **YAML → execution IR convergence.** ADR 002 §5 requires both ingress paths to converge on
+  this IR. `.agent` lowering (`LowerExec`) exists; YAML still executes as a `WorkflowStep` DAG
+  in [`internal/engine`](../internal/engine). A `YAML → execir` lowering and running the engine
+  from `execir` are a follow-up — until then the convergence is a design target, not a shipped
+  property, and `execir`'s package comment says so.
+- **Persistence and resume (#207).** `apply` persisting the compiled program and `run --resume`
+  pinning it (so an in-flight run cannot be re-lowered underneath it) build on the immutable
+  content-addressed deployment snapshot of **#207** and are deferred until that store lands
+  (ADR 002 §5, round-3/round-4 amendments).
+
+Today `execir` executes as a library, driven by an injected `Invoker`, so control-flow
+semantics are unit-tested in isolation.
 
 ## Diagnostics
 

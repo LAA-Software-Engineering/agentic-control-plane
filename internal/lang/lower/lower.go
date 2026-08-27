@@ -360,11 +360,82 @@ func (wl *workflowLowerer) lowerBody(body []lang.Stmt) {
 			if len(next) > 0 {
 				frontier = next
 			}
+		case *lang.IfStmt, *lang.ForStmt:
+			// Control flow does not become a WorkflowStep field (ADR 002 §4); it
+			// lowers to the execution IR (LowerExec). The resource projection
+			// instead FLATTENS every reachable arm/body into steps so the effect
+			// bound computed over it (internal/effects walks these steps) is the
+			// union over all branches — a conditional cannot smuggle an
+			// unpermitted effect past the effects clause (ADR 002 §5, #199). The
+			// flattened steps are a sound over-approximation for effect analysis
+			// and plan diffing, not an independently executable graph; execution
+			// runs from the execution IR.
+			wl.lowerControlStmts([]lang.Stmt{st}, frontier)
 		case *lang.ReturnStmt:
 			wl.output = &spec.WorkflowOutput{
 				Value: map[string]any{"value": wl.lowerValue(s.Value, "return", frontier)},
 			}
 		}
+	}
+}
+
+// lowerControlStmts flattens the statements inside a conditional or loop into
+// resource steps (the union over branches; see the IfStmt/ForStmt case in
+// lowerBody). Every call becomes a step with a FRESH id — a name bound in both
+// arms of an `if` must not collide — so these steps carry structural ids, not
+// author binding names, and the projection is not required to be independently
+// executable. Effect analysis only reads each step's uses:/agent/workflow, which
+// this preserves faithfully.
+func (wl *workflowLowerer) lowerControlStmts(body []lang.Stmt, predNeeds []string) {
+	for _, st := range body {
+		switch s := st.(type) {
+		case *lang.AssignStmt:
+			wl.lowerControlAssign(s, predNeeds)
+		case *lang.ExprStmt:
+			if call, ok := s.X.(*lang.CallExpr); ok {
+				id := wl.freshID(calleeLeaf(call.Callee))
+				wl.lowerCall(id, call, predNeeds, s.Pos)
+			} else {
+				wl.l.diag(s.Pos, "expression statement is not a call and has no effect")
+			}
+		case *lang.ParallelStmt:
+			for _, b := range s.Body {
+				wl.lowerControlAssign(b, predNeeds)
+			}
+		case *lang.IfStmt:
+			wl.lowerControlStmts(s.Then, predNeeds)
+			wl.lowerControlStmts(s.Else, predNeeds)
+		case *lang.ForStmt:
+			if v := identName(s.Var); v != "" {
+				// Register the loop variable so references to it inside the body
+				// resolve (best-effort) instead of being flagged unresolved.
+				wl.env.roots[v] = "loop." + v
+			}
+			wl.lowerControlStmts(s.Body, predNeeds)
+		case *lang.ReturnStmt:
+			wl.output = &spec.WorkflowOutput{
+				Value: map[string]any{"value": wl.lowerValue(s.Value, "return", predNeeds)},
+			}
+		}
+	}
+}
+
+// lowerControlAssign lowers an assignment inside a control-flow body, allocating
+// a fresh step id (so branch-local bindings never collide) and registering the
+// binding's interpolation root best-effort.
+func (wl *workflowLowerer) lowerControlAssign(s *lang.AssignStmt, predNeeds []string) {
+	name := identName(s.Target)
+	switch v := s.Value.(type) {
+	case *lang.CallExpr:
+		id := wl.freshID(name)
+		wl.lowerCall(id, v, predNeeds, s.Pos)
+		wl.env.roots[name] = "steps." + id + ".output"
+	case *lang.RefExpr:
+		wl.env.roots[name] = wl.prefixOf(v)
+	case *lang.LitExpr:
+		// A literal binding contributes no step and no interpolation root.
+	default:
+		wl.l.diag(s.Pos, "unsupported binding value")
 	}
 }
 
@@ -453,6 +524,10 @@ func (wl *workflowLowerer) lowerArg(e lang.Expr, parentID string, argIdx int, pr
 	switch v := e.(type) {
 	case *lang.RefExpr:
 		return wl.token(v)
+	case *lang.LitExpr:
+		// A literal argument lowers to its Go value directly; the with: map holds
+		// arbitrary values, so no interpolation token is needed (#199).
+		return v.Value
 	case *lang.CallExpr:
 		id := wl.freshID(parentID + "_arg" + strconv.Itoa(argIdx))
 		wl.lowerCall(id, v, predNeeds, v.Pos)
@@ -470,6 +545,8 @@ func (wl *workflowLowerer) lowerValue(e lang.Expr, idBase string, predNeeds []st
 	switch v := e.(type) {
 	case *lang.RefExpr:
 		return wl.token(v)
+	case *lang.LitExpr:
+		return v.Value
 	case *lang.CallExpr:
 		id := wl.freshID(idBase + "_" + calleeLeaf(v.Callee))
 		wl.lowerCall(id, v, predNeeds, v.Pos)

@@ -2,6 +2,7 @@ package check
 
 import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/effects"
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/execir"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/lower"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
@@ -41,6 +42,18 @@ type Program struct {
 	File   *lang.File
 	Graph  *spec.ProjectGraph
 	Bounds effects.GraphBounds
+	// Executables is the execution-IR projection of every workflow in the
+	// compilation unit, keyed by workflow name (ADR 002 §5, #199). This is the
+	// form control flow (Branch/Loop/Fork) lives in, executable via execir.Interp.
+	// Positional workflow: arguments are rebound to real parameter names here
+	// (applyExecRebinds), the same rewrite Graph receives.
+	//
+	// Not yet on a production path: wiring these programs (and the plan-hash fold
+	// of execir.Program.Digest via plan.WorkflowSpecHashWithExec) into apply/run
+	// is deferred with the rest of `.agent` ingest — LoadProject does not read
+	// `.agent` yet, and no planner or runner constructs a Program. Populated even
+	// when diagnostics are present (best-effort, like Graph).
+	Executables map[string]*execir.Program
 }
 
 // Check resolves, type-checks, and effect-checks the WHOLE compilation unit
@@ -89,6 +102,7 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	workflowNames := collectWorkflowNames(unit, opts.Project)
 
 	graph := cloneGraph(opts.Project)
+	executables := map[string]*execir.Program{}
 	for _, file := range unit {
 		result, lowerDiags := lower.LowerFile(file, lower.Options{Workflows: workflowNames})
 		diags = append(diags, lowerDiags...)
@@ -96,8 +110,24 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 		if err := project.MergeLowered(graph, result); err != nil {
 			diags = append(diags, lang.Diagnostic{Pos: file.Pos, Msg: err.Error()})
 		}
+		// Execution lowering is the sibling projection (ADR 002 §5): lowered
+		// directly from the AST, in parallel with the resource projection above,
+		// never from it. Its diagnostics (e.g. a call inside a condition) are
+		// part of the compilation unit's result.
+		for _, d := range file.Decls {
+			wd, ok := d.(*lang.WorkflowDecl)
+			if !ok {
+				continue
+			}
+			execProg, execDiags := lower.LowerExec(wd, workflowNames)
+			diags = append(diags, execDiags...)
+			if execProg != nil && execProg.Workflow != "" {
+				executables[execProg.Workflow] = execProg
+			}
+		}
 	}
 	prog.Graph = graph
+	prog.Executables = executables
 	prog.Bounds = effects.Compute(graph)
 
 	tu, typeDiags := resolveTypes(f, opts)
@@ -105,10 +135,37 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	checkDiags, rebinds := checkTypes(unit, tu)
 	diags = append(diags, checkDiags...)
 	applyRebinds(lowered, rebinds)
+	// The same positional-argument rebind must reach the EXECUTION IR, not only
+	// the resource projection: LowerExec keys positional workflow: arguments as
+	// arg0/arg1 exactly as LowerFile does, and Program.Executables is the form the
+	// engine will run — an InvokeWorkflow left with arg0 keys would hand the
+	// Invoker a map under the wrong keys (paramScope binds by parameter name).
+	applyExecRebinds(executables, rebinds)
 
 	diags = append(diags, checkEffectsClauses(unit, prog.Bounds)...)
 
-	return prog, diags.Sorted()
+	return prog, dedupDiags(diags.Sorted())
+}
+
+// dedupDiags drops adjacent exact-duplicate diagnostics (same position, message,
+// and severity). The checker is the authority for unresolved references and
+// emits the same message lowering's prefixOf does for a straight-line reference,
+// so a genuine typo would otherwise be reported twice; a control-flow scope
+// violation is reported by the checker alone. Sorting groups identical entries
+// adjacently, so one pass suffices.
+func dedupDiags(diags lang.Diagnostics) lang.Diagnostics {
+	if len(diags) < 2 {
+		return diags
+	}
+	out := diags[:1]
+	for _, d := range diags[1:] {
+		last := out[len(out)-1]
+		if d.Pos == last.Pos && d.Msg == last.Msg && d.Severity == last.Severity {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 // applyRebinds rewrites a lowered workflow: step's placeholder with: keys
@@ -158,6 +215,68 @@ func applyRebinds(lowered []*spec.WorkflowResource, rebinds []rebind) {
 			s.With = next
 		}
 	}
+}
+
+// applyExecRebinds rewrites positional workflow: argument keys (arg0, arg1, ...)
+// on every InvokeWorkflow in the execution IR to the callee's real parameter
+// names, using the same rebinds Check applies to the resource projection
+// (applyRebinds). Correlation is by position: LowerExec stamps InvokeWorkflow.Pos
+// with the call's position, which equals the callee position rebind.pos carries
+// (CallExpr.Pos is its callee RefExpr.Pos), so no re-derivation of a step-id
+// scheme is needed. It recurses into every control-flow body so a workflow call
+// inside an if/loop/parallel — including a hoisted nested call — is rebound too.
+func applyExecRebinds(executables map[string]*execir.Program, rebinds []rebind) {
+	if len(rebinds) == 0 {
+		return
+	}
+	byPos := make(map[lang.Pos]map[string]string, len(rebinds))
+	for _, rb := range rebinds {
+		byPos[rb.pos] = rb.renames
+	}
+	for _, prog := range executables {
+		if prog != nil {
+			rebindNodes(prog.Body, byPos)
+		}
+	}
+}
+
+func rebindNodes(nodes []execir.Node, byPos map[lang.Pos]map[string]string) {
+	for _, n := range nodes {
+		switch v := n.(type) {
+		case *execir.InvokeWorkflow:
+			if renames, ok := byPos[v.Pos]; ok {
+				v.Args = renameArgs(v.Args, renames)
+			}
+		case *execir.Branch:
+			rebindNodes(v.Then, byPos)
+			rebindNodes(v.Else, byPos)
+		case *execir.Loop:
+			rebindNodes(v.Body, byPos)
+		case *execir.Fork:
+			for i := range v.Branches {
+				rebindNodes(v.Branches[i].Nodes, byPos)
+			}
+		}
+	}
+}
+
+// renameArgs rebuilds an argument map applying renames, reading every original
+// key once so a parameter legally named like a placeholder (arg1) cannot alias
+// one rename's target onto another's source — the same hazard applyRebinds
+// avoids for the resource projection.
+func renameArgs(args map[string]execir.Value, renames map[string]string) map[string]execir.Value {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]execir.Value, len(args))
+	for k, val := range args {
+		if nk, ok := renames[k]; ok {
+			out[nk] = val
+		} else {
+			out[k] = val
+		}
+	}
+	return out
 }
 
 // compilationUnit returns f followed by every distinct, non-nil file in

@@ -10,16 +10,20 @@
 //     Workflow's identity + dependency graph. It is what plan diffs, what apply
 //     writes, and what policy/effect analysis runs against. It never gains an
 //     expression language.
-//   - the EXECUTION lowering (#199): InvokeTool/InvokeAgent/Fork/Join and the
-//     control-flow forms Branch/Loop/Return. It is never hand-authored and has no
-//     YAML surface.
+//   - the EXECUTION lowering ([LowerExec], #199): InvokeTool/InvokeAgent/
+//     InvokeWorkflow/Fork and the control-flow forms Branch/Loop/Return, emitted
+//     into internal/execir. It is never hand-authored and has no YAML surface.
 //
 // The naive reading "AST -> resource IR -> execution IR" is explicitly wrong
-// (ADR 002 §5): control flow cannot be recovered from the resource projection
-// once it exists, so the execution lowering must read the same checked program
-// independently. This package is therefore written so #199 is ADDITIVE — nothing
-// downstream is expected to reconstruct control flow from [Result]. Do not make
-// the execution lowering consume a [Result]; make it a second reader of the AST.
+// (ADR 002 §5): control flow cannot be recovered from the resource projection,
+// so the execution lowering reads the same AST independently. [LowerExec] is
+// accordingly a SECOND reader of the AST, not a consumer of [Result]; the two
+// lowerings share only the callee-classification rule (dotted callee = tool;
+// single identifier = workflow when named, else agent). Their one coupling is by
+// design: [LowerFile] additionally FLATTENS every conditional arm and loop body
+// into resource steps (lowerControlStmts) so the effect bound computed over the
+// resource projection is the union over all branches — a conditional cannot
+// smuggle an unpermitted effect past the effects clause (ADR 002 §5).
 //
 // Until the checker (#198) lands the "checked program" is the raw AST, so
 // [LowerFile] takes an [ast]/[lang].File directly. Reference resolution, typing,

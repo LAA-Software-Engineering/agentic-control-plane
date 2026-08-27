@@ -862,16 +862,29 @@ frontend and must never become an expression field on `WorkflowStep`. Conditiona
 lower to an internal **execution IR** (`Branch`, `Loop`, `Fork`, `Join`) that is derived rather
 than authored and has no YAML surface — see ADR 002 §5.
 
-| Addition | Surface |
-|----------|---------|
-| parallel branches | YAML / IR |
-| subworkflows | YAML / IR |
-| human approval steps | YAML / IR |
-| scheduled triggers | YAML / IR |
-| event triggers | YAML / IR |
-| fan-out/fan-in | static fan-out is YAML / IR; dynamic fan-out over a runtime collection is a loop and belongs to the frontend |
-| conditional steps | `.agent` frontend |
-| loops | `.agent` frontend |
+Conditionals, loops, and dynamic fan-out are **delivered** in the `.agent` frontend (#199):
+they parse, type/effect-check, lower to the execution IR ([`internal/execir`](../internal/execir)),
+and execute as a library — see
+[`docs/LANGUAGE.md`](LANGUAGE.md#control-flow-and-the-execution-ir-199). The effect bound
+remains sound as the union over all branches, and loops are bounded by
+`limits.maxLoopIterations`. Three pieces are **follow-ups**, not shipped by #199: the
+execution-IR digest fold into the workflow spec-hash exists (`plan.WorkflowSpecHashWithExec`)
+but no production `plan`/`run` path constructs an `execir.Program` yet; the YAML ingress path
+still executes as a `WorkflowStep` DAG rather than converging on the execution IR; and
+persisting the compiled program at `apply` / pinning it across `run --resume` awaits the
+content-addressed deployment snapshot of #207. All three land with `.agent` ingest into the
+CLI/engine.
+
+| Addition | Surface | Status |
+|----------|---------|--------|
+| parallel branches | YAML / IR | delivered (#192) |
+| subworkflows | YAML / IR | delivered (#194) |
+| human approval steps | YAML / IR | delivered |
+| scheduled triggers | YAML / IR | planned |
+| event triggers | YAML / IR | planned |
+| fan-out/fan-in | static fan-out is YAML / IR; dynamic fan-out over a runtime collection is a loop and belongs to the frontend | static delivered; dynamic delivered (#199) |
+| conditional steps | `.agent` frontend | delivered (#199) |
+| loops | `.agent` frontend | delivered (#199) |
 
 ---
 
