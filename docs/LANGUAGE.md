@@ -156,11 +156,17 @@ Lowering rules:
   (or listed in `Options.Workflows` for workflows in other files) and an `agent:` step
   otherwise. A name declared as both an agent and a workflow is a diagnostic, never a silent
   `agent:`. Named arguments become `with:` keys; positional arguments become placeholder
-  `arg0`, `arg1`, … keys. For a `workflow:` step the checker (#198, below) resolves these
-  against the callee's declared, ordered parameters. For an `agent:` step there is no such
-  parameter list to resolve against — an agent's `input` is one type, not named fields — so
-  a multi-argument agent call's placeholder keys stay a real, open gap: #198 reports it
-  loudly (a warning) rather than silently guessing a field mapping, but does not resolve it.
+  `arg0`, `arg1`, … keys — **lowering itself has no symbol table**, so it cannot know a
+  callee's real parameter names. For a `workflow:` step, the checker (#198, below) resolves
+  those placeholders against the callee's declared, ordered parameters and **rewrites**
+  `Program.Graph`'s `with:` keys to the real parameter names as a second pass over the
+  already-lowered graph — a `.agent` program that type-checks clean also produces an
+  executable graph, not one whose callee cannot read its own arguments. For an `agent:` step
+  there is no such parameter list to rewrite against — an agent's `input` is one type, not
+  named fields — so a multi-argument (or single-named) agent call's placeholder keys stay a
+  real, open gap: #198 reports every such call loudly (a warning, or an error for zero
+  arguments against a known input type) rather than silently guessing a field mapping, but
+  does not resolve it.
 - **References.** A workflow parameter field lowers to `${input.…}`; a binding lowers to
   `${steps.<id>.output.…}`. `return <expr>` lowers to `output.value.value`. A **bare**
   reference to a single-parameter workflow's input (the whole input object, e.g.
@@ -292,19 +298,25 @@ it did not parse.
 What is checked:
 
 - An agent invocation's **single positional argument** against the callee's declared
-  `input` type (the unambiguous case — an agent's `input` is one type, not a named
-  parameter list). A call with **more than one** argument to an agent — the ADR 002
-  normative surface's own `Synthesizer(security, quality, tests)` shape — has no defined
-  field-order binding yet (lowering placeholder-keys those arguments `arg0`, `arg1`, … with
-  no declared meaning for the receiving agent to bind against); type-checking such a call
-  emits an explicit **warning** naming the unchecked call rather than silently passing with
-  no signal that nothing was verified.
-- A workflow invocation's arguments against the callee's declared, **ordered** parameters.
-  Named and positional arguments may be mixed at one call site: a positional argument binds
-  to the next declared parameter slot **not already claimed by a named argument anywhere in
-  the call** (not to its raw position), so a named argument earlier in the call correctly
-  "uses up" its slot instead of leaving a later positional argument double-checked against
-  it.
+  `input` type — the one unambiguous shape, since an agent's `input` is one type, not a
+  named parameter list. Every OTHER call shape against a known input type is a diagnostic,
+  not a smaller version of the same problem to skip past quietly: **zero arguments** is an
+  **error** (a declared input was never supplied); a **single named argument**
+  (`A(input: x)`) and **more than one argument** — the ADR 002 normative surface's own
+  `Synthesizer(security, quality, tests)` shape — have no defined field-order binding yet
+  (lowering placeholder-keys those arguments `arg0`, `arg1`, … with no declared meaning for
+  the receiving agent to bind against), so both emit an explicit **warning** naming the
+  unchecked call rather than silently passing with no signal that nothing was verified.
+- A workflow invocation's arguments against the callee's declared, **ordered** parameters,
+  including call-site arity: a named argument naming no declared parameter, a positional
+  argument past the last declared parameter, and a declared parameter left unbound by
+  anything are all **errors**. Named and positional arguments may be mixed at one call
+  site: a positional argument binds to the next declared parameter slot **not already
+  claimed by a named argument anywhere in the call** (not to its raw position), so a named
+  argument earlier in the call correctly "uses up" its slot instead of leaving a later
+  positional argument double-checked against it. A `workflow:` step's lowered `with:` keys
+  are rewritten to match this same binding (see the lowering section above) — the type
+  checker and the resource projection agree on which argument fills which parameter.
 - **Value flow through bindings**: `result = Synthesizer(...)` binds `result` to
   `Synthesizer`'s declared output type; a later `result.summary` walks that type through
   `schema.Document.Lookup`, and a field the schema declares forbidden

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
@@ -158,27 +159,51 @@ func (t typeRef) child(field string) (typeRef, schema.LookupResult) {
 	return typeRef{doc: t.doc, path: p}, res
 }
 
+// rebind records that a lowered workflow: step's placeholder with: key
+// (arg0, arg1, ...) must be renamed to the callee's real parameter name. Type
+// checking runs over the AST; lower.LowerFile has already produced
+// Program.Graph by the time checkTypes runs, and lowering has no symbol table
+// of its own to resolve a callee's parameters against (that is what this
+// package exists to add) — so the checker computes the correct key here and
+// Check applies it to the already-lowered graph as a second, narrow pass, via
+// position correlation: pos is the exact call-site position lowering already
+// stamped onto the step as WorkflowPos (applyCallee in
+// internal/lang/lower/lower.go sets it from the same AST Callee node), so
+// finding the one step this rebind belongs to needs no re-derivation of
+// lowering's step-id scheme.
+type rebind struct {
+	pos    lang.Pos
+	oldKey string
+	newKey string
+}
+
 // checkTypes type-checks agent invocation arguments and value flow between
-// bindings for every workflow in f.
-func checkTypes(f *lang.File, tu *typeUniverse) lang.Diagnostics {
+// bindings for every workflow in f, and returns the with: key rebinds
+// (see rebind) that Check must apply to the resource projection for the
+// result to be an executable graph rather than one that merely type-checked.
+func checkTypes(f *lang.File, tu *typeUniverse) (lang.Diagnostics, []rebind) {
 	var diags lang.Diagnostics
+	var rebinds []rebind
 	for _, d := range f.Decls {
 		wd, ok := d.(*lang.WorkflowDecl)
 		if !ok {
 			continue
 		}
-		diags = append(diags, checkWorkflowTypes(wd, tu)...)
+		wdDiags, wdRebinds := checkWorkflowTypes(wd, tu)
+		diags = append(diags, wdDiags...)
+		rebinds = append(rebinds, wdRebinds...)
 	}
-	return diags
+	return diags, rebinds
 }
 
 type wfChecker struct {
-	tu  *typeUniverse
-	wf  *lang.WorkflowDecl
-	env map[string]typeRef
+	tu      *typeUniverse
+	wf      *lang.WorkflowDecl
+	env     map[string]typeRef
+	rebinds []rebind
 }
 
-func checkWorkflowTypes(wd *lang.WorkflowDecl, tu *typeUniverse) lang.Diagnostics {
+func checkWorkflowTypes(wd *lang.WorkflowDecl, tu *typeUniverse) (lang.Diagnostics, []rebind) {
 	wc := &wfChecker{tu: tu, wf: wd, env: map[string]typeRef{}}
 	info := tu.workflows[identName(wd.Name)]
 	for _, p := range wd.Params {
@@ -192,7 +217,7 @@ func checkWorkflowTypes(wd *lang.WorkflowDecl, tu *typeUniverse) lang.Diagnostic
 	for _, st := range wd.Body {
 		diags = append(diags, wc.checkStmt(st)...)
 	}
-	return diags
+	return diags, wc.rebinds
 }
 
 func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
@@ -305,8 +330,13 @@ func (wc *wfChecker) checkCall(c *lang.CallExpr) (typeRef, lang.Diagnostics) {
 
 // checkWorkflowArgs matches call arguments to the callee's declared,
 // ORDERED parameters — named args by name, positional args filling the
-// remaining declared slots in order — and checks each against the
-// parameter's resolved type.
+// remaining declared slots in order — checks each against the parameter's
+// resolved type, and validates call-site arity: an unknown named argument, a
+// positional argument past the last declared parameter, and a declared
+// parameter that ends up bound by nothing are all errors, not silent
+// successes. Every positional argument that resolves to a real parameter is
+// also recorded as a rebind so the caller can rewrite the lowered graph's
+// placeholder with: key (argN) to that parameter's real name.
 //
 // Named and positional arguments may be mixed at a call site (the grammar
 // does not forbid it — see Arg's doc comment). A positional argument binds to
@@ -319,10 +349,14 @@ func (wc *wfChecker) checkCall(c *lang.CallExpr) (typeRef, lang.Diagnostics) {
 func (wc *wfChecker) checkWorkflowArgs(name string, wi workflowTypeInfo, c *lang.CallExpr) lang.Diagnostics {
 	var diags lang.Diagnostics
 
-	used := make(map[string]bool, len(c.Args))
+	// bound tracks every parameter claimed so far — named arguments up front
+	// (order-independent: a later positional must skip a name used anywhere in
+	// the call, not just earlier in it), then each positional claim as it
+	// resolves — so arity can be validated once every argument is processed.
+	bound := make(map[string]bool, len(wi.ParamOrder))
 	for _, arg := range c.Args {
 		if arg.Name != nil {
-			used[arg.Name.Name] = true
+			bound[arg.Name.Name] = true
 		}
 	}
 	nextIdx := 0
@@ -330,68 +364,110 @@ func (wc *wfChecker) checkWorkflowArgs(name string, wi workflowTypeInfo, c *lang
 		for nextIdx < len(wi.ParamOrder) {
 			p := wi.ParamOrder[nextIdx]
 			nextIdx++
-			if !used[p] {
+			if !bound[p] {
+				bound[p] = true
 				return p
 			}
 		}
 		return ""
 	}
 
-	for _, arg := range c.Args {
+	for i, arg := range c.Args {
 		argType, d := wc.checkExpr(arg.Value)
 		diags = append(diags, d...)
 
-		paramName := ""
 		if arg.Name != nil {
-			paramName = arg.Name.Name
-		} else {
-			paramName = nextPositionalParam()
-		}
-		if paramName == "" {
+			paramDoc, known := wi.Params[arg.Name.Name]
+			if !known {
+				diags = append(diags, lang.Diagnostic{
+					Pos: arg.Position(),
+					Msg: fmt.Sprintf("%s has no parameter %q", name, arg.Name.Name),
+				})
+				continue
+			}
+			diags = append(diags, wc.checkCompatible(arg.Position(), argType, typeRef{doc: paramDoc},
+				fmt.Sprintf("argument %q of %s", arg.Name.Name, name))...)
 			continue
 		}
-		paramDoc, known := wi.Params[paramName]
-		if !known {
-			continue // an argument name with no matching parameter is not a type error
+
+		paramName := nextPositionalParam()
+		if paramName == "" {
+			diags = append(diags, lang.Diagnostic{
+				Pos: arg.Position(),
+				Msg: fmt.Sprintf("%s takes %d parameter(s); this is an extra positional argument", name, len(wi.ParamOrder)),
+			})
+			continue
 		}
-		diags = append(diags, wc.checkCompatible(arg.Position(), argType, typeRef{doc: paramDoc},
+		diags = append(diags, wc.checkCompatible(arg.Position(), argType, typeRef{doc: wi.Params[paramName]},
 			fmt.Sprintf("argument %q of %s", paramName, name))...)
+
+		oldKey := "arg" + strconv.Itoa(i)
+		if paramName != oldKey {
+			wc.rebinds = append(wc.rebinds, rebind{pos: c.Callee.Pos, oldKey: oldKey, newKey: paramName})
+		}
+	}
+
+	for _, p := range wi.ParamOrder {
+		if !bound[p] {
+			diags = append(diags, lang.Diagnostic{
+				Pos: c.Pos,
+				Msg: fmt.Sprintf("%s: missing required argument %q", name, p),
+			})
+		}
 	}
 	return diags
 }
 
 // checkAgentArgs checks the unambiguous case — a single positional argument
 // standing for the agent's whole declared input — against that type. An
-// agent's `input` is one type, not a named parameter list, so a call with
-// more than one argument (the ADR 002 normative surface's own
-// `Synthesizer(security, quality, tests)` shape) has no defined field-order
-// binding yet: internal/lang/lower/lower.go placeholder-keys those arguments
-// arg0, arg1, ... with no declared meaning for the receiving agent to bind
-// against. Guessing a mapping here would produce false-positive type errors
-// on well-typed calls, so this case stays unchecked — but LOUDLY: when the
-// agent's input type IS known, a multi-argument call to it emits a
-// diagnostic saying so, rather than silently passing with no signal that
-// nothing was verified. See docs/LANGUAGE.md's "Type checking" section.
+// agent's `input` is one type, not a named parameter list, so every OTHER
+// call shape against a known input type is an undefined ABI, not a smaller
+// version of the same problem to skip past quietly:
+//
+//   - zero arguments never supplies a value for a declared input — that is a
+//     missing-required-value error, not gradual typing;
+//   - a single NAMED argument (`A(input: x)`) is one key instead of the whole
+//     document — no less undefined than three positional arguments, so it
+//     gets the same treatment;
+//   - more than one argument (the ADR 002 normative surface's own
+//     `Synthesizer(security, quality, tests)` shape) has no defined
+//     field-order binding yet: internal/lang/lower/lower.go placeholder-keys
+//     those arguments arg0, arg1, ... with no declared meaning for the
+//     receiving agent to bind against.
+//
+// The latter two stay unchecked — guessing a mapping would produce
+// false-positive type errors on well-typed calls — but LOUDLY: a warning
+// names the call as unverified rather than passing with no signal that
+// nothing was checked. See docs/LANGUAGE.md's "Type checking" section.
 func (wc *wfChecker) checkAgentArgs(name string, ai agentTypeInfo, c *lang.CallExpr) lang.Diagnostics {
 	var diags lang.Diagnostics
 	for _, arg := range c.Args {
 		_, d := wc.checkExpr(arg.Value)
 		diags = append(diags, d...)
 	}
-	switch {
-	case len(c.Args) == 1 && c.Args[0].Name == nil:
+	if len(c.Args) == 1 && c.Args[0].Name == nil {
 		argType, _ := wc.checkExpr(c.Args[0].Value)
 		diags = append(diags, wc.checkCompatible(c.Args[0].Position(), argType, typeRef{doc: ai.Input},
 			fmt.Sprintf("input of %s", name))...)
-	case len(c.Args) > 1 && ai.Input != nil:
+		return diags
+	}
+	if ai.Input == nil {
+		return diags // untyped agent input: nothing to check any shape against
+	}
+	if len(c.Args) == 0 {
 		diags = append(diags, lang.Diagnostic{
 			Pos: c.Pos,
-			Msg: fmt.Sprintf(
-				"cannot type-check %d arguments to %s: multi-argument agent-call field binding is not defined yet, so %s's declared input type was not checked against this call",
-				len(c.Args), name, name),
-			Severity: lang.SeverityWarning,
+			Msg: fmt.Sprintf("%s declares an input type but was called with no arguments", name),
 		})
+		return diags
 	}
+	diags = append(diags, lang.Diagnostic{
+		Pos: c.Pos,
+		Msg: fmt.Sprintf(
+			"cannot type-check %d argument(s) to %s: agent-call field binding is only defined for a single positional argument, so %s's declared input type was not checked against this call",
+			len(c.Args), name, name),
+		Severity: lang.SeverityWarning,
+	})
 	return diags
 }
 

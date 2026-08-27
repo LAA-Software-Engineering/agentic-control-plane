@@ -58,6 +58,17 @@ type Program struct {
 // but still not the real grant set). Lowering the whole unit is what makes
 // "the frontend and YAML paths agree on a bound" true when a program spans
 // more than one .agent file.
+//
+// Check also REWRITES the resource projection it returns: lower.LowerFile
+// keys a positional call argument by raw index (arg0, arg1, ...) because
+// lowering has no symbol table of its own to resolve a callee's declared
+// parameters against. Type-checking a workflow: call does have that
+// information (checkWorkflowArgs), so Check applies the resolved parameter
+// names back onto the already-lowered graph as a second pass (applyRebinds)
+// — otherwise a positional workflow call would type-check clean while
+// Program.Graph still carried a with: map the callee cannot read. This only
+// touches steps this call itself just lowered, never a resource reachable
+// through Options.Project.
 func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	prog := &Program{File: f}
 	if f == nil {
@@ -65,6 +76,7 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	}
 
 	var diags lang.Diagnostics
+	var lowered []*spec.WorkflowResource
 
 	unit := compilationUnit(f, opts.Files)
 	workflowNames := collectWorkflowNames(unit, opts.Project)
@@ -73,6 +85,7 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	for _, file := range unit {
 		result, lowerDiags := lower.LowerFile(file, lower.Options{Workflows: workflowNames})
 		diags = append(diags, lowerDiags...)
+		lowered = append(lowered, result.Workflows...)
 		if err := project.MergeLowered(graph, result); err != nil {
 			diags = append(diags, lang.Diagnostic{Pos: file.Pos, Msg: err.Error()})
 		}
@@ -82,10 +95,43 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 
 	tu, typeDiags := resolveTypes(f, opts)
 	diags = append(diags, typeDiags...)
-	diags = append(diags, checkTypes(f, tu)...)
+	checkDiags, rebinds := checkTypes(f, tu)
+	diags = append(diags, checkDiags...)
+	applyRebinds(lowered, rebinds)
+
 	diags = append(diags, checkEffectsClauses(f, prog.Bounds)...)
 
 	return prog, diags.Sorted()
+}
+
+// applyRebinds rewrites a lowered workflow: step's placeholder with: key
+// (argN) to the callee's real parameter name, per rb (see rebind's doc
+// comment for the position-correlation approach). lowered is exactly the set
+// of *spec.WorkflowResource values this Check call itself just produced via
+// lower.LowerFile — never a resource reachable through Options.Project,
+// which Check must not mutate; cloneGraph only clones the graph's maps, not
+// the resource values a caller's Project graph points to.
+func applyRebinds(lowered []*spec.WorkflowResource, rebinds []rebind) {
+	if len(rebinds) == 0 {
+		return
+	}
+	for _, wr := range lowered {
+		for i := range wr.Spec.Steps {
+			s := &wr.Spec.Steps[i]
+			if s.WorkflowPos.IsZero() || s.With == nil {
+				continue
+			}
+			for _, rb := range rebinds {
+				if s.WorkflowPos != rb.pos {
+					continue
+				}
+				if v, ok := s.With[rb.oldKey]; ok {
+					delete(s.With, rb.oldKey)
+					s.With[rb.newKey] = v
+				}
+			}
+		}
+	}
 }
 
 // compilationUnit returns f followed by every distinct, non-nil file in
