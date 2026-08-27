@@ -137,10 +137,16 @@ type ToolSpec struct {
 // ToolOperation is one named operation on a Tool and the effects it may produce.
 type ToolOperation struct {
 	Effects []string `yaml:"effects,omitempty" json:"effects,omitempty"`
+	// Schema is a JSON Schema ref for this operation's input (the manifest's "operation → effects →
+	// schema", completing #204). When set, a tool call's input is validated against it before
+	// dispatch; absent means gradual (any input). Part of the capability manifest and identity.
+	Schema string `yaml:"schema,omitempty" json:"schema,omitempty"`
 	// Pos is the YAML map-key location of this operation (issue #187). Not identity.
 	Pos Pos `yaml:"-" json:"-"`
 	// EffectsPos is diagnostic metadata aligned with Effects (issue #187).
 	EffectsPos []Pos `yaml:"-" json:"-"`
+	// SchemaPos is diagnostic metadata for Schema (issue #187). Not identity.
+	SchemaPos Pos `yaml:"-" json:"-"`
 }
 
 // ToolSafety describes trust and side effects for policy fallback when no explicit Policy rule matches.

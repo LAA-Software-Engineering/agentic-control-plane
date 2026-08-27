@@ -99,6 +99,11 @@ func (e *Executor) enforceToolInput(
 	runID, stepID, uses string,
 	with map[string]any,
 ) (map[string]any, error) {
+	// Validate the input against the operation's declared input schema (#204 manifest completion)
+	// before byte-limit enforcement, so a malformed call is rejected on its own terms.
+	if err := e.validateToolInputSchema(uses, with); err != nil {
+		return nil, err
+	}
 	limits := e.resolveToolLimits(wf, uses)
 	return e.enforceMapLimit(ctx, runID, stepID, uses, spec.LimitKindToolInput, with,
 		limits.MaxToolInputBytes, limits.ToolInputExceedPolicy)

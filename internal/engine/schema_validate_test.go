@@ -53,6 +53,56 @@ func TestValidateWorkflowInput_pinnedMissingSchemaIsGradual(t *testing.T) {
 	}
 }
 
+func toolGraphWithOpSchema(ref string) *spec.ProjectGraph {
+	return &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
+		"github": {Metadata: spec.Metadata{Name: "github"}, Spec: spec.ToolSpec{
+			Type:               "native",
+			OperationsDeclared: true,
+			Operations:         map[string]spec.ToolOperation{"read_pr": {Effects: []string{"github.read"}, Schema: ref}},
+		}},
+	}}
+}
+
+// A tool call's input is validated against the operation's declared input schema (completing the
+// #204 manifest). On a fresh run it reads the schema from disk; on a pinned resume it uses the
+// captured bundle.
+func TestValidateToolInputSchema_enforcesOperationSchema(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "in.json"), []byte(strictInputSchema), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := &Executor{Graph: toolGraphWithOpSchema("./in.json"), ProjectRoot: root}
+
+	if err := e.validateToolInputSchema("tool.github.read_pr", map[string]any{"x": "ok"}); err != nil {
+		t.Fatalf("valid tool input should pass the operation schema: %v", err)
+	}
+	if err := e.validateToolInputSchema("tool.github.read_pr", map[string]any{"y": 1}); err == nil {
+		t.Fatal("tool input missing required field must be rejected by the operation schema")
+	}
+	// An operation with no declared schema is gradual (any input).
+	e2 := &Executor{Graph: toolGraphWithOpSchema(""), ProjectRoot: root}
+	if err := e2.validateToolInputSchema("tool.github.read_pr", map[string]any{"anything": true}); err != nil {
+		t.Fatalf("operation without a schema must accept any input: %v", err)
+	}
+}
+
+func TestValidateToolInputSchema_pinnedUsesCapturedNotDisk(t *testing.T) {
+	root := t.TempDir()
+	// On-disk schema has drifted to permissive since the run started.
+	if err := os.WriteFile(filepath.Join(root, "in.json"), []byte(permissiveInputSchema), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pinned := &Executor{
+		Graph:       toolGraphWithOpSchema("./in.json"),
+		ProjectRoot: root,
+		PinnedGraph: true,
+		Schemas:     map[string]string{"./in.json": strictInputSchema},
+	}
+	if err := pinned.validateToolInputSchema("tool.github.read_pr", map[string]any{"y": 1}); err == nil {
+		t.Fatal("pinned tool input must enforce the captured strict schema, not the drifted disk file")
+	}
+}
+
 func TestValidateAgentOutput_pinnedUsesCapturedSchema(t *testing.T) {
 	agent := &spec.AgentResource{
 		Metadata: spec.Metadata{Name: "a"},

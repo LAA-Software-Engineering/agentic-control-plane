@@ -40,6 +40,10 @@ type ManifestOperation struct {
 	// Effects are the operation's declared effects, sorted and unique. Empty when the
 	// operation declares no effects (still a closed-world member — it is callable).
 	Effects []string `json:"effects,omitempty" yaml:"effects,omitempty"`
+	// Schema is the operation's declared input-schema ref (the "→ schema" half of the manifest,
+	// #204). Empty when the operation declares no input schema. Part of the manifest digest, so a
+	// changed operation schema ref is manifest drift.
+	Schema string `json:"schema,omitempty" yaml:"schema,omitempty"`
 }
 
 // DeriveManifest builds the capability manifest for one Tool from its declared operations.
@@ -58,15 +62,15 @@ func DeriveManifest(name string, ts *spec.ToolSpec) CapabilityManifest {
 	}
 	re := spec.ResolveToolEffects(name, ts)
 	m.Operations = make([]ManifestOperation, 0, len(ts.Operations))
-	for op := range ts.Operations {
-		op = strings.TrimSpace(op)
+	for opKey, opSpec := range ts.Operations {
+		op := strings.TrimSpace(opKey)
 		var eff []string
 		if !re.Unknown {
 			if fx := re.ByOperation[op]; len(fx) > 0 {
 				eff = append(eff, fx...)
 			}
 		}
-		m.Operations = append(m.Operations, ManifestOperation{Name: op, Effects: eff})
+		m.Operations = append(m.Operations, ManifestOperation{Name: op, Effects: eff, Schema: strings.TrimSpace(opSpec.Schema)})
 	}
 	sort.Slice(m.Operations, func(i, j int) bool { return m.Operations[i].Name < m.Operations[j].Name })
 	return m
@@ -103,8 +107,9 @@ func (m CapabilityManifest) Allows(op string) bool {
 // plan because spec.operations lives in the Tool's normalized spec, so it changes the resource
 // spec hash that plan/apply already diff (issue #204 coordinates with the #112 resolved-config
 // digest rather than adding a parallel pin). The digest exists for direct manifest comparison and
-// for the forthcoming run-pinned deployment snapshot (#207). Note: an input schema per operation
-// is not yet modeled on ToolOperation, so schema drift is out of scope until it is.
+// for the forthcoming run-pinned deployment snapshot (#207). The digest covers each operation's
+// input-schema ref, so a changed operation schema is manifest drift; the schema's *content* is
+// covered separately by the deployment snapshot's schema bundle (#207).
 func (m CapabilityManifest) Digest() string {
 	var b strings.Builder
 	b.WriteString(m.Tool)
@@ -122,6 +127,8 @@ func (m CapabilityManifest) Digest() string {
 		eff := append([]string(nil), op.Effects...)
 		sort.Strings(eff)
 		b.WriteString(strings.Join(eff, ","))
+		b.WriteByte(0)
+		b.WriteString(op.Schema)
 		b.WriteByte('\n')
 	}
 	sum := sha256.Sum256([]byte(b.String()))

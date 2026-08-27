@@ -709,11 +709,20 @@ spec:
   operations:
     read_pr:
       effects: [github.read]
+      schema: ./schemas/read_pr.json   # optional per-operation input schema
     post_comment:
       effects: [github.write, external.visible]
     merge_pr:
       effects: [github.write, destructive]
 ```
+
+An operation may also declare an **input `schema`** (a JSON Schema ref, same convention as
+`agent`/`workflow` input schemas) — the "operation → effects → schema" the capability manifest
+(#204) describes. When set, a tool call's input is validated against it before dispatch; absent
+means gradual (any input). The ref is part of the capability manifest and its digest (a changed ref
+is manifest drift), and the schema's *content* is captured into the deployment snapshot's schema
+bundle (#207) so a pinned resume enforces the schema it started with. `validate` checks the ref
+resolves and compiles.
 
 A tool with **no** declared effects is fail-closed in the **effect resolver**
 (`[ResolveToolEffects]`): it carries an unknown effect that no policy permits unless the

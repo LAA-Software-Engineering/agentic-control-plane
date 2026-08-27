@@ -106,6 +106,9 @@ func stampToolOperations(file string, specNode *yaml.Node, s *ToolSpec) {
 			continue
 		}
 		op.Pos = posFromNode(file, key)
+		if sch := yamlMapValue(val, "schema"); sch != nil {
+			op.SchemaPos = posFromNode(file, sch)
+		}
 		effects := yamlMapValue(val, "effects")
 		if effects != nil && effects.Kind == yaml.SequenceNode {
 			op.EffectsPos = make([]Pos, len(op.Effects))

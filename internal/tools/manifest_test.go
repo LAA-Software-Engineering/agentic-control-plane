@@ -79,6 +79,31 @@ func TestManifestDigest_stableAndDriftSensitive(t *testing.T) {
 	}
 }
 
+func TestDeriveManifest_carriesOperationSchema(t *testing.T) {
+	ts := &spec.ToolSpec{Type: "native", OperationsDeclared: true, Operations: map[string]spec.ToolOperation{
+		"read_pr": {Effects: []string{"github.read"}, Schema: "./schemas/read_pr.json"},
+	}}
+	m := DeriveManifest("github", ts)
+	if len(m.Operations) != 1 || m.Operations[0].Schema != "./schemas/read_pr.json" {
+		t.Fatalf("manifest did not carry operation schema: %+v", m.Operations)
+	}
+
+	// A changed operation schema ref is manifest drift.
+	tsB := &spec.ToolSpec{Type: "native", OperationsDeclared: true, Operations: map[string]spec.ToolOperation{
+		"read_pr": {Effects: []string{"github.read"}, Schema: "./schemas/other.json"},
+	}}
+	if DeriveManifest("github", ts).Digest() == DeriveManifest("github", tsB).Digest() {
+		t.Fatal("changing an operation's input schema must change the manifest digest")
+	}
+	// Adding a schema where there was none is also drift.
+	tsNone := &spec.ToolSpec{Type: "native", OperationsDeclared: true, Operations: map[string]spec.ToolOperation{
+		"read_pr": {Effects: []string{"github.read"}},
+	}}
+	if DeriveManifest("github", ts).Digest() == DeriveManifest("github", tsNone).Digest() {
+		t.Fatal("declaring an input schema must change the manifest digest")
+	}
+}
+
 func TestGraphManifestDigest_driftOnOperationChange(t *testing.T) {
 	base := &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
 		"github": {Metadata: spec.Metadata{Name: "github"}, Spec: *toolSpecWithOps(map[string][]string{"read_pr": {"github.read"}})},

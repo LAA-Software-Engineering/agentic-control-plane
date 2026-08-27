@@ -55,6 +55,7 @@ func RelocateFile(res any, file string) {
 		relocatePos(&r.Pos, file)
 		for k, op := range r.Spec.Operations {
 			relocatePos(&op.Pos, file)
+			relocatePos(&op.SchemaPos, file)
 			for i := range op.EffectsPos {
 				relocatePos(&op.EffectsPos[i], file)
 			}

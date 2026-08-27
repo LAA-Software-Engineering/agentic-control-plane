@@ -534,6 +534,24 @@ func validateSchemaFiles(g *ProjectGraph, projectRoot string) []error {
 			}
 		}
 	}
+	for name, tr := range g.Tools {
+		if tr == nil {
+			continue
+		}
+		for opName, op := range tr.Spec.Operations {
+			p := strings.TrimSpace(op.Schema)
+			if p == "" {
+				continue
+			}
+			opPos := tr.Pos
+			if !op.SchemaPos.IsZero() {
+				opPos = op.SchemaPos
+			}
+			if _, err := loadSchemaDocument(projectRoot, p); err != nil {
+				errs = append(errs, opPos.Errorf("Tool/%s: spec.operations[%q].schema: %w", name, opName, err))
+			}
+		}
+	}
 	return errs
 }
 

@@ -127,6 +127,7 @@ func copyToolDiagnosticPos(src, dst *ToolResource) {
 			continue
 		}
 		dstOp.Pos = srcOp.Pos
+		dstOp.SchemaPos = srcOp.SchemaPos
 		if len(srcOp.EffectsPos) > 0 {
 			dstOp.EffectsPos = append([]Pos(nil), srcOp.EffectsPos...)
 		}

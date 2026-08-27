@@ -36,6 +36,29 @@ func TestCollectSchemas_readsReferencedFiles(t *testing.T) {
 	}
 }
 
+func TestCollectSchemas_capturesToolOperationSchemas(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "op.json"), []byte(`{"type":"object"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g := &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
+		"github": {Metadata: spec.Metadata{Name: "github"}, Spec: spec.ToolSpec{
+			Type:       "native",
+			Operations: map[string]spec.ToolOperation{"read_pr": {Schema: "./op.json"}},
+		}},
+	}}
+	schemas, warnings, err := CollectSchemas(g, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+	if schemas["./op.json"] != `{"type":"object"}` {
+		t.Fatalf("tool operation schema not captured: %v", schemas)
+	}
+}
+
 func TestCollectSchemas_missingFileWarnsNotFatal(t *testing.T) {
 	root := t.TempDir()
 	schemas, warnings, err := CollectSchemas(graphWithInputSchema("./gone.json"), root)

@@ -63,6 +63,15 @@ func CollectSchemas(g *spec.ProjectGraph, projectRoot string) (map[string]string
 			add("Agent/"+name+" output", ar.Spec.Output.Schema)
 		}
 	}
+	for _, name := range sortedResourceNames(g.Tools) {
+		tr := g.Tools[name]
+		if tr == nil {
+			continue
+		}
+		for _, opName := range sortedOperationNames(tr.Spec.Operations) {
+			add("Tool/"+name+" operation "+opName+" input", tr.Spec.Operations[opName].Schema)
+		}
+	}
 	if len(out) == 0 {
 		return nil, warnings, nil
 	}
@@ -95,6 +104,15 @@ func UnmarshalSchemaBundle(payload []byte) (map[string]string, error) {
 }
 
 func sortedResourceNames[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedOperationNames(m map[string]spec.ToolOperation) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
