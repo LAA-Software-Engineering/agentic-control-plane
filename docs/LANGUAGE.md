@@ -283,6 +283,11 @@ checks call arguments and value flow between bindings against them, reusing the 
 `schema.Document` / `schema.TypeSet.Compatible` primitives `internal/spec/wiring.go` uses
 for YAML step wiring (#193) — but walking `CallExpr.Args` / `RefExpr.Parts` directly, so a
 mismatch reports the `.agent` call-site position rather than a synthesized step name.
+`TypeSet.Compatible` compares **JSON Schema type categories** (object, string, integer, …),
+not schema identity — passing a `Review` where a differently-named-but-also-`object`
+`ReviewRequest` is declared is not itself an error, the same coarseness #193 already has in
+the YAML path. Nominal/structural schema equality is a separate, larger piece of work, not
+part of this pass.
 
 **A `TypeRef` name resolves to `<SchemaDir>/schemas/<Name>.json`** (`SchemaDir` defaults to
 the directory of the `.agent` file being checked). This is a new naming convention
@@ -337,4 +342,9 @@ What is checked:
 message, and a `Severity` (`SeverityError`, the zero value, or `SeverityWarning` — added by
 #198 for the over-broad-effects-clause case above) and formats as
 `file:line:col: message` (a warning is prefixed `warning:`). `Diagnostics.HasErrors()`
-reports whether at least one entry is fatal.
+reports whether at least one entry is fatal, and `Diagnostics.AsError()` converts to a plain
+`error` — `nil` for a warning-only result, non-nil otherwise. **Do not** treat a bare
+`error(diags) != nil` check, `len(diags) != 0`, or `fmt.Errorf("%w", diags)` as "this
+failed": `Diagnostics` is a non-nil slice type once populated, so all three report failure
+for a warning-only result regardless of what `Error()`'s string says. `AsError` (or
+`HasErrors` directly) is the only safe conversion.

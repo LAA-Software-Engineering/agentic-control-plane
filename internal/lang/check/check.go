@@ -16,13 +16,12 @@ type Options struct {
 	// it computes against a shallow clone.
 	Project *spec.ProjectGraph
 
-	// Files supplies other .agent ASTs in the same compilation unit — a
-	// cross-file agent/workflow reference resolves to the right step kind, AND
-	// every file listed here is lowered and merged into the graph Check
-	// computes the effect bound against (not merely classified for callee-kind
-	// purposes). This is the project-wide symbol table
-	// internal/lang/lower/lower.go's Options.Workflows doc comment names as
-	// this package's replacement.
+	// Files supplies other .agent ASTs in the same compilation unit. Every
+	// file listed here is lowered, merged into Program.Graph, type-checked,
+	// rebound, and effects-clause-checked exactly like f — this is one
+	// compilation unit, not f plus context for f. This is the project-wide
+	// symbol table internal/lang/lower/lower.go's Options.Workflows doc
+	// comment names as this package's replacement.
 	Files []*lang.File
 
 	// SchemaDir overrides where TypeRef names resolve to schema files
@@ -44,7 +43,15 @@ type Program struct {
 	Bounds effects.GraphBounds
 }
 
-// Check resolves, type-checks, and effect-checks f.
+// Check resolves, type-checks, and effect-checks the WHOLE compilation unit
+// (f plus every file in Options.Files) — not just f. Program.Graph is one
+// merged graph holding every file's lowered workflows, and it is documented
+// (and relied on by callers) as an executable projection; type-checking only
+// f while Files' workflows still sit on that same graph would leave a
+// positional workflow: call in a Files-only file with its lowered
+// arg0/arg1 keys never rebound, silently contradicting that contract for
+// exactly the files a caller is least likely to have already checked
+// directly.
 //
 // The effect bound is computed by lowering EVERY file in the compilation unit
 // (f plus Options.Files) through lower.LowerFile into one merged
@@ -95,25 +102,40 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 
 	tu, typeDiags := resolveTypes(f, opts)
 	diags = append(diags, typeDiags...)
-	checkDiags, rebinds := checkTypes(f, tu)
+	checkDiags, rebinds := checkTypes(unit, tu)
 	diags = append(diags, checkDiags...)
 	applyRebinds(lowered, rebinds)
 
-	diags = append(diags, checkEffectsClauses(f, prog.Bounds)...)
+	diags = append(diags, checkEffectsClauses(unit, prog.Bounds)...)
 
 	return prog, diags.Sorted()
 }
 
-// applyRebinds rewrites a lowered workflow: step's placeholder with: key
-// (argN) to the callee's real parameter name, per rb (see rebind's doc
-// comment for the position-correlation approach). lowered is exactly the set
-// of *spec.WorkflowResource values this Check call itself just produced via
-// lower.LowerFile — never a resource reachable through Options.Project,
+// applyRebinds rewrites a lowered workflow: step's placeholder with: keys
+// (argN) to the callee's real parameter names, per rb.renames (see rebind's
+// doc comment for the position-correlation approach). lowered is exactly the
+// set of *spec.WorkflowResource values this Check call itself just produced
+// via lower.LowerFile — never a resource reachable through Options.Project,
 // which Check must not mutate; cloneGraph only clones the graph's maps, not
 // the resource values a caller's Project graph points to.
+//
+// Each matching step's with: map is rebuilt FRESH from its original entries
+// rather than mutated key-by-key in place. Lowering's placeholder namespace
+// (arg0, arg1, ...) and the callee's real parameter namespace share the same
+// map, so a parameter can legally be named e.g. "arg1" — a sequence of
+// delete-then-insert on one live map can then alias one rename's target onto
+// another rename's source (arg0->arg1 followed by arg1->a silently drops the
+// first value once the second rename fires). Building a new map by reading
+// every ORIGINAL key exactly once and writing to a separate map has no such
+// hazard: every old key is looked up in renames independent of what any
+// other key rewrites to.
 func applyRebinds(lowered []*spec.WorkflowResource, rebinds []rebind) {
 	if len(rebinds) == 0 {
 		return
+	}
+	byPos := make(map[lang.Pos]map[string]string, len(rebinds))
+	for _, rb := range rebinds {
+		byPos[rb.pos] = rb.renames
 	}
 	for _, wr := range lowered {
 		for i := range wr.Spec.Steps {
@@ -121,15 +143,19 @@ func applyRebinds(lowered []*spec.WorkflowResource, rebinds []rebind) {
 			if s.WorkflowPos.IsZero() || s.With == nil {
 				continue
 			}
-			for _, rb := range rebinds {
-				if s.WorkflowPos != rb.pos {
-					continue
-				}
-				if v, ok := s.With[rb.oldKey]; ok {
-					delete(s.With, rb.oldKey)
-					s.With[rb.newKey] = v
+			renames, ok := byPos[s.WorkflowPos]
+			if !ok {
+				continue
+			}
+			next := make(map[string]any, len(s.With))
+			for k, v := range s.With {
+				if nk, renamed := renames[k]; renamed {
+					next[nk] = v
+				} else {
+					next[k] = v
 				}
 			}
+			s.With = next
 		}
 	}
 }

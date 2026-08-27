@@ -8,8 +8,12 @@ import (
 	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
-// checkEffectsClauses checks every WorkflowDecl in f that declares an
-// `effects { }` clause against its computed bound:
+// checkEffectsClauses checks every WorkflowDecl declaring an `effects { }`
+// clause, across every file in the compilation unit (files is f plus every
+// Options.Files entry — the same set lowered and merged onto Program.Graph;
+// checking only f would leave a Files-only workflow's clause unchecked even
+// though its computed bound sits in the same shared Bounds this pass reads),
+// against its computed bound:
 //
 //   - a computed effect the clause does not cover is an error, with a witness
 //     path rendered by the same effects.FormatWitness the #190 policy
@@ -25,19 +29,24 @@ import (
 // tool in the graph declares operation effects), the opposite of
 // "unaffected." Whether an .agent workflow should be required to declare an
 // effects clause at all is a separate lint decision, not this pass's job.
-func checkEffectsClauses(f *lang.File, bounds effects.GraphBounds) lang.Diagnostics {
+func checkEffectsClauses(files []*lang.File, bounds effects.GraphBounds) lang.Diagnostics {
 	var diags lang.Diagnostics
-	for _, d := range f.Decls {
-		wd, ok := d.(*lang.WorkflowDecl)
-		if !ok || wd.Effects == nil {
+	for _, file := range files {
+		if file == nil {
 			continue
 		}
-		name := identName(wd.Name)
-		bound, ok := bounds.Workflows[name]
-		if !ok {
-			continue
+		for _, d := range file.Decls {
+			wd, ok := d.(*lang.WorkflowDecl)
+			if !ok || wd.Effects == nil {
+				continue
+			}
+			name := identName(wd.Name)
+			bound, ok := bounds.Workflows[name]
+			if !ok {
+				continue
+			}
+			diags = append(diags, checkEffectsClause(wd, bound)...)
 		}
-		diags = append(diags, checkEffectsClause(wd, bound)...)
 	}
 	return diags
 }

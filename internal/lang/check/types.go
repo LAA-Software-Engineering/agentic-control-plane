@@ -159,39 +159,56 @@ func (t typeRef) child(field string) (typeRef, schema.LookupResult) {
 	return typeRef{doc: t.doc, path: p}, res
 }
 
-// rebind records that a lowered workflow: step's placeholder with: key
-// (arg0, arg1, ...) must be renamed to the callee's real parameter name. Type
-// checking runs over the AST; lower.LowerFile has already produced
-// Program.Graph by the time checkTypes runs, and lowering has no symbol table
-// of its own to resolve a callee's parameters against (that is what this
-// package exists to add) — so the checker computes the correct key here and
-// Check applies it to the already-lowered graph as a second, narrow pass, via
-// position correlation: pos is the exact call-site position lowering already
-// stamped onto the step as WorkflowPos (applyCallee in
-// internal/lang/lower/lower.go sets it from the same AST Callee node), so
-// finding the one step this rebind belongs to needs no re-derivation of
-// lowering's step-id scheme.
+// rebind records that ONE call site's lowered workflow: step must have its
+// placeholder with: keys (arg0, arg1, ...) renamed to the callee's real
+// parameter names. Type checking runs over the AST; lower.LowerFile has
+// already produced Program.Graph by the time checkTypes runs, and lowering
+// has no symbol table of its own to resolve a callee's parameters against
+// (that is what this package exists to add) — so the checker computes the
+// correct names here and Check applies them to the already-lowered graph as
+// a second, narrow pass, via position correlation: pos is the exact
+// call-site position lowering already stamped onto the step as WorkflowPos
+// (applyCallee in internal/lang/lower/lower.go sets it from the same AST
+// Callee node), so finding the one step this rebind belongs to needs no
+// re-derivation of lowering's step-id scheme.
+//
+// renames holds every rename for that ONE call site together (oldKey ->
+// newKey), not one rebind per argument: applying them one entry at a time
+// against a single live map is unsound whenever a rename's target collides
+// with another rename's source (lowering's placeholder namespace and the
+// callee's real parameter namespace are the same map, and "arg1" is a legal
+// parameter name) — see applyRebinds for why grouping them lets the rewrite
+// build a fresh map instead.
 type rebind struct {
-	pos    lang.Pos
-	oldKey string
-	newKey string
+	pos     lang.Pos
+	renames map[string]string
 }
 
 // checkTypes type-checks agent invocation arguments and value flow between
-// bindings for every workflow in f, and returns the with: key rebinds
-// (see rebind) that Check must apply to the resource projection for the
-// result to be an executable graph rather than one that merely type-checked.
-func checkTypes(f *lang.File, tu *typeUniverse) (lang.Diagnostics, []rebind) {
+// bindings for every workflow across every file in the compilation unit
+// (files is f plus every Options.Files entry, the same set already lowered
+// and merged onto Program.Graph — checking only f would leave a positional
+// workflow: call in another file with its lowered arg0/arg1 keys never
+// rebound, and its effects clause never checked), and returns the with: key
+// rebinds (see rebind) that Check must apply to the resource projection for
+// the result to be an executable graph rather than one that merely
+// type-checked.
+func checkTypes(files []*lang.File, tu *typeUniverse) (lang.Diagnostics, []rebind) {
 	var diags lang.Diagnostics
 	var rebinds []rebind
-	for _, d := range f.Decls {
-		wd, ok := d.(*lang.WorkflowDecl)
-		if !ok {
+	for _, file := range files {
+		if file == nil {
 			continue
 		}
-		wdDiags, wdRebinds := checkWorkflowTypes(wd, tu)
-		diags = append(diags, wdDiags...)
-		rebinds = append(rebinds, wdRebinds...)
+		for _, d := range file.Decls {
+			wd, ok := d.(*lang.WorkflowDecl)
+			if !ok {
+				continue
+			}
+			wdDiags, wdRebinds := checkWorkflowTypes(wd, tu)
+			diags = append(diags, wdDiags...)
+			rebinds = append(rebinds, wdRebinds...)
+		}
 	}
 	return diags, rebinds
 }
@@ -334,9 +351,10 @@ func (wc *wfChecker) checkCall(c *lang.CallExpr) (typeRef, lang.Diagnostics) {
 // resolved type, and validates call-site arity: an unknown named argument, a
 // positional argument past the last declared parameter, and a declared
 // parameter that ends up bound by nothing are all errors, not silent
-// successes. Every positional argument that resolves to a real parameter is
-// also recorded as a rebind so the caller can rewrite the lowered graph's
-// placeholder with: key (argN) to that parameter's real name.
+// successes. Every positional argument that resolves to a real parameter
+// adds one oldKey->newKey entry to a SINGLE rebind for this call site (see
+// rebind's doc comment for why they must be grouped rather than applied one
+// at a time).
 //
 // Named and positional arguments may be mixed at a call site (the grammar
 // does not forbid it — see Arg's doc comment). A positional argument binds to
@@ -348,6 +366,7 @@ func (wc *wfChecker) checkCall(c *lang.CallExpr) (typeRef, lang.Diagnostics) {
 // parameter while the true target parameter goes unchecked.
 func (wc *wfChecker) checkWorkflowArgs(name string, wi workflowTypeInfo, c *lang.CallExpr) lang.Diagnostics {
 	var diags lang.Diagnostics
+	renames := map[string]string{}
 
 	// bound tracks every parameter claimed so far — named arguments up front
 	// (order-independent: a later positional must skip a name used anywhere in
@@ -403,7 +422,7 @@ func (wc *wfChecker) checkWorkflowArgs(name string, wi workflowTypeInfo, c *lang
 
 		oldKey := "arg" + strconv.Itoa(i)
 		if paramName != oldKey {
-			wc.rebinds = append(wc.rebinds, rebind{pos: c.Callee.Pos, oldKey: oldKey, newKey: paramName})
+			renames[oldKey] = paramName
 		}
 	}
 
@@ -414,6 +433,9 @@ func (wc *wfChecker) checkWorkflowArgs(name string, wi workflowTypeInfo, c *lang
 				Msg: fmt.Sprintf("%s: missing required argument %q", name, p),
 			})
 		}
+	}
+	if len(renames) > 0 {
+		wc.rebinds = append(wc.rebinds, rebind{pos: c.Callee.Pos, renames: renames})
 	}
 	return diags
 }
