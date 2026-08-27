@@ -14,6 +14,9 @@ const (
 	ReasonApprovalRequired = "approval_required"
 	ReasonInvalidUses      = "invalid_uses"
 	ReasonDenied           = "denied"
+	// ReasonOperationNotInManifest denies an operation absent from the deployed
+	// capability manifest (closed-world enforcement, issue #204).
+	ReasonOperationNotInManifest = "operation_not_in_manifest"
 )
 
 // DeniedError is returned when a policy check fails (design doc section 12.2 H).

@@ -25,6 +25,12 @@ type MCPDiscoveryWarning struct {
 // ApplyMCPSafetyDiscovery lists MCP tools for each Tool with type mcp, merges
 // meta.mcp_flags into spec.safety (author-set fields win), and mutates g in place.
 // Discovery failures for individual tools are reported as warnings; fail-closed defaults apply.
+//
+// Discovery is never an authority source for the callable set (issue #204, ADR 002): it merges
+// only spec.safety and never adds entries to the capability manifest (spec.operations). The
+// closed world is the declared/deployed manifest, so a server advertising an extra operation via
+// tools/list cannot widen what is agent-callable — see [DeriveManifest] and the runtime deny in
+// internal/policy (ReasonOperationNotInManifest).
 func ApplyMCPSafetyDiscovery(ctx context.Context, g *spec.ProjectGraph) []MCPDiscoveryWarning {
 	if g == nil || g.Tools == nil {
 		return nil

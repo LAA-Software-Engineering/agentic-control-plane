@@ -723,6 +723,57 @@ gating is unchanged until #190. `spec.operations` is additive to `spec.safety`.
 Transitive bounds over these declarations (static `uses:` plus autonomous grants) are
 computed by [`internal/effects`](../internal/effects) — see §12.2 J.
 
+### Capability manifest — the closed callable world (issue #204)
+
+`spec.operations` is also the Tool's **allowed-operation manifest**: the closed set of
+operations that may become agent-callable. The bound in #189 is only a *sound* upper bound if
+that set cannot grow after the bound is computed, so the manifest is authoritative — never a live
+`tools/list`. Discovery ([`internal/tools/mcp_safety.go`](../internal/tools/mcp_safety.go)) may
+*populate* a desired manifest during authoring, but it merges only `spec.safety`; it never adds
+operations. The deployed manifest is reconstructed from the applied Tool spec.
+
+`[tools.DeriveManifest]` builds the manifest. **Manifest drift** — an operation appearing,
+disappearing, or changing its effects — is reported by `plan` as a Tool state change because
+`spec.operations` lives in the Tool's normalized spec, so it already changes the resource spec hash
+that `plan`/`apply` diff; #204 coordinates with that existing pin rather than adding a second one.
+`[tools.CapabilityManifest.Digest]` / `[tools.GraphManifestDigest]` are manifest-identity
+primitives for direct comparison and the forthcoming #207 run-pin, not a separate plan/apply pin.
+An input schema per operation is not yet modeled on `ToolOperation`, so schema drift is out of
+scope until it is.
+
+**Closed vs open.** Enforcement is opt-in per tool. An **omitted** `operations` key is an *open*
+callable set (backward compatible — existing MCP/HTTP examples dispatch every operation). A
+*declared* `operations` manifest — including an empty `operations: {}` — is a **closed** world:
+only its declared operations are callable, and an empty one denies all. Closedness is a presence
+bit (`ToolSpec.OperationsDeclared`), not the operation count, so shrinking a manifest to empty
+cannot silently widen it to the universe. Because `Operations` is `omitempty`, an empty map would
+serialize away; the bit is therefore **part of identity** (`json:"operationsDeclared"`), flowing
+into the normalized spec hash, plan diffs, `NormalizedSpecJSON`, and the deployed manifest
+reconstructed from applied spec (`graphFromApplied`, and the #207 snapshot). So deleting the
+`operations:` key from a locked tool is a visible plan change, and the deployed world matches what
+`CheckToolCall` enforces — closed-empty is not distinguishable from open only at runtime. The YAML
+interchange path preserves it too (ADR 003): `ToolSpec.MarshalYAML` emits an explicit
+`operations: {}` for a declared-but-empty manifest, so `terfyn export` → load round-trips to the
+same closed world rather than dropping the empty mapping.
+
+Runtime enforcement is on the policy path
+(`[policy.PolicyEvaluator.CheckToolCall]` → `ReasonOperationNotInManifest`, in **both** the
+compiled snapshot evaluator that `terfyn run` uses and the legacy evaluator): an operation absent
+from the deployed manifest is **denied**, traced (`system_error`), and exits **5**. The manifest is
+a hard authority boundary: it binds even a nil or permissive policy, before any approval or
+`DecisionAllow` short-circuit.
+
+**Not yet shipped (#207).** Enforcement currently uses the run's *resolved* graph, whose manifest
+is the declared `spec.operations`. The **run-pinned** guarantee — a resumed run enforcing the
+manifest it started with, reached through the run's deployment snapshot, rather than whatever is
+deployed at resume time — depends on retained deployment artifacts (#207). Until then an `apply`
+that lands mid-run can change an in-flight run's authority. See ADR 002, *Soundness assumptions
+and limits*.
+
+The scope limit still holds: the manifest bounds the callable *set* and each operation's *declared*
+effects. It does not verify what a remote endpoint actually does — the trust anchor is human review
+of the manifest, not runtime verification of semantics.
+
 ### MVP tool types
 
 * `mcp`
@@ -961,7 +1012,9 @@ Once any Tool declares `spec.operations` effects, a Policy with no `effects.perm
 `permitWithApproval` block **permits nothing** (fail-closed; the error names the Policy).
 Projects with no declared tool effects skip this check so existing examples still validate.
 Enforcement is `internal/effects.Check` at validate/plan command paths (exit **2**), not
-shared `config.Resolve` and not runtime `CheckToolCall`. #204 pin is not shipped.
+shared `config.Resolve`. Runtime `CheckToolCall` separately enforces the #204 closed-world
+capability manifest (an operation outside declared `spec.operations` is denied, exit **5**); the
+run-pinned deployed manifest is deferred to #207.
 
 ### End goal
 
@@ -1689,7 +1742,7 @@ Responsibilities:
 
 The engine implements the bounded tool-calling loop (issue #160). Each agent-declared Tool resource is advertised as one `ToolDef` (name = Tool metadata.name, permissive object schema). `agent.spec.tools` entries may be the Tool metadata name or a pinned uses string `tool.<name>.<operation>`. `ToolChoice` is `auto`. Type defaults when only the name is listed: native → `tool.<name>.echo`; mock/mcp → `tool.<name>.default`. HTTP has no default (`parseOperation` would treat `default` as `GET /default`); list `tool.<name>.<method.path>` — pinned `tool.<name>.default` is rejected the same way as a bare HTTP name. `terfyn validate` / `plan` apply these advertised-uses rules (unknown tools, HTTP method.path, conflicting ops on one Tool name). Only the ToolDef name is accepted as a `ToolCall.Name` (ADR 002: no operation is agent-callable unless it was advertised). Aliases such as `helper.echo`, `tool.helper.echo`, `helper.command.run`, or HTTP `delete.users` fail before `CheckToolCall` / `Tools.Call`. On `StopReason: tool_use`, each accepted call is checked with `CheckToolCall`, then executed via `Tools.Call` on the agent `constraints.timeoutSeconds` context. Results are appended as `ChatMessage.ToolResults` (with the assistant `ToolCalls` replayed) and the loop continues. Agents that declare no tools stay a single `Generate` with no `Tools` field. Loop cost (model + tool) accumulates into the step `GenerateMeta`; `policy.CheckRun` runs after each Generate and tool turn so `execution.maxTotalCostUsd` / wall-clock apply inside a single agent step. `constraints.maxIterations` (default 8, hard cap 32) counts **Generate turns**; `tool_use` on the last turn fails without executing those calls (`maxIterations: 1` is one completion, tools never run). A cutoff emits `limit_hit` (`kind: max_iterations`) and fails the step. HITL interrupt is **not** consulted inside the loop: inner uses must already be pre-approved (`terfyn run --approve` / `ApprovedActions`) or `CheckToolCall` fails closed. Policy denial uses the existing `DeniedError` path (CLI exit **5**).
 
-`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `terfyn plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is only sound against a pinned operation manifest (#204), which is **not shipped** (`tools/list` can still expand the world). Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
+`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `terfyn plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is sound against the pinned operation manifest (#204): runtime `CheckToolCall` denies any operation outside the tool's declared `spec.operations`, so a live `tools/list` can no longer expand the callable world (see §7.3, *Capability manifest*). The run-**pinned** deployed manifest — enforcing what a resumed run started with — remains deferred to #207. Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
 
 Abstraction:
 
@@ -1832,7 +1885,8 @@ closed (the message names the tool). A policy with no permit block permits nothi
 any tool declares operations; if no tool declares operations, Check is skipped. `permit`
 vs `requiresApproval` / `approvals.requiredFor`: the stricter rule wins (any reachable op
 for an ident; `permitWithApproval` when the same ident is in both lists) and the error
-says which applied. Runtime `CheckToolCall` is unchanged. #204 is not shipped.
+says which applied. This static check is separate from the #204 runtime closed-world
+manifest enforcement in `CheckToolCall` (§7.3, *Capability manifest*).
 
 The bound is a sound **upper** set of named effects the root may perform, over both
 deterministic and autonomous paths. Two edge kinds are preserved on each witness hop:
@@ -1865,10 +1919,12 @@ an empty effect delta and still marks autonomous authority `WIDENED`.
 bound — fail-closed, not empty/allow, not omitted. Effects **declared** on a tool operation
 that is not reachable from that root are listed as **unreachable**, not dropped.
 
-**#204 is not shipped.** The bound is over declared `spec.operations` and advertised uses on
-the desired graph. `validate`/`plan` would bound desired; `run` would enforce the deployed
-manifest — this package only computes desired-graph bounds. A remote `tools/list` expansion
-is out of scope until the pin lands.
+**#204 closed world (partially shipped).** This package computes desired-graph bounds over
+declared `spec.operations` and advertised uses; `validate`/`plan` bound desired. The runtime
+closed-world enforcement — `run` denying any operation outside the deployed manifest — now ships
+on the `CheckToolCall` policy path (§7.3), so a remote `tools/list` expansion is denied, not
+absorbed. The **run-pinned** deployed manifest (a resumed run enforcing what it started with)
+still depends on #207.
 
 Walks use a visiting set (least fixed point) so cyclic graphs terminate. Production `workflow:`
 steps are walked (issue #194); diamond reuse of one agent does not duplicate infinitely.
