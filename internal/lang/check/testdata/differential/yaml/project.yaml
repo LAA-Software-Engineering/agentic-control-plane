@@ -1,0 +1,10 @@
+apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: differential-fixture
+spec:
+  imports:
+    - ./tools/github.yaml
+    - ./policies/guarded-writes.yaml
+    - ./agents/reviewer.yaml
+    - ./workflows/pr-review.yaml

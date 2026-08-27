@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "properties": {
+    "repo": { "type": "string" },
+    "number": { "type": "integer" }
+  },
+  "additionalProperties": false
+}
