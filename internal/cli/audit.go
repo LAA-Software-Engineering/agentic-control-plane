@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/audit"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/audit"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 	"github.com/spf13/cobra"
 )
 

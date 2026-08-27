@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 const genesisPrefix = "acp-audit-genesis-v1:"

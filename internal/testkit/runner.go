@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	_ "github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
+	_ "github.com/LAA-Software-Engineering/terfyn/internal/runtime/local"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 )
 
 // RunOptions configures environment labels for [RunCase].

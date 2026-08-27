@@ -1,6 +1,6 @@
 package main
 
-import "github.com/LAA-Software-Engineering/agentic-control-plane/internal/app"
+import "github.com/LAA-Software-Engineering/terfyn/internal/app"
 
 func main() {
 	app.New().RunAndExit()

@@ -3,7 +3,7 @@ package check
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
 )
 
 func TestCheckTypes(t *testing.T) {

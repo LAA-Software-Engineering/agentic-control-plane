@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // Options carries classification the current file cannot supply on its own.

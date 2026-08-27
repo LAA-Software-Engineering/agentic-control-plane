@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	sqlitemigrations "github.com/LAA-Software-Engineering/agentic-control-plane/migrations/sqlite"
+	sqlitemigrations "github.com/LAA-Software-Engineering/terfyn/migrations/sqlite"
 )
 
 // applySingleMigration runs one embedded migration by version number (tests only).

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func TestStricterOf_checkRunUsesTighterBudget(t *testing.T) {

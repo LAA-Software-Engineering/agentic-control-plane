@@ -1,6 +1,6 @@
 # Tamper-evident trace audit chain (issue #116)
 
-SQLite trace rows are the compliance evidence that an approved agent run is what actually executed. Plain rows can be edited silently; ACP hash-links each `trace_events` row into a **per-run chain** so post-hoc tampering (insert, delete, reorder, or mutate) is detectable with `agentctl audit verify`.
+SQLite trace rows are the compliance evidence that an approved agent run is what actually executed. Plain rows can be edited silently; Terfyn hash-links each `trace_events` row into a **per-run chain** so post-hoc tampering (insert, delete, reorder, or mutate) is detectable with `agentctl audit verify`.
 
 This is **internal consistency**, not cryptographic non-repudiation: there is no external timestamp authority or signing key yet. The chain proves the stored sequence matches the hash algorithm — useful for regulated deployments and forensic review.
 

@@ -1,7 +1,7 @@
 package trace
 
 import (
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // RedactionFromGraph returns trace payload redaction options from project spec (issue #110).

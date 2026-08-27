@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping improve Agentic Control Plane. This document describes how to work on the repo locally and what we expect in pull requests.
+Thank you for helping improve Terfyn. This document describes how to work on the repo locally and what we expect in pull requests.
 
 All participants are expected to follow the **[Code of Conduct](CODE_OF_CONDUCT.md)**.
 
@@ -12,8 +12,8 @@ All participants are expected to follow the **[Code of Conduct](CODE_OF_CONDUCT.
 ## Getting started
 
 ```bash
-git clone https://github.com/LAA-Software-Engineering/agentic-control-plane.git
-cd agentic-control-plane
+git clone https://github.com/LAA-Software-Engineering/terfyn.git
+cd terfyn
 go mod download
 make build    # or: go build -o bin/agentctl ./cmd/agentctl
 ```

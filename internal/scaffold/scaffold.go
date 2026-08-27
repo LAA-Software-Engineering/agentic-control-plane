@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/project"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // ErrResourceExists is returned when a resource file or name already exists in the project.

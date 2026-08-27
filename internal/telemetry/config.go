@@ -3,7 +3,7 @@ package telemetry
 import (
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // Config is the runtime view of Project.spec.telemetry.

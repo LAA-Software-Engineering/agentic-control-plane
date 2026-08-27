@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
 )
 
 // Check compares [Compute] bounds against each root's Policy.spec.effects (issue #190).

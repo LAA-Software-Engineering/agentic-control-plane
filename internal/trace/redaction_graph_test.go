@@ -3,7 +3,7 @@ package trace
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func TestRedactionFromGraph_defaultsWhenUnset(t *testing.T) {

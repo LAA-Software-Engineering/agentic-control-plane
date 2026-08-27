@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 )
 
 func writeFile(t *testing.T, path, content string) {

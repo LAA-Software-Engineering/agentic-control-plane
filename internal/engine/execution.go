@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/models"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 )
 
 // Executor runs workflow steps as a DAG (design doc section 12.2 E, section 13, issue #192).

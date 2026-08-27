@@ -9,11 +9,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/engine"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 	"github.com/mattn/go-isatty"
 )
 

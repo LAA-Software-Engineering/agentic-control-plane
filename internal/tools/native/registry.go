@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // ErrUnknownOperation indicates the operation name is not implemented by this registry.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 )
 
 // FormatEffectivePolicy renders compiled per-tool decisions for human-readable plan output.

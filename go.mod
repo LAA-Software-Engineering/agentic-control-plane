@@ -1,4 +1,4 @@
-module github.com/LAA-Software-Engineering/agentic-control-plane
+module github.com/LAA-Software-Engineering/terfyn
 
 go 1.25.0
 

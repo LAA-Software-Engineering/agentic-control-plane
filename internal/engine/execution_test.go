@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/models"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 )
 
 func testProjectRoot(t *testing.T) string {

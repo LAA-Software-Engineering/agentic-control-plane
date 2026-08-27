@@ -1,6 +1,6 @@
 # Run attribution (tenant, thread, actor)
 
-Issue [#111](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/111) adds lightweight tenancy and attribution to `runs` and `trace_events`.
+Issue [#111](https://github.com/LAA-Software-Engineering/terfyn/issues/111) adds lightweight tenancy and attribution to `runs` and `trace_events`.
 
 ## Fields
 

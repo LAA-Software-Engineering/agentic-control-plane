@@ -60,7 +60,7 @@ func newProvider(cfg Config, agentVersion string) (*sdktrace.TracerProvider, err
 
 	svc := cfg.ServiceName
 	if svc == "" {
-		svc = "agentic-control-plane"
+		svc = "terfyn"
 	}
 	ver := strings.TrimSpace(agentVersion)
 	if ver == "" {

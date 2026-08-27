@@ -54,7 +54,7 @@ resource graph. Three reasons:
   `examples/`. IR-level tests *should* be written against the IR; rewriting them into a language
   that does not exist yet is churn.
 - Machine-generated resources — a future inspector UI, a module registry, another tool emitting
-  ACP — need an ingress that is not a parser.
+  Terfyn — need an ingress that is not a parser.
 - It is the interchange format.
 
 This is the LLVM model: `.ll` is hand-writable, nobody hand-writes it, it remains fully

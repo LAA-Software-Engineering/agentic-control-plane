@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 func TestGenesisHash_stablePerRun(t *testing.T) {

@@ -1,6 +1,6 @@
 package trace
 
-import "github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
+import "github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
 
 // SpanName returns the OTel span name for et (issue #108).
 func (e EventType) SpanName() string {

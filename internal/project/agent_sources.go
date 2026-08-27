@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/check"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang/check"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // agentExt is the authoring-surface source extension (ADR 002 / ADR 003).

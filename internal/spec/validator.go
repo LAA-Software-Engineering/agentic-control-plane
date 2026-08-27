@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/catalog"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime/catalog"
+	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
 )
 
 // ValidateProjectGraph runs MVP validation rules from design doc §9.1–§9.5 on a merged graph.

@@ -3,7 +3,7 @@ package project
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // MissingRefError is reported when a graph reference does not resolve (see [spec.MissingRefError]).

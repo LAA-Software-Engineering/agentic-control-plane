@@ -9,12 +9,12 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 	"github.com/spf13/cobra"
 )
 

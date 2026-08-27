@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
+	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
 )
 
 // interpTokenRE matches ${...} placeholders (design doc §13.1). Same shape as engine/interpolation.go.

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/testkit"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/testkit"
 	"github.com/spf13/cobra"
 )
 

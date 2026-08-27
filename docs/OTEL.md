@@ -1,6 +1,6 @@
 # OpenTelemetry trace export (issue #108)
 
-ACP stores structured traces in SQLite by default. Optional OTLP export emits `gen_ai.*` spans for runs, model calls, tool executions, and HITL approvals so you can view them in Jaeger, Grafana Tempo, or any OTLP backend.
+Terfyn stores structured traces in SQLite by default. Optional OTLP export emits `gen_ai.*` spans for runs, model calls, tool executions, and HITL approvals so you can view them in Jaeger, Grafana Tempo, or any OTLP backend.
 
 ## Project configuration
 
@@ -63,7 +63,7 @@ docker run -d --name jaeger \
   jaegertracing/all-in-one:1.64
 ```
 
-Export endpoint for ACP:
+Export endpoint for Terfyn:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318/v1/traces

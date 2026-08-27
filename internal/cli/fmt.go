@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/project"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
 	"github.com/spf13/cobra"
 )
 

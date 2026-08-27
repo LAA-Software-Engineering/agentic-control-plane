@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
+	"github.com/LAA-Software-Engineering/terfyn/internal/util"
 )
 
 // ResolveSchemaPath joins schemaRef to projectRoot for Agent/Workflow schema fields

@@ -1,4 +1,4 @@
-# Agentic Control Plane — agent instructions
+# Terfyn — agent instructions
 
 Declarative YAML control plane for agents, tools, workflows, and policies. Primary interface is the Go CLI `agentctl` (Terraform-style validate / plan / apply / run / logs).
 

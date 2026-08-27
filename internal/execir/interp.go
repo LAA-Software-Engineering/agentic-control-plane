@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // DefaultMaxConcurrency bounds goroutine fan-out for a parallel Loop or Fork

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/models"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // ExecMeta is timing/cost metadata for an HTTP tool call (§13.2 placeholders).

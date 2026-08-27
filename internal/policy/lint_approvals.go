@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func lintUngatedSensitiveTools(graph *spec.ProjectGraph) []LintFinding {

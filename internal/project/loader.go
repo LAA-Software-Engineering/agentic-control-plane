@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/util"
 )
 
 // YAML file suffixes loaded from directories (recursive) and explicit import paths.

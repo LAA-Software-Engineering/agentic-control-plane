@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
 	"github.com/spf13/cobra"
 )
 

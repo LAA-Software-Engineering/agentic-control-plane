@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/cli"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/cli"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 	_ "modernc.org/sqlite"
 )
 
-// repoRoot returns the agentic-control-plane module root (directory containing go.mod).
+// repoRoot returns the terfyn module root (directory containing go.mod).
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

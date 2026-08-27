@@ -3,7 +3,7 @@ package plan
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func TestResolvedGraphDigest_stable(t *testing.T) {

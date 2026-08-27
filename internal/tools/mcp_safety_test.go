@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 var (

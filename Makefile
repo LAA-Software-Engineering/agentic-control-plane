@@ -1,4 +1,4 @@
-# Agentic Control Plane — developer Makefile
+# Terfyn — developer Makefile
 # Run `make` or `make help` to list targets.
 
 SHELL := bash

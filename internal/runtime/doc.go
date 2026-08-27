@@ -6,5 +6,5 @@
 // and report status; they must not reload project YAML/TOML themselves.
 //
 // The MVP local disk-backed implementation lives in
-// [github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime/local].
+// [github.com/LAA-Software-Engineering/terfyn/internal/runtime/local].
 package runtime

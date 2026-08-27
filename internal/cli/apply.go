@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/apply"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/apply"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/render"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // LimitHitEventData is the canonical payload for [EventLimitHit] (issue #117).

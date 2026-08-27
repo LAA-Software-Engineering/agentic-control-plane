@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 )
 
 // Default and hard-cap for agent.spec.constraints.maxIterations (issue #160).

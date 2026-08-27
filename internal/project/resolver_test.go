@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func TestResolveReferences_missingAgent(t *testing.T) {

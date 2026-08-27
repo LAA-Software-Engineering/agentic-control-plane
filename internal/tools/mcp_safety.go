@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools/mcp"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools/mcp"
 )
 
 // MCPDiscoveryPerToolTimeout bounds tools/list for one MCP Tool resource during config resolution.

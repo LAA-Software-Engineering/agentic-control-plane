@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // resolveStateSQLitePath returns an absolute filesystem path for the SQLite deployment store.

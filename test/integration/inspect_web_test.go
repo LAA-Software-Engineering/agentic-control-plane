@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/inspect"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state/sqlite"
+	"github.com/LAA-Software-Engineering/terfyn/internal/inspect"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
 )
 
 // TestIntegration_inspectWeb_API_afterRun seeds state via CLI run, then hits inspector HTTP API.

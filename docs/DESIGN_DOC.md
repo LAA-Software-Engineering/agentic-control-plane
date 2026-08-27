@@ -1,4 +1,4 @@
-# Agentic Control Plane
+# Terfyn
 
 ## Design Document v0
 

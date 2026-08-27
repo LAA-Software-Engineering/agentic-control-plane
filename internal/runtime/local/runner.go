@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/config"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/engine"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/runtime"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/util"
+	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/engine"
+	"github.com/LAA-Software-Engineering/terfyn/internal/models"
+	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
+	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/util"
 )
 
 // Invoke validates input, persists the run row, and executes the workflow engine.

@@ -3,7 +3,7 @@ package policy
 import (
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // Engine binds a loaded project graph for policy resolution (design doc section 12.2 H MVP).

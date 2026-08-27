@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // SourcePresetBase marks a decision originating from a built-in policy preset (issue #118).

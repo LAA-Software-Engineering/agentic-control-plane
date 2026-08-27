@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models/anthropic"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/models/anthropic"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // Agent-step style: mock returns JSON that unmarshals into a fixed schema (issue #17 acceptance).

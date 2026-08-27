@@ -129,7 +129,7 @@ cases rather than silently continuing.
   default in this monorepo and works on any architecture the toolchain supports.
 - **Custom install step** — replace or extend the release install step to download the asset that
   matches your runner (for example **`agentctl-<tag>-linux-arm64.tar.gz`** when published on
-  [Releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases)), or an
+  [Releases](https://github.com/LAA-Software-Engineering/terfyn/releases)), or an
   internal artifact URL you maintain.
 
 Native GitHub REST tools (**`pull_request.get`**, **`pull_request.diff`**, etc.) require an
@@ -165,7 +165,7 @@ it only from protected branches or environments after you are comfortable with r
 
 ## In-repo reference layout
 
-When developing **inside** the **agentic-control-plane** monorepo, you can point
+When developing **inside** the **terfyn** monorepo, you can point
 **`AGENTIC_PROJECT`** at **`examples/pr-review-github-actions`** so the checked-in workflow matches
 the copy-paste template without moving files.
 

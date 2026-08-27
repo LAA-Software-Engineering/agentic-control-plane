@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           version="${AGENTCTL_VERSION}"
           asset="agentctl-${version}-linux-amd64.tar.gz"
-          url="https://github.com/LAA-Software-Engineering/agentic-control-plane/releases/download/${version}/${asset}"
+          url="https://github.com/LAA-Software-Engineering/terfyn/releases/download/${version}/${asset}"
           curl -fsSL "$url" -o /tmp/agentctl.tgz
           tar -xzf /tmp/agentctl.tgz -C /tmp
           if [[ ! -x /tmp/agentctl ]]; then

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 func TestRiskSummary_policyLint_sensitiveTool(t *testing.T) {

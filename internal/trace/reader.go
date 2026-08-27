@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 // Reader loads trace events from [state.RuntimeStore] (read side for logs / inspect).

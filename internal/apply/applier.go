@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 // Applier mutates deployment state from an apply operation (design doc §5.2, §12.2 D).

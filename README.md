@@ -1,14 +1,14 @@
-# Agentic Control Plane
+# Terfyn
 
-[![CI](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/ci.yml)
-[![Release](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml)
+[![CI](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/ci.yml)
+[![Release](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev/dl/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
-[![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/agentic-control-plane.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/agentic-control-plane)
+[![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/terfyn.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/terfyn)
 
 **A statically analyzable, capability-oriented execution platform for nondeterministic programs.** Review the **authority granted** to agents as a plan diff — before they run.
 
-ACP bounds and diffs that grant. It does **not** verify what remote systems do with it.
+Terfyn bounds and diffs that grant. It does **not** verify what remote systems do with it.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ Expanded diagram, plan-time bounds, and closed-world caveats: [`docs/architectur
 
 ## The differentiator: plan-time bounds on authority
 
-This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. ACP's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)). `agentctl plan` prints that bound and the authority delta vs stored deployment state.
+This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. Terfyn's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)). `agentctl plan` prints that bound and the authority delta vs stored deployment state.
 
 **Today** `agentctl plan` diffs **permissions**, **approvals**, **models**, **budgets**, **C1 risk items**, and **effect/capability/authority** against SQLite desired state:
 
@@ -71,7 +71,7 @@ Authority:
   autonomous  -> WIDENED
 ```
 
-Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Straight-line workflows run end-to-end today; conditionals, loops, and dynamic fan-out parse and type-check ([#199](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/199)) but do not execute yet, so the loader refuses control-flow workflows until the execution IR runs on the engine. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the 58 existing fixtures work), and `agentctl export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
+Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Straight-line workflows run end-to-end today; conditionals, loops, and dynamic fan-out parse and type-check ([#199](https://github.com/LAA-Software-Engineering/terfyn/issues/199)) but do not execute yet, so the loader refuses control-flow workflows until the execution IR runs on the engine. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the 58 existing fixtures work), and `agentctl export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
 
 ## Flagship: incident triage
 
@@ -85,7 +85,7 @@ Other walkthroughs: policy-blocked PR review in [`examples/pr-review-demo`](exam
 
 Most agent stacks bury prompts, tool wiring, and permissions in application code. That makes it hard to answer: *Is this config valid? What authority changed? What are we about to grant? What actually ran? Did policy allow it?*
 
-**Agentic Control Plane** is a small Go CLI (`agentctl`) plus a resource graph so teams can:
+**Terfyn** is a small Go CLI (`agentctl`) plus a resource graph so teams can:
 
 - Review **capability diffs** (`plan`) before changes land
 - Track **deployment state** separately from **runtime traces**
@@ -107,7 +107,7 @@ Most agent stacks bury prompts, tool wiring, and permissions in application code
 
 ## Compared with adjacent tools
 
-ACP is the **declarative governance/config layer** for agent systems — not a replacement for durable-execution engines or code-first agent runtimes.
+Terfyn is the **declarative governance/config layer** for agent systems — not a replacement for durable-execution engines or code-first agent runtimes.
 
 | Capability | This project | OpenAI Agents SDK | LangGraph | Temporal | Terraform |
 |---|---|---|---|---|---|
@@ -115,9 +115,9 @@ ACP is the **declarative governance/config layer** for agent systems — not a r
 | Durable execution / distributed scheduling | No | No | Optional checkpointers; not a durable-execution engine | Yes | N/A |
 | Code-first agent runtime | No (resource graph; `.agent` authoring, YAML compilation output) | Yes | Yes | Workflow SDK, not an agent runtime | No |
 | Desired-state plan / apply | Yes (`agentctl plan` / `apply` vs SQLite) | No | No | No | Yes |
-| Plan-time effect bound | **Shipped** ([#189](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/189) / [#190](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/190) / [#191](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `agentctl plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
+| Plan-time effect bound | **Shipped** ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#190](https://github.com/LAA-Software-Engineering/terfyn/issues/190) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `agentctl plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
 
-The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/204)) is **not enforced** today (MCP `tools/list` can still expand the world). `agentctl plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
+The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204)) is **not enforced** today (MCP `tools/list` can still expand the world). `agentctl plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
 
 ---
 
@@ -152,8 +152,8 @@ See **section 18 (MVP)** and **section 19 (End Goal)** in [`docs/DESIGN_DOC.md`]
 ### Build
 
 ```bash
-git clone https://github.com/LAA-Software-Engineering/agentic-control-plane.git
-cd agentic-control-plane
+git clone https://github.com/LAA-Software-Engineering/terfyn.git
+cd terfyn
 make build   # writes bin/agentctl
 ```
 
@@ -161,7 +161,7 @@ Or: `make install` / `go install ./cmd/agentctl` (honours `GOBIN` / `GOPATH/bin`
 
 ### Prebuilt binaries
 
-[GitHub Releases](https://github.com/LAA-Software-Engineering/agentic-control-plane/releases) ship **`agentctl`** for common platforms (`.tar.gz` on Linux/macOS, `.zip` on Windows) plus **`SHA256SUMS.txt`**. Pick the archive that matches your machine, for example:
+[GitHub Releases](https://github.com/LAA-Software-Engineering/terfyn/releases) ship **`agentctl`** for common platforms (`.tar.gz` on Linux/macOS, `.zip` on Windows) plus **`SHA256SUMS.txt`**. Pick the archive that matches your machine, for example:
 
 | Platform | Asset suffix |
 |----------|----------------|
@@ -173,7 +173,7 @@ Or: `make install` / `go install ./cmd/agentctl` (honours `GOBIN` / `GOPATH/bin`
 
 `agentctl version` reports the release tag (e.g. `v0.1.4`).
 
-Releases are **created automatically** when changes land on **`main`**, using a **patch** semver bump over the latest `vMAJOR.MINOR.PATCH` tag (merges that only touch Markdown or the root `Makefile` do not trigger a release). To cut **minor** or **major** bumps on demand, run the [**Release** workflow](https://github.com/LAA-Software-Engineering/agentic-control-plane/actions/workflows/release.yml) manually (**Actions → Release → Run workflow**) and choose the bump type.
+Releases are **created automatically** when changes land on **`main`**, using a **patch** semver bump over the latest `vMAJOR.MINOR.PATCH` tag (merges that only touch Markdown or the root `Makefile` do not trigger a release). To cut **minor** or **major** bumps on demand, run the [**Release** workflow](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml) manually (**Actions → Release → Run workflow**) and choose the bump type.
 
 ### Create a project and run the loop
 
@@ -332,7 +332,7 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 Recent landings already cover much of “hardening”: **plan/apply optimistic concurrency** (exit **3** when deployment state drifts), **MCP** over **streamable HTTP** as well as stdio, **trace retention** (`spec.traces.retentionDays`), **`defaults.runtime`** / **`spec.runtime`** (MVP `local`), and clearer **defaults vs environment overlay** documentation. What is still open for near-term polish:
 
 - More **`diff` / drift** UX where the design doc calls for it (beyond today’s resource-level diff)  
-- Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/LAA-Software-Engineering/agentic-control-plane/issues/109))  
+- Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/LAA-Software-Engineering/terfyn/issues/109))  
 - **`agentctl test`**-style workflow fixtures (**stretch** per design doc)  
 
 ### Post-MVP (from design doc section 19)

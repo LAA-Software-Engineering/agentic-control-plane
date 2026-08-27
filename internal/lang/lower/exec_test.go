@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/execir"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
 )
 
 // endToEndInvoker records tool calls and returns a per-uses canned result.

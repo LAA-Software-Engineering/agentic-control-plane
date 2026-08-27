@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 // ErrChainBroken indicates a hash or prev_hash mismatch in a run's trace chain.

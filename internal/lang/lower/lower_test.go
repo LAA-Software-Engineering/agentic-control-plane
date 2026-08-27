@@ -12,10 +12,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/lang/lower"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/project"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang/lower"
+	"github.com/LAA-Software-Engineering/terfyn/internal/project"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // lowerFixture parses and lowers a testdata/<name>.agent file, failing on any

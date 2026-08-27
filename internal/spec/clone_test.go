@@ -3,7 +3,7 @@ package spec
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
+	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
 )
 
 func TestCloneProjectGraph_isolatesMutation(t *testing.T) {

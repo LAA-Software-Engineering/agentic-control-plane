@@ -3,7 +3,7 @@ package native
 import (
 	"sort"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // DispatchOperations lists operation names handled by [Registry.Dispatch] (excluding shell ops).

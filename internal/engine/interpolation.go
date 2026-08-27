@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
+	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
 )
 
 // StepResult is the MVP step result shape (design doc §13.2).

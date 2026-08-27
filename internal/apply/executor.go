@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/plan"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
 
 func executePlan(

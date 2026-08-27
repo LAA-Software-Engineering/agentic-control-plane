@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // MergeLowered folds the resource projection of a lowered .agent file (#197) into

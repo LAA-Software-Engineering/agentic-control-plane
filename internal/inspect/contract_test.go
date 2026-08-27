@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/state"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/statejson"
+	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
 )
 
 // TestContract_runEvents_matchesLogsJSON ensures inspector /api/runs/{id} events match agentctl logs -o json.

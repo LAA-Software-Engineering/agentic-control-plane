@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
 // DeploymentStore persists deployment rows from design doc §14.1 (applied_resources, applied_projects).

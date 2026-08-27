@@ -18,7 +18,7 @@ func Initialize(ctx context.Context, c Connector) error {
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
-			"name":    "agentic-control-plane",
+			"name":    "terfyn",
 			"version": "0",
 		},
 	}

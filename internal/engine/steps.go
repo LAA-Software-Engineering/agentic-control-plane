@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/models"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/policy"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/schema"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/telemetry"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/tools"
-	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/trace"
+	"github.com/LAA-Software-Engineering/terfyn/internal/models"
+	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
+	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
+	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 )
 
 func validateAgentOutput(projectRoot string, agent *spec.AgentResource, content string) error {
