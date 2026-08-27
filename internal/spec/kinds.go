@@ -118,13 +118,18 @@ type ToolSpec struct {
 	Safety *ToolSafety `yaml:"safety,omitempty" json:"safety,omitempty"`
 	// Operations declares per-operation named effects (issue #188, ADR 002). Additive to Safety.
 	Operations map[string]ToolOperation `yaml:"operations,omitempty" json:"operations,omitempty"`
-	// OperationsDeclared is true when the YAML mapping included an `operations` key (even if
-	// empty). It is the presence bit for the closed-world capability manifest (issue #204): an
-	// empty `operations: {}` is a *closed* manifest that denies every operation, distinct from an
-	// omitted `operations` (an open callable set, backward compatible). The distinction cannot
-	// survive the JSON round-trip in [CloneProjectGraph] because `Operations` is omitempty, so this
-	// derived bit carries it — mirroring [WorkflowStep.NeedsDeclared]. Diagnostic; not identity.
-	OperationsDeclared bool `yaml:"-" json:"-"`
+	// OperationsDeclared is true when the mapping included an `operations` key (even if empty). It
+	// is the presence bit for the closed-world capability manifest (issue #204): an empty
+	// `operations: {}` is a *closed* manifest that denies every operation, distinct from an omitted
+	// `operations` (an open callable set, backward compatible). Because `Operations` is omitempty an
+	// empty map serializes away, so this bit carries closedness — and it is **part of identity**
+	// (`json:"operationsDeclared"`), not merely diagnostic: it flows into the normalized spec hash,
+	// plan diffs, `NormalizedSpecJSON`, and `graphFromApplied`, so deleting `operations:` from a
+	// locked tool is a visible plan change rather than a silent reopen, and the deployed manifest
+	// reconstructed from applied spec (and the #207 snapshot) sees the same closed world runtime
+	// enforces. Not author-settable (`yaml:"-"`); it is derived from key presence during load.
+	// `omitempty` keeps the field absent (JSON unchanged) for the common open tool.
+	OperationsDeclared bool `yaml:"-" json:"operationsDeclared,omitempty"`
 	// Limits optionally overrides project execution byte limits for this tool (issue #117).
 	Limits *ExecutionLimits `yaml:"limits,omitempty" json:"limits,omitempty"`
 }

@@ -302,7 +302,11 @@ expanding the callable set. This is tracked as a first-class Epic F issue (#204)
 **Shipped by #204:** the desired/deployed manifest model, `validate`/`plan` bounding over the
 desired manifest, and runtime closed-world denial of operations outside the declared manifest.
 Closedness is a presence bit (`operations: {}` is a closed, deny-all world; an omitted key is open
-and backward compatible), not the operation count, so shrinking a manifest cannot reopen it.
+and backward compatible), not the operation count, so shrinking a manifest cannot reopen it. The
+bit is part of identity (`ToolSpec.OperationsDeclared`, serialized into the normalized spec), so
+plan, apply, and the deployed manifest reconstructed from applied spec see the same closed world
+runtime enforces — deleting `operations:` from a locked tool is a visible plan change, not a silent
+reopen.
 Discovery merges only `spec.safety` and never adds operations, so it is never an authority source.
 `tools.CapabilityManifest.Digest` / `GraphManifestDigest` are manifest-identity primitives for
 comparison and the #207 run-pin, not a second plan/apply pin; an input schema per operation is not

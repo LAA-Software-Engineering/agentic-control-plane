@@ -745,8 +745,13 @@ scope until it is.
 callable set (backward compatible — existing MCP/HTTP examples dispatch every operation). A
 *declared* `operations` manifest — including an empty `operations: {}` — is a **closed** world:
 only its declared operations are callable, and an empty one denies all. Closedness is a presence
-bit (`ToolSpec.OperationsDeclared`, preserved across the resolve-freeze), not the operation count,
-so shrinking a manifest to empty cannot silently widen it to the universe.
+bit (`ToolSpec.OperationsDeclared`), not the operation count, so shrinking a manifest to empty
+cannot silently widen it to the universe. Because `Operations` is `omitempty`, an empty map would
+serialize away; the bit is therefore **part of identity** (`json:"operationsDeclared"`), flowing
+into the normalized spec hash, plan diffs, `NormalizedSpecJSON`, and the deployed manifest
+reconstructed from applied spec (`graphFromApplied`, and the #207 snapshot). So deleting the
+`operations:` key from a locked tool is a visible plan change, and the deployed world matches what
+`CheckToolCall` enforces — closed-empty is not distinguishable from open only at runtime.
 
 Runtime enforcement is on the policy path
 (`[policy.PolicyEvaluator.CheckToolCall]` → `ReasonOperationNotInManifest`, in **both** the
