@@ -23,24 +23,48 @@ does, regardless of whether a test currently catches it.
 
 ## Invariants
 
-### S1 — Pinned authority is authoritative
-Once a run starts, **every authority-bearing input comes from its pinned deployment snapshot**
-(`runs.deployment_snapshot_digest`). Current desired state, current deployed state, source YAML,
-`.agent` files, and mutable on-disk snapshots (`.agentic/policy-snapshot.json`,
-`.agentic/resolved-config.json`) must never widen an in-flight run. Resume hydrates graph, policy,
-capability manifest, and captured schemas from the snapshot — not from re-resolved current config.
-*Enforced in:* `internal/runtime/local` (`prepareForResume`), `internal/engine`
+### S1 — A pinned run's authority is authoritative
+**Precondition: the run pinned a deployment snapshot** (`runs.deployment_snapshot_digest` non-empty).
+For such a run, **every authority-bearing input comes from that snapshot**: current desired state,
+current deployed state, source YAML, `.agent` files, and mutable on-disk snapshots
+(`.agentic/policy-snapshot.json`, `.agentic/resolved-config.json`) must never widen it. Resume
+hydrates graph, policy, capability manifest, and captured schemas from the snapshot — not from
+re-resolved current config.
+*Enforced in:* `internal/runtime/local` (`prepareForResume`, pinned branch), `internal/engine`
 (`Executor.PinnedGraph`), `internal/deploy` (`HydrateGraph`). *Learned from:* #207 initially
 hydrated a pinned graph but `CheckToolCall` still compiled policy from the on-disk snapshot `apply`
 overwrites — approvals/presets/safety used post-apply authority.
 
-### S2 — Discovery is observation, never authority
-Remote discovery — MCP `tools/list`, HTTP discovery, provider metadata — may **assist authoring**
-(populate a *desired* manifest) but must **never enlarge the runtime callable set**. The deployed
-capability manifest, not the live server, is authoritative at run time. *Enforced in:*
-`internal/tools` (`ApplyMCPSafetyDiscovery` merges only `spec.safety`, never operations),
-`internal/policy` (`checkOperationInManifest`). *Learned from:* #204 — a server advertising
-`delete_repo` after apply must not make it callable.
+**Bounded carve-out (explicitly outside M).** A run with an **empty** snapshot digest falls back to
+current config (`prepareForResume` → `prepareFromConfig`) and therefore *can* be widened by an
+intervening apply. This is not a bypass of the invariant; it is a run **outside** its precondition:
+- runs created **before #207** have no snapshot to pin (a migration reality, not a hole);
+- backends that do not implement `state.ArtifactStore` (in-memory/test stores) retain no artifacts,
+  so `pinDeploymentSnapshot` returns an empty digest.
+
+The production SQLite backend pins **every new run**, so S1 holds for all new production runs. The
+carve-out is documented (CHANGELOG, `resume_validate.go`) and is the one place S1's "never" is
+conditional; a *new* code path that resumes a snapshot-bearing run from current config **is** the M
+bug.
+
+### S2 — Discovery never enlarges a *closed* tool's callable set
+**Precondition: the tool declares a manifest** (`operations:` present, i.e. `OperationsDeclared` —
+including `operations: {}`). For such a **closed-world** tool, remote discovery — MCP `tools/list`,
+HTTP discovery, provider metadata — may **assist authoring** (populate a *desired* manifest) but must
+**never enlarge the runtime callable set**: an operation absent from the deployed manifest is denied
+at dispatch, so a server advertising `delete_repo` after apply cannot make it callable.
+*Enforced in:* `internal/tools` (`ApplyMCPSafetyDiscovery` merges only `spec.safety`, never
+operations; `CapabilityManifest.Allows`), `internal/policy` (`checkOperationInManifest`).
+*Learned from:* #204.
+
+**Closed-world is opt-in — this invariant does not cover an *open* tool.** A tool that omits
+`operations:` (every tool in `examples/` today) is an **explicit open world**: `Allows` returns
+`true` and `CheckToolCall` does not deny, so its runtime callable set *is* whatever the live server
+exposes at dispatch — by author opt-out, not a violation. The honest contract is therefore: *S2
+holds iff the tool opted into a manifest.* An engineer who wants the "server cannot grow the callable
+set" guarantee must declare `operations:` (see DESIGN_DOC §7.3, ADR 002 — closed-world is opt-in).
+`ApplyMCPSafetyDiscovery` not adding operations at *resolve* time is a related but distinct property
+from the *dispatch*-time closed world, and does not by itself close an open tool.
 
 ### S3 — Closed-empty is distinct from unspecified
 An explicitly empty capability set (`operations: {}`) means **closed / deny-all**; an omitted key
@@ -79,7 +103,10 @@ especially the highest-value line, `autonomous authority: WIDENED`. Authority ma
 silently between `plan` and `apply`, and manifest drift (an operation appearing, disappearing, or
 changing effects/schema) must surface as a state change. *Enforced in:* `internal/plan`
 (`attachEffectAuthority`, authority delta), `internal/effects` (`Compute`). *Depends on:* S5 — a
-widening that does not change identity cannot be reported.
+widening that does not change identity cannot be reported. *Scope:* this covers the **declared**
+authority in the reviewed config; it does not cover an *open* tool's runtime callable set growing
+because the live server added an operation (that widening is invisible to `plan` — the S2 open-world
+carve-out — and is another reason to prefer declared `operations:`).
 
 ### S7 — Resume cannot duplicate effects
 Once durable execir replay lands (#258), a memoized effectful leaf (`InvokeTool/Agent/Workflow`)
@@ -91,9 +118,11 @@ resumed run diverges. *Enforced in (planned):* `internal/execir`, `internal/engi
 must exist before #258 is implemented, not after.*
 
 ### S8 — Unknown artifact formats fail closed
-Never reinterpret a snapshot, artifact, or execution-IR payload whose `format_version` the runtime
-does not understand. An unsupported version fails resume loudly, naming both the found and supported
-versions. *Enforced in:* `internal/deploy` (`HydrateGraph`, `ErrUnsupportedFormat`).
+Never reinterpret a deployment artifact or snapshot whose `format_version` the runtime does not
+understand. An unsupported version fails resume loudly, naming both the found and supported versions.
+*Enforced in:* `internal/deploy` (`HydrateGraph`, `ErrUnsupportedFormat`) for the snapshot, resolved
+graph, and schema bundle. *Scope:* the `execution_ir` artifact does not exist yet — this invariant
+extends to it when #260 lands, and the format check is part of that issue's acceptance criteria.
 
 ---
 
@@ -122,14 +151,24 @@ one chain, and anything that determines its arrows is in the TCB:
          EXECUTION                 (faithful to reviewed authority)
 ```
 
-**TCB packages** (raised review standard):
+**TCB packages** (raised review standard). The TCB is **whatever can make S1–S8 false** — derived
+from the chain above, not a curated favourites list. It must include every package an invariant's
+*Enforced in* line names:
 
 ```text
-internal/effects      internal/policy       internal/deploy
-internal/tools        internal/state        internal/runtime
-internal/engine       internal/lang/lower   internal/plan (digest/authority)
+internal/lang/check   internal/lang/lower   internal/effects      (SOURCE → checker/effects)
+internal/plan (digest/authority)                                  (PLAN)
+internal/apply        internal/deploy                             (APPLY / snapshot + pins)
+internal/policy       internal/tools        internal/schema       (RUN / pinned enforcement)
+internal/runtime      internal/engine       internal/state        (RUN → EXECUTION)
 internal/spec (identity, manifest, schema fields)
 ```
+
+`internal/lang/check` is the static-analyzability pillar (ADR 004), the diagram's first arrow;
+`internal/schema` is S4's exhibit (the #253 `FileLoader` near-miss); `internal/apply` is the APPLY
+box. Omitting any of them is exactly the "looks complete in a table, does not cover its own
+exhibits" failure this document exists to prevent. `internal/execir` joins the list the moment S7
+stops being "planned".
 
 **Review standard.** A change to a TCB package is reviewed against the invariants, not just for local
 correctness. The reviewer's first question is:
