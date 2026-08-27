@@ -10,8 +10,6 @@
 
 ACP bounds and diffs that grant. It does **not** verify what remote systems do with it.
 
-<img width="1082" height="625" alt="agentctl CLI" src="https://github.com/user-attachments/assets/bbcc8d7f-6031-4f65-b5c9-1d5cd6424e91" />
-
 ## Architecture
 
 Source graph → `validate` / `plan` → SQLite desired state → `apply` → engine → tools + models → trace / logs / audit.
