@@ -119,6 +119,37 @@ func TestFmt_formatsAgentSources(t *testing.T) {
 	}
 }
 
+func TestFmt_caseFoldedAgentExtensionFormatsAsAgent(t *testing.T) {
+	// Discovery matches .agent case-insensitively; the formatter must use the
+	// same predicate, or a well-formed .AGENT file would be mangled as YAML.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "project.yaml"),
+		[]byte("apiVersion: agentic.dev/v0\nkind: Project\nmetadata:\n  name: demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agentPath := filepath.Join(root, "flow.AGENT")
+	if err := os.WriteFile(agentPath, []byte("workflow W(input: X)   {\ngithub.get_pr(input.repo)\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"fmt", "--project", root})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("fmt of a .AGENT file: %v", err)
+	}
+	got, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Canonical .agent form (printer), not a YAML round-trip.
+	if !strings.Contains(string(got), "workflow W(input: X) {") {
+		t.Fatalf("expected .AGENT to be formatted as .agent, got:\n%s", got)
+	}
+}
+
 func TestFmt_malformedAgentFails(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "project.yaml"),

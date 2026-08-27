@@ -135,7 +135,7 @@ func runFmt(cmd *cobra.Command, check bool) error {
 // file that does not parse is a formatting failure (exit 2), the same class as
 // unparseable YAML — fmt must not silently rewrite or drop a malformed source.
 func normalizeForFmt(path string, b []byte) ([]byte, error) {
-	if filepath.Ext(path) == ".agent" {
+	if project.IsAgentSource(path) {
 		out, diags := lang.Format(path, string(b))
 		if diags.HasErrors() {
 			return nil, fmt.Errorf("cannot format unparseable .agent source:\n%s", diags.Error())

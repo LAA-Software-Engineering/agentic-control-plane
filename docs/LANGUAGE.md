@@ -479,9 +479,10 @@ own. The fold that would let a lowering-only change (e.g. swapping an `if`'s two
 invalidate a stale plan is
 [`plan.WorkflowSpecHashWithExec`](../internal/plan/workflow_hash.go), which mixes
 `execir.Program.Digest` into the spec-hash. **This is the mechanism, not yet a live invariant**:
-no production path constructs an `execir.Program` for a workflow today — `project.LoadProject`
-does not read `.agent`, and `agentctl plan` hashes YAML resource envelopes through
-`WorkflowSpecHash` (empty digest). When `.agent` ingest is wired into plan/run, those call
+no production path constructs an `execir.Program` for a workflow today. `project.LoadProject`
+compiles `.agent` (#200) but uses the checked resource graph and refuses control-flow
+workflows, so it never builds an `execir.Program`; `agentctl plan` hashes resource envelopes
+through `WorkflowSpecHash` (empty digest). When `execir` is wired onto the engine, those call
 sites move to `WorkflowSpecHashWithExec`; the plain `WorkflowSpecHash` doc comment flags that.
 The fold is unit-tested (`internal/plan/workflow_hash_execir_test.go`).
 

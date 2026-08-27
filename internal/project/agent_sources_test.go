@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/LAA-Software-Engineering/agentic-control-plane/internal/spec"
 )
 
 func writeFile(t *testing.T, dir, name, body string) {
@@ -101,6 +103,65 @@ workflow Review(input: PullRequest) {
 	}
 	if _, ok := g.Workflows["Review"]; !ok {
 		t.Fatalf("expected workflow Review, got %v", keys(g.Workflows))
+	}
+}
+
+// TestLoadProject_agentUnresolvedReferenceFails pins that the loader compiles
+// through the checker: a reference to a name the scope model does not bind is a
+// load error.
+func TestLoadProject_agentUnresolvedReferenceFails(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "project.yaml", minimalProjectYAML)
+	writeFile(t, root, "w.agent", `workflow W(input: X) { return never_bound }`)
+
+	_, err := LoadProject(root)
+	if err == nil {
+		t.Fatalf("expected an unresolved-reference compile error")
+	}
+	if !strings.Contains(err.Error(), "unresolved reference") {
+		t.Fatalf("expected an unresolved-reference error, got: %v", err)
+	}
+}
+
+// TestLoadProject_agentRebindsPositionalWorkflowArgs pins the checker on the
+// load path specifically: a positional workflow: call's with: keys are the
+// callee's real parameter names (arg0 placeholders are rebound by
+// check.applyRebinds). A bare lower.LowerFile loader would leave arg0.
+func TestLoadProject_agentRebindsPositionalWorkflowArgs(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "project.yaml", minimalProjectYAML)
+	writeFile(t, root, "flows.agent", `
+workflow Inner(msg: Message) -> Message {
+    return msg.body
+}
+
+workflow Outer(input: Ticket) {
+    reply = Inner(input.text)
+    return reply
+}
+`)
+	g, err := LoadProject(root)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	outer, ok := g.Workflows["Outer"]
+	if !ok {
+		t.Fatalf("expected workflow Outer, got %v", keys(g.Workflows))
+	}
+	var step *spec.WorkflowStep
+	for i := range outer.Spec.Steps {
+		if outer.Spec.Steps[i].Workflow == "Inner" {
+			step = &outer.Spec.Steps[i]
+		}
+	}
+	if step == nil {
+		t.Fatalf("expected a workflow: step invoking Inner, got steps %+v", outer.Spec.Steps)
+	}
+	if _, ok := step.With["msg"]; !ok {
+		t.Fatalf("expected positional arg rebound to parameter %q, got with: %v", "msg", step.With)
+	}
+	if _, ok := step.With["arg0"]; ok {
+		t.Fatalf("arg0 placeholder must not survive the checker's rebind: with: %v", step.With)
 	}
 }
 

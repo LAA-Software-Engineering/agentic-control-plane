@@ -16,6 +16,14 @@ import (
 // agentExt is the authoring-surface source extension (ADR 002 / ADR 003).
 const agentExt = ".agent"
 
+// IsAgentSource reports whether path names a .agent authoring source. It is the
+// single predicate discovery, the loader, and `agentctl fmt` share, so the set
+// of files formatted is exactly the set the loader ingests (case-insensitive on
+// the extension).
+func IsAgentSource(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), agentExt)
+}
+
 // compileAgentSources discovers every .agent file under rootAbs, compiles the
 // whole set through internal/lang/check (type and effect checking, plus the
 // positional workflow-argument rebind), and merges the CHECKED resource
@@ -187,7 +195,7 @@ func discoverAgentFiles(rootAbs string) ([]string, error) {
 			}
 			return nil
 		}
-		if strings.EqualFold(filepath.Ext(path), agentExt) {
+		if IsAgentSource(path) {
 			out = append(out, path)
 		}
 		return nil
