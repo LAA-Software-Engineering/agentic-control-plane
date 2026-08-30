@@ -140,6 +140,18 @@ func (r *runner) exec(scope map[string]any, n Node) error {
 		r.output = val
 		r.done = true
 		return nil
+	case *Graph:
+		// A general needs-DAG executes on the engine-backed run path (Phase 1,
+		// #257), which schedules nodes by their dependency sets with per-branch
+		// suspend. This runtime-independent interpreter deliberately does not
+		// serialize a Graph into an arbitrary order — doing so would misreport
+		// concurrency/suspend semantics — so it fails loudly instead.
+		return fmt.Errorf("execir: Graph (needs-DAG) execution is not implemented in the standalone interpreter (engine run path, issue #257)")
+	case *Approval:
+		// A human pause suspends and resumes through the engine's checkpoint
+		// machinery (Phase 2, #258); treating it as a no-op here would silently
+		// skip a gate, so it fails loudly.
+		return fmt.Errorf("execir: Approval node execution is not implemented in the standalone interpreter (durable suspend/resume, issue #258)")
 	default:
 		return fmt.Errorf("execir: unknown node %T", n)
 	}

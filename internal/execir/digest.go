@@ -93,9 +93,47 @@ func encodeNode(b *strings.Builder, n Node) {
 	case *Return:
 		b.WriteString("return ")
 		encodeValue(b, v.Value)
+	case *Graph:
+		encodeGraph(b, v)
+	case *Approval:
+		b.WriteString("approval ")
+		b.WriteString(v.Bind)
+		b.WriteString(" desc:")
+		b.WriteString(strconv.Quote(v.Description))
+		b.WriteString(" redact:[")
+		b.WriteString(strings.Join(sortedCopy(v.RedactKeys), ","))
+		b.WriteByte(']')
 	default:
 		b.WriteString("?node")
 	}
+}
+
+// encodeGraph canonicalizes a needs-DAG independently of authored node order:
+// nodes are emitted sorted by id and each node's needs are sorted, so reordering
+// independent steps (a semantically-equivalent structuring) yields one digest.
+func encodeGraph(b *strings.Builder, g *Graph) {
+	b.WriteString("graph{")
+	nodes := make([]GraphNode, len(g.Nodes))
+	copy(nodes, g.Nodes)
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
+	for _, gn := range nodes {
+		b.WriteString(gn.ID)
+		b.WriteByte('[')
+		b.WriteString(strings.Join(sortedCopy(gn.Needs), ","))
+		b.WriteString("]=")
+		encodeNode(b, gn.Run)
+		b.WriteByte(';')
+	}
+	b.WriteByte('}')
+}
+
+// sortedCopy returns a sorted copy of ss, leaving the input untouched (the digest
+// must not mutate the program it hashes).
+func sortedCopy(ss []string) []string {
+	out := make([]string, len(ss))
+	copy(out, ss)
+	sort.Strings(out)
+	return out
 }
 
 func encodeArgs(b *strings.Builder, args map[string]Value) {
@@ -122,6 +160,32 @@ func encodeValue(b *strings.Builder, v Value) {
 	case Lit:
 		b.WriteString("lit:")
 		b.WriteString(litKey(x.V))
+	case Object:
+		b.WriteString("obj{")
+		fields := make([]Field, len(x.Fields))
+		copy(fields, x.Fields)
+		sort.Slice(fields, func(i, j int) bool { return fields[i].Key < fields[j].Key })
+		for _, f := range fields {
+			b.WriteString(f.Key)
+			b.WriteByte('=')
+			encodeValue(b, f.Val)
+			b.WriteByte(',')
+		}
+		b.WriteByte('}')
+	case List:
+		b.WriteString("list[")
+		for _, e := range x.Elems {
+			encodeValue(b, e)
+			b.WriteByte(',')
+		}
+		b.WriteByte(']')
+	case Template:
+		b.WriteString("tmpl(")
+		for _, p := range x.Parts {
+			encodeValue(b, p)
+			b.WriteByte(';')
+		}
+		b.WriteByte(')')
 	case nil:
 		b.WriteString("nil")
 	default:

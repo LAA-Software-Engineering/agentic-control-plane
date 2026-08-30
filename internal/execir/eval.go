@@ -1,8 +1,11 @@
 package execir
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 )
 
 // evalArgs resolves each argument value against scope.
@@ -21,17 +24,77 @@ func evalArgs(scope map[string]any, args map[string]Value) (map[string]any, erro
 	return out, nil
 }
 
-// evalValue resolves a Ref against the scope or returns a Lit's Go value.
+// evalValue resolves a Ref against the scope or returns a Lit's Go value. The
+// composite forms (Object/List/Template) evaluate their members recursively —
+// they are pure over already-resolved refs, so a straight-line program that
+// returns an object or interpolates a string is fully executable in isolation
+// (control-flow nodes Graph/Approval are the parts deferred to later phases).
 func evalValue(scope map[string]any, v Value) (any, error) {
 	switch x := v.(type) {
 	case Lit:
 		return x.V, nil
 	case Ref:
 		return resolvePath(scope, x.Path)
+	case Object:
+		out := make(map[string]any, len(x.Fields))
+		for _, f := range x.Fields {
+			fv, err := evalValue(scope, f.Val)
+			if err != nil {
+				return nil, err
+			}
+			out[f.Key] = fv
+		}
+		return out, nil
+	case List:
+		out := make([]any, len(x.Elems))
+		for i, e := range x.Elems {
+			ev, err := evalValue(scope, e)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = ev
+		}
+		return out, nil
+	case Template:
+		var sb strings.Builder
+		for _, p := range x.Parts {
+			pv, err := evalValue(scope, p)
+			if err != nil {
+				return nil, err
+			}
+			sb.WriteString(stringify(pv))
+		}
+		return sb.String(), nil
 	case nil:
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("execir: unknown value %T", v)
+	}
+}
+
+// stringify renders a resolved value for embedding in an interpolated Template:
+// scalars print directly, and composites JSON-encode (mirroring how the engine's
+// string interpolation embeds objects/arrays), so a Template part that resolves
+// to a map/list does not print as a Go %v map.
+func stringify(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case bool:
+		return strconv.FormatBool(x)
+	case int:
+		return strconv.Itoa(x)
+	case int64:
+		return strconv.FormatInt(x, 10)
+	case float64:
+		return strconv.FormatFloat(x, 'g', -1, 64)
+	default:
+		if b, err := json.Marshal(x); err == nil {
+			return string(b)
+		}
+		return fmt.Sprintf("%v", x)
 	}
 }
 
