@@ -364,3 +364,48 @@ func TestLoop_NonListCollectionErrors(t *testing.T) {
 		t.Fatalf("expected an error iterating a non-list, got nil")
 	}
 }
+
+// TestCompositeValues_Eval proves the #256 composite Value forms evaluate
+// recursively: an Object of a Ref and a List, and a Template that interpolates a
+// scalar ref into surrounding text.
+func TestCompositeValues_Eval(t *testing.T) {
+	t.Parallel()
+	prog := &Program{
+		Workflow: "W", Params: []string{"input"},
+		Body: []Node{&Return{Value: Object{Fields: []Field{
+			{Key: "who", Val: Ref{Path: []string{"input", "name"}}},
+			{Key: "tags", Val: List{Elems: []Value{Lit{V: "x"}, Ref{Path: []string{"input", "name"}}}}},
+			{Key: "greeting", Val: Template{Parts: []Value{Lit{V: "hi "}, Ref{Path: []string{"input", "name"}}, Lit{V: "!"}}}},
+		}}}},
+	}
+	out := runProg(t, &Interp{Invoker: &recorder{}}, prog, map[string]any{"name": "ada"})
+	m, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("return should be a map, got %T", out)
+	}
+	if m["who"] != "ada" {
+		t.Fatalf("who = %v, want ada", m["who"])
+	}
+	if tags, ok := m["tags"].([]any); !ok || len(tags) != 2 || tags[0] != "x" || tags[1] != "ada" {
+		t.Fatalf("tags = %v, want [x ada]", m["tags"])
+	}
+	if m["greeting"] != "hi ada!" {
+		t.Fatalf("greeting = %v, want %q", m["greeting"], "hi ada!")
+	}
+}
+
+// TestDeferredNodes_RejectedLoudly proves the standalone interpreter refuses the
+// Graph and Approval nodes (execution is Phases 1/2, #257/#258) rather than
+// silently serializing a DAG or skipping a human gate.
+func TestDeferredNodes_RejectedLoudly(t *testing.T) {
+	t.Parallel()
+	for _, n := range []Node{
+		&Graph{Nodes: []GraphNode{{ID: "a", Run: &InvokeAgent{Bind: "a", Agent: "A"}}}},
+		&Approval{Bind: "gate"},
+	} {
+		prog := &Program{Workflow: "W", Body: []Node{n}}
+		if _, err := (&Interp{Invoker: &recorder{}}).Run(context.Background(), prog, nil); err == nil {
+			t.Fatalf("expected %T execution to be rejected, got nil error", n)
+		}
+	}
+}

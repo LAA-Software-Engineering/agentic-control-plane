@@ -18,11 +18,18 @@
 // Ingress convergence is the DESIGN target, not yet the implementation. ADR 002
 // §5 requires both ingress paths to converge on this IR — a straight-line YAML
 // workflow lowering to the same flat node list a straight-line `.agent` workflow
-// does, so execution semantics never diverge. This package provides the target
-// and the `.agent` lowering (LowerExec); the YAML side still executes as a
-// WorkflowStep DAG in internal/engine, and a YAML->execir lowering plus running
-// the engine from execir is a follow-up. Until that lands, do not read this
-// package as proof the two paths already share an interpreter.
+// does, so execution semantics never diverge. Both lowerings now exist —
+// internal/lang/lower.LowerExec (`.agent`) and internal/lang/lower.
+// LowerWorkflowResource (YAML, #256), the latter proven to produce a byte-
+// identical Program for a straight-line YAML/`.agent` twin pair — but the engine
+// still executes the YAML side as a WorkflowStep DAG in internal/engine; running
+// the engine from execir is a follow-up (#257/#258). Until that lands, do not
+// read this package as proof the two paths already share an interpreter.
+//
+// The YAML lowering also introduces two constructs that outrun the `.agent`
+// surface, both execution-deferred (the standalone Interp rejects them): [Graph],
+// a general needs-DAG (YAML `needs:` is not series-parallel, so it is not [Fork]),
+// and [Approval], the fourth XOR step kind (#195).
 //
 // Runtime independence: nodes reference values by the source binding namespace
 // (parameter names, assignment targets, loop variables), not by resource-model
@@ -157,6 +164,66 @@ type Return struct {
 
 func (*Return) node() {}
 
+// Graph is a general needs-DAG of steps — the concurrency construct the YAML
+// lowering owns (issue #256, ADR 002 §5). It is the deliberate resolution of
+// "design decision 1": YAML `needs:` is validated as an ARBITRARY DAG, which
+// [Fork] (series-parallel, all-branches-join) cannot express without either
+// false synchronization or duplicating a node. Concretely, in
+//
+//	A, B roots;  C needs [A];  D needs [A, B];  E needs [C]
+//
+// D is runnable once A and B finish (not waiting for C/E), and a per-branch
+// suspend (an approval in one branch, #195) must not force a sibling whose own
+// needs are already met to wait. A Graph preserves each node's authored
+// dependency set so the reviewable resource DAG executes faithfully; `.agent`
+// `parallel { }` ([Fork]) is the structured special case, not the general form.
+//
+// A straight-line (implicit-sequential) YAML workflow does NOT lower to a Graph:
+// it lowers to a flat top-level node list, identical to the `.agent`
+// straight-line twin (that parity is the differential-test bar). Only a workflow
+// that opts into graph mode (any `needs:` key, [spec.WorkflowUsesExplicitNeeds])
+// lowers to a Graph.
+//
+// Execution is Phase 1 (#257), deliberately out of scope here; the interpreter
+// rejects a Graph loudly rather than silently serializing it.
+type Graph struct {
+	Pos   Pos
+	Nodes []GraphNode
+}
+
+func (*Graph) node() {}
+
+// GraphNode is one node of a [Graph]: its stable identity (the step id, also the
+// binding name its result is published under, so a downstream `${steps.<id>...}`
+// reference resolves), the predecessor ids that must complete before it runs,
+// and the single Invoke*/Approval node it executes.
+type GraphNode struct {
+	ID    string
+	Needs []string
+	Run   Node
+}
+
+// Approval is a workflow-level human pause — the FOURTH XOR step kind (a step is
+// exactly one of uses/agent/workflow/approval, DESIGN_DOC §7.4) and the
+// resolution of "design decision 2" (issue #256/#195, ADR 002). It has no
+// InvokeX to lower to: it suspends the workflow at this node for a human
+// decision that is not a tool call. Bind is the source binding name (the step
+// id) the reviewed payload is published under; Description and RedactKeys are
+// review presentation only and do not decide whether the node pauses (policy
+// still gates tool-call approvals separately).
+//
+// The suspend/resume machinery is Phase 2 (#258), out of scope here; this node
+// only makes the pause representable and lowerable, and the interpreter rejects
+// it loudly rather than treating a human gate as a no-op.
+type Approval struct {
+	Pos         Pos
+	Bind        string
+	Description string
+	RedactKeys  []string
+}
+
+func (*Approval) node() {}
+
 // --- Values -----------------------------------------------------------------
 
 // Value is a data operand: a [Ref] into the runtime scope or a [Lit].
@@ -179,6 +246,48 @@ type Lit struct {
 }
 
 func (Lit) value() {}
+
+// Object is a composite operand: an ordered set of named fields, each a Value.
+// It is the lowering of a YAML `with:` sub-map or a multi-key `output.value`
+// (issue #256) — structure the `.agent` surface never produces (an `.agent`
+// argument is a single Ref/Lit), so it appears only on the YAML side. Digest and
+// equality are field-order independent: fields are canonicalized by Key.
+type Object struct {
+	Pos    Pos
+	Fields []Field
+}
+
+func (Object) value() {}
+
+// Field is one named member of an [Object].
+type Field struct {
+	Key string
+	Val Value
+}
+
+// List is a composite operand: an ordered sequence of Values — the lowering of a
+// YAML sequence value under a `with:`/`output` key (issue #256). Order IS
+// significant (unlike [Object] fields).
+type List struct {
+	Pos   Pos
+	Elems []Value
+}
+
+func (List) value() {}
+
+// Template is an interpolated string: a YAML string value that is NOT a whole-
+// field `${...}` token but contains one or more embedded tokens mixed with
+// literal text, e.g. a `body:` built from prose plus `${steps.x.output.summary}`
+// (issue #256). Parts are concatenated as strings at evaluation; each part is a
+// literal [Lit] chunk or a [Ref]. A string with no token lowers to a plain
+// [Lit]; a whole-field token lowers to a [Ref] — a Template is strictly the
+// mixed case, so the `${...}` → Ref mapping still holds for every token.
+type Template struct {
+	Pos   Pos
+	Parts []Value
+}
+
+func (Template) value() {}
 
 // --- Condition expressions --------------------------------------------------
 
