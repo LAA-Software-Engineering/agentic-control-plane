@@ -2,6 +2,7 @@ package lower
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -194,9 +195,52 @@ func (wl *wfResLowerer) lowerYAMLValue(v any, pos spec.Pos) execir.Value {
 		}
 		return execir.List{Pos: pos, Elems: elems}
 	default:
-		// Scalars (bool, int, int64, float64, nil, …) and any other leaf.
-		return execir.Lit{Pos: pos, V: v}
+		// A scalar leaf, canonicalized to execir's documented Lit types (string,
+		// int64, float64, bool). This is load-bearing for twin-digest parity:
+		// yaml.v3 decodes an authored integer as Go `int`, but the `.agent` parser
+		// (parseNumber) produces `int64` for the same literal, and execir.litKey
+		// tokenizes those two types differently — so an un-normalized `int` would
+		// make a YAML workflow and its `.agent` twin hash differently for a
+		// literal that executes identically. Widen numeric kinds here, at the
+		// ingress boundary, rather than teaching every downstream Lit consumer
+		// (digest, equality, marshalling) the yaml.v3 type split.
+		return execir.Lit{Pos: pos, V: canonicalScalar(v)}
 	}
+}
+
+// canonicalScalar widens a decoded YAML scalar to the Go type the `.agent` parser
+// and execir use as canonical: any signed/unsigned integer kind → int64,
+// float32 → float64; string, bool, float64, nil, and anything else pass through.
+// A uint64 that does not fit int64 is left as-is (no `.agent` literal can reach
+// that magnitude — parseNumber falls back to float64 past the int64 range).
+func canonicalScalar(v any) any {
+	switch x := v.(type) {
+	case int:
+		return int64(x)
+	case int8:
+		return int64(x)
+	case int16:
+		return int64(x)
+	case int32:
+		return int64(x)
+	case uint:
+		if uint64(x) <= math.MaxInt64 {
+			return int64(x)
+		}
+	case uint8:
+		return int64(x)
+	case uint16:
+		return int64(x)
+	case uint32:
+		return int64(x)
+	case uint64:
+		if x <= math.MaxInt64 {
+			return int64(x)
+		}
+	case float32:
+		return float64(x)
+	}
+	return v
 }
 
 var interpTokenRE = regexp.MustCompile(`\$\{([^}]*)\}`)

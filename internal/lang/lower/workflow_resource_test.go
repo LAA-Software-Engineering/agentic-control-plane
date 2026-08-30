@@ -83,6 +83,56 @@ workflow W(input: PR) {
 	}
 }
 
+// TestLowerWorkflowResource_LiteralParity guards the twin digest across every
+// scalar literal type. yaml.v3 decodes an authored integer as Go `int` while the
+// `.agent` parser produces `int64`, and execir.litKey tokenizes those
+// differently — so without scalar canonicalization at the lowering boundary the
+// two twins would hash differently for a literal that executes identically. This
+// is the parity that DifferentialParity (refs only) does not exercise.
+func TestLowerWorkflowResource_LiteralParity(t *testing.T) {
+	t.Parallel()
+
+	yamlProg, ydiags := lowerYAMLWorkflowOrFatal(t, `
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: W
+spec:
+  steps:
+    - id: a
+      uses: tool.t.op
+      with:
+        n: 5
+        ratio: 1.5
+        flag: true
+        name: hi
+  output:
+    value:
+      value: ${steps.a.output}
+`)
+	if ydiags.HasErrors() {
+		t.Fatalf("YAML lowering diagnostics: %v", ydiags)
+	}
+	agentProg, adiags := lowerExecOrFatal(t, `
+workflow W(input: PR) {
+    a = t.op(n: 5, ratio: 1.5, flag: true, name: "hi")
+    return a
+}
+`, nil)
+	if adiags.HasErrors() {
+		t.Fatalf(".agent lowering diagnostics: %v", adiags)
+	}
+	if yamlProg.Digest() != agentProg.Digest() {
+		t.Fatalf("literal twin digests differ:\n YAML:   %s\n .agent: %s", yamlProg.Digest(), agentProg.Digest())
+	}
+	// The integer literal must be the canonical int64, not the yaml.v3 int.
+	if n, ok := yamlProg.Body[0].(*execir.InvokeTool).Args["n"].(execir.Lit); !ok {
+		t.Fatalf("arg n should be a Lit, got %#v", yamlProg.Body[0].(*execir.InvokeTool).Args["n"])
+	} else if _, ok := n.V.(int64); !ok {
+		t.Fatalf("integer literal should be canonicalized to int64, got %T", n.V)
+	}
+}
+
 // TestLowerWorkflowResource_InterpolationRefMapping pins the ${...} → Ref mapping
 // in the source binding namespace: input.<field> keeps its path, steps.<id>.
 // output.<f> drops output (a step binds its output), and steps.<id>.meta.<f>
