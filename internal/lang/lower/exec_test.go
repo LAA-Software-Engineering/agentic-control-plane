@@ -15,7 +15,7 @@ type endToEndInvoker struct {
 	calls []string
 }
 
-func (e *endToEndInvoker) InvokeTool(_ context.Context, uses string, args map[string]any) (any, error) {
+func (e *endToEndInvoker) InvokeTool(_ context.Context, _ execir.CallSite, uses string, args map[string]any) (any, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	label := uses
@@ -28,10 +28,10 @@ func (e *endToEndInvoker) InvokeTool(_ context.Context, uses string, args map[st
 	e.calls = append(e.calls, label)
 	return map[string]any{"ok": true}, nil
 }
-func (e *endToEndInvoker) InvokeAgent(_ context.Context, a string, _ map[string]any) (any, error) {
+func (e *endToEndInvoker) InvokeAgent(_ context.Context, _ execir.CallSite, a string, _ map[string]any) (any, error) {
 	return map[string]any{"agent": a}, nil
 }
-func (e *endToEndInvoker) InvokeWorkflow(_ context.Context, w string, _ map[string]any) (any, error) {
+func (e *endToEndInvoker) InvokeWorkflow(_ context.Context, _ execir.CallSite, w string, _ map[string]any) (any, error) {
 	return nil, nil
 }
 

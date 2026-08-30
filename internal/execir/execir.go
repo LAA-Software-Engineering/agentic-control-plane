@@ -21,10 +21,13 @@
 // does, so execution semantics never diverge. Both lowerings now exist —
 // internal/lang/lower.LowerExec (`.agent`) and internal/lang/lower.
 // LowerWorkflowResource (YAML, #256), the latter proven to produce a byte-
-// identical Program for a straight-line YAML/`.agent` twin pair — but the engine
-// still executes the YAML side as a WorkflowStep DAG in internal/engine; running
-// the engine from execir is a follow-up (#257/#258). Until that lands, do not
-// read this package as proof the two paths already share an interpreter.
+// identical Program for a straight-line YAML/`.agent` twin pair. An engine-backed
+// [Invoker] now runs a lowered program through [Interp] behind a test-only flag
+// at parity with the DAG on completing graphs (#257, internal/engine
+// engineInvoker); the DAG remains the production default, and durable
+// resume/HITL on the execir path is still a follow-up (#258). Until that lands,
+// do not read this package as proof the two paths already share the production
+// runtime.
 //
 // The YAML lowering also introduces two constructs that outrun the `.agent`
 // surface, both execution-deferred (the standalone Interp rejects them): [Graph],

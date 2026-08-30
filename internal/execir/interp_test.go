@@ -3,6 +3,7 @@ package execir
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -22,7 +23,7 @@ type recorder struct {
 	holdFor time.Duration
 }
 
-func (r *recorder) InvokeTool(_ context.Context, uses string, args map[string]any) (any, error) {
+func (r *recorder) InvokeTool(_ context.Context, _ CallSite, uses string, args map[string]any) (any, error) {
 	if r.track != nil {
 		cur := atomic.AddInt32(r.track, 1)
 		for {
@@ -45,7 +46,7 @@ func (r *recorder) InvokeTool(_ context.Context, uses string, args map[string]an
 	return nil, nil
 }
 
-func (r *recorder) InvokeAgent(_ context.Context, agent string, args map[string]any) (any, error) {
+func (r *recorder) InvokeAgent(_ context.Context, _ CallSite, agent string, args map[string]any) (any, error) {
 	r.mu.Lock()
 	r.tools = append(r.tools, "agent:"+agent)
 	r.mu.Unlock()
@@ -55,7 +56,7 @@ func (r *recorder) InvokeAgent(_ context.Context, agent string, args map[string]
 	return map[string]any{"agent": agent}, nil
 }
 
-func (r *recorder) InvokeWorkflow(_ context.Context, wf string, args map[string]any) (any, error) {
+func (r *recorder) InvokeWorkflow(_ context.Context, _ CallSite, wf string, args map[string]any) (any, error) {
 	r.mu.Lock()
 	r.tools = append(r.tools, "workflow:"+wf)
 	r.mu.Unlock()
@@ -394,18 +395,96 @@ func TestCompositeValues_Eval(t *testing.T) {
 	}
 }
 
-// TestDeferredNodes_RejectedLoudly proves the standalone interpreter refuses the
-// Graph and Approval nodes (execution is Phases 1/2, #257/#258) rather than
-// silently serializing a DAG or skipping a human gate.
-func TestDeferredNodes_RejectedLoudly(t *testing.T) {
+// TestApproval_RejectedLoudly proves the standalone interpreter refuses an
+// Approval node (durable suspend/resume is Phase 2, #258) rather than silently
+// skipping a human gate. (Graph now executes — see TestGraph_* below.)
+func TestApproval_RejectedLoudly(t *testing.T) {
 	t.Parallel()
-	for _, n := range []Node{
-		&Graph{Nodes: []GraphNode{{ID: "a", Run: &InvokeAgent{Bind: "a", Agent: "A"}}}},
-		&Approval{Bind: "gate"},
-	} {
-		prog := &Program{Workflow: "W", Body: []Node{n}}
-		if _, err := (&Interp{Invoker: &recorder{}}).Run(context.Background(), prog, nil); err == nil {
-			t.Fatalf("expected %T execution to be rejected, got nil error", n)
+	prog := &Program{Workflow: "W", Body: []Node{&Approval{Bind: "gate"}}}
+	if _, err := (&Interp{Invoker: &recorder{}}).Run(context.Background(), prog, nil); err == nil {
+		t.Fatalf("expected Approval execution to be rejected, got nil error")
+	}
+}
+
+// TestGraph_JoinAccuracy proves the DAG scheduler runs each node when ITS own
+// predecessors complete — not over-synchronized like a Fork. In
+// `A,B roots; C[A]; D[A,B]; E[C]`, every node runs exactly once and a node never
+// runs before its predecessors (observed via the recorded output chain).
+func TestGraph_JoinAccuracy(t *testing.T) {
+	t.Parallel()
+	// Each node returns {seen: <sorted predecessor ids actually present in scope>}
+	// so we can assert a node saw exactly its declared predecessors' outputs.
+	graphNode := func(id string, needs ...string) GraphNode {
+		args := map[string]Value{}
+		for _, dep := range needs {
+			args[dep] = Ref{Path: []string{dep}}
 		}
+		return GraphNode{ID: id, Needs: needs, Run: &InvokeTool{Bind: id, Uses: "tool.t." + id, Args: args}}
+	}
+	prog := &Program{
+		Workflow: "W", Params: []string{"input"},
+		Body: []Node{
+			&Graph{Nodes: []GraphNode{
+				graphNode("a"),
+				graphNode("b"),
+				graphNode("c", "a"),
+				graphNode("d", "a", "b"),
+				graphNode("e", "c"),
+			}},
+			&Return{Value: Ref{Path: []string{"e"}}},
+		},
+	}
+	var mu sync.Mutex
+	seen := map[string]map[string]bool{}
+	rec := &recorder{respond: func(uses string, args map[string]any) any {
+		id := strings.TrimPrefix(uses, "tool.t.")
+		mu.Lock()
+		got := map[string]bool{}
+		for k := range args {
+			got[k] = true
+		}
+		seen[id] = got
+		mu.Unlock()
+		return map[string]any{"id": id}
+	}}
+	if _, err := (&Interp{Invoker: rec}).Run(context.Background(), prog, nil); err != nil {
+		t.Fatalf("graph run: %v", err)
+	}
+	// Every node ran exactly once.
+	for _, id := range []string{"a", "b", "c", "d", "e"} {
+		if _, ok := seen[id]; !ok {
+			t.Fatalf("node %q did not run", id)
+		}
+	}
+	// d saw both a and b (its declared predecessors, published before it ran).
+	if !seen["d"]["a"] || !seen["d"]["b"] {
+		t.Fatalf("d should see a and b, saw %v", seen["d"])
+	}
+	// e saw c (not b — E does not wait for the D/B join).
+	if !seen["e"]["c"] {
+		t.Fatalf("e should see c, saw %v", seen["e"])
+	}
+}
+
+// TestGraph_BoundedConcurrency proves independent roots run concurrently but the
+// scheduler honors MaxConcurrency.
+func TestGraph_BoundedConcurrency(t *testing.T) {
+	t.Parallel()
+	var track, peak int32
+	nodes := make([]GraphNode, 6)
+	for i := range nodes {
+		id := fmt.Sprintf("r%d", i)
+		nodes[i] = GraphNode{ID: id, Run: &InvokeTool{Bind: id, Uses: "tool.t." + id}}
+	}
+	prog := &Program{Workflow: "W", Body: []Node{&Graph{Nodes: nodes}}}
+	rec := &recorder{track: &track, peak: &peak, holdFor: 20 * time.Millisecond}
+	if _, err := (&Interp{Invoker: rec, MaxConcurrency: 2}).Run(context.Background(), prog, nil); err != nil {
+		t.Fatalf("graph run: %v", err)
+	}
+	if got := atomic.LoadInt32(&peak); got > 2 {
+		t.Fatalf("peak concurrency %d exceeded MaxConcurrency 2", got)
+	}
+	if got := atomic.LoadInt32(&peak); got < 2 {
+		t.Fatalf("independent roots should run concurrently, peak was %d", got)
 	}
 }

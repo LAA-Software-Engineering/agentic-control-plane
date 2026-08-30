@@ -65,6 +65,11 @@ type RunInput struct {
 	InterruptAfterStepID string
 	// MaxConcurrentSteps bounds goroutine fan-out (issue #192). Zero uses DefaultMaxConcurrentSteps.
 	MaxConcurrentSteps int
+	// UseExecIR routes the run through the execution IR (lower the workflow to an execir.Program and
+	// run it via execir.Interp) instead of the WorkflowStep DAG (issue #257). Test-only flag; the DAG
+	// stays the production default. Non-resumable and no HITL/suspend in Phase 1, so it is ignored on
+	// a Resume. Parity with the DAG path on completing graphs is the acceptance bar.
+	UseExecIR bool
 	// WorkflowDepth is 0 for the entry run and increments for each workflow: step (issue #194).
 	WorkflowDepth int
 	// CallStack is callee workflow names from the root (issue #194 traces).
@@ -166,13 +171,24 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	}()
 
 	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
-	finishAt := e.now()
+
+	// Phase 1 execir path (issue #257): route through the execution IR behind the flag, except on a
+	// Resume (durable resume stays DAG-handled until #258).
+	if in.UseExecIR && !in.Resume {
+		return e.runViaExecIR(ctx, in, wf, wfPol, runStartedAt, runHandle)
+	}
 
 	ictx, totalCost, err = e.runWorkflowSteps(ctx, in, wf, wfPol, ictx, nil, totalCost, completed, runStartedAt, runHandle)
 	if err != nil {
 		return err
 	}
+	return e.finishRunSucceeded(ctx, in, wf, ictx, totalCost)
+}
 
+// finishRunSucceeded builds the workflow output, writes the final completed
+// checkpoint, and marks the run succeeded. Shared by the DAG and execir paths so
+// both produce byte-identical output and finish bookkeeping.
+func (e *Executor) finishRunSucceeded(ctx context.Context, in RunInput, wf *spec.WorkflowResource, ictx Context, totalCost float64) error {
 	finalOut, err := buildWorkflowOutput(wf, ictx)
 	if err != nil {
 		return e.failRun(ctx, in, err, totalCost)
@@ -181,11 +197,10 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	if err != nil {
 		return e.failRun(ctx, in, err, totalCost)
 	}
-	finishAt = e.now()
 	if err := e.saveCheckpoint(ctx, wf, in.RunID, len(wf.Spec.Steps)-1, "", ictx, totalCost, state.CheckpointStatusCompleted); err != nil {
 		return e.failRun(ctx, in, fmt.Errorf("engine: final checkpoint: %w", err), totalCost)
 	}
-	return e.Store.FinishRun(ctx, in.RunID, state.RunStatusSucceeded, finishAt, string(outBytes), "", totalCost)
+	return e.Store.FinishRun(ctx, in.RunID, state.RunStatusSucceeded, e.now(), string(outBytes), "", totalCost)
 }
 
 func primaryAgentName(wf *spec.WorkflowResource) string {
