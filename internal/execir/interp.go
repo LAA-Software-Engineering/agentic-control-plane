@@ -24,10 +24,12 @@ const DefaultMaxConcurrency = 8
 //
 // It is a clean pause, not a failure: it propagates up as a signal that
 // RunResumable maps to [RunState.Suspended]. Inside a concurrent construct
-// (Fork/Graph/parallel Loop) it suspends the run per-branch (#270): the branch
-// that paused wins the one suspension slot, its siblings are cancelled (a
-// completed sibling is memoized and replays on resume; an in-flight one re-runs),
-// and the whole run pauses at the join.
+// (Fork/Graph/parallel Loop) the branch that paused wins the one suspension slot
+// and halts, but its siblings are NOT cancelled (issue #275): each runs to its
+// own natural pause — a completed sibling is memoized and replays on resume, and
+// a sibling that resolves its own gate on resume runs to completion rather than
+// being cancelled and forced to re-suspend. Only a genuine branch error cancels
+// siblings. The whole run pauses at the join (#270).
 var ErrSuspend = errors.New("execir: suspended for human decision")
 
 // ApprovalInfo is the review presentation an [Approval] node carries to the
@@ -287,17 +289,23 @@ func isCanceled(err error) bool {
 
 // classifyConcurrent decides the result of a concurrent construct (Fork/Graph/
 // parallel Loop) after its branches join. A suspend anywhere wins (the run pauses,
-// #270 — completed siblings are already memoized; in-flight ones were cancelled
-// and re-run on resume). Otherwise the first genuine branch error surfaces; a
-// context cancellation is a sibling abandoned by the cancel, not a fault.
+// #270). Siblings are not cancelled by a suspend (#275): each completed sibling is
+// already memoized and a sibling resolving its own gate ran to completion.
+// Otherwise the first genuine branch error surfaces; a context cancellation is a
+// sibling abandoned by a real failure's cancel, not a fault.
 func classifyConcurrent(suspended bool, errs []error) error {
-	if suspended {
-		return ErrSuspend
-	}
+	// A genuine branch error (a failure or a HITL reject) aborts the whole
+	// construct and takes precedence over a concurrent suspend. Siblings are no
+	// longer cancelled by a suspend (#275), so a non-cancel, non-suspend error in
+	// errs is a real fault, not an artifact of a suspend's cancel — pausing a run
+	// that is going to fail would strand the failure.
 	for _, e := range errs {
-		if e != nil && !isCanceled(e) {
+		if e != nil && !isCanceled(e) && !errors.Is(e, ErrSuspend) {
 			return e
 		}
+	}
+	if suspended {
+		return ErrSuspend
 	}
 	return nil
 }
@@ -454,7 +462,15 @@ func (r *runner) execFork(scope map[string]any, f *Fork, path, loop []int) error
 			sub := &runner{in: r.in, ctx: ctx, sess: r.sess}
 			if err := sub.execAll(child, br.Nodes, extend(path, i), loop); err != nil {
 				errs[i] = err
-				cancel() // a suspend or failure stops the sibling branches
+				// A genuine failure stops the sibling branches; a suspend does NOT
+				// (issue #275). A suspending branch lets its siblings run to their
+				// own natural pause — a completed sibling is memoized (S7: replayed,
+				// never reissued), and a sibling that resolved its own gate on resume
+				// runs to completion instead of being cancelled and forced to
+				// re-suspend. The whole fork still pauses at the join.
+				if !errors.Is(err, ErrSuspend) {
+					cancel()
+				}
 				return
 			}
 			val, ok := child[br.Bind]
@@ -526,7 +542,12 @@ func (r *runner) execLoopParallel(scope map[string]any, l *Loop, items []any, pa
 			sub := &runner{in: r.in, ctx: ctx, sess: r.sess}
 			if err := sub.execAll(child, l.Body, path, extend(loop, i)); err != nil {
 				errs[i] = err
-				cancel() // a suspend or failure in one iteration stops the others
+				// A genuine failure stops the other iterations; a suspend does NOT
+				// (issue #275), so the iterations not waiting on a human run to
+				// completion and are memoized (S7) rather than cancelled and re-run.
+				if !errors.Is(err, ErrSuspend) {
+					cancel()
+				}
 			}
 		}(i, item)
 	}
@@ -621,11 +642,13 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 					}
 					completed[gn.ID] = struct{}{}
 				case errors.Is(err, ErrSuspend):
-					// This node paused for a human; stop scheduling and cancel the
-					// in-flight siblings. It is NOT marked completed, so on resume it
-					// re-runs and its gate resolves.
+					// This node paused for a human. Stop scheduling NEW nodes, but do
+					// NOT cancel the in-flight siblings (issue #275): an independent
+					// sibling completes deterministically (memoized, S7), and a sibling
+					// that resolved its own gate on resume runs to completion instead
+					// of being cancelled and forced to re-suspend. This node is NOT
+					// marked completed, so on resume it re-runs and its gate resolves.
 					suspended = true
-					cancel()
 				case isCanceled(err) && (suspended || firstErr != nil):
 					// A sibling abandoned by the cancel above — re-runs on resume.
 				default:
@@ -659,11 +682,14 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 
 	mu.Lock()
 	defer mu.Unlock()
-	if suspended {
-		return ErrSuspend
-	}
+	// A genuine node error wins over a concurrent suspend (#275): siblings are no
+	// longer cancelled by a suspend, so firstErr is a real fault that must abort
+	// the graph rather than be masked by the pause.
 	if firstErr != nil {
 		return firstErr
+	}
+	if suspended {
+		return ErrSuspend
 	}
 	if len(completed) != n {
 		return fmt.Errorf("execir: graph has no runnable step (unsatisfiable needs or cycle)")

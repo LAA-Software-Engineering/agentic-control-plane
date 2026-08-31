@@ -45,16 +45,15 @@ type engineInvoker struct {
 	cost         *liveCost
 	runStartedAt time.Time
 
-	// resuming is true on a resume; pending is the suspended gate loaded from the
-	// checkpoint, anchored by its execir CallKey (issue #258).
-	resuming bool
-
-	mu             sync.Mutex
-	ictx           Context           // Input + accumulated Steps, for buildWorkflowOutput after the run
-	suspendClaimed bool              // one suspension cause per run cycle (first-wins across gates/subworkflows)
-	pending        *PendingHitlState // a direct gate awaiting a decision (seeded on resume; set first-wins on a fresh suspend)
-	nested         *nestedSuspension // a suspended subworkflow frame (set first-wins on a fresh suspend, #270)
-	nestedSeed     *NestedRunState   // a suspended subworkflow to resume (seeded from the checkpoint on resume)
+	mu   sync.Mutex
+	ictx Context // Input + accumulated Steps, for buildWorkflowOutput after the run
+	// pending and nested are the ONE presented suspension cause this run cycle: a
+	// direct gate (first-wins) or a suspended subworkflow, which preempts a direct
+	// gate because its frame carries committed work (#275). At most one is set.
+	pending     *PendingHitlState // the direct gate this run cycle suspends at
+	pendingSeed *PendingHitlState // the gate loaded from the checkpoint that THIS resume resolves (claimed by the matching branch, #275)
+	nested      *nestedSuspension // a suspended subworkflow frame; preempts a direct gate (#275/#270)
+	nestedSeed  *NestedRunState   // a suspended subworkflow to resume (seeded from the checkpoint on resume)
 }
 
 // nestedSuspension is a subworkflow that suspended: the callee's completed steps +
@@ -80,43 +79,54 @@ func (a *engineInvoker) approvedActions(extra string) []string {
 	return out
 }
 
-// claimPending atomically returns and clears the pending gate iff it is anchored
-// to key (the leaf being resumed); nil otherwise. Concurrency-safe: a Graph/Fork
-// resumes and re-runs branches from several goroutines.
+// claimPending atomically returns and clears the SEEDED pending gate iff it is
+// anchored to key (the leaf this resume resolves); nil otherwise. It reads the
+// resume seed, NOT the fresh-suspend slot (a.pending): under a concurrent
+// Graph/Fork resume, a sibling that re-suspends into a.pending must not clobber
+// the seed before the matching branch claims it (issue #275). Concurrency-safe:
+// branches re-run from several goroutines.
 func (a *engineInvoker) claimPending(key string) *PendingHitlState {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.pending != nil && a.pending.ExecKey == key {
-		p := a.pending
-		a.pending = nil
+	if a.pendingSeed != nil && a.pendingSeed.ExecKey == key {
+		p := a.pendingSeed
+		a.pendingSeed = nil
 		return p
 	}
 	return nil
 }
 
-// setPendingIfFirst records a direct gate as the run's one suspension cause iff
-// none is claimed yet (first-suspend wins), returning whether it won. A racing
-// second gate is dropped and re-runs on resume — the DAG's cancel-on-first-interrupt.
+// setPendingIfFirst records a direct gate as the run's one presented suspension
+// cause iff none is claimed yet (first-suspend wins), returning whether it won. A
+// racing second gate is dropped and re-runs on resume — safe because a direct
+// gate carries no committed work (it IS the pre-dispatch pause). A suspended
+// subworkflow (setNestedIfFirst) has priority over a direct gate: since siblings
+// are no longer cancelled on suspend (#275), a direct gate must yield the slot to
+// a nested frame that already committed inner effects, or that work would be
+// dropped and re-run (S7).
 func (a *engineInvoker) setPendingIfFirst(p *PendingHitlState) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.suspendClaimed {
+	if a.nested != nil || a.pending != nil {
 		return false
 	}
-	a.suspendClaimed = true
 	a.pending = p
 	return true
 }
 
-// setNestedIfFirst records a suspended subworkflow as the run's one suspension
-// cause iff none is claimed yet.
+// setNestedIfFirst records a suspended subworkflow as the run's one presented
+// suspension cause, returning whether it was recorded. Its frame carries the
+// callee's committed inner memo, which would re-run (duplicate side effect, S7)
+// if dropped — so it PREEMPTS a direct gate already in the slot (that gate re-runs
+// safely on resume). A second nested frame cannot be preserved in one slot and is
+// rejected (false); the caller fails closed rather than risk an S7 duplicate.
 func (a *engineInvoker) setNestedIfFirst(n *nestedSuspension) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.suspendClaimed {
+	if a.nested != nil {
 		return false
 	}
-	a.suspendClaimed = true
+	a.pending = nil // preempt a direct gate; it carries no committed work and re-runs safely
 	a.nested = n
 	return true
 }
@@ -175,9 +185,8 @@ func (e *Executor) runViaExecIR(ctx context.Context, in RunInput, wf *spec.Workf
 		if err != nil {
 			return e.failRun(ctx, in, err, 0)
 		}
-		inv.resuming = true
 		inv.ictx = ictx // seed completed steps for output + interpolation
-		inv.pending = ictx.PendingHitl
+		inv.pendingSeed = ictx.PendingHitl
 		inv.nestedSeed = nested // a suspended subworkflow to resume (#270)
 		cost.add(totalCost)     // memoized leaves are not re-invoked, so their cost is already counted
 		seed = state
@@ -261,26 +270,27 @@ func (a *engineInvoker) InvokeTool(ctx context.Context, site execir.CallSite, us
 		return a.dispatchTool(ctx, site, resolvedUses, resolvedWith, resolvedUses)
 	}
 
-	// Fresh run: a gated uses: call suspends (or, under auto-approve, records and
-	// proceeds). On a resume, gates are NOT re-suspended (a.resuming): the one
-	// pending gate is resolved above, and any other gated call dispatches — where
-	// CheckToolCall fails closed if still unapproved (same as the DAG).
-	if !a.resuming {
-		step := spec.WorkflowStep{ID: site.Bind, Uses: uses}
-		// A gate-builder error is advisory only — the authoritative deny is
-		// CheckToolCall inside runToolStep (which emits the system_error trace),
-		// so on error fall through to dispatch, exactly as the DAG's
-		// executeOneStep discards maybeInterruptForHitl's error when it does not
-		// interrupt.
-		if gate, gerr := a.buildToolGate(step, uses, args); gerr == nil && gate != nil {
-			if a.in.Hitl.AutoApprove {
-				a.e.recordAutoApproveHitl(ctx, a.in.RunID, step, 0, *gate, a.in.Hitl.Actor)
-			} else {
-				if a.setPendingIfFirst(&PendingHitlState{StepID: step.ID, Uses: gate.Uses, With: gate.With, Review: gate.Review, ExecKey: key}) {
-					a.emitHitlRequest(ctx, step, gate)
-				}
-				return nil, execir.ErrSuspend
+	// A gated uses: call suspends (or, under auto-approve, records and proceeds) —
+	// whether on a fresh run or as a not-yet-resolved gate reached on resume. The
+	// one gate anchored by the checkpoint is resolved above (claimPending), and a
+	// completed leaf is replayed from the interpreter memo before it ever reaches
+	// here, so the only gated call arriving on resume is a SECOND, still-undecided
+	// gate. It must re-suspend for its own decision (issue #275), exactly like
+	// InvokeApproval — not fall through to CheckToolCall and fail closed (exit 5).
+	// One gate is presented per suspend; successive resumes resolve each in turn.
+	step := spec.WorkflowStep{ID: site.Bind, Uses: uses}
+	// A gate-builder error is advisory only — the authoritative deny is
+	// CheckToolCall inside runToolStep (which emits the system_error trace), so on
+	// error fall through to dispatch, exactly as the DAG's executeOneStep discards
+	// maybeInterruptForHitl's error when it does not interrupt.
+	if gate, gerr := a.buildToolGate(step, uses, args); gerr == nil && gate != nil {
+		if a.in.Hitl.AutoApprove {
+			a.e.recordAutoApproveHitl(ctx, a.in.RunID, step, 0, *gate, a.in.Hitl.Actor)
+		} else {
+			if a.setPendingIfFirst(&PendingHitlState{StepID: step.ID, Uses: gate.Uses, With: gate.With, Review: gate.Review, ExecKey: key}) {
+				a.emitHitlRequest(ctx, step, gate)
 			}
+			return nil, execir.ErrSuspend
 		}
 	}
 	return a.dispatchTool(ctx, site, uses, args, "")
@@ -466,7 +476,6 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 
 	var childSeed *execir.RunState
 	if ns := a.claimNestedSeed(key); ns != nil && strings.TrimSpace(ns.Workflow) == workflow {
-		childInv.resuming = true
 		in := ns.Input
 		if in == nil {
 			in = args
@@ -476,10 +485,7 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 			steps = map[string]StepResult{}
 		}
 		childInv.ictx = Context{Input: in, Steps: steps, PendingHitl: ns.PendingHitl}
-		childInv.pending = ns.PendingHitl
-		if ns.PendingHitl != nil {
-			childInv.suspendClaimed = false // allow re-claim on resume
-		}
+		childInv.pendingSeed = ns.PendingHitl
 		childSeed = &execir.RunState{Memo: ns.ExecMemo, Control: ns.ExecControl}
 	} else if a.e.Trace != nil {
 		_, _ = a.e.Trace.Append(ctx, a.in.RunID, a.e.qualID(site.Bind), trace.EventWorkflowCallStarted, trace.ActorSystem, map[string]any{
@@ -494,13 +500,20 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 	}
 	if childState.Suspended {
 		snap := childInv.snapshotIctx()
-		a.setNestedIfFirst(&nestedSuspension{
+		// The child suspended with (possibly) committed inner effects in its memo.
+		// setNestedIfFirst preempts a direct gate to preserve them, but a SECOND
+		// suspended subworkflow in the same concurrent group cannot be preserved in
+		// the single nested slot — dropping its frame would re-run its committed
+		// inner steps on resume (S7). Fail closed rather than duplicate side effects.
+		if !a.setNestedIfFirst(&nestedSuspension{
 			key:    key,
 			stepID: site.Bind,
 			callee: workflow,
 			ictx:   Context{Input: snap.Input, Steps: snap.Steps, PendingHitl: childInv.getPending()},
 			state:  childState,
-		})
+		}) {
+			return nil, fmt.Errorf("engine: step %q: a second subworkflow suspended for human decision in the same concurrent group is not yet supported (issue #275); a single concurrent subworkflow, or independent direct gates, do resume", site.Bind)
+		}
 		return nil, execir.ErrSuspend
 	}
 

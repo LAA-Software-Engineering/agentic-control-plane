@@ -257,6 +257,200 @@ func TestExecIRResume_GraphPerBranchSuspend(t *testing.T) {
 	}
 }
 
+// twoConcurrentGateGraph is a needs-DAG whose two independent roots each call a
+// distinct HITL-gated tool, so a single run reaches two independent gates in one
+// concurrent group (issue #275).
+func twoConcurrentGateGraph() *spec.ProjectGraph {
+	return &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{
+			"pub1": {APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "pub1"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(true)}}},
+			"pub2": {APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "pub2"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(true)}}},
+		},
+		Policies: map[string]*spec.PolicyResource{
+			"gate": {Spec: spec.PolicySpec{
+				Approvals: &spec.PolicyApprovals{RequiredFor: []string{"tool.pub1.echo", "tool.pub2.echo"}},
+				Hitl: &spec.HitlPolicy{InterruptOn: map[string]spec.HitlInterruptValue{
+					"pub1": {Enabled: true, Config: &spec.HitlInterruptConfig{AllowedDecisions: []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject}}},
+					"pub2": {Enabled: true, Config: &spec.HitlInterruptConfig{AllowedDecisions: []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject}}},
+				}},
+			}},
+		},
+		Workflows: map[string]*spec.WorkflowResource{
+			"twogate": {
+				APIVersion: spec.APIVersionV0, Kind: spec.KindWorkflow, Metadata: spec.Metadata{Name: "twogate"},
+				Spec: spec.WorkflowSpec{
+					Policy: "gate",
+					Steps: []spec.WorkflowStep{
+						{ID: "a", Uses: "tool.pub1.echo", With: map[string]any{"x": "1"}, NeedsDeclared: true},
+						{ID: "b", Uses: "tool.pub2.echo", With: map[string]any{"x": "2"}, NeedsDeclared: true},
+					},
+					Output: &spec.WorkflowOutput{Value: map[string]any{"a": "${steps.a.output}", "b": "${steps.b.output}"}},
+				},
+			},
+		},
+	}
+}
+
+// TestExecIRResume_TwoConcurrentGates is the #275 acceptance: two independent HITL
+// gates in one concurrent group resume to completion across two decisions — the
+// second gate re-suspends on the first resume instead of failing closed (exit 5),
+// and neither side effect fires twice. First-wins means one gate is presented per
+// suspend; which of a/b wins the fresh-run slot is a race, so the assertions read
+// the aggregate, not a fixed branch.
+func TestExecIRResume_TwoConcurrentGates(t *testing.T) {
+	t.Parallel()
+	ex, ct, runID, started := newResumeExecutor(t, twoConcurrentGateGraph(), "twogate")
+	ctx := context.Background()
+	approve := HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"}}
+
+	// Fresh run: both branches reach their gate; one wins the slot and the run
+	// suspends. No gated tool runs before approval.
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true}); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("fresh run should interrupt at the first gate, got %v", err)
+	}
+	if got := ct.count("tool.pub1.echo") + ct.count("tool.pub2.echo"); got != 0 {
+		t.Fatalf("no gated tool should run before approval, got %d", got)
+	}
+
+	// Resume 1: approve the presented gate. It must re-suspend at the SECOND gate,
+	// not fail closed and not complete (issue #275).
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{}, Resume: true, Hitl: approve}); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("resume 1 should re-suspend at the second gate, got %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusInterrupted {
+		t.Fatalf("resume 1 status = %q err=%q (want interrupted, not fail-closed)", run.Status, run.ErrorText)
+	}
+	if got := ct.count("tool.pub1.echo") + ct.count("tool.pub2.echo"); got != 1 {
+		t.Fatalf("exactly one gated tool should have run after the first approval, got %d", got)
+	}
+
+	// Resume 2: approve the second gate. The run completes; the first branch is
+	// replayed from the memo (no duplicate), so each gated tool ran exactly once.
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{}, Resume: true, Hitl: approve}); err != nil {
+		t.Fatalf("resume 2: %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusSucceeded {
+		t.Fatalf("resume 2 status = %q err=%q", run.Status, run.ErrorText)
+	}
+	if got := ct.count("tool.pub1.echo"); got != 1 {
+		t.Fatalf("pub1 should run exactly once total, got %d", got)
+	}
+	if got := ct.count("tool.pub2.echo"); got != 1 {
+		t.Fatalf("pub2 should run exactly once total, got %d", got)
+	}
+}
+
+// TestExecIRResume_TwoConcurrentGates_RejectAborts proves a reject on one gate of
+// a concurrent group aborts the run even though the sibling gate is still
+// suspended: siblings are no longer cancelled by a suspend (#275), so the reject
+// is a real fault that must win over the concurrent pause, not be masked by it.
+func TestExecIRResume_TwoConcurrentGates_RejectAborts(t *testing.T) {
+	t.Parallel()
+	ex, ct, runID, started := newResumeExecutor(t, twoConcurrentGateGraph(), "twogate")
+	ctx := context.Background()
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true}); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("fresh run should interrupt, got %v", err)
+	}
+	err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{},
+		Resume: true, Hitl: HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionReject, Actor: "alice"}},
+	})
+	if err == nil || errors.Is(err, ErrInterrupted) {
+		t.Fatalf("reject on one concurrent gate should abort the run, got %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusFailed {
+		t.Fatalf("rejected run status = %q (want failed)", run.Status)
+	}
+	if got := ct.count("tool.pub1.echo") + ct.count("tool.pub2.echo"); got != 0 {
+		t.Fatalf("no gated tool should run when a gate is rejected, got %d", got)
+	}
+}
+
+// directGateWithSubworkflowGraph is a needs-DAG whose two concurrent roots are a
+// direct HITL gate ("g") and a subworkflow call ("w") whose callee runs an
+// ungated step ("innerprep") then an inner HITL gate ("innergate"). It exercises
+// the interaction of the #275 no-cancel change with the single suspension slot:
+// the direct gate can win the slot while the child has already committed its
+// inner step (issue #275 review).
+func directGateWithSubworkflowGraph() *spec.ProjectGraph {
+	return &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{
+			"helper": {APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "helper"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}}},
+			"pub1":   {APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "pub1"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(true)}}},
+			"pub2":   {APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "pub2"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(true)}}},
+		},
+		Policies: map[string]*spec.PolicyResource{
+			"gate": {Spec: spec.PolicySpec{
+				Approvals: &spec.PolicyApprovals{RequiredFor: []string{"tool.pub1.echo", "tool.pub2.echo"}},
+				Hitl: &spec.HitlPolicy{InterruptOn: map[string]spec.HitlInterruptValue{
+					"pub1": {Enabled: true, Config: &spec.HitlInterruptConfig{AllowedDecisions: []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject}}},
+					"pub2": {Enabled: true, Config: &spec.HitlInterruptConfig{AllowedDecisions: []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject}}},
+				}},
+			}},
+		},
+		Workflows: map[string]*spec.WorkflowResource{
+			"child": {
+				APIVersion: spec.APIVersionV0, Kind: spec.KindWorkflow, Metadata: spec.Metadata{Name: "child"},
+				Spec: spec.WorkflowSpec{
+					Policy: "gate",
+					Steps: []spec.WorkflowStep{
+						{ID: "innerprep", Uses: "tool.helper.echo", With: map[string]any{"topic": "${input.topic}"}},
+						{ID: "innergate", Uses: "tool.pub2.echo", With: map[string]any{"y": "${steps.innerprep.output.echo.topic}"}},
+					},
+					Output: &spec.WorkflowOutput{Value: map[string]any{"r": "${steps.innergate.output}"}},
+				},
+			},
+			"parent": {
+				APIVersion: spec.APIVersionV0, Kind: spec.KindWorkflow, Metadata: spec.Metadata{Name: "parent"},
+				Spec: spec.WorkflowSpec{
+					Policy: "gate",
+					Steps: []spec.WorkflowStep{
+						{ID: "g", Uses: "tool.pub1.echo", With: map[string]any{"x": "1"}, NeedsDeclared: true},
+						{ID: "w", Workflow: "child", With: map[string]any{"topic": "hi"}, NeedsDeclared: true},
+					},
+					Output: &spec.WorkflowOutput{Value: map[string]any{"g": "${steps.g.output}", "w": "${steps.w.output}"}},
+				},
+			},
+		},
+	}
+}
+
+// TestExecIRResume_DirectGateWithConcurrentSubworkflow proves that a subworkflow
+// running concurrently with a direct gate does not re-run its already-committed
+// inner step on resume, even when the direct gate wins the single suspension slot
+// (issue #275 review, SOUNDNESS.md S7). Resolving every gate over successive
+// resumes must run each tool exactly once.
+func TestExecIRResume_DirectGateWithConcurrentSubworkflow(t *testing.T) {
+	t.Parallel()
+	ex, ct, runID, started := newResumeExecutor(t, directGateWithSubworkflowGraph(), "parent")
+	ctx := context.Background()
+	approve := HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"}}
+
+	err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true})
+	if !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("fresh run should interrupt, got %v", err)
+	}
+	// Resolve every outstanding gate across successive resumes (bounded).
+	for i := 0; i < 5 && errors.Is(err, ErrInterrupted); i++ {
+		err = ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{}, Resume: true, Hitl: approve})
+	}
+	if err != nil {
+		t.Fatalf("run did not complete across resumes: %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusSucceeded {
+		t.Fatalf("status = %q err=%q", run.Status, run.ErrorText)
+	}
+	if got := ct.count("tool.helper.echo"); got != 1 {
+		t.Fatalf("inner prep re-ran on resume (%d): a committed inner step must not fire twice (S7)", got)
+	}
+	if got := ct.count("tool.pub1.echo"); got != 1 {
+		t.Fatalf("direct gate tool should run exactly once, got %d", got)
+	}
+	if got := ct.count("tool.pub2.echo"); got != 1 {
+		t.Fatalf("inner gate tool should run exactly once, got %d", got)
+	}
+}
+
 // nestedSubworkflowGraph is a parent workflow whose only step calls a child that
 // has an ungated step then a HITL-gated step.
 func nestedSubworkflowGraph() *spec.ProjectGraph {
