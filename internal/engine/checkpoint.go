@@ -55,6 +55,14 @@ type NestedRunState struct {
 	Completed   []string              `json:"completed,omitempty"`
 	PendingHitl *PendingHitlState     `json:"pendingHitl,omitempty"`
 	Nested      *NestedRunState       `json:"nested,omitempty"`
+	// ExecKey/ExecMemo/ExecControl carry a suspended subworkflow's execir durable
+	// state on the execir run path (issue #270): ExecKey anchors this frame to the
+	// parent's InvokeWorkflow CallSite, and the memo/control seed the callee's
+	// interpreter on resume so its completed inner steps replay, never re-run. All
+	// omitempty — a DAG nested checkpoint never sets them (backward compatible).
+	ExecKey     string         `json:"execKey,omitempty"`
+	ExecMemo    map[string]any `json:"execMemo,omitempty"`
+	ExecControl map[string]int `json:"execControl,omitempty"`
 }
 
 func completedStepIDs(steps map[string]StepResult) []string {

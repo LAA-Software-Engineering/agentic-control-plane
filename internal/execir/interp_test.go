@@ -370,17 +370,79 @@ func TestDurable_NestedLoopLengthVariesPerIteration(t *testing.T) {
 	}
 }
 
-// TestDurable_ConcurrentSuspendRejected proves a suspend inside a Graph (Tier B)
-// surfaces loudly rather than mis-anchoring a checkpoint.
-func TestDurable_ConcurrentSuspendRejected(t *testing.T) {
+// TestDurable_GraphPerBranchSuspend proves a gate inside a Graph suspends the run
+// (not a Tier-B error, #270) while an INDEPENDENT sibling completes and is
+// memoized; on resume only the unfinished branch re-runs.
+func TestDurable_GraphPerBranchSuspend(t *testing.T) {
 	t.Parallel()
 	prog := &Program{Workflow: "W", Body: []Node{
-		&Graph{Nodes: []GraphNode{{ID: "g", Run: &InvokeTool{Bind: "g", Uses: "tool.t.gate"}}}},
+		&Graph{Nodes: []GraphNode{
+			{ID: "sib", Run: &InvokeTool{Bind: "sib", Uses: "tool.t.sib"}},
+			{ID: "gate", Run: &InvokeTool{Bind: "gate", Uses: "tool.t.gate"}},
+		}},
 	}}
 	stub := &durableStub{suspendUses: "tool.t.gate"}
-	_, _, err := (&Interp{Invoker: stub}).RunResumable(context.Background(), prog, nil, nil)
-	if err == nil {
-		t.Fatalf("expected a Tier-B error for suspend inside a concurrent construct")
+	in := &Interp{Invoker: stub}
+	_, st, err := in.RunResumable(context.Background(), prog, nil, nil)
+	if err != nil {
+		t.Fatalf("graph suspend should be clean, got %v", err)
+	}
+	if !st.Suspended {
+		t.Fatalf("expected the graph to suspend at the gate")
+	}
+	if stub.calls["tool.t.sib"] != 1 {
+		t.Fatalf("independent sibling should have completed once before suspend, got %d", stub.calls["tool.t.sib"])
+	}
+	// Resume: sibling is memoized (not re-run); the gate completes.
+	_, st2, err := in.RunResumable(context.Background(), prog, nil, st)
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if st2.Suspended {
+		t.Fatalf("resume should complete")
+	}
+	if stub.calls["tool.t.sib"] != 1 {
+		t.Fatalf("sibling re-run on resume (%d): completed branch must replay from memo", stub.calls["tool.t.sib"])
+	}
+	if stub.calls["tool.t.gate"] != 2 {
+		t.Fatalf("gate should be attempted twice (suspend + resume), got %d", stub.calls["tool.t.gate"])
+	}
+}
+
+// TestDurable_ParallelLoopSuspendResume proves a suspend in one parallel-loop
+// iteration replays completed iterations from the memo on resume.
+func TestDurable_ParallelLoopSuspendResume(t *testing.T) {
+	t.Parallel()
+	// Each iteration calls a per-item uses; the "gate" item suspends the first time.
+	prog := &Program{Workflow: "W", Params: []string{"input"}, Body: []Node{
+		&Loop{Var: "item", Parallel: true, Collection: Ref{Path: []string{"input", "items"}}, Body: []Node{
+			&InvokeTool{Bind: "r", Uses: "tool.t.run", Args: map[string]Value{"item": Ref{Path: []string{"item"}}}},
+		}},
+	}}
+	// durableStub keys suspension on uses; all iterations share one uses, so it
+	// suspends the first iteration to reach the invoke, then the rest/replay pass.
+	stub := &durableStub{suspendUses: "tool.t.run"}
+	in := &Interp{Invoker: stub, MaxConcurrency: 1}
+	input := map[string]any{"items": []any{"a", "b", "c"}}
+	_, st, err := in.RunResumable(context.Background(), prog, input, nil)
+	if err != nil {
+		t.Fatalf("parallel loop suspend should be clean: %v", err)
+	}
+	if !st.Suspended {
+		t.Fatalf("expected suspension in the parallel loop")
+	}
+	before := stub.calls["tool.t.run"]
+	_, st2, err := in.RunResumable(context.Background(), prog, input, st)
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if st2.Suspended {
+		t.Fatalf("resume should complete")
+	}
+	// The completed iterations from the first run are memoized; resume runs only
+	// the ones not yet completed, so total invocations is bounded (< before + 3).
+	if stub.calls["tool.t.run"] >= before+len(input["items"].([]any)) {
+		t.Fatalf("resume re-ran already-completed iterations: before=%d after=%d", before, stub.calls["tool.t.run"])
 	}
 }
 
