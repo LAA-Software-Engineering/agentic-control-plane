@@ -1,0 +1,24 @@
+// Control flow on the engine (issue #259). Conditionals and loops now run
+// end-to-end: the workflow lowers to the execution IR, which is pinned into the
+// deployment snapshot (#260) and executed on the run path — the taken arm only.
+//
+// Run:  terfyn validate
+//       terfyn plan   && terfyn apply --auto-approve
+//       terfyn run workflow/route --input-file fixtures/ticket.json
+
+agent Router {
+    model mock/gpt-4
+}
+
+workflow route(input: Ticket) -> Result {
+    for tag in input.tags {
+        tagger.echo(tag)
+    }
+    if input.urgent {
+        r = Router(input.subject)
+        return r
+    } else {
+        s = tagger.echo(input.subject)
+        return s
+    }
+}

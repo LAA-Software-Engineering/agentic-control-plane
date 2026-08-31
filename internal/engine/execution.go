@@ -177,10 +177,18 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 
 	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
 
-	// execir path: a fresh run routes on the flag (#257); a resume routes on the checkpoint marker so a
-	// run started on the execir path resumes on it (#258 durable resume), while DAG runs resume on the
-	// DAG path.
-	useExec := in.UseExecIR && !in.Resume
+	// execir path routing:
+	//   - a control-flow workflow (if/for/parallel for) MUST run on the interpreter — the resource DAG
+	//     flattens its arms and would execute all of them (issue #259). This holds TRANSITIVELY: a
+	//     control-flow workflow reached as a `workflow:` CALLEE must not be run on the DAG either, so
+	//     the whole run routes to execir when the entry OR any reachable callee requires it
+	//     (RequiresInterpreterTransitive); the execir InvokeWorkflow path (#270) runs the nested
+	//     control-flow child correctly;
+	//   - the UseExecIR flag forces it for any workflow (test parity, #257);
+	//   - a resume routes on the checkpoint's ExecIR marker, so a run started on the execir path resumes
+	//     on it (#258), while DAG runs resume on the DAG.
+	// The DAG stays the production default for straight-line / YAML workflows with no control flow.
+	useExec := (in.UseExecIR || execir.RequiresInterpreterTransitive(e.Executables, in.WorkflowName)) && !in.Resume
 	if in.Resume {
 		isExec, exErr := e.resumeIsExecIR(ctx, in.RunID)
 		if exErr != nil {
@@ -199,14 +207,21 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 	return e.finishRunSucceeded(ctx, in, wf, ictx, totalCost)
 }
 
-// finishRunSucceeded builds the workflow output, writes the final completed
-// checkpoint, and marks the run succeeded. Shared by the DAG and execir paths so
-// both produce byte-identical output and finish bookkeeping.
+// finishRunSucceeded builds the workflow output from the interpolation context
+// (the DAG path and the straight-line execir path) and finishes the run.
 func (e *Executor) finishRunSucceeded(ctx context.Context, in RunInput, wf *spec.WorkflowResource, ictx Context, totalCost float64) error {
 	finalOut, err := buildWorkflowOutput(wf, ictx)
 	if err != nil {
 		return e.failRun(ctx, in, err, totalCost)
 	}
+	return e.finishRunWithOutput(ctx, in, wf, ictx, totalCost, finalOut)
+}
+
+// finishRunWithOutput writes the final completed checkpoint and marks the run
+// succeeded with a prebuilt output object. The execir path (control flow) builds
+// its output from the interpreter's Return value (execIROutput) because the
+// flattened resource output.value cannot address a taken arm (#259).
+func (e *Executor) finishRunWithOutput(ctx context.Context, in RunInput, wf *spec.WorkflowResource, ictx Context, totalCost float64, finalOut map[string]any) error {
 	outBytes, err := json.Marshal(finalOut)
 	if err != nil {
 		return e.failRun(ctx, in, err, totalCost)

@@ -1022,3 +1022,35 @@ func TestCLI_PrReviewGithubApprovedLiveComment(t *testing.T) {
 		t.Fatalf("run output:\n%s", out)
 	}
 }
+
+// TestCLI_AgentControlFlowExample exercises examples/agent-control-flow end-to-end
+// (issue #259): a control-flow .agent workflow (if + for) validates, applies, and
+// RUNS green — executing the pinned execution IR (the taken arm), not the
+// flattened resource DAG.
+func TestCLI_AgentControlFlowExample(t *testing.T) {
+	root := repoRoot(t)
+	ex := filepath.Join(root, "examples", "agent-control-flow")
+	input := filepath.Join(ex, "fixtures", "ticket.json")
+	db := filepath.Join(t.TempDir(), "cf.db")
+
+	out, err := runCLI(t, "validate", "--project", ex, "--no-color")
+	if err != nil {
+		t.Fatalf("validate: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Validation successful") {
+		t.Fatalf("validate:\n%s", out)
+	}
+	if out, err := runCLI(t, "plan", "--project", ex, "--state", db); err != nil {
+		t.Fatalf("plan: %v\n%s", err, out)
+	}
+	if out, err := runCLI(t, "apply", "--project", ex, "--state", db, "--auto-approve"); err != nil {
+		t.Fatalf("apply: %v\n%s", err, out)
+	}
+	out, err = runCLI(t, "run", "workflow/route", "--project", ex, "--state", db, "--input-file", input, "--no-color")
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Status: succeeded") {
+		t.Fatalf("control-flow run should succeed:\n%s", out)
+	}
+}

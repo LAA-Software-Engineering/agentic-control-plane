@@ -184,14 +184,43 @@ func (e *Executor) runViaExecIR(ctx context.Context, in RunInput, wf *spec.Workf
 	}
 
 	interp := &execir.Interp{Invoker: inv, MaxConcurrency: in.MaxConcurrentSteps}
-	_, runState, err := interp.RunResumable(ctx, prog, in.Input, seed)
+	returnValue, runState, err := interp.RunResumable(ctx, prog, in.Input, seed)
 	if err != nil {
 		return e.failRun(ctx, in, err, cost.get())
 	}
 	if runState.Suspended {
 		return e.suspendExecIR(ctx, in, wf, inv, runState, cost.get())
 	}
-	return e.finishRunSucceeded(ctx, in, wf, inv.snapshotIctx(), cost.get())
+	ictx := inv.snapshotIctx()
+	out, err := e.execIROutput(wf, returnValue, ictx)
+	if err != nil {
+		return e.failRun(ctx, in, err, cost.get())
+	}
+	return e.finishRunWithOutput(ctx, in, wf, ictx, cost.get(), out)
+}
+
+// execIROutput builds the workflow output on the execir path (#259). For a
+// control-flow workflow the flattened resource output.value references only the
+// last-lowered arm, so it cannot address the taken arm's result; the interpreter's
+// Return value is the correct output. The `.agent` convention is a single
+// `{value: <token>}` output, which becomes `{value: <return value>}`; a multi-key
+// YAML output is built by buildWorkflowOutput (its step ids align with the ictx),
+// preserving DAG parity for straight-line/YAML runs.
+func (e *Executor) execIROutput(wf *spec.WorkflowResource, returnValue any, ictx Context) (map[string]any, error) {
+	if isSingleValueOutput(wf) {
+		return map[string]any{"value": returnValue}, nil
+	}
+	return buildWorkflowOutput(wf, ictx)
+}
+
+// isSingleValueOutput reports the `.agent`-return convention: output.value is a
+// single `value:` key (see internal/lang/lower workflow.go lowerBody).
+func isSingleValueOutput(wf *spec.WorkflowResource) bool {
+	if wf == nil || wf.Spec.Output == nil || len(wf.Spec.Output.Value) != 1 {
+		return false
+	}
+	_, ok := wf.Spec.Output.Value["value"]
+	return ok
 }
 
 func newEngineInvoker(e *Executor, in RunInput, wf *spec.WorkflowResource, wfPol policy.PolicyEvaluator, runHandle *telemetry.RunHandle, cost *liveCost, runStartedAt time.Time) *engineInvoker {
@@ -532,9 +561,17 @@ func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args ma
 
 	finished := a.e.now()
 	a.mu.Lock()
-	a.ictx.Steps[step.ID] = StepResult{
-		Output: out,
-		Meta:   map[string]any{"costUsd": stepCost, "durationMs": finished.Sub(started).Milliseconds()},
+	// Record step results only under a real binding name. An effect-only call
+	// (a bare-expression statement, common in a loop body) has an empty bind; it
+	// is not addressable by interpolation and is not a resource step id, so
+	// recording it under "" would both alias every such call and break the
+	// checkpoint's step validation (issue #259). Its durable replay is the memo,
+	// keyed by CallSite, not ictx.Steps.
+	if step.ID != "" {
+		a.ictx.Steps[step.ID] = StepResult{
+			Output: out,
+			Meta:   map[string]any{"costUsd": stepCost, "durationMs": finished.Sub(started).Milliseconds()},
+		}
 	}
 	a.mu.Unlock()
 

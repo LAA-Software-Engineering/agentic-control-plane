@@ -5,10 +5,9 @@
 //       terfyn export --format yaml     # materialize the compiled graph
 //       terfyn plan
 //
-// Note: this workflow is straight-line. Conditionals and loops parse and
-// type-check (issue #199), but do not execute end-to-end yet — the loader
-// refuses control-flow workflows until the execution IR runs on the engine
-// (#207 follow-up). See docs/LANGUAGE.md.
+// Note: this workflow is straight-line. Conditionals and loops now execute
+// end-to-end too (issue #259) — see examples/agent-control-flow. See
+// docs/LANGUAGE.md.
 
 agent Summarizer {
     model mock/gpt-4

@@ -42,12 +42,13 @@ func IsAgentSource(path string) bool {
 // loader surfaces as compilation failures. This does not create an import cycle:
 // check no longer imports this package (MergeLowered moved to internal/lang/lower).
 //
-// Control flow is refused (see controlFlowGate): the resource projection cannot
-// represent if/for — it flattens both arms into steps — and the execution IR that
-// can (internal/execir) is not wired into the engine yet. Merging a flattened
-// control-flow workflow would put a program on the run path that executes every
-// arm and returns whichever the merge wrote last, so such workflows are a load
-// error until execir executes on the engine (#207 follow-up).
+// Control flow (if/for/parallel for) is compiled and RUN (issue #259): the
+// checked execution IR (Program.Executables, pinned into the deployment snapshot
+// per #260) is what the run path executes for a control-flow workflow, via the
+// execir interpreter rather than the flattened resource DAG. The resource
+// projection still flattens both arms — but only for effect analysis
+// (effects.Compute), where the union over arms is exactly the sound bound; it is
+// never executed for such a workflow.
 //
 // Discovery scans the project tree and skips dot-directories (e.g. .agentic
 // deployment state), so authors drop .agent files anywhere in the project rather
@@ -72,10 +73,6 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 		diags = append(diags, d...)
 		parsed = append(parsed, f)
 	}
-
-	// Refuse workflows the engine cannot execute yet, before type checking, so
-	// the diagnostic names the construct rather than a downstream symptom.
-	diags = append(diags, controlFlowGate(parsed)...)
 
 	// Compile the whole unit: the checker lowers every file, merges onto a clone
 	// of g (the YAML resources), rebinds positional workflow arguments, and
@@ -114,54 +111,6 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 		return prog.Executables, nil
 	}
 	return nil, nil
-}
-
-// controlFlowGate reports a diagnostic for every workflow that uses a
-// conditional or loop. The outermost control-flow construct is always at
-// statement level in the workflow body (an inner if/for is nested inside an
-// outer one), so a single top-level scan finds every control-flow workflow.
-func controlFlowGate(files []*lang.File) lang.Diagnostics {
-	var diags lang.Diagnostics
-	for _, f := range files {
-		if f == nil {
-			continue
-		}
-		for _, decl := range f.Decls {
-			wd, ok := decl.(*lang.WorkflowDecl)
-			if !ok {
-				continue
-			}
-			pos, found := firstControlFlow(wd.Body)
-			if !found {
-				continue
-			}
-			name := "?"
-			if wd.Name != nil {
-				name = wd.Name.Name
-			}
-			diags = append(diags, lang.Diagnostic{
-				Pos: pos,
-				Msg: fmt.Sprintf("workflow %q uses control flow (if/for), which is not executable yet: "+
-					"the execution IR that represents conditionals and loops (internal/execir) is not wired into "+
-					"the engine (#207 follow-up). Use straight-line steps and parallel { } here, or keep the "+
-					"branching inside an agent, until .agent control flow executes end-to-end.", name),
-			})
-		}
-	}
-	return diags
-}
-
-// firstControlFlow returns the position of the first if/for statement in body.
-func firstControlFlow(body []lang.Stmt) (spec.Pos, bool) {
-	for _, st := range body {
-		switch s := st.(type) {
-		case *lang.IfStmt:
-			return s.Pos, true
-		case *lang.ForStmt:
-			return s.Pos, true
-		}
-	}
-	return spec.Pos{}, false
 }
 
 // errorDiags returns only the error-severity diagnostics (warnings do not fail a
