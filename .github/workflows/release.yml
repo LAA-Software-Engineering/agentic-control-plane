@@ -1,14 +1,17 @@
-# Auto-tag and publish cross-compiled terfyn binaries on each merge to main (patch bump),
-# or manually with workflow_dispatch (patch / minor / major).
+# Publish cross-compiled `terfyn` binaries for a v*.*.* tag.
+#
+# Triggered by pushing a tag, or manually with a semver bump (which computes and
+# pushes the tag for you). Releases are deliberately NOT auto-cut on merges to
+# main — a release is an explicit, human-initiated action.
+#
+# Binaries build with CGO_ENABLED=0 on a single runner: terfyn's SQLite driver is
+# modernc.org/sqlite (pure Go), so no cgo toolchain per target is needed.
 name: Release
 
 on:
   push:
-    branches:
-      - main
-    paths-ignore:
-      - "Makefile"
-      - "**/*.md"
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       bump:
@@ -38,68 +41,77 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Compute next version tag
+      - name: Resolve release tag
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_BUMP: ${{ github.event.inputs.bump }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          BUMP=patch
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            # Tag push: release exactly the tag that was pushed.
+            next="$REF_NAME"
+            echo "Tag push: $next"
+          else
             BUMP="${INPUT_BUMP:-patch}"
-          fi
+            # actions/checkout does not set a git identity, and the annotated tag
+            # (git tag -a below) requires one.
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git fetch --tags --force
 
-          git fetch --tags --force
+            latest=""
+            while IFS= read -r t; do
+              if [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                latest="$t"
+                break
+              fi
+            done < <(git tag -l 'v*' --sort=-v:refname)
 
-          latest=""
-          while IFS= read -r t; do
-            if [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              latest="$t"
-              break
+            if [ -z "$latest" ]; then
+              case "$BUMP" in
+                major) next="v1.0.0" ;;
+                *) next="v0.1.0" ;;
+              esac
+              echo "Latest stable tag: <none>"
+              echo "First release ($BUMP) -> $next"
+            else
+              ver="${latest#v}"
+              major="${ver%%.*}"
+              rest="${ver#*.}"
+              minor="${rest%%.*}"
+              patch="${rest#*.}"
+
+              case "$BUMP" in
+                major) major=$((major + 1)); minor=0; patch=0 ;;
+                minor) minor=$((minor + 1)); patch=0 ;;
+                patch) patch=$((patch + 1)) ;;
+                *) echo "unknown bump: $BUMP" >&2; exit 1 ;;
+              esac
+
+              next="v${major}.${minor}.${patch}"
+              echo "Latest stable tag: $latest"
+              echo "Bump: $BUMP -> $next"
             fi
-          done < <(git tag -l 'v*' --sort=-v:refname)
 
-          if [ -z "$latest" ]; then
-            case "$BUMP" in
-              major) next="v1.0.0" ;;
-              *) next="v0.1.0" ;;
-            esac
-            echo "Latest stable tag: <none>"
-            echo "First release ($BUMP) → $next"
-            echo "tag=$next" >> "$GITHUB_OUTPUT"
-            exit 0
+            # A tag pushed with GITHUB_TOKEN does not start another workflow run,
+            # so this cannot recurse into the tag-push trigger above.
+            git tag -a "$next" -m "$next"
+            git push origin "$next"
           fi
 
-          ver="${latest#v}"
-          major="${ver%%.*}"
-          rest="${ver#*.}"
-          minor="${rest%%.*}"
-          patch="${rest#*.}"
-
-          case "$BUMP" in
-            major)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
-            minor)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            patch)
-              patch=$((patch + 1))
-              ;;
-            *)
-              echo "unknown bump: $BUMP" >&2
-              exit 1
-              ;;
-          esac
-
-          next="v${major}.${minor}.${patch}"
-          echo "Latest stable tag: $latest"
-          echo "Bump: $BUMP → $next"
+          # v1.2.3-rc.1 and friends publish as GitHub pre-releases.
+          if [[ "$next" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
           echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the release tag
+        run: git checkout --detach "${{ steps.version.outputs.tag }}"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -145,6 +157,7 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
+          prerelease: ${{ steps.version.outputs.prerelease }}
           files: |
             dist/*.tar.gz
             dist/*.zip
