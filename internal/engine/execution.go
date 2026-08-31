@@ -179,13 +179,16 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 
 	// execir path routing:
 	//   - a control-flow workflow (if/for/parallel for) MUST run on the interpreter — the resource DAG
-	//     flattens its arms and would execute all of them (issue #259); its pinned program requires the
-	//     interpreter (execir.RequiresInterpreter);
+	//     flattens its arms and would execute all of them (issue #259). This holds TRANSITIVELY: a
+	//     control-flow workflow reached as a `workflow:` CALLEE must not be run on the DAG either, so
+	//     the whole run routes to execir when the entry OR any reachable callee requires it
+	//     (RequiresInterpreterTransitive); the execir InvokeWorkflow path (#270) runs the nested
+	//     control-flow child correctly;
 	//   - the UseExecIR flag forces it for any workflow (test parity, #257);
 	//   - a resume routes on the checkpoint's ExecIR marker, so a run started on the execir path resumes
 	//     on it (#258), while DAG runs resume on the DAG.
-	// The DAG stays the production default for straight-line / YAML workflows.
-	useExec := (in.UseExecIR || execir.RequiresInterpreter(e.Executables[in.WorkflowName])) && !in.Resume
+	// The DAG stays the production default for straight-line / YAML workflows with no control flow.
+	useExec := (in.UseExecIR || execir.RequiresInterpreterTransitive(e.Executables, in.WorkflowName)) && !in.Resume
 	if in.Resume {
 		isExec, exErr := e.resumeIsExecIR(ctx, in.RunID)
 		if exErr != nil {

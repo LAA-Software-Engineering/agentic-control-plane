@@ -200,3 +200,112 @@ func TestControlFlow_ResumeMidLoop(t *testing.T) {
 		t.Fatalf("publisher should run once on resume, got %d", ct.count("tool.publisher.echo"))
 	}
 }
+
+// nestedCFGraph is a STRAIGHT-LINE parent whose single workflow: step calls a
+// control-flow child. The parent alone has no Branch/Loop, so an entry-only
+// routing predicate would send the whole run to the DAG and execute both of the
+// child's flattened arms (#259 review). Transitive routing must send it to execir.
+func nestedCFGraph() *spec.ProjectGraph {
+	return &spec.ProjectGraph{
+		Tools:    map[string]*spec.ToolResource{"thn": nativeTool("thn"), "els": nativeTool("els")},
+		Policies: map[string]*spec.PolicyResource{"default": {Spec: spec.PolicySpec{}}},
+		Workflows: map[string]*spec.WorkflowResource{
+			"parent": {
+				APIVersion: spec.APIVersionV0, Kind: spec.KindWorkflow, Metadata: spec.Metadata{Name: "parent"},
+				Spec: spec.WorkflowSpec{
+					Steps:  []spec.WorkflowStep{{ID: "c", Workflow: "child"}},
+					Output: &spec.WorkflowOutput{Value: map[string]any{"value": "${steps.c.output}"}},
+				},
+			},
+			"child": {
+				APIVersion: spec.APIVersionV0, Kind: spec.KindWorkflow, Metadata: spec.Metadata{Name: "child"},
+				Spec: spec.WorkflowSpec{
+					Steps:  []spec.WorkflowStep{{ID: "a", Uses: "tool.thn.echo"}, {ID: "b", Uses: "tool.els.echo"}},
+					Output: &spec.WorkflowOutput{Value: map[string]any{"value": "${steps.a.output}"}},
+				},
+			},
+		},
+	}
+}
+
+// TestControlFlow_ChildBehindStraightLineParent proves the transitive routing fix:
+// a control-flow child reached through a straight-line parent's workflow: step runs
+// on the interpreter (only the taken arm), not the flattening DAG.
+func TestControlFlow_ChildBehindStraightLineParent(t *testing.T) {
+	t.Parallel()
+	parentProg := &execir.Program{Workflow: "parent", Params: []string{"input"}, Body: []execir.Node{
+		&execir.InvokeWorkflow{Bind: "c", Workflow: "child", Args: map[string]execir.Value{"urgent": execir.Ref{Path: []string{"input", "urgent"}}}},
+		&execir.Return{Value: execir.Ref{Path: []string{"c"}}},
+	}}
+	childProg := &execir.Program{Workflow: "child", Params: []string{"input"}, Body: []execir.Node{
+		&execir.Branch{
+			Cond: execir.Leaf{V: execir.Ref{Path: []string{"input", "urgent"}}},
+			Then: []execir.Node{&execir.InvokeTool{Bind: "a", Uses: "tool.thn.echo"}, &execir.Return{Value: execir.Ref{Path: []string{"a"}}}},
+			Else: []execir.Node{&execir.InvokeTool{Bind: "b", Uses: "tool.els.echo"}, &execir.Return{Value: execir.Ref{Path: []string{"b"}}}},
+		},
+	}}
+	execs := map[string]*execir.Program{"parent": parentProg, "child": childProg}
+
+	ex, ct, runID, started := newResumeExecutor(t, nestedCFGraph(), "parent")
+	ex.Executables = execs
+	// No UseExecIR: transitive routing must detect the control-flow callee.
+	if err := ex.Run(context.Background(), RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{"urgent": true}}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if run, _ := ex.Store.GetRun(context.Background(), runID); run.Status != state.RunStatusSucceeded {
+		t.Fatalf("status = %q", run.Status)
+	}
+	if ct.count("tool.thn.echo") != 1 || ct.count("tool.els.echo") != 0 {
+		t.Fatalf("nested child: thn=%d els=%d, want 1/0 (the DAG would run both arms)", ct.count("tool.thn.echo"), ct.count("tool.els.echo"))
+	}
+}
+
+// TestControlFlow_ChildBehindParentResume proves the transitive-routed run also
+// resumes correctly: a control-flow child suspends at a gate in the taken arm and,
+// on resume, completes without running the untaken arm.
+func TestControlFlow_ChildBehindParentResume(t *testing.T) {
+	t.Parallel()
+	g := nestedCFGraph()
+	g.Tools["publisher"] = &spec.ToolResource{APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "publisher"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(true)}}}
+	g.Policies["gate"] = &spec.PolicyResource{Spec: spec.PolicySpec{
+		Approvals: &spec.PolicyApprovals{RequiredFor: []string{"tool.publisher.echo"}},
+		Hitl: &spec.HitlPolicy{InterruptOn: map[string]spec.HitlInterruptValue{
+			"publisher": {Enabled: true, Config: &spec.HitlInterruptConfig{AllowedDecisions: []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject}}},
+		}},
+	}}
+	g.Workflows["child"].Spec.Policy = "gate"
+	g.Workflows["child"].Spec.Steps = []spec.WorkflowStep{{ID: "a", Uses: "tool.publisher.echo"}, {ID: "b", Uses: "tool.els.echo"}}
+	g.Workflows["parent"].Spec.Policy = "gate"
+
+	parentProg := &execir.Program{Workflow: "parent", Params: []string{"input"}, Body: []execir.Node{
+		&execir.InvokeWorkflow{Bind: "c", Workflow: "child", Args: map[string]execir.Value{"urgent": execir.Ref{Path: []string{"input", "urgent"}}}},
+		&execir.Return{Value: execir.Ref{Path: []string{"c"}}},
+	}}
+	childProg := &execir.Program{Workflow: "child", Params: []string{"input"}, Body: []execir.Node{
+		&execir.Branch{
+			Cond: execir.Leaf{V: execir.Ref{Path: []string{"input", "urgent"}}},
+			Then: []execir.Node{&execir.InvokeTool{Bind: "a", Uses: "tool.publisher.echo"}, &execir.Return{Value: execir.Ref{Path: []string{"a"}}}},
+			Else: []execir.Node{&execir.InvokeTool{Bind: "b", Uses: "tool.els.echo"}, &execir.Return{Value: execir.Ref{Path: []string{"b"}}}},
+		},
+	}}
+	ex, ct, runID, started := newResumeExecutor(t, g, "parent")
+	ex.Executables = map[string]*execir.Program{"parent": parentProg, "child": childProg}
+	ctx := context.Background()
+
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{"urgent": true}}); !errorsIsInterrupted(err) {
+		t.Fatalf("fresh run should interrupt at the child gate, got %v", err)
+	}
+	err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{"urgent": true},
+		Resume: true, Hitl: HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"}},
+	})
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusSucceeded {
+		t.Fatalf("resume status = %q err=%q", run.Status, run.ErrorText)
+	}
+	if ct.count("tool.publisher.echo") != 1 || ct.count("tool.els.echo") != 0 {
+		t.Fatalf("resume: publisher=%d els=%d, want 1/0 (only the taken arm)", ct.count("tool.publisher.echo"), ct.count("tool.els.echo"))
+	}
+}
