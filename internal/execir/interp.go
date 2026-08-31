@@ -3,6 +3,7 @@ package execir
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
@@ -28,7 +29,10 @@ const DefaultMaxConcurrency = 8
 //     may be empty for an effect-only call, so it is not a sufficient key alone.
 //   - Path is the static node address: the child index at each nesting level from
 //     the program root, so every static node position is distinct even when Bind
-//     is empty or repeats.
+//     is empty or repeats. For a [Graph] node the segment is the node's CANONICAL
+//     (id-sorted) rank, not its authored index, so Path is stable under the
+//     digest-preserving step reorderings #256 treats as equal — the identity
+//     #258 memoizes on must not shift under a semantically-neutral edit.
 //   - Loop is the enclosing loop iteration indices (outermost first), so the same
 //     static node executed on different iterations has distinct identity. It is
 //     empty on the YAML path (no loops) and non-empty only under `.agent` loops.
@@ -349,6 +353,16 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 	ctx, cancel := context.WithCancel(r.ctx)
 	defer cancel()
 
+	// rank maps a node's authored index to its CANONICAL (id-sorted) rank, used as
+	// the node's CallSite.Path segment. Authored order in a Graph is semantically
+	// neutral — reordering independent steps is a digest-preserving edit
+	// (#256 encodeGraph sorts by id) — so keying the address on authored index
+	// would make the frozen identity disagree with the digest and shift under a
+	// no-op reorder. Ranking by id (tie-broken by index for determinism if two
+	// ids ever coincide) makes Path stable under exactly the reorderings the
+	// digest calls equal, which is the property #258 memoization needs.
+	rank := canonicalRanks(g.Nodes)
+
 	ready := func(gn GraphNode) bool {
 		for _, dep := range gn.Needs {
 			if _, ok := completed[dep]; !ok {
@@ -386,7 +400,7 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 				local := childScope(scope)
 				mu.Unlock()
 				sub := &runner{in: r.in, ctx: ctx}
-				err := sub.exec(local, gn.Run, extend(path, i), loop)
+				err := sub.exec(local, gn.Run, extend(path, rank[i]), loop)
 				mu.Lock()
 				if err != nil {
 					if firstErr == nil {
@@ -433,6 +447,29 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 		return fmt.Errorf("execir: graph has no runnable step (unsatisfiable needs or cycle)")
 	}
 	return nil
+}
+
+// canonicalRanks returns, for each node's authored index, its position when the
+// nodes are ordered by id (ties broken by authored index). Two Graphs that
+// denote the same DAG with independent steps reordered therefore assign every id
+// the same rank — so a node's CallSite.Path is invariant under the
+// digest-preserving reorderings #256 canonicalizes away.
+func canonicalRanks(nodes []GraphNode) []int {
+	order := make([]int, len(nodes))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(a, b int) bool {
+		if nodes[order[a]].ID != nodes[order[b]].ID {
+			return nodes[order[a]].ID < nodes[order[b]].ID
+		}
+		return order[a] < order[b]
+	})
+	rank := make([]int, len(nodes))
+	for pos, idx := range order {
+		rank[idx] = pos
+	}
+	return rank
 }
 
 // childScope shallow-copies a scope so a nested block (loop iteration, fork

@@ -63,6 +63,149 @@ func (r *recorder) InvokeWorkflow(_ context.Context, _ CallSite, wf string, args
 	return nil, nil
 }
 
+// siteRecorder captures the CallSite of every invocation so tests can pin the
+// frozen ABI's identity contract (issue #257): Path uniqueness/stability and
+// Loop iteration indices.
+type siteRecorder struct {
+	mu    sync.Mutex
+	sites []CallSite
+}
+
+func (s *siteRecorder) record(site CallSite) {
+	s.mu.Lock()
+	s.sites = append(s.sites, site)
+	s.mu.Unlock()
+}
+
+func (s *siteRecorder) InvokeTool(_ context.Context, site CallSite, _ string, _ map[string]any) (any, error) {
+	s.record(site)
+	return map[string]any{}, nil
+}
+func (s *siteRecorder) InvokeAgent(_ context.Context, site CallSite, agent string, _ map[string]any) (any, error) {
+	s.record(site)
+	return map[string]any{"agent": agent}, nil
+}
+func (s *siteRecorder) InvokeWorkflow(_ context.Context, site CallSite, _ string, _ map[string]any) (any, error) {
+	s.record(site)
+	return map[string]any{}, nil
+}
+
+// byBind indexes captured sites by their (unique) binding name.
+func (s *siteRecorder) byBind() map[string]CallSite {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]CallSite, len(s.sites))
+	for _, st := range s.sites {
+		out[st.Bind] = st
+	}
+	return out
+}
+
+func pathsEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestCallSite_DistinctPathsEmptyBind proves two static nodes with the SAME
+// (empty) Bind still get distinct Path — Bind alone is not a sufficient key, so
+// Path must disambiguate.
+func TestCallSite_DistinctPathsEmptyBind(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Body: []Node{
+		&InvokeTool{Uses: "tool.t.x"}, // Bind ""
+		&InvokeTool{Uses: "tool.t.x"}, // Bind "" (same)
+	}}
+	rec := &siteRecorder{}
+	if _, err := (&Interp{Invoker: rec}).Run(context.Background(), prog, nil); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(rec.sites) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(rec.sites))
+	}
+	if rec.sites[0].Bind != "" || rec.sites[1].Bind != "" {
+		t.Fatalf("both binds should be empty, got %q/%q", rec.sites[0].Bind, rec.sites[1].Bind)
+	}
+	if pathsEqual(rec.sites[0].Path, rec.sites[1].Path) {
+		t.Fatalf("two distinct static nodes must have distinct Path, both = %v", rec.sites[0].Path)
+	}
+}
+
+// TestCallSite_LoopIndices proves a loop-body node keeps one static Path across
+// iterations while Loop carries the per-iteration index — the disambiguator #258
+// needs to memoize the same static leaf on different iterations distinctly.
+func TestCallSite_LoopIndices(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Params: []string{"input"}, Body: []Node{
+		&Loop{Var: "i", Collection: Ref{Path: []string{"input", "items"}}, Body: []Node{
+			&InvokeTool{Bind: "x", Uses: "tool.t.x"},
+		}},
+	}}
+	rec := &siteRecorder{}
+	if _, err := (&Interp{Invoker: rec}).Run(context.Background(), prog, map[string]any{"items": []any{int64(1), int64(2), int64(3)}}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(rec.sites) != 3 {
+		t.Fatalf("expected 3 iterations, got %d", len(rec.sites))
+	}
+	for k, st := range rec.sites {
+		if !pathsEqual(st.Loop, []int{k}) {
+			t.Fatalf("iteration %d Loop = %v, want [%d]", k, st.Loop, k)
+		}
+		if !pathsEqual(st.Path, rec.sites[0].Path) {
+			t.Fatalf("loop-body Path must be constant across iterations: %v vs %v", st.Path, rec.sites[0].Path)
+		}
+	}
+}
+
+// TestCallSite_GraphPathOrderStable proves a Graph node's Path is invariant under
+// digest-preserving reordering of independent steps — the property #258 keys
+// durable memoization on. Guards against the authored-index regression.
+func TestCallSite_GraphPathOrderStable(t *testing.T) {
+	t.Parallel()
+	node := func(id string, needs ...string) GraphNode {
+		return GraphNode{ID: id, Needs: needs, Run: &InvokeTool{Bind: id, Uses: "tool.t." + id}}
+	}
+	// Same DAG (a,b roots; c[a]; d[a,b]; e[c]), authored in two different orders.
+	p1 := &Program{Workflow: "W", Body: []Node{&Graph{Nodes: []GraphNode{
+		node("a"), node("b"), node("c", "a"), node("d", "a", "b"), node("e", "c"),
+	}}}}
+	p2 := &Program{Workflow: "W", Body: []Node{&Graph{Nodes: []GraphNode{
+		node("d", "b", "a"), node("b"), node("e", "c"), node("a"), node("c", "a"),
+	}}}}
+	if p1.Digest() != p2.Digest() {
+		t.Fatalf("fixtures must be the same DAG (equal digest)")
+	}
+	r1, r2 := &siteRecorder{}, &siteRecorder{}
+	if _, err := (&Interp{Invoker: r1}).Run(context.Background(), p1, nil); err != nil {
+		t.Fatalf("p1 run: %v", err)
+	}
+	if _, err := (&Interp{Invoker: r2}).Run(context.Background(), p2, nil); err != nil {
+		t.Fatalf("p2 run: %v", err)
+	}
+	s1, s2 := r1.byBind(), r2.byBind()
+	for _, id := range []string{"a", "b", "c", "d", "e"} {
+		if !pathsEqual(s1[id].Path, s2[id].Path) {
+			t.Fatalf("node %q Path differs across reordering: %v vs %v (authored order must not leak into the frozen identity)", id, s1[id].Path, s2[id].Path)
+		}
+	}
+	// And every node's Path is distinct (a real address, not a constant).
+	seen := map[string]bool{}
+	for _, id := range []string{"a", "b", "c", "d", "e"} {
+		key := fmt.Sprint(s1[id].Path)
+		if seen[key] {
+			t.Fatalf("node %q shares Path %s with another node", id, key)
+		}
+		seen[key] = true
+	}
+}
+
 func argsSuffix(args map[string]any) string {
 	if v, ok := args["v"]; ok {
 		return fmt.Sprintf("(%v)", v)
