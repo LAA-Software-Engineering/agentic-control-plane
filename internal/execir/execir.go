@@ -215,14 +215,20 @@ type GraphNode struct {
 // review presentation only and do not decide whether the node pauses (policy
 // still gates tool-call approvals separately).
 //
-// The suspend/resume machinery is Phase 2 (#258), out of scope here; this node
-// only makes the pause representable and lowerable, and the interpreter rejects
-// it loudly rather than treating a human gate as a no-op.
+// Args is the reviewed payload (the lowered `with:` of the approval step); the
+// approved payload becomes the node's output, so a downstream reference resolves
+// to what the human approved. Description and RedactKeys are review presentation
+// only and do not decide whether the node pauses (policy still gates tool-call
+// approvals separately).
+//
+// Durable suspend/resume is Phase 2 (#258): a fresh run suspends here for a human
+// decision; resume applies the decision and publishes the payload.
 type Approval struct {
 	Pos         Pos
 	Bind        string
 	Description string
 	RedactKeys  []string
+	Args        map[string]Value
 }
 
 func (*Approval) node() {}

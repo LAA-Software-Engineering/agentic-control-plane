@@ -24,6 +24,9 @@ type PendingHitlState struct {
 	With   map[string]any            `json:"with"`
 	Review policy.ResolvedHitlReview `json:"review"`
 	Kind   string                    `json:"kind,omitempty"`
+	// ExecKey anchors the pending gate to the suspended execir leaf's CallSite key
+	// on the execir run path (issue #258); empty on the DAG path (StepID anchors).
+	ExecKey string `json:"execKey,omitempty"`
 }
 
 // HitlRunOptions configures human-in-the-loop resolution for a run (issue #106).

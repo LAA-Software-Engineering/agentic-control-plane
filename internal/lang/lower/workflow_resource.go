@@ -108,6 +108,7 @@ func (wl *wfResLowerer) lowerStep(st spec.WorkflowStep) execir.Node {
 			Bind:        bind,
 			Description: spec.ApprovalStepDescription(st),
 			RedactKeys:  approvalRedactKeys(st),
+			Args:        wl.lowerWith(st.With, st.Pos),
 		}
 	case strings.TrimSpace(st.Uses) != "":
 		return &execir.InvokeTool{Pos: st.Pos, Bind: bind, Uses: st.Uses, Args: wl.lowerWith(st.With, st.Pos)}

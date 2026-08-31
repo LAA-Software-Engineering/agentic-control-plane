@@ -172,9 +172,18 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 
 	runStartedAt := resumeRunStartedAt(ctx, e.Store, in)
 
-	// Phase 1 execir path (issue #257): route through the execution IR behind the flag, except on a
-	// Resume (durable resume stays DAG-handled until #258).
-	if in.UseExecIR && !in.Resume {
+	// execir path: a fresh run routes on the flag (#257); a resume routes on the checkpoint marker so a
+	// run started on the execir path resumes on it (#258 durable resume), while DAG runs resume on the
+	// DAG path.
+	useExec := in.UseExecIR && !in.Resume
+	if in.Resume {
+		isExec, exErr := e.resumeIsExecIR(ctx, in.RunID)
+		if exErr != nil {
+			return e.failRun(ctx, in, exErr, totalCost)
+		}
+		useExec = isExec
+	}
+	if useExec {
 		return e.runViaExecIR(ctx, in, wf, wfPol, runStartedAt, runHandle)
 	}
 
