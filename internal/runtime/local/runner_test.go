@@ -262,159 +262,6 @@ func TestInvoke_prunesOldTraceRuns(t *testing.T) {
 	}
 }
 
-func TestResume_afterInterrupt(t *testing.T) {
-	ctx := context.Background()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-local.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-
-	root := testRunProjRoot(t)
-	rc := testResolvedConfig(t, root, "staging")
-	graph := rc.Graph()
-
-	runID := "resume-local-1"
-	started := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
-	inputJSON := []byte(`{"topic":"resume-me"}`)
-	if err := st.StartRun(ctx, state.Run{
-		RunID: runID, WorkflowName: "demo", Env: "dev", Status: "running",
-		StartedAt: started, InputJSON: string(inputJSON), TotalCostUSD: 0,
-		EnvironmentName: "staging",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	var input map[string]any
-	if err := json.Unmarshal(inputJSON, &input); err != nil {
-		t.Fatal(err)
-	}
-	idx := 0
-	ex := &engine.Executor{
-		Graph: graph, ProjectRoot: root,
-		Tools: tools.NewRegistry(graph), Models: models.NewRegistry(graph),
-		Store: st, Trace: trace.NewRecorder(st),
-		Now: func() time.Time { return started },
-	}
-	if err := ex.Run(ctx, engine.RunInput{
-		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
-		InterruptAfterStepIndex: &idx,
-	}); !errors.Is(err, engine.ErrInterrupted) {
-		t.Fatalf("interrupt: %v", err)
-	}
-
-	rt := NewRuntime(st)
-	rt.Now = func() time.Time { return started.Add(time.Hour) }
-	if _, err := rt.Resume(ctx, rc, runtime.ResumeOptions{
-		RunID: runID, EnvironmentName: "staging",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := st.GetRun(ctx, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != "succeeded" {
-		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
-	}
-
-	events, err := trace.NewReader(st).ListByRunID(ctx, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var resumed int
-	var fetchSelections int
-	for _, ev := range events {
-		if ev.Type == string(trace.EventRunStarted) && strings.Contains(ev.DataJSON, `"resumed":true`) {
-			resumed++
-		}
-		if ev.StepID == "fetch" && ev.Type == string(trace.EventToolSelection) {
-			fetchSelections++
-		}
-	}
-	if resumed != 1 {
-		t.Fatalf("run_started(resumed) count = %d", resumed)
-	}
-	if fetchSelections != 1 {
-		t.Fatalf("fetch tool_selection count = %d want 1", fetchSelections)
-	}
-}
-
-func TestResume_preservesAttribution(t *testing.T) {
-	ctx := context.Background()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-attr.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-
-	root := testRunProjRoot(t)
-	rc := testResolvedConfig(t, root, "staging")
-	graph := rc.Graph()
-
-	runID := "resume-attr-1"
-	started := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
-	inputJSON := []byte(`{"topic":"resume-attr"}`)
-	if err := st.StartRun(ctx, state.Run{
-		RunID: runID, WorkflowName: "demo", Env: "dev", Status: state.RunStatusRunning,
-		StartedAt: started, InputJSON: string(inputJSON), TotalCostUSD: 0,
-		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot",
-		RequestID: "req-original", Source: "cli",
-		EnvironmentName: "staging",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	var input map[string]any
-	if err := json.Unmarshal(inputJSON, &input); err != nil {
-		t.Fatal(err)
-	}
-	idx := 0
-	ex := &engine.Executor{
-		Graph: graph, ProjectRoot: root,
-		Tools: tools.NewRegistry(graph), Models: models.NewRegistry(graph),
-		Store: st, Trace: trace.NewRecorder(st),
-		Now: func() time.Time { return started },
-	}
-	if err := ex.Run(ctx, engine.RunInput{
-		RunID: runID, WorkflowName: "demo", Env: "dev", StartedAt: started, Input: input,
-		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot", RequestID: "req-original",
-		InterruptAfterStepIndex: &idx,
-	}); !errors.Is(err, engine.ErrInterrupted) {
-		t.Fatalf("interrupt: %v", err)
-	}
-
-	rt := NewRuntime(st)
-	rt.Now = func() time.Time { return started.Add(time.Hour) }
-	if _, err := rt.Resume(ctx, rc, runtime.ResumeOptions{
-		RunID: runID, EnvironmentName: "staging",
-		TenantID: "other-tenant", ThreadID: "thread-override", ActorID: "other-actor",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := st.GetRun(ctx, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.TenantID != "acme" || got.ThreadID != "thread-original" || got.ActorID != "starter-bot" {
-		t.Fatalf("run attribution changed: %+v", got)
-	}
-
-	events, err := trace.NewReader(st).ListByRunID(ctx, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, ev := range events {
-		if ev.Type == string(trace.EventRunStarted) && strings.Contains(ev.DataJSON, `"resumed":true`) {
-			if ev.TenantID != "acme" || ev.ThreadID != "thread-original" || ev.ActorID != "starter-bot" {
-				t.Fatalf("resume trace attribution: %+v", ev)
-			}
-		}
-	}
-}
-
 func TestHealth_nilStore(t *testing.T) {
 	var rt *Runtime
 	status := rt.Health(context.Background())
@@ -435,5 +282,85 @@ func TestHealth_ok(t *testing.T) {
 	status := rt.Health(ctx)
 	if status.State != runtime.HealthOK {
 		t.Fatalf("state = %q details=%q", status.State, status.Details)
+	}
+}
+
+// TestResume_preservesAttribution proves resume reuses the run's ORIGINAL
+// attribution (run row + resume trace), ignoring resume-time overrides. The run
+// interrupts at a real HITL gate (the `gated` fixture workflow) — no test hook.
+func TestResume_preservesAttribution(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-attr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	root := testRunProjRoot(t)
+	rc := testResolvedConfig(t, root, "staging")
+	graph := rc.Graph()
+
+	runID := "resume-attr-1"
+	started := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+	inputJSON := []byte(`{"topic":"resume-attr"}`)
+	if err := st.StartRun(ctx, state.Run{
+		RunID: runID, WorkflowName: "gated", Env: "dev", Status: state.RunStatusRunning,
+		StartedAt: started, InputJSON: string(inputJSON), TotalCostUSD: 0,
+		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot",
+		RequestID: "req-original", Source: "cli",
+		EnvironmentName: "staging",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var input map[string]any
+	if err := json.Unmarshal(inputJSON, &input); err != nil {
+		t.Fatal(err)
+	}
+	ex := &engine.Executor{
+		Graph: graph, ProjectRoot: root,
+		Tools: tools.NewRegistry(graph), Models: models.NewRegistry(graph),
+		Store: st, Trace: trace.NewRecorder(st),
+		Now: func() time.Time { return started },
+	}
+	if err := ex.Run(ctx, engine.RunInput{
+		RunID: runID, WorkflowName: "gated", Env: "dev", StartedAt: started, Input: input,
+		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot", RequestID: "req-original",
+	}); !errors.Is(err, engine.ErrInterrupted) {
+		t.Fatalf("gated run should interrupt at the gate, got %v", err)
+	}
+
+	rt := NewRuntime(st)
+	rt.Now = func() time.Time { return started.Add(time.Hour) }
+	if _, err := rt.Resume(ctx, rc, runtime.ResumeOptions{
+		RunID: runID, EnvironmentName: "staging",
+		HitlActor:    "approver",
+		HitlDecision: &runtime.HitlDecisionOptions{Kind: spec.HitlDecisionApprove},
+		TenantID:     "other-tenant", ThreadID: "thread-override", ActorID: "other-actor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.GetRun(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.RunStatusSucceeded {
+		t.Fatalf("resume status = %q err=%q", got.Status, got.ErrorText)
+	}
+	if got.TenantID != "acme" || got.ThreadID != "thread-original" || got.ActorID != "starter-bot" {
+		t.Fatalf("run attribution changed: %+v", got)
+	}
+
+	events, err := trace.NewReader(st).ListByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.Type == string(trace.EventRunStarted) && strings.Contains(ev.DataJSON, `"resumed":true`) {
+			if ev.TenantID != "acme" || ev.ThreadID != "thread-original" || ev.ActorID != "starter-bot" {
+				t.Fatalf("resume trace attribution: %+v", ev)
+			}
+		}
 	}
 }

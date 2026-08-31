@@ -8,6 +8,8 @@ spec:
     - ./tools.yaml
     - ./agents.yaml
     - ./workflows.yaml
+    - ./gated-policy.yaml
+    - ./gated-workflow.yaml
     - ./environments.yaml
   providers:
     models:

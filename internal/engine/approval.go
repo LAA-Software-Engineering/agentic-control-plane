@@ -1,15 +1,16 @@
 package engine
 
 import (
-	"context"
 	"sort"
 	"strings"
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
 )
 
+// approvalHitlGate builds the HITL gate for a workflow-level approval node. The
+// execir InvokeApproval path uses it to present the reviewed payload and to
+// resolve the operator decision through the shared HITL machinery.
 func approvalHitlGate(step spec.WorkflowStep, with map[string]any) policy.HitlGate {
 	if with == nil {
 		with = map[string]any{}
@@ -40,50 +41,4 @@ func approvalHitlGate(step spec.WorkflowStep, with map[string]any) policy.HitlGa
 			RedactKeys:       redact,
 		},
 	}
-}
-
-func (e *Executor) runApprovalStep(
-	ctx context.Context,
-	persistCtx context.Context,
-	in RunInput,
-	wf *spec.WorkflowResource,
-	wfPol policy.PolicyEvaluator,
-	rt *dagRuntime,
-	ictx Context,
-	pctx policy.RunContext,
-	runHandle *telemetry.RunHandle,
-	i int,
-	step spec.WorkflowStep,
-	with map[string]any,
-) (out map[string]any, pendingCleared bool, interrupted bool, err error) {
-	gate := approvalHitlGate(step, with)
-	pending := ictx.PendingHitl
-	if pending != nil && pending.StepID != step.ID {
-		pending = nil
-	}
-	if pending != nil {
-		_, resolved, rerr := e.resolvePendingHitl(ctx, in, step, wfPol, pctx, pending)
-		if rerr != nil {
-			return nil, false, false, rerr
-		}
-		if resolved == nil {
-			resolved = map[string]any{}
-		}
-		return resolved, true, false, nil
-	}
-	if in.Hitl.AutoApprove {
-		e.recordAutoApproveHitl(persistCtx, in.RunID, step, i, gate, in.Hitl.Actor)
-		if with == nil {
-			with = map[string]any{}
-		}
-		return with, false, false, nil
-	}
-	rt.mu.Lock()
-	liveTotal := rt.cost.get()
-	interruptedHITL, ierr := e.interruptForHitlGate(persistCtx, in, wf, i, step, &gate, &rt.ictx, liveTotal, runHandle, PendingHitlKindApproval)
-	rt.mu.Unlock()
-	if interruptedHITL {
-		return nil, false, true, ierr
-	}
-	return with, false, false, ierr
 }

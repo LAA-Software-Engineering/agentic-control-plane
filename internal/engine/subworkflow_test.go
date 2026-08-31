@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -244,96 +243,6 @@ func resumeNestedGraph() *spec.ProjectGraph {
 				},
 			},
 		},
-	}
-}
-
-func TestRun_resumeMidSubworkflow(t *testing.T) {
-	ctx := context.Background()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-sub.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-
-	graph := resumeNestedGraph()
-	runID := "run-resume-sub"
-	started := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	inJSON := `{}`
-	if err := st.StartRun(ctx, state.Run{
-		RunID: runID, WorkflowName: "parent", Env: "dev", Status: "running",
-		StartedAt: started, InputJSON: inJSON,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	ex := &Executor{
-		Graph: graph, ProjectRoot: t.TempDir(),
-		Tools: tools.NewRegistry(graph), Models: models.NewRegistry(graph),
-		Store: st, Trace: trace.NewRecorder(st),
-		Now: func() time.Time { return started },
-	}
-	err = ex.Run(ctx, RunInput{
-		RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{},
-		InterruptAfterStepID: "call/first",
-	})
-	if !errors.Is(err, ErrInterrupted) {
-		t.Fatalf("err = %v want ErrInterrupted", err)
-	}
-
-	cp, err := st.GetLatestCheckpoint(ctx, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cp.Status != state.CheckpointStatusInterrupted {
-		t.Fatalf("checkpoint status %q", cp.Status)
-	}
-	if !strings.Contains(cp.ContextJSON, `"workflow":"child"`) || !strings.Contains(cp.ContextJSON, `"stepId":"call"`) {
-		t.Fatalf("nested checkpoint missing: %s", cp.ContextJSON)
-	}
-	if !strings.Contains(cp.ContextJSON, `"first"`) {
-		t.Fatalf("inner first missing from nested checkpoint: %s", cp.ContextJSON)
-	}
-
-	if err := st.UpdateRunStatus(ctx, runID, state.RunStatusRunning); err != nil {
-		t.Fatal(err)
-	}
-	if err := ex.Run(ctx, RunInput{
-		RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{},
-		Resume: true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := st.GetRun(ctx, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != "succeeded" {
-		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
-	}
-	var out map[string]any
-	if err := json.Unmarshal([]byte(got.OutputJSON), &out); err != nil {
-		t.Fatal(err)
-	}
-	if out["done"] != float64(2) {
-		t.Fatalf("done %+v", out)
-	}
-
-	rows, err := trace.NewReader(st).ListByRunID(ctx, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var firstSelections int
-	for _, ev := range rows {
-		if ev.Type != string(trace.EventToolSelection) {
-			continue
-		}
-		if ev.StepID == "call/first" {
-			firstSelections++
-		}
-	}
-	if firstSelections != 1 {
-		t.Fatalf("first step replayed: %d tool_selection events", firstSelections)
 	}
 }
 

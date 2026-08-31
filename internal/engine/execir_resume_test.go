@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func TestExecIRResume_HitlGateNoDuplicateSideEffect(t *testing.T) {
 	ctx := context.Background()
 
 	// Fresh run on the execir path: prep runs, publish suspends.
-	err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}, UseExecIR: true})
+	err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}})
 	if !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt at the gate, got %v", err)
 	}
@@ -142,7 +143,7 @@ func TestExecIRResume_HitlReject(t *testing.T) {
 	t.Parallel()
 	ex, _, runID, started := newResumeExecutor(t, gatedTwoStepGraph(), "pub")
 	ctx := context.Background()
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}, UseExecIR: true}); !errors.Is(err, ErrInterrupted) {
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}}); !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt, got %v", err)
 	}
 	err := ex.Run(ctx, RunInput{
@@ -183,7 +184,7 @@ func TestExecIRResume_ApprovalNode(t *testing.T) {
 	t.Parallel()
 	ex, ct, runID, started := newResumeExecutor(t, approvalGraph(), "appr")
 	ctx := context.Background()
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "appr", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}, UseExecIR: true}); !errors.Is(err, ErrInterrupted) {
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "appr", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}}); !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt at the approval node, got %v", err)
 	}
 	if got := ct.count("tool.helper.echo"); got != 1 {
@@ -234,7 +235,7 @@ func TestExecIRResume_GraphPerBranchSuspend(t *testing.T) {
 	t.Parallel()
 	ex, ct, runID, started := newResumeExecutor(t, perBranchGraph(), "pub")
 	ctx := context.Background()
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}, UseExecIR: true}); !errors.Is(err, ErrInterrupted) {
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}}); !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt at the gate, got %v", err)
 	}
 	err := ex.Run(ctx, RunInput{
@@ -305,7 +306,7 @@ func TestExecIRResume_TwoConcurrentGates(t *testing.T) {
 
 	// Fresh run: both branches reach their gate; one wins the slot and the run
 	// suspends. No gated tool runs before approval.
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true}); !errors.Is(err, ErrInterrupted) {
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{}}); !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt at the first gate, got %v", err)
 	}
 	if got := ct.count("tool.pub1.echo") + ct.count("tool.pub2.echo"); got != 0 {
@@ -348,7 +349,7 @@ func TestExecIRResume_TwoConcurrentGates_RejectAborts(t *testing.T) {
 	t.Parallel()
 	ex, ct, runID, started := newResumeExecutor(t, twoConcurrentGateGraph(), "twogate")
 	ctx := context.Background()
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true}); !errors.Is(err, ErrInterrupted) {
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "twogate", Env: "dev", StartedAt: started, Input: map[string]any{}}); !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt, got %v", err)
 	}
 	err := ex.Run(ctx, RunInput{
@@ -426,7 +427,7 @@ func TestExecIRResume_DirectGateWithConcurrentSubworkflow(t *testing.T) {
 	ctx := context.Background()
 	approve := HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"}}
 
-	err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true})
+	err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{}})
 	if !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt, got %v", err)
 	}
@@ -484,7 +485,7 @@ func TestExecIRResume_NestedSubworkflow(t *testing.T) {
 	t.Parallel()
 	ex, ct, runID, started := newResumeExecutor(t, nestedSubworkflowGraph(), "outer")
 	ctx := context.Background()
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "outer", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}, UseExecIR: true}); !errors.Is(err, ErrInterrupted) {
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "outer", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}}); !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt at the inner gate, got %v", err)
 	}
 	if got := ct.count("tool.helper.echo"); got != 1 {
@@ -531,7 +532,7 @@ func TestExecIR_UsesPinnedProgram(t *testing.T) {
 			&execir.Return{Value: execir.Ref{Path: []string{"a"}}},
 		}},
 	}
-	if err := ex.Run(context.Background(), RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true}); err != nil {
+	if err := ex.Run(context.Background(), RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{}}); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if ct.count("tool.sentinel.echo") != 1 {
@@ -545,19 +546,30 @@ func TestExecIR_UsesPinnedProgram(t *testing.T) {
 // TestExecIRResume_DagCheckpointRoutesToDag guards backward compatibility: a run
 // on the DAG path writes a non-execir checkpoint, so resumeIsExecIR is false and
 // resume stays on the DAG path.
-func TestExecIRResume_DagCheckpointRoutesToDag(t *testing.T) {
+// TestExecIRResume_LegacyDagCheckpointFailsLoudly proves the #278 hard format cut:
+// a pre-execir (WorkflowStep DAG) checkpoint — one without the ExecIR marker — is
+// not resumable. Resume fails loudly rather than routing to a runtime that no
+// longer exists; there is no DAG→execir migration.
+func TestExecIRResume_LegacyDagCheckpointFailsLoudly(t *testing.T) {
 	t.Parallel()
 	ex, _, runID, started := newResumeExecutor(t, hitlTestGraph(), "hitl")
 	ctx := context.Background()
-	// DAG path (UseExecIR unset) suspends at the gate.
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "hitl", Env: "dev", StartedAt: started, Input: map[string]any{}}); !errors.Is(err, ErrInterrupted) {
-		t.Fatalf("DAG run should interrupt, got %v", err)
+	// Seed a legacy DAG-shaped interrupted checkpoint (no execIR marker).
+	if err := ex.Store.SaveCheckpoint(ctx, state.RunCheckpoint{
+		RunID: runID, StepIndex: 0, StepID: "gate",
+		ContextJSON: `{"version":1,"input":{},"steps":{},"totalCostUsd":0,"pendingHitl":{"stepId":"gate"}}`,
+		Status:      state.CheckpointStatusInterrupted, CreatedAt: started,
+	}); err != nil {
+		t.Fatal(err)
 	}
-	isExec, err := ex.resumeIsExecIR(ctx, runID)
-	if err != nil {
-		t.Fatalf("resumeIsExecIR: %v", err)
+	err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "hitl", Env: "dev", StartedAt: started, Input: map[string]any{},
+		Resume: true, Hitl: HitlRunOptions{Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "a"}},
+	})
+	if err == nil || errors.Is(err, ErrInterrupted) {
+		t.Fatalf("legacy DAG checkpoint must fail resume loudly, got %v", err)
 	}
-	if isExec {
-		t.Fatalf("a DAG checkpoint must not be flagged execir")
+	if !strings.Contains(err.Error(), "not resumable") {
+		t.Fatalf("want a clear not-resumable error, got %v", err)
 	}
 }

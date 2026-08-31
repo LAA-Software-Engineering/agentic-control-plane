@@ -230,6 +230,11 @@ YAML through a synthetic "program" layer that adds nothing; do require both path
 the same execution IR, since divergent execution semantics between ingress paths is a defect, not
 a design freedom.
 
+> **Status: convergence complete (#278).** Both ingress paths now execute on the one `execir`
+> interpreter. The parallel `WorkflowStep` DAG runtime that used to run YAML / `needs` / `parallel`
+> workflows has been deleted; a lowered `execir.Program` is the sole executable form for every
+> workflow. There is no second execution path left to diverge.
+
 Three consequences that must hold or the split is meaningless:
 
 - **`plan` diffs the resource projection.** The execution IR produces no diff lines of its own.

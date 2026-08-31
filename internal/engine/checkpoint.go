@@ -13,7 +13,6 @@ import (
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 )
 
 // ErrInterrupted is returned when a run pauses at an approval gate or stub interrupt (issue #105).
@@ -246,7 +245,6 @@ func validateCheckpointSteps(steps map[string]StepResult, wf *spec.WorkflowResou
 
 func (e *Executor) saveCheckpoint(ctx context.Context, wf *spec.WorkflowResource, runID string, stepIndex int, stepID string, ictx Context, totalCost float64, status string) error {
 	if e != nil {
-		ictx = e.wrapNestedCheckpoint(ictx)
 		if e.rootWF != nil {
 			wf = e.rootWF
 		}
@@ -269,58 +267,31 @@ func (e *Executor) saveCheckpoint(ctx context.Context, wf *spec.WorkflowResource
 	})
 }
 
-func (e *Executor) loadResumeState(ctx context.Context, in RunInput) (Context, float64, map[string]struct{}, error) {
-	cp, err := e.Store.GetLatestCheckpoint(ctx, in.RunID)
+// execResumeMeta loads the latest checkpoint for a resume, verifies it was written
+// by the execir run path (the only run path since #278 retired the DAG), and
+// returns its OTel interrupt link for the resumed run's telemetry span. A legacy
+// pre-execir (DAG) checkpoint — one without the ExecIR marker — is NOT resumable:
+// the DAG runtime is gone, so resume fails loudly instead of routing to a runtime
+// that no longer exists. There is no DAG→execir checkpoint migration; a run
+// interrupted before the upgrade must be started anew.
+func (e *Executor) execResumeMeta(ctx context.Context, runID string) (*telemetry.SpanRef, error) {
+	cp, err := e.Store.GetLatestCheckpoint(ctx, runID)
 	if err != nil {
-		return Context{}, 0, nil, fmt.Errorf("engine: load checkpoint: %w", err)
+		return nil, fmt.Errorf("engine: load checkpoint: %w", err)
 	}
 	switch cp.Status {
 	case state.CheckpointStatusRunning, state.CheckpointStatusInterrupted:
 	default:
-		return Context{}, 0, nil, fmt.Errorf("engine: checkpoint status %q is not resumable", cp.Status)
-	}
-	wf, err := lookupWorkflow(e.Graph, in.WorkflowName)
-	if err != nil {
-		return Context{}, 0, nil, err
-	}
-	ictx, totalCost, err := unmarshalCheckpointPayload(cp.ContextJSON, e.Graph, wf, cp.StepIndex)
-	if err != nil {
-		return Context{}, 0, nil, err
-	}
-	completed := make(map[string]struct{}, len(ictx.Steps))
-	for id := range ictx.Steps {
-		completed[id] = struct{}{}
+		return nil, fmt.Errorf("engine: checkpoint status %q is not resumable", cp.Status)
 	}
 	var payload checkpointPayload
-	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err == nil {
-		for _, id := range payload.Completed {
-			id = strings.TrimSpace(id)
-			if id != "" {
-				completed[id] = struct{}{}
-			}
-		}
+	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err != nil {
+		return nil, fmt.Errorf("engine: unmarshal checkpoint: %w", err)
 	}
-	return ictx, totalCost, completed, nil
-}
-
-func (e *Executor) interruptRun(ctx context.Context, wf *spec.WorkflowResource, in RunInput, stepIndex int, stepID string, ictx Context, totalCost float64, runHandle *telemetry.RunHandle) error {
-	if runHandle != nil {
-		runHandle.MarkInterrupted()
-		ref := runHandle.SpanRef()
-		ictx.OtelInterrupt = &ref
+	if !payload.ExecIR {
+		return nil, fmt.Errorf("engine: run %q has a pre-execir (WorkflowStep DAG) checkpoint; the DAG runtime was retired (#278) and legacy checkpoints are not resumable — start a new run", runID)
 	}
-	if err := e.saveCheckpoint(ctx, wf, in.RunID, stepIndex, stepID, ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
-		return fmt.Errorf("engine: save interrupted checkpoint: %w", err)
-	}
-	if err := e.Store.UpdateRunStatus(ctx, in.RunID, state.RunStatusInterrupted); err != nil {
-		return fmt.Errorf("engine: mark run interrupted: %w", err)
-	}
-	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, in.RunID, stepID, trace.EventRunError, trace.ActorSystem, map[string]any{
-			"stepIndex": stepIndex, "stepId": stepID, "interrupted": true,
-		})
-	}
-	return ErrInterrupted
+	return payload.OtelInterrupt, nil
 }
 
 // resumeRunStartedAt returns StartedAt for resumed runs, using the original run row when available.
