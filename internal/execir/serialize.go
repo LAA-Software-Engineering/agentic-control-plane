@@ -3,6 +3,7 @@ package execir
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 )
 
 // ProgramFormatV1 versions the serialized-program payload. An unknown version
@@ -216,7 +217,12 @@ func wireLit(v any) valWire {
 	case string:
 		return valWire{Kind: "lit", LitT: "s", LitV: x}
 	case int64:
-		return valWire{Kind: "lit", LitT: "i", LitV: x}
+		// Encode as a decimal STRING, never a JSON number: json.Unmarshal decodes
+		// every JSON number into float64 when the target is `any`, rounding an
+		// int64 past 2^53 to the nearest double. That would silently hydrate a
+		// different program than was pinned (the content digest guards the bytes,
+		// not the decoded program). A string is lossless across the full int64.
+		return valWire{Kind: "lit", LitT: "i", LitV: strconv.FormatInt(x, 10)}
 	case float64:
 		return valWire{Kind: "lit", LitT: "f", LitV: x}
 	case bool:
@@ -351,8 +357,11 @@ func decodeLit(v valWire) any {
 			return s
 		}
 	case "i":
-		if f, ok := v.LitV.(float64); ok {
-			return int64(f)
+		// Decimal string (see wireLit) — lossless across the full int64 range.
+		if s, ok := v.LitV.(string); ok {
+			if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+				return n
+			}
 		}
 	case "f":
 		if f, ok := v.LitV.(float64); ok {

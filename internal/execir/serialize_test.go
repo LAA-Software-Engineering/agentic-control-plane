@@ -1,6 +1,41 @@
 package execir
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
+
+// TestSerialize_LargeIntLiteralsExact proves integer literals beyond float64's
+// exact range (2^53) survive marshal→unmarshal — they must not be laundered
+// through float64, or the hydrated program is not the pinned one.
+func TestSerialize_LargeIntLiteralsExact(t *testing.T) {
+	t.Parallel()
+	for _, n := range []int64{5, 1 << 52, (1 << 53) + 1, 1234567890123456789, math.MaxInt64, math.MinInt64} {
+		prog := &Program{Workflow: "w", Body: []Node{
+			&InvokeTool{Bind: "a", Uses: "tool.t.op", Args: map[string]Value{"n": Lit{V: n}}},
+		}}
+		got, err := UnmarshalPrograms(mustMarshal(t, map[string]*Program{"w": prog}))
+		if err != nil {
+			t.Fatalf("n=%d: unmarshal: %v", n, err)
+		}
+		lit := got["w"].Body[0].(*InvokeTool).Args["n"].(Lit)
+		if lit.V != any(n) {
+			t.Fatalf("n=%d round-tripped to %#v (type %T)", n, lit.V, lit.V)
+		}
+		if got["w"].Digest() != prog.Digest() {
+			t.Fatalf("n=%d: digest changed on round-trip", n)
+		}
+	}
+}
+
+func mustMarshal(t *testing.T, progs map[string]*Program) []byte {
+	t.Helper()
+	b, err := MarshalPrograms(progs)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return b
+}
 
 // TestSerialize_RoundTripPreservesDigest exercises every node/value/expr kind and
 // asserts marshal→unmarshal reconstructs a program with an identical Digest — the
