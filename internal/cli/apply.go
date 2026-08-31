@@ -14,6 +14,7 @@ import (
 	"github.com/LAA-Software-Engineering/terfyn/internal/apply"
 	"github.com/LAA-Software-Engineering/terfyn/internal/config"
 	"github.com/LAA-Software-Engineering/terfyn/internal/deploy"
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
 	"github.com/LAA-Software-Engineering/terfyn/internal/render"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
@@ -91,7 +92,7 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 	}
 	defer func() { _ = st.Close() }()
 
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, env, graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, env, graph, rc.Executables())
 	if err != nil {
 		return fmt.Errorf("apply: compute plan: %w", err)
 	}
@@ -100,7 +101,7 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 		if err := writeApplyEmptyOutput(cmd, env, dsn, pl, rc, g); err != nil {
 			return err
 		}
-		if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env, rc.ProjectRoot()); err != nil {
+		if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env, rc.ProjectRoot(), rc.Executables()); err != nil {
 			return err
 		}
 		return persistSnapshots(rc)
@@ -143,7 +144,7 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 	if err := writeApplySuccessOutput(cmd, env, dsn, pl, rc, g, at); err != nil {
 		return err
 	}
-	if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env, rc.ProjectRoot()); err != nil {
+	if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env, rc.ProjectRoot(), rc.Executables()); err != nil {
 		return err
 	}
 	return persistSnapshots(rc)
@@ -153,8 +154,8 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 // applied graph (issue #207) so later runs can pin it and inspect/logs can detect superseded runs.
 // Literal-secret warnings are printed to stderr; the snapshot preserves env: references verbatim
 // and never stores resolved secret values.
-func persistDeploymentSnapshot(ctx context.Context, cmd *cobra.Command, st state.ArtifactStore, graph *spec.ProjectGraph, env, projectRoot string) error {
-	digest, warnings, err := deploy.BuildAndPersist(ctx, st, graph, env, Version, projectRoot)
+func persistDeploymentSnapshot(ctx context.Context, cmd *cobra.Command, st state.ArtifactStore, graph *spec.ProjectGraph, env, projectRoot string, execs map[string]*execir.Program) error {
+	digest, warnings, err := deploy.BuildAndPersist(ctx, st, graph, env, Version, projectRoot, execs)
 	if err != nil {
 		return fmt.Errorf("apply: persist deployment snapshot: %w", err)
 	}

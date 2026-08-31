@@ -57,7 +57,7 @@ func TestEffectBound_firstApply_emptyBaselineTreatsEffectsAsNew(t *testing.T) {
 		{ID: "fetch_pr", Uses: "tool.github.read_pr"},
 		{ID: "review", Agent: "reviewer"},
 	})
-	pl, err := NewPlanner(&fakeDeploy{list: nil}).ComputePlan(context.Background(), "dev", g)
+	pl, err := NewPlanner(&fakeDeploy{list: nil}).ComputePlan(context.Background(), "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestEffectDelta_newAutonomousGrant(t *testing.T) {
 		{ID: "review", Agent: "reviewer"},
 	})
 
-	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestCapabilityDelta_emptyEffectDelta(t *testing.T) {
 	})
 	addChatTool(newG)
 
-	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestEffectDelta_autonomousHigherSeverityThanStatic(t *testing.T) {
 		{ID: "review", Agent: "reviewer"},
 	})
 
-	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestEffectDelta_staticToAutonomousPromotion(t *testing.T) {
 		{ID: "review", Agent: "reviewer"},
 	})
 
-	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestExportRisk_effectBoundWitnessAndAuthority(t *testing.T) {
 		{ID: "fetch_pr", Uses: "tool.github.read_pr"},
 		{ID: "review", Agent: "reviewer"},
 	})
-	pl, err := NewPlanner(&fakeDeploy{list: nil}).ComputePlan(context.Background(), "dev", g)
+	pl, err := NewPlanner(&fakeDeploy{list: nil}).ComputePlan(context.Background(), "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestFormatPlan_capabilityAndAuthoritySections(t *testing.T) {
 		{ID: "review", Agent: "reviewer"},
 	})
 	addChatTool(newG)
-	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

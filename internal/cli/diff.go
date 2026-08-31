@@ -101,10 +101,11 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	g := Globals()
 
-	graph, root, err := prepareProjectGraph(g)
+	rc, err := prepareResolvedConfig(g)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
+	graph, root := rc.Graph(), rc.ProjectRoot()
 
 	env := planEnvironment(g)
 	dsn, err := resolveStateSQLitePath(root, graph, g.StatePath)
@@ -121,7 +122,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = st.Close() }()
 
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, env, graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, env, graph, rc.Executables())
 	if err != nil {
 		return fmt.Errorf("diff: compute plan: %w", err)
 	}

@@ -7,36 +7,31 @@ import (
 )
 
 // WorkflowSpecHash returns the deployment spec_hash for a normalized workflow
-// resource envelope.
-//
-// It hashes the RESOURCE projection only. A workflow lowered from `.agent` with
-// control flow must instead go through [WorkflowSpecHashWithExec] so its
-// execution-IR digest folds in — this bare form would give a control-flow-only
-// edit the historical hash. Every current caller passes a YAML-loaded workflow
-// with no execution IR, so this is correct today; when `.agent` ingest is wired
-// into plan/run (a follow-up), those call sites must switch to the WithExec
-// form. See ADR 002 §5.
+// resource envelope, hashing the RESOURCE projection only. Use it only where a
+// workflow provably has no execution IR; otherwise a run executes a pinned
+// Program the hash does not commit to. See [WorkflowSpecHashWithExec].
 func WorkflowSpecHash(wf *spec.WorkflowResource) (string, error) {
 	return WorkflowSpecHashWithExec(wf, "")
 }
 
-// WorkflowSpecHashWithExec returns the deployment spec_hash for a workflow,
-// folding in the digest of its execution IR (ADR 002 §5, issue #199). The
-// resource projection alone cannot represent control flow (Branch/Loop), so two
-// workflows with identical resource projections but different lowered programs —
-// e.g. an `if` whose two arms invoke the same set of operations in a different
-// structure — would otherwise share a spec_hash and let a stale plan apply. The
-// execution-IR digest (execir.Program.Digest) closes that gap: a lowering change
-// with no resource-level change still changes the hash.
+// WorkflowSpecHashWithExec returns the deployment spec_hash for a workflow: a
+// workflow's identity is its normalized resource projection AND the exact
+// executable IR (execir.Program) that runs it, whenever one exists (issue #260,
+// ADR 002 §5).
 //
-// This is the FOLD MECHANISM, not yet a wired invariant: no production path
-// constructs an execir.Program for a workflow yet (`.agent` is not ingested by
-// project.LoadProject, and plan hashes YAML resource envelopes with no execir
-// parameter), so nothing calls this with a non-empty digest outside tests. It
-// exists so the `.agent` ingest follow-up folds the digest here rather than
-// reinventing it. execDigest is empty for a workflow with no execution IR, in
-// which case the hash is exactly the historical resource-only hash — existing
-// deployment state and golden hashes are unaffected.
+// The invariant is deliberately not tied to any node kind. After #256 both
+// ingress paths lower to an execir.Program, and #260 pins that program into the
+// deployment snapshot and executes it — so the program is execution authority.
+// Two workflows with an identical resource projection but a different Program
+// (a lowering/compiler change, or an `.agent` control-flow restructuring the
+// flattened resource projection cannot express) must therefore get a different
+// spec_hash, or a stale plan/snapshot would apply and a run would execute
+// something the identity did not commit to. Folding execir.Program.Digest closes
+// that gap by construction, without asking "does this Program contain
+// information the resource projection couldn't represent?".
+//
+// execDigest is empty only for a workflow with no lowerable program, in which
+// case the hash is exactly the historical resource-only hash.
 func WorkflowSpecHashWithExec(wf *spec.WorkflowResource, execDigest string) (string, error) {
 	if wf == nil {
 		return "", fmt.Errorf("plan: nil workflow")

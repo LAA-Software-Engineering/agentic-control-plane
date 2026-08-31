@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang/lower"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/util"
 )
@@ -21,23 +23,66 @@ const ymlExt = ".yml"
 // Duplicate kind/metadata.name pairs are rejected (§9.1). Only the root project file
 // may define kind Project.
 func LoadProject(root string) (*spec.ProjectGraph, error) {
+	g, _, err := LoadProjectWithExecutables(root)
+	return g, err
+}
+
+// LoadProjectWithExecutables loads the project graph and, alongside it, the
+// execution IR of every workflow — the pinned program #260 folds into the
+// workflow identity and persists in the deployment snapshot. `.agent` workflows
+// use check.Check's checked program (positional-arg rebinds included); every
+// other workflow lowers via lower.LowerWorkflowResource (#256). A workflow that
+// cannot lower has no program (the DAG path still runs it); the map only omits it.
+func LoadProjectWithExecutables(root string) (*spec.ProjectGraph, map[string]*execir.Program, error) {
+	g, agentExecs, err := loadProjectGraph(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	return g, buildExecutables(g, agentExecs), nil
+}
+
+// buildExecutables unions the checked `.agent` programs with a lowered program for
+// every other (YAML) workflow.
+func buildExecutables(g *spec.ProjectGraph, agentExecs map[string]*execir.Program) map[string]*execir.Program {
+	if g == nil {
+		return nil
+	}
+	out := make(map[string]*execir.Program, len(g.Workflows))
+	for name, wf := range g.Workflows {
+		if p, ok := agentExecs[name]; ok && p != nil {
+			out[name] = p
+			continue
+		}
+		if wf == nil {
+			continue
+		}
+		prog, diags := lower.LowerWorkflowResource(wf)
+		if diags.HasErrors() {
+			continue
+		}
+		out[name] = prog
+	}
+	return out
+}
+
+func loadProjectGraph(root string) (*spec.ProjectGraph, map[string]*execir.Program, error) {
 	rootAbs, err := filepath.Abs(filepath.Clean(root))
 	if err != nil {
-		return nil, fmt.Errorf("project root: %w", err)
+		return nil, nil, fmt.Errorf("project root: %w", err)
 	}
 
 	projPath, err := findProjectFile(rootAbs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	dec, err := spec.LoadResourceFile(projPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	pr, ok := dec.Resource.(*spec.ProjectResource)
 	if !ok || dec.Kind() != spec.KindProject {
-		return nil, fmt.Errorf("%s: expected kind Project, got %q", projPath, dec.Kind())
+		return nil, nil, fmt.Errorf("%s: expected kind Project, got %q", projPath, dec.Kind())
 	}
 	relocateLoaded(rootAbs, projPath, pr)
 
@@ -58,7 +103,7 @@ func LoadProject(root string) (*spec.ProjectGraph, error) {
 
 	files, err := expandImports(rootAbs, projPath, g.Spec.Imports)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for _, path := range files {
@@ -67,22 +112,23 @@ func LoadProject(root string) (*spec.ProjectGraph, error) {
 		}
 		d, err := spec.LoadResourceFile(path)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		relocateLoaded(rootAbs, path, d.Resource)
 		if err := mergeDecoded(g, d, path, seen); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	// .agent authoring surface (ADR 003): compile every .agent file under the
 	// project root and merge its checked resource projection. Runs after YAML so
 	// .agent may reference YAML-declared resources.
-	if err := compileAgentSources(g, rootAbs); err != nil {
-		return nil, err
+	agentExecs, err := compileAgentSources(g, rootAbs)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return g, nil
+	return g, agentExecs, nil
 }
 
 type resourceKey struct {

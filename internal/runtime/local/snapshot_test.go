@@ -50,12 +50,12 @@ func TestPrepareForResume_enforcesPinnedAuthorityAfterWideningApply(t *testing.T
 	t.Cleanup(func() { _ = st.Close() })
 
 	// Run starts under a narrow policy; pin its snapshot.
-	narrowDigest, _, err := deploy.BuildAndPersist(ctx, st, policyGraph(false), "local", "v1", "")
+	narrowDigest, _, err := deploy.BuildAndPersist(ctx, st, policyGraph(false), "local", "v1", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A later apply widens the policy (permissive) and lands a newer snapshot for the same env.
-	if _, _, err := deploy.BuildAndPersist(ctx, st, policyGraph(true), "local", "v1", ""); err != nil {
+	if _, _, err := deploy.BuildAndPersist(ctx, st, policyGraph(true), "local", "v1", "", nil); err != nil {
 		t.Fatal(err)
 	}
 

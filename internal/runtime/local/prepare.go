@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/config"
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
@@ -19,6 +20,10 @@ type preparedProject struct {
 	// schemas is the schema ref→content bundle captured in the pinned snapshot; the engine validates
 	// against it on resume instead of re-reading files. Nil on fresh runs.
 	schemas map[string]string
+	// executables is the pinned execution IR per workflow (issue #260): on a fresh run from the
+	// resolved config, on a pinned resume from the hydrated snapshot. The execir run path executes
+	// the pinned program rather than re-lowering.
+	executables map[string]*execir.Program
 }
 
 // prepareFromConfig builds execution state from a resolved config snapshot.
@@ -50,5 +55,5 @@ func (r *Runtime) prepareFromConfig(ctx context.Context, cfg *config.ResolvedCon
 			}
 		}
 	}
-	return &preparedProject{root: root, graph: graph}, nil
+	return &preparedProject{root: root, graph: graph, executables: cfg.Executables()}, nil
 }

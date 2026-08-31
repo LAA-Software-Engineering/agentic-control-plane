@@ -52,6 +52,11 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		return runtime.RunResult{}, err
 	}
 
+	// The #118 run-start-vs-resume drift check hashes the resource projection only
+	// (its own hash space, distinct from the plan/apply applied_resources spec_hash
+	// #260 folds the program digest into). Keeping it bare avoids a false drift when
+	// a run row is seeded externally, and does not weaken the snapshot pin (the
+	// pinned program is the execution authority on resume).
 	wfHash, err := plan.WorkflowSpecHash(wf)
 	if err != nil {
 		return runtime.RunResult{}, err
@@ -75,7 +80,7 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	// Pin the deployment snapshot (#207): resume enforces this exact configuration and authority,
 	// not whatever is deployed at resume time. Uses the effective environment label (cfg.Environment)
 	// so an identical config applied and run under the same env dedupes to one snapshot.
-	snapshotDigest, snapWarnings, err := r.pinDeploymentSnapshot(ctx, prep.graph, cfg.Environment(), prep.root)
+	snapshotDigest, snapWarnings, err := r.pinDeploymentSnapshot(ctx, prep.graph, cfg.Environment(), prep.root, prep.executables)
 	if err != nil {
 		return runtime.RunResult{}, err
 	}
@@ -233,6 +238,7 @@ func (r *Runtime) executeEngine(
 		ProjectRoot: prep.root,
 		PinnedGraph: prep.pinned,
 		Schemas:     prep.schemas,
+		Executables: prep.executables,
 		Tools:       tools.NewRegistry(prep.graph),
 		Models:      models.NewRegistry(prep.graph),
 		Store:       r.Store,

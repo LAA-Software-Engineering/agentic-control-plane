@@ -94,7 +94,7 @@ func runPlan(cmd *cobra.Command, fromEnv string) error {
 	}
 	defer func() { _ = st.Close() }()
 
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, appliedEnv, graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, appliedEnv, graph, rc.Executables())
 	if err != nil {
 		return fmt.Errorf("plan: compute: %w", err)
 	}

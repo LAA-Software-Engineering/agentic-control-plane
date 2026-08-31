@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
@@ -310,6 +311,40 @@ func TestExecIRResume_NestedSubworkflow(t *testing.T) {
 	}
 	if got := ct.count("tool.publisher.echo"); got != 1 {
 		t.Fatalf("inner gated step should run once on resume, got %d", got)
+	}
+}
+
+// TestExecIR_UsesPinnedProgram proves runViaExecIR executes the PINNED program
+// (Executor.Executables) rather than re-lowering the resource graph (issue #260):
+// a sentinel program that invokes a different tool than the workflow's steps runs
+// that tool, not the workflow's.
+func TestExecIR_UsesPinnedProgram(t *testing.T) {
+	t.Parallel()
+	graph := gatedTwoStepGraph()
+	// Replace the workflow with a simple single-step one that uses helper.echo.
+	graph.Workflows["pub"].Spec = spec.WorkflowSpec{
+		Policy: "gate",
+		Steps:  []spec.WorkflowStep{{ID: "a", Uses: "tool.helper.echo", With: map[string]any{"x": "1"}}},
+		Output: &spec.WorkflowOutput{Value: map[string]any{"r": "${steps.a.output}"}},
+	}
+	// Add a sentinel tool the pinned program will call instead.
+	graph.Tools["sentinel"] = &spec.ToolResource{APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "sentinel"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}}}
+
+	ex, ct, runID, started := newResumeExecutor(t, graph, "pub")
+	ex.Executables = map[string]*execir.Program{
+		"pub": {Workflow: "pub", Params: []string{"input"}, Body: []execir.Node{
+			&execir.InvokeTool{Bind: "a", Uses: "tool.sentinel.echo"},
+			&execir.Return{Value: execir.Ref{Path: []string{"a"}}},
+		}},
+	}
+	if err := ex.Run(context.Background(), RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if ct.count("tool.sentinel.echo") != 1 {
+		t.Fatalf("pinned program's sentinel tool should have run once, got %d", ct.count("tool.sentinel.echo"))
+	}
+	if ct.count("tool.helper.echo") != 0 {
+		t.Fatalf("the workflow's own step must NOT run — the pinned program is authority, got %d", ct.count("tool.helper.echo"))
 	}
 }
 

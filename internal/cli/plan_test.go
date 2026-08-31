@@ -148,7 +148,7 @@ func TestPlan_afterApply_noChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestPlan_policyCostIncrease_riskDelta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl0, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl0, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +323,7 @@ func applyProjectGraph(t *testing.T, root, db string) {
 		t.Fatal(err)
 	}
 	defer func() { _ = st.Close() }()
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

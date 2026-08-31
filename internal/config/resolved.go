@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
 	"github.com/LAA-Software-Engineering/terfyn/internal/project"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
@@ -40,11 +41,22 @@ type ResolveOptions struct {
 // Graph returns a defensive copy; treat it as read-only.
 type ResolvedConfig struct {
 	graph       *spec.ProjectGraph
+	executables map[string]*execir.Program
 	root        string
 	env         string
 	statePath   string
 	digest      string
 	mcpWarnings []tools.MCPDiscoveryWarning
+}
+
+// Executables returns the execution IR of each workflow (the pinned program #260
+// folds into workflow identity and persists in the deployment snapshot). Keyed by
+// workflow name; a workflow with no lowerable program is absent. Read-only.
+func (r *ResolvedConfig) Executables() map[string]*execir.Program {
+	if r == nil {
+		return nil
+	}
+	return r.executables
 }
 
 // Graph returns a defensive copy of the resolved, validated project graph.
@@ -113,7 +125,7 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 		return nil, err
 	}
 
-	graph, err := project.LoadProject(root)
+	graph, executables, err := project.LoadProjectWithExecutables(root)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +162,7 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 
 	return &ResolvedConfig{
 		graph:       frozen,
+		executables: executables,
 		root:        root,
 		env:         env,
 		statePath:   statePath,

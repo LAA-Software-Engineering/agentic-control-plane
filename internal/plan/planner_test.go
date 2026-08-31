@@ -63,7 +63,7 @@ func graphWithAgent(model string) *spec.ProjectGraph {
 
 func appliedFromDesired(t *testing.T, env string, g *spec.ProjectGraph) []state.AppliedResource {
 	t.Helper()
-	rows, err := desiredRows(g)
+	rows, err := desiredRows(g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestListDesiredResourceIDs_minimalGraph(t *testing.T) {
 func TestComputePlan_emptyStore_allCreate(t *testing.T) {
 	g := minimalGraph()
 	p := NewPlanner(&fakeDeploy{list: nil})
-	plan, err := p.ComputePlan(context.Background(), "dev", g)
+	plan, err := p.ComputePlan(context.Background(), "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestComputePlan_secondPlan_noOps(t *testing.T) {
 	g := minimalGraph()
 	applied := appliedFromDesired(t, "dev", g)
 	p := NewPlanner(&fakeDeploy{list: applied})
-	plan, err := p.ComputePlan(context.Background(), "dev", g)
+	plan, err := p.ComputePlan(context.Background(), "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestComputePlan_changedField_updateWithDiff(t *testing.T) {
 	newG := graphWithAgent("anthropic/claude-sonnet-4")
 
 	p := NewPlanner(&fakeDeploy{list: applied})
-	plan, err := p.ComputePlan(context.Background(), "dev", newG)
+	plan, err := p.ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestComputePlan_removedResource_delete(t *testing.T) {
 	g := minimalGraph()
 
 	p := NewPlanner(&fakeDeploy{list: applied})
-	plan, err := p.ComputePlan(context.Background(), "dev", g)
+	plan, err := p.ComputePlan(context.Background(), "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
