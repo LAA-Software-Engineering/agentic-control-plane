@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 )
 
@@ -56,28 +57,39 @@ workflow Review(input: PullRequest) -> Review {
 	}
 }
 
-func TestLoadProject_agentControlFlowRefused(t *testing.T) {
-	// The resource projection cannot represent control flow (it flattens both
-	// arms), and the execution IR that can is not on the engine yet, so a
-	// control-flow workflow is refused at load rather than silently deployed as a
-	// program that runs every arm.
+func TestLoadProject_agentControlFlowLoadsAndLowers(t *testing.T) {
+	// Control flow now COMPILES and carries a pinned program (issue #259): the
+	// gate that refused if/for is gone. The workflow loads, its resource
+	// projection merges (flattened arms, for effect analysis), and its execution
+	// IR is available to run on the interpreter.
 	root := t.TempDir()
 	writeFile(t, root, "project.yaml", minimalProjectYAML)
 	writeFile(t, root, "flow.agent", `
+agent Reviewer { model openai/gpt-5 }
+
 workflow Deploy(input: Batch) {
     if input.dry_run {
-        github.summarize(input.repos)
+        a = Reviewer(input.item)
+        return a
     } else {
-        github.deploy(input.repos)
+        b = Reviewer(input.item)
+        return b
     }
 }
 `)
-	_, err := LoadProject(root)
-	if err == nil {
-		t.Fatalf("expected a control-flow workflow to be refused at load")
+	g, execs, err := LoadProjectWithExecutables(root)
+	if err != nil {
+		t.Fatalf("control-flow workflow should now load: %v", err)
 	}
-	if !strings.Contains(err.Error(), "control flow") {
-		t.Fatalf("expected a control-flow refusal error, got: %v", err)
+	if _, ok := g.Workflows["Deploy"]; !ok {
+		t.Fatalf("expected workflow Deploy, got %v", keys(g.Workflows))
+	}
+	prog := execs["Deploy"]
+	if prog == nil {
+		t.Fatalf("expected a pinned program for the control-flow workflow")
+	}
+	if !execir.RequiresInterpreter(prog) {
+		t.Fatalf("a control-flow program must require the interpreter")
 	}
 }
 
@@ -191,5 +203,51 @@ func TestLoadProject_skipsDotDirs(t *testing.T) {
 	}
 	if _, ok := g.Workflows["Ghost"]; ok {
 		t.Fatalf("a .agent file under a dot-directory must not be ingested")
+	}
+}
+
+// TestLoadProject_agentControlFlowEffectViolationRejected proves removing the
+// control-flow gate did not open the effect-soundness hole (issue #259): a branch
+// reaching an effect the workflow's effects{} clause does not permit still fails
+// at load, because LoadProject compiles through check.Check whose effect bound is
+// the union over both arms of the flattened projection.
+func TestLoadProject_agentControlFlowEffectViolationRejected(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "project.yaml", `apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: demo
+spec:
+  imports:
+    - ./tools/github.yaml
+`)
+	writeFile(t, root, "tools/github.yaml", `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: github
+spec:
+  type: native
+  operations:
+    get_pr:
+      effects: [github.read]
+    merge_pr:
+      effects: [github.write, destructive]
+`)
+	// The else arm reaches github.merge_pr (write/destructive), which the clause
+	// does not permit — a compile error even though it is conditional.
+	writeFile(t, root, "flow.agent", `
+workflow W(input: PR)
+    effects { github.read }
+{
+    if input.urgent {
+        github.get_pr()
+    } else {
+        github.merge_pr()
+    }
+}
+`)
+	_, err := LoadProject(root)
+	if err == nil {
+		t.Fatalf("expected the branch's ungranted effect to fail at load")
 	}
 }
