@@ -16,16 +16,16 @@ that `validate`/`plan`/`apply`/`run` consume. `terfyn export --format yaml` mate
 graph (ADR 003), `terfyn fmt` formats `.agent`, and `terfyn init` scaffolds a `.agent`
 project.
 
-**Straight-line `.agent` workflows execute end-to-end; control-flow ones do not yet.** The
-resource projection cannot represent `if`/`for` — it flattens both arms into steps for effect
-analysis — and the execution IR that can ([`internal/execir`](../internal/execir)) is not wired
-into the engine. So the loader **refuses** a workflow that uses a conditional or loop (a
-compile error naming the construct); only straight-line steps and `parallel { }` static
-fan-out reach the run path. Conditionals, loops, and dynamic fan-out still parse and
-type-check (#199) and are usable as a library, but wiring `execir` onto the engine — with the
-persistence half of #199 (`apply` persisting the execution IR, `run --resume` pinning it,
-deferred to the content-addressed artifact store of #207) — is the remaining work before they
-run through `terfyn`.
+**`.agent` workflows execute end-to-end, including control flow.** `if`/`else`, sequential
+`for` (with `return`), and `parallel for` run through the **execution IR**
+([`internal/execir`](../internal/execir)): the checker lowers each workflow to an
+`execir.Program`, that program is pinned into the deployment snapshot (#260), and a
+control-flow workflow runs on the `execir` interpreter — the taken arm only — rather than the
+resource DAG (#259). The resource projection still flattens both arms of a conditional and a
+loop body into steps, but only for **effect analysis** (`effects.Compute`), where the union
+over arms is the sound bound; it is never executed for such a workflow. Straight-line, `needs`
+DAGs, and `parallel { }` continue to run on the `WorkflowStep` DAG (retiring it in favor of one
+`execir` run path is a follow-up, #278). See `examples/agent-control-flow`.
 
 The reference implementation is [`internal/lang`](../internal/lang):
 `lang.Parse(file, src) (*lang.File, lang.Diagnostics)`.
@@ -472,34 +472,31 @@ interpreter additionally caps the element count at `limits.maxLoopIterations`
 (`spec.DefaultMaxLoopIterations` = 1000; overridable per project/workflow), so a runtime
 collection cannot make a run unbounded — a loop over more elements fails loudly.
 
-### `plan` under control flow — the fold mechanism, not yet wired
+### `plan` under control flow — the execution IR is part of workflow identity
 
-`plan` diffs only the **resource projection**; the execution IR produces no diff lines of its
-own. The fold that would let a lowering-only change (e.g. swapping an `if`'s two arms)
-invalidate a stale plan is
-[`plan.WorkflowSpecHashWithExec`](../internal/plan/workflow_hash.go), which mixes
-`execir.Program.Digest` into the spec-hash. **This is the mechanism, not yet a live invariant**:
-no production path constructs an `execir.Program` for a workflow today. `project.LoadProject`
-compiles `.agent` (#200) but uses the checked resource graph and refuses control-flow
-workflows, so it never builds an `execir.Program`; `terfyn plan` hashes resource envelopes
-through `WorkflowSpecHash` (empty digest). When `execir` is wired onto the engine, those call
-sites move to `WorkflowSpecHashWithExec`; the plain `WorkflowSpecHash` doc comment flags that.
-The fold is unit-tested (`internal/plan/workflow_hash_execir_test.go`).
+`plan` diffs the **resource projection**, but a workflow's `spec_hash` also commits to the exact
+executable IR whenever one exists (#260):
+[`plan.WorkflowSpecHashWithExec`](../internal/plan/workflow_hash.go) folds
+`execir.Program.Digest` into the hash, so a **lowering-only change** (e.g. swapping an `if`'s two
+arms, or a compiler change that alters the `Program` without touching the resource projection)
+is a visible plan change. `project.LoadProjectWithExecutables` builds the `Program` for every
+workflow (`check.Check`'s checked `.agent` programs; `LowerWorkflowResource` for YAML) and
+`ComputePlan` folds each workflow's program digest. The invariant is not tied to control flow:
+identity is the normalized resource projection **and** the executable IR whenever it exists.
 
-### Deferred follow-ups
+### Convergence status
 
-- **YAML → execution IR convergence.** ADR 002 §5 requires both ingress paths to converge on
-  this IR. `.agent` lowering (`LowerExec`) exists; YAML still executes as a `WorkflowStep` DAG
-  in [`internal/engine`](../internal/engine). A `YAML → execir` lowering and running the engine
-  from `execir` are a follow-up — until then the convergence is a design target, not a shipped
-  property, and `execir`'s package comment says so.
-- **Persistence and resume (#207).** `apply` persisting the compiled program and `run --resume`
-  pinning it (so an in-flight run cannot be re-lowered underneath it) build on the immutable
-  content-addressed deployment snapshot of **#207** and are deferred until that store lands
-  (ADR 002 §5, round-3/round-4 amendments).
+ADR 002 §5's convergence goal — both ingress paths sharing one interpreter — is reached for the
+control-flow surface: YAML lowers to `execir` (`LowerWorkflowResource`, #256), the engine
+executes `execir` at parity with the DAG (#257), durably resumes it including HITL, concurrent
+per-branch suspend, and nested subworkflows (#258/#270), pins the program into the deployment
+snapshot (#260), and runs `.agent` control flow end-to-end (#259). The compiled program is
+persisted as an `execution_ir` deployment artifact and hydrated on resume, so an in-flight run is
+never re-lowered underneath it (ADR 001).
 
-Today `execir` executes as a library, driven by an injected `Invoker`, so control-flow
-semantics are unit-tested in isolation.
+The one remaining step is retiring the redundant `WorkflowStep` DAG runtime so **every** workflow
+(not only control-flow ones) runs on `execir` — tracked in **#278**. Until then, straight-line /
+`needs` / `parallel { }` workflows still execute on the DAG.
 
 ## Diagnostics
 

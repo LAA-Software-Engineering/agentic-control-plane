@@ -1,8 +1,11 @@
 # Implementation plan — #255: Execute the execution IR (`execir`) on the engine
 
-Status: planned (rev. 2 — corrected after review). Epic [#255]. Builds toward the ADR 002 §5
-convergence goal. Depends on #199 (execir + `.agent` lowering, merged) and #207 (deployment snapshot
-with the reserved-but-empty `execution_ir_digest`, merged).
+Status: **SHIPPED** (rev. 2). Epic [#255]. All filed phases merged: Phase 0 #256, Phase 1 #257,
+Phase 2 #258 (+ Tier B #270), Phase 3 pin #260, Phase 4 control flow #259. The only remaining phase
+is Phase 5 — retire the redundant `WorkflowStep` DAG runtime — now filed as #278. `.agent`
+`if`/`for`/`parallel for` run end-to-end on the engine via the pinned program; both ingress paths
+converge on one interpreter (ADR 002 §5). The phase text below is retained as the historical plan.
+Depends on #199 (execir + `.agent` lowering) and #207 (deployment snapshot).
 
 > **Revision note.** Rev. 1 made three load-bearing claims that were false against the current
 > runtime, and would have failed the first feature built on them. They are corrected here and called
