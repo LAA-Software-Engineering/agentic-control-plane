@@ -52,12 +52,16 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		return runtime.RunResult{}, err
 	}
 
-	// The #118 run-start-vs-resume drift check hashes the resource projection only
-	// (its own hash space, distinct from the plan/apply applied_resources spec_hash
-	// #260 folds the program digest into). Keeping it bare avoids a false drift when
-	// a run row is seeded externally, and does not weaken the snapshot pin (the
-	// pinned program is the execution authority on resume).
-	wfHash, err := plan.WorkflowSpecHash(wf)
+	// The #118 run-start-vs-resume drift check now commits to the workflow's
+	// execution IR too (#277): fold the pinned program's digest into the stored
+	// hash so a lowering-only change between run-start and resume is drift, not
+	// invisible to the resource-only projection. On the pinned-snapshot path resume
+	// recomputes from the SAME hydrated program, so this never false-positives; a
+	// workflow with no lowered program folds "" and keeps the historical
+	// resource-only hash. This is its own hash space, distinct from the plan/apply
+	// applied_resources spec_hash (#260); a run row seeded with a bare hash still
+	// resumes (validateResumeWorkflowSpec accepts the bare fallback).
+	wfHash, err := plan.WorkflowSpecHashWithExec(wf, workflowExecDigest(prep.executables, wfName))
 	if err != nil {
 		return runtime.RunResult{}, err
 	}
@@ -177,7 +181,7 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	if !ok || wf == nil {
 		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: unknown workflow %q", wfName)
 	}
-	if err := validateResumeWorkflowSpec(run, wf); err != nil {
+	if err := validateResumeWorkflowSpec(run, wf, workflowExecDigest(prep.executables, wfName)); err != nil {
 		return runtime.RunResult{RunID: runID}, err
 	}
 

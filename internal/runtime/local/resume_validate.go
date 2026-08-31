@@ -43,18 +43,36 @@ func ResolvedConfigForRun(run *state.Run, base config.ResolveOptions, cliEnv str
 	return config.Resolve(opts)
 }
 
-// validateResumeWorkflowSpec ensures the workflow definition has not changed since the run started.
-func validateResumeWorkflowSpec(run *state.Run, wf *spec.WorkflowResource) error {
+// validateResumeWorkflowSpec ensures the workflow definition has not changed since
+// the run started. The drift hash commits to the workflow's execution IR as well
+// as its resource projection (#277): execDigest is the pinned program's digest
+// (from the hydrated snapshot on the pinned path, or the re-lowered config on the
+// legacy fallback), folded exactly as run-start stored it, so a lowering-only
+// change to a control-flow workflow is drift rather than invisible.
+func validateResumeWorkflowSpec(run *state.Run, wf *spec.WorkflowResource, execDigest string) error {
 	stored := strings.TrimSpace(run.WorkflowSpecHash)
 	if stored == "" {
 		return nil
 	}
-	current, err := plan.WorkflowSpecHash(wf)
+	current, err := plan.WorkflowSpecHashWithExec(wf, execDigest)
 	if err != nil {
 		return fmt.Errorf("local: hash workflow: %w", err)
 	}
-	if current != stored {
-		return fmt.Errorf("local: workflow spec changed since run started")
+	if current == stored {
+		return nil
 	}
-	return nil
+	// Migration: a run row created before #277 stored the resource-only (bare)
+	// hash. When a program exists, the folded hash differs from the bare one, so
+	// also accept a match against the bare hash — pre-fold runs still resume. (As
+	// before #277, a lowering-only change is not reported as drift for such a row.)
+	if execDigest != "" {
+		bare, err := plan.WorkflowSpecHash(wf)
+		if err != nil {
+			return fmt.Errorf("local: hash workflow: %w", err)
+		}
+		if bare == stored {
+			return nil
+		}
+	}
+	return fmt.Errorf("local: workflow spec changed since run started")
 }

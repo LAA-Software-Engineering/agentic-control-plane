@@ -26,6 +26,20 @@ type preparedProject struct {
 	executables map[string]*execir.Program
 }
 
+// workflowExecDigest returns the pinned/lowered program digest for wfName, or ""
+// when no program exists for it. It is the execution-IR component folded into the
+// #118 run-start-vs-resume drift hash (#277), so run-start and resume commit to
+// the same identity: the program a workflow will actually execute, not only its
+// resource projection. Run-start reads it from the resolved config's executables;
+// a pinned resume reads it from the hydrated snapshot's executables (the SAME
+// program), so the pinned path never false-drifts.
+func workflowExecDigest(executables map[string]*execir.Program, wfName string) string {
+	if prog := executables[strings.TrimSpace(wfName)]; prog != nil {
+		return prog.Digest()
+	}
+	return ""
+}
+
 // prepareFromConfig builds execution state from a resolved config snapshot.
 // The runtime must not reload project YAML/TOML; cfg is the sole configuration source.
 func (r *Runtime) prepareFromConfig(ctx context.Context, cfg *config.ResolvedConfig) (*preparedProject, error) {
