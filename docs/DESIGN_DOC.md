@@ -493,11 +493,11 @@ End goal later:
 > **Authoring surface (ADR 002 / ADR 003).** Agents and workflows are authored in
 > [`.agent`](LANGUAGE.md). `.agent` files anywhere under the project root are discovered and
 > compiled through the checker (type/effect checking plus the workflow-argument rebind) into the
-> resource graph by the loader, alongside any YAML resources. Straight-line workflows (including
-> `parallel { }` static fan-out) execute end-to-end; **conditionals, loops, and dynamic fan-out
-> (#199) parse and type-check but do not execute yet** — the loader refuses a control-flow
-> workflow until the execution IR runs on the engine (a #207 follow-up), because the resource
-> graph cannot represent `if`/`for`. **YAML is the compilation output and interchange
+> resource graph by the loader, alongside any YAML resources. `.agent` workflows execute
+> end-to-end, **including conditionals, loops, and dynamic fan-out (#199/#259)**: a control-flow
+> workflow lowers to the execution IR, is pinned into the deployment snapshot (#260), and runs on
+> the `execir` interpreter (the taken arm only) rather than the resource DAG, whose flattened arms
+> are kept only for effect analysis. **YAML is the compilation output and interchange
 > format**, not the primary authoring surface: the loader still accepts it (machine-generated
 > resources, existing fixtures, and interchange all depend on it), `terfyn export --format yaml`
 > materializes the compiled graph on demand, and nothing generated is written to disk by default.
@@ -803,9 +803,10 @@ start (e.g. a missing file) stays gradual (allowed). Captured schemas compile in
 fixed opaque URL and a loader that cannot open files — so a same-document `#/$defs/...` `$ref`
 resolves within the captured bytes, while an external `$ref` (`file://`, another document) is a loud
 compile error, never a live disk read (which would be the drift the capture prevents). **Limits:**
-schemas must be self-contained (no cross-file `$ref`), and the execution IR (`execution_ir_digest`)
-is still empty until execir runs on the engine. See §14 and ADR 002, *Soundness assumptions and
-limits*.
+schemas must be self-contained (no cross-file `$ref`). The execution IR is now pinned too:
+`execution_ir_digest` is the content digest of the `execution_ir` artifact (the serialized
+per-workflow `execir.Program`), non-empty for any project with a lowerable workflow (#260). See
+§14 and ADR 002, *Soundness assumptions and limits*.
 
 The scope limit still holds: the manifest bounds the callable *set* and each operation's *declared*
 effects. It does not verify what a remote endpoint actually does — the trust anchor is human review
@@ -965,20 +966,18 @@ frontend and must never become an expression field on `WorkflowStep`. Conditiona
 lower to an internal **execution IR** (`Branch`, `Loop`, `Fork`, `Join`) that is derived rather
 than authored and has no YAML surface — see ADR 002 §5.
 
-Conditionals, loops, and dynamic fan-out are **delivered** in the `.agent` frontend (#199):
-they parse, type/effect-check, lower to the execution IR ([`internal/execir`](../internal/execir)),
-and execute as a library — see
-[`docs/LANGUAGE.md`](LANGUAGE.md#control-flow-and-the-execution-ir-199). The effect bound
-remains sound as the union over all branches, and loops are bounded by
-`limits.maxLoopIterations`. Three pieces are **follow-ups**, not shipped by #199: the
-execution-IR digest fold into the workflow spec-hash exists (`plan.WorkflowSpecHashWithExec`)
-but no production `plan`/`run` path constructs an `execir.Program` yet; the YAML ingress path
-still executes as a `WorkflowStep` DAG rather than converging on the execution IR; and
-persisting the compiled program at `apply` / pinning it across `run --resume` awaits the
-content-addressed deployment snapshot of #207. `.agent` CLI ingest (#200) landed the loader,
-`export`, `fmt`, and `init`, but it compiles to the resource graph and **refuses control-flow
-workflows** rather than executing the execution IR; running `execir` on the engine (which these
-three follow-ups require) is still pending.
+Conditionals, loops, and dynamic fan-out are **delivered and executed** end-to-end (#199 frontend,
+#255 epic): they parse, type/effect-check, lower to the execution IR
+([`internal/execir`](../internal/execir)), and **run on the engine** — see
+[`docs/LANGUAGE.md`](LANGUAGE.md#control-flow-and-the-execution-ir-199) and
+`examples/agent-control-flow`. The effect bound remains sound as the union over all branches, and
+loops are bounded by `limits.maxLoopIterations`. The engine executes `execir` at parity with the
+DAG (#257), durably resumes it including HITL / concurrent per-branch suspend / nested subworkflows
+(#258/#270), pins the compiled program into the deployment snapshot and executes it (#260 — the
+execution-IR digest fold via `plan.WorkflowSpecHashWithExec` is now live workflow identity), and
+runs `.agent` control flow through the pinned program (#259). The one remaining piece is retiring
+the redundant `WorkflowStep` DAG runtime so every workflow runs on `execir` (#278); until then,
+straight-line / `needs` / `parallel { }` workflows still execute on the DAG.
 
 | Addition | Surface | Status |
 |----------|---------|--------|
@@ -2159,7 +2158,7 @@ or project directory. `compiler_version` is provenance for the compilation as a 
 * `compiler_version`
 * `environment`
 * `graph_digest` → `deployment_artifacts`
-* `execution_ir_digest` → `deployment_artifacts` (empty until execir runs on the engine)
+* `execution_ir_digest` → `deployment_artifacts` (the `execution_ir` artifact: serialized per-workflow `execir.Program`; empty only for a project with no lowerable workflow)
 * `capability_manifest_digest` → `deployment_artifacts`
 * `schema_bundle_digest` → `deployment_artifacts` (the `schema_bundle` artifact: referenced JSON
   Schemas captured at run start; empty when the project references none). A pinned resume validates
