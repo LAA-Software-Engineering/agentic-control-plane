@@ -219,8 +219,18 @@ func CallKey(site CallSite) string {
 	return fmt.Sprintf("%s|%v|%v", site.Bind, site.Path, site.Loop)
 }
 
-// pathKey is the control-record address for a node at the given static path.
-func pathKey(path []int) string { return fmt.Sprintf("%v", path) }
+// controlKey is the determinism-record address for a control node. It folds in
+// BOTH the static path AND the enclosing loop-iteration vector — the same lesson
+// CallKey applies to leaves: a loop body's nodes share one static path across
+// every iteration (#257 addressing), so a data-dependent Branch/Loop legitimately
+// decides differently per iteration. Keying on path alone would record every
+// iteration under one address and misread iteration N's decision as a divergence
+// from iteration N-1. Keyed by path AND loop, the guard compares the same
+// static+iteration decision across the original run and its replay — which is
+// what "diverged on replay" actually means.
+func controlKey(prefix string, path, loop []int) string {
+	return prefix + fmt.Sprintf("%v|%v", path, loop)
+}
 
 // extend returns a fresh slice base+[x], never aliasing base — a child address
 // must not mutate its parent's (several goroutines share the parent).
@@ -377,7 +387,7 @@ func (r *runner) execBranch(scope map[string]any, b *Branch, path, loop []int) e
 	if cond {
 		taken = 1
 	}
-	if err := r.sess.checkControl("br:"+pathKey(path), taken); err != nil {
+	if err := r.sess.checkControl(controlKey("br:", path, loop), taken); err != nil {
 		return err
 	}
 	if cond {
@@ -438,7 +448,7 @@ func (r *runner) execLoop(scope map[string]any, l *Loop, path, loop []int) error
 	if max := r.in.maxIters(); len(items) > max {
 		return fmt.Errorf("execir: loop over %d items exceeds the maximum of %d iterations (raise limits.maxLoopIterations)", len(items), max)
 	}
-	if err := r.sess.checkControl("loop:"+pathKey(path), len(items)); err != nil {
+	if err := r.sess.checkControl(controlKey("loop:", path, loop), len(items)); err != nil {
 		return err
 	}
 	if l.Parallel {

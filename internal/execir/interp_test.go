@@ -321,6 +321,55 @@ func TestDurable_DeterminismGuard(t *testing.T) {
 	}
 }
 
+// TestDurable_LoopBodyBranchVariesPerIteration proves the determinism guard does
+// NOT flag legitimate per-iteration control flow: a Branch inside a sequential
+// Loop whose outcome depends on the loop variable decides differently each
+// iteration, which is correct — the control record is keyed by path AND loop
+// (mirroring CallKey), so iteration N's decision is not misread as a divergence
+// from iteration N-1. Runs to completion, and replays from a seed unchanged.
+func TestDurable_LoopBodyBranchVariesPerIteration(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Params: []string{"input"}, Body: []Node{
+		&Loop{Var: "flag", Collection: Ref{Path: []string{"input", "flags"}}, Body: []Node{
+			&Branch{
+				Cond: Leaf{V: Ref{Path: []string{"flag"}}},
+				Then: []Node{&InvokeTool{Uses: "tool.t.on"}},
+				Else: []Node{&InvokeTool{Uses: "tool.t.off"}},
+			},
+		}},
+	}}
+	in := &Interp{Invoker: &recorder{}}
+	input := map[string]any{"flags": []any{true, false, true}}
+	_, st, err := in.RunResumable(context.Background(), prog, input, nil)
+	if err != nil {
+		t.Fatalf("fresh run must not flag per-iteration branch divergence: %v", err)
+	}
+	// Replay from the recorded control: the same per-iteration decisions must
+	// verify, not collide.
+	if _, _, err := in.RunResumable(context.Background(), prog, input, st); err != nil {
+		t.Fatalf("replay of identical nested control flow must pass: %v", err)
+	}
+}
+
+// TestDurable_NestedLoopLengthVariesPerIteration proves an inner Loop whose
+// collection length varies per outer iteration is not flagged: the inner loop's
+// length record is keyed by the outer loop index too.
+func TestDurable_NestedLoopLengthVariesPerIteration(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Params: []string{"input"}, Body: []Node{
+		&Loop{Var: "row", Collection: Ref{Path: []string{"input", "rows"}}, Body: []Node{
+			&Loop{Var: "x", Collection: Ref{Path: []string{"row"}}, Body: []Node{
+				&InvokeTool{Uses: "tool.t.x"},
+			}},
+		}},
+	}}
+	in := &Interp{Invoker: &recorder{}}
+	input := map[string]any{"rows": []any{[]any{int64(1)}, []any{int64(1), int64(2)}}}
+	if _, _, err := in.RunResumable(context.Background(), prog, input, nil); err != nil {
+		t.Fatalf("inner loop length varying per outer iteration must not be flagged: %v", err)
+	}
+}
+
 // TestDurable_ConcurrentSuspendRejected proves a suspend inside a Graph (Tier B)
 // surfaces loudly rather than mis-anchoring a checkpoint.
 func TestDurable_ConcurrentSuspendRejected(t *testing.T) {
