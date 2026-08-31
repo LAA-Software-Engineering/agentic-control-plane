@@ -36,6 +36,14 @@ type checkpointPayload struct {
 	PendingHitl   *PendingHitlState     `json:"pendingHitl,omitempty"`
 	OtelInterrupt *telemetry.SpanRef    `json:"otelInterrupt,omitempty"`
 	Nested        *NestedRunState       `json:"nested,omitempty"`
+	// ExecIR marks a checkpoint written by the execir run path (issue #258), so a
+	// resume routes back to that path. ExecMemo/ExecControl carry the interpreter's
+	// durable state (completed-leaf memo keyed by execir.CallKey, and pure
+	// control-flow records) so replay skips re-invoking completed leaves. All
+	// omitempty — a DAG checkpoint never sets them (backward compatible).
+	ExecIR      bool           `json:"execIR,omitempty"`
+	ExecMemo    map[string]any `json:"execMemo,omitempty"`
+	ExecControl map[string]int `json:"execControl,omitempty"`
 }
 
 // NestedRunState is stacked in-flight subworkflow progress (issue #194).

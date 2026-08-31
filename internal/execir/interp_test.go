@@ -63,6 +63,13 @@ func (r *recorder) InvokeWorkflow(_ context.Context, _ CallSite, wf string, args
 	return nil, nil
 }
 
+func (r *recorder) InvokeApproval(_ context.Context, _ CallSite, _ ApprovalInfo, args map[string]any) (any, error) {
+	r.mu.Lock()
+	r.tools = append(r.tools, "approval")
+	r.mu.Unlock()
+	return args, nil
+}
+
 // siteRecorder captures the CallSite of every invocation so tests can pin the
 // frozen ABI's identity contract (issue #257): Path uniqueness/stability and
 // Loop iteration indices.
@@ -88,6 +95,10 @@ func (s *siteRecorder) InvokeAgent(_ context.Context, site CallSite, agent strin
 func (s *siteRecorder) InvokeWorkflow(_ context.Context, site CallSite, _ string, _ map[string]any) (any, error) {
 	s.record(site)
 	return map[string]any{}, nil
+}
+func (s *siteRecorder) InvokeApproval(_ context.Context, site CallSite, _ ApprovalInfo, args map[string]any) (any, error) {
+	s.record(site)
+	return args, nil
 }
 
 // byBind indexes captured sites by their (unique) binding name.
@@ -203,6 +214,173 @@ func TestCallSite_GraphPathOrderStable(t *testing.T) {
 			t.Fatalf("node %q shares Path %s with another node", id, key)
 		}
 		seen[key] = true
+	}
+}
+
+// durableStub suspends the first call to suspendUses (returning ErrSuspend) and
+// counts invocations per uses, so a test can prove a memoized leaf is not
+// re-invoked on resume.
+type durableStub struct {
+	mu          sync.Mutex
+	calls       map[string]int
+	suspendUses string
+	suspended   bool
+}
+
+func (d *durableStub) InvokeTool(_ context.Context, _ CallSite, uses string, _ map[string]any) (any, error) {
+	d.mu.Lock()
+	if d.calls == nil {
+		d.calls = map[string]int{}
+	}
+	d.calls[uses]++
+	first := !d.suspended && uses == d.suspendUses
+	if first {
+		d.suspended = true
+	}
+	d.mu.Unlock()
+	if first {
+		return nil, ErrSuspend
+	}
+	return map[string]any{"uses": uses}, nil
+}
+func (d *durableStub) InvokeAgent(_ context.Context, _ CallSite, a string, _ map[string]any) (any, error) {
+	return map[string]any{"agent": a}, nil
+}
+func (d *durableStub) InvokeWorkflow(_ context.Context, _ CallSite, _ string, _ map[string]any) (any, error) {
+	return nil, nil
+}
+func (d *durableStub) InvokeApproval(_ context.Context, _ CallSite, _ ApprovalInfo, args map[string]any) (any, error) {
+	return args, nil
+}
+
+// TestDurable_MemoReplayNoDuplicateInvocation is the core #258 guarantee: a
+// completed leaf before the suspend point is replayed from the memo on resume,
+// never re-invoked, so its side effect fires exactly once across suspend+resume.
+func TestDurable_MemoReplayNoDuplicateInvocation(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Body: []Node{
+		&InvokeTool{Bind: "a", Uses: "tool.t.a"},
+		&InvokeTool{Bind: "gate", Uses: "tool.t.gate"},
+		&InvokeTool{Bind: "b", Uses: "tool.t.b"},
+		&Return{Value: Ref{Path: []string{"b"}}},
+	}}
+	stub := &durableStub{suspendUses: "tool.t.gate"}
+	in := &Interp{Invoker: stub}
+
+	// Fresh run: a completes, gate suspends.
+	_, st, err := in.RunResumable(context.Background(), prog, nil, nil)
+	if err != nil {
+		t.Fatalf("fresh run: %v", err)
+	}
+	if !st.Suspended {
+		t.Fatalf("expected suspension at the gate")
+	}
+	if stub.calls["tool.t.a"] != 1 || stub.calls["tool.t.b"] != 0 {
+		t.Fatalf("after suspend: a=%d b=%d, want a=1 b=0", stub.calls["tool.t.a"], stub.calls["tool.t.b"])
+	}
+
+	// Resume from the memo: a must NOT be re-invoked; gate completes; b runs.
+	out, st2, err := in.RunResumable(context.Background(), prog, nil, st)
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if st2.Suspended {
+		t.Fatalf("resume should complete, not re-suspend")
+	}
+	if stub.calls["tool.t.a"] != 1 {
+		t.Fatalf("tool a re-invoked on resume (%d): memo replay must be side-effect-free", stub.calls["tool.t.a"])
+	}
+	if stub.calls["tool.t.b"] != 1 {
+		t.Fatalf("tool b should run once on resume, got %d", stub.calls["tool.t.b"])
+	}
+	if m, ok := out.(map[string]any); !ok || m["uses"] != "tool.t.b" {
+		t.Fatalf("output %#v", out)
+	}
+}
+
+// TestDurable_DeterminismGuard proves a control-flow decision that diverges on
+// replay (a Branch taking the other arm) is detected, not silently mis-replayed.
+func TestDurable_DeterminismGuard(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Params: []string{"input"}, Body: []Node{
+		&Branch{
+			Cond: Leaf{V: Ref{Path: []string{"input", "flag"}}},
+			Then: []Node{&InvokeTool{Bind: "x", Uses: "tool.t.then"}},
+			Else: []Node{&InvokeTool{Bind: "x", Uses: "tool.t.else"}},
+		},
+	}}
+	in := &Interp{Invoker: &recorder{}}
+	_, st, err := in.RunResumable(context.Background(), prog, map[string]any{"flag": true}, nil)
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	// Replay with the condition flipped — must be a determinism error.
+	_, _, err = in.RunResumable(context.Background(), prog, map[string]any{"flag": false}, st)
+	if err == nil {
+		t.Fatalf("expected a determinism-violation error when the branch diverges on replay")
+	}
+}
+
+// TestDurable_LoopBodyBranchVariesPerIteration proves the determinism guard does
+// NOT flag legitimate per-iteration control flow: a Branch inside a sequential
+// Loop whose outcome depends on the loop variable decides differently each
+// iteration, which is correct — the control record is keyed by path AND loop
+// (mirroring CallKey), so iteration N's decision is not misread as a divergence
+// from iteration N-1. Runs to completion, and replays from a seed unchanged.
+func TestDurable_LoopBodyBranchVariesPerIteration(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Params: []string{"input"}, Body: []Node{
+		&Loop{Var: "flag", Collection: Ref{Path: []string{"input", "flags"}}, Body: []Node{
+			&Branch{
+				Cond: Leaf{V: Ref{Path: []string{"flag"}}},
+				Then: []Node{&InvokeTool{Uses: "tool.t.on"}},
+				Else: []Node{&InvokeTool{Uses: "tool.t.off"}},
+			},
+		}},
+	}}
+	in := &Interp{Invoker: &recorder{}}
+	input := map[string]any{"flags": []any{true, false, true}}
+	_, st, err := in.RunResumable(context.Background(), prog, input, nil)
+	if err != nil {
+		t.Fatalf("fresh run must not flag per-iteration branch divergence: %v", err)
+	}
+	// Replay from the recorded control: the same per-iteration decisions must
+	// verify, not collide.
+	if _, _, err := in.RunResumable(context.Background(), prog, input, st); err != nil {
+		t.Fatalf("replay of identical nested control flow must pass: %v", err)
+	}
+}
+
+// TestDurable_NestedLoopLengthVariesPerIteration proves an inner Loop whose
+// collection length varies per outer iteration is not flagged: the inner loop's
+// length record is keyed by the outer loop index too.
+func TestDurable_NestedLoopLengthVariesPerIteration(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Params: []string{"input"}, Body: []Node{
+		&Loop{Var: "row", Collection: Ref{Path: []string{"input", "rows"}}, Body: []Node{
+			&Loop{Var: "x", Collection: Ref{Path: []string{"row"}}, Body: []Node{
+				&InvokeTool{Uses: "tool.t.x"},
+			}},
+		}},
+	}}
+	in := &Interp{Invoker: &recorder{}}
+	input := map[string]any{"rows": []any{[]any{int64(1)}, []any{int64(1), int64(2)}}}
+	if _, _, err := in.RunResumable(context.Background(), prog, input, nil); err != nil {
+		t.Fatalf("inner loop length varying per outer iteration must not be flagged: %v", err)
+	}
+}
+
+// TestDurable_ConcurrentSuspendRejected proves a suspend inside a Graph (Tier B)
+// surfaces loudly rather than mis-anchoring a checkpoint.
+func TestDurable_ConcurrentSuspendRejected(t *testing.T) {
+	t.Parallel()
+	prog := &Program{Workflow: "W", Body: []Node{
+		&Graph{Nodes: []GraphNode{{ID: "g", Run: &InvokeTool{Bind: "g", Uses: "tool.t.gate"}}}},
+	}}
+	stub := &durableStub{suspendUses: "tool.t.gate"}
+	_, _, err := (&Interp{Invoker: stub}).RunResumable(context.Background(), prog, nil, nil)
+	if err == nil {
+		t.Fatalf("expected a Tier-B error for suspend inside a concurrent construct")
 	}
 }
 
@@ -538,14 +716,24 @@ func TestCompositeValues_Eval(t *testing.T) {
 	}
 }
 
-// TestApproval_RejectedLoudly proves the standalone interpreter refuses an
-// Approval node (durable suspend/resume is Phase 2, #258) rather than silently
-// skipping a human gate. (Graph now executes — see TestGraph_* below.)
-func TestApproval_RejectedLoudly(t *testing.T) {
+// TestApproval_ExecutesAndPublishesPayload proves an Approval node runs through
+// the Invoker (issue #258) and publishes the approved payload under its bind, so
+// a downstream reference resolves to what was approved.
+func TestApproval_ExecutesAndPublishesPayload(t *testing.T) {
 	t.Parallel()
-	prog := &Program{Workflow: "W", Body: []Node{&Approval{Bind: "gate"}}}
-	if _, err := (&Interp{Invoker: &recorder{}}).Run(context.Background(), prog, nil); err == nil {
-		t.Fatalf("expected Approval execution to be rejected, got nil error")
+	prog := &Program{Workflow: "W", Params: []string{"input"}, Body: []Node{
+		&Approval{Bind: "gate", Description: "review", Args: map[string]Value{"note": Ref{Path: []string{"input", "note"}}}},
+		&Return{Value: Ref{Path: []string{"gate"}}},
+	}}
+	rec := &recorder{}
+	out := runProg(t, &Interp{Invoker: rec}, prog, map[string]any{"note": "hello"})
+	m, ok := out.(map[string]any)
+	if !ok || m["note"] != "hello" {
+		t.Fatalf("approval should publish its reviewed payload, got %#v", out)
+	}
+	names := rec.names()
+	if len(names) != 1 || names[0] != "approval" {
+		t.Fatalf("expected one approval invocation, got %v", names)
 	}
 }
 

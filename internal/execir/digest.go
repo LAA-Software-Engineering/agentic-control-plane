@@ -103,6 +103,7 @@ func encodeNode(b *strings.Builder, n Node) {
 		b.WriteString(" redact:[")
 		b.WriteString(strings.Join(sortedCopy(v.RedactKeys), ","))
 		b.WriteByte(']')
+		encodeArgs(b, v.Args)
 	default:
 		b.WriteString("?node")
 	}

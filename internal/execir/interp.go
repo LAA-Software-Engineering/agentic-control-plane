@@ -2,6 +2,7 @@ package execir
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -13,6 +14,27 @@ import (
 // when the caller sets no override. It mirrors the engine's step-concurrency
 // default without importing the engine (execir must stay runtime-independent).
 const DefaultMaxConcurrency = 8
+
+// ErrSuspend is returned by an [Invoker] to signal that a leaf is now waiting on
+// a human decision (a HITL gate or an [Approval] node): the program pauses here
+// (issue #258). The engine adapter records the pending anchor (keyed by the
+// [CallSite]) as a side effect before returning it; the interpreter halts the
+// walk cleanly, leaving [RunState.Suspended] set and the completed-leaf memo
+// intact so a later resume replays without re-issuing side effects.
+//
+// It is a clean pause, not a failure: a suspend inside a straight-line walk is
+// not propagated as an error. A suspend inside a concurrent construct
+// (Fork/Graph/parallel Loop) is NOT supported yet (#258 Tier B) and surfaces as
+// a loud error rather than a mis-anchored checkpoint.
+var ErrSuspend = errors.New("execir: suspended for human decision")
+
+// ApprovalInfo is the review presentation an [Approval] node carries to the
+// [Invoker] (issue #258/#195). It is not policy — it does not decide whether the
+// node pauses.
+type ApprovalInfo struct {
+	Description string
+	RedactKeys  []string
+}
 
 // CallSite is the structural identity of one leaf invocation, passed to the
 // [Invoker] per call (issue #257). It is the key an engine adapter uses for
@@ -51,6 +73,10 @@ type Invoker interface {
 	InvokeTool(ctx context.Context, site CallSite, uses string, args map[string]any) (any, error)
 	InvokeAgent(ctx context.Context, site CallSite, agent string, args map[string]any) (any, error)
 	InvokeWorkflow(ctx context.Context, site CallSite, workflow string, args map[string]any) (any, error)
+	// InvokeApproval runs a workflow-level human pause (issue #195/#258): the
+	// reviewed args are the node's payload, and the approved payload is its
+	// output. A fresh run returns [ErrSuspend]; a resume applies the decision.
+	InvokeApproval(ctx context.Context, site CallSite, info ApprovalInfo, args map[string]any) (any, error)
 }
 
 // Interp executes a Program against an Invoker. Zero values pick built-in
@@ -76,21 +102,134 @@ func (in *Interp) maxConc() int {
 	return DefaultMaxConcurrency
 }
 
+// RunState carries durable execution progress across a suspend/resume boundary
+// (issue #258). It is the execir half of the engine checkpoint: the engine
+// serializes it into checkpoint context and seeds it back on resume.
+//
+//   - Memo maps a leaf's [CallSite] key to its completed output. On resume a
+//     memoized leaf is NOT re-invoked — its result is replayed — so an
+//     already-completed side effect never fires twice.
+//   - Control records each pure control-flow decision (a Branch condition, a Loop
+//     collection length) by node address, so replay can assert the control flow
+//     did not diverge (a divergence is a loud error, not a silent wrong replay).
+//   - Suspended/SuspendKey report that the run paused at the leaf identified by
+//     SuspendKey (the pending human decision the engine anchors PendingHitl to).
+type RunState struct {
+	Memo       map[string]any `json:"memo,omitempty"`
+	Control    map[string]int `json:"control,omitempty"`
+	Suspended  bool           `json:"-"`
+	SuspendKey string         `json:"-"`
+}
+
 // Run executes prog with the given workflow input and returns the value set by a
-// Return node (nil if the program returns nothing).
+// Return node (nil if the program returns nothing). It discards durable state; a
+// suspend (an [Invoker] returning [ErrSuspend]) halts cleanly with a nil-ish
+// output. Use [Interp.RunResumable] for the durable path.
 func (in *Interp) Run(ctx context.Context, prog *Program, input map[string]any) (any, error) {
+	out, _, err := in.RunResumable(ctx, prog, input, nil)
+	return out, err
+}
+
+// RunResumable executes prog, seeding completed-leaf memo and control records
+// from seed (nil for a fresh run), and returns the durable [RunState] — whether
+// the run completed or suspended (issue #258).
+func (in *Interp) RunResumable(ctx context.Context, prog *Program, input map[string]any, seed *RunState) (any, *RunState, error) {
 	if in == nil || in.Invoker == nil {
-		return nil, fmt.Errorf("execir: nil interpreter or invoker")
+		return nil, nil, fmt.Errorf("execir: nil interpreter or invoker")
 	}
 	if prog == nil {
-		return nil, fmt.Errorf("execir: nil program")
+		return nil, nil, fmt.Errorf("execir: nil program")
+	}
+	sess := &session{memo: map[string]any{}, control: map[string]int{}}
+	if seed != nil {
+		for k, v := range seed.Memo {
+			sess.memo[k] = v
+		}
+		for k, v := range seed.Control {
+			sess.control[k] = v
+		}
 	}
 	scope := paramScope(prog.Params, input)
-	r := &runner{in: in, ctx: ctx}
+	r := &runner{in: in, ctx: ctx, sess: sess}
 	if err := r.execAll(scope, prog.Body, nil, nil); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return r.output, nil
+	st := &RunState{
+		Memo:       sess.memo,
+		Control:    sess.control,
+		Suspended:  sess.suspended,
+		SuspendKey: sess.suspendKey,
+	}
+	return r.output, st, nil
+}
+
+// session is the shared durable state for one RunResumable call: the memo of
+// completed leaves and the control-flow record, both accessed from every
+// (sub-)runner — including the goroutines a completing Fork/Graph/parallel Loop
+// spawns — so it is mutex-guarded.
+type session struct {
+	mu         sync.Mutex
+	memo       map[string]any
+	control    map[string]int
+	suspended  bool
+	suspendKey string
+}
+
+func (s *session) getMemo(key string) (any, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.memo[key]
+	return v, ok
+}
+
+func (s *session) putMemo(key string, v any) {
+	s.mu.Lock()
+	s.memo[key] = v
+	s.mu.Unlock()
+}
+
+func (s *session) markSuspended(key string) {
+	s.mu.Lock()
+	if !s.suspended {
+		s.suspended = true
+		s.suspendKey = key
+	}
+	s.mu.Unlock()
+}
+
+// checkControl records a pure control-flow decision at addr, or, on replay,
+// verifies it matches the recorded value — a mismatch means the control flow
+// diverged between the original run and the replay (a non-deterministic
+// condition or collection), which would make the memo replay unsound.
+func (s *session) checkControl(addr string, val int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if prev, ok := s.control[addr]; ok && prev != val {
+		return fmt.Errorf("execir: control flow diverged on replay at %s (was %d, now %d): a non-deterministic condition cannot be durably resumed", addr, prev, val)
+	}
+	s.control[addr] = val
+	return nil
+}
+
+// CallKey canonicalizes a CallSite into the memo/anchor key. Path is already
+// order-stable (#257), so the key is stable across digest-preserving edits. An
+// engine adapter uses it to anchor a suspended leaf's pending state to the same
+// key the interpreter memoizes and reports as [RunState.SuspendKey] (issue #258).
+func CallKey(site CallSite) string {
+	return fmt.Sprintf("%s|%v|%v", site.Bind, site.Path, site.Loop)
+}
+
+// controlKey is the determinism-record address for a control node. It folds in
+// BOTH the static path AND the enclosing loop-iteration vector — the same lesson
+// CallKey applies to leaves: a loop body's nodes share one static path across
+// every iteration (#257 addressing), so a data-dependent Branch/Loop legitimately
+// decides differently per iteration. Keying on path alone would record every
+// iteration under one address and misread iteration N's decision as a divergence
+// from iteration N-1. Keyed by path AND loop, the guard compares the same
+// static+iteration decision across the original run and its replay — which is
+// what "diverged on replay" actually means.
+func controlKey(prefix string, path, loop []int) string {
+	return prefix + fmt.Sprintf("%v|%v", path, loop)
 }
 
 // extend returns a fresh slice base+[x], never aliasing base — a child address
@@ -125,8 +264,12 @@ func paramScope(params []string, input map[string]any) map[string]any {
 type runner struct {
 	in     *Interp
 	ctx    context.Context
+	sess   *session // shared memo/control/suspend state (issue #258)
 	output any
-	done   bool // a Return has fired; stop executing subsequent nodes
+	done   bool // a Return has fired OR this walk suspended; stop executing subsequent nodes
+	// concurrent is true for a runner executing inside a Fork/Graph/parallel Loop
+	// branch. A suspend there is Tier B (#258) — flagged loudly, not checkpointed.
+	concurrent bool
 }
 
 // execAll runs nodes in order against scope, stopping early once a Return fires.
@@ -151,17 +294,17 @@ func (r *runner) exec(scope map[string]any, n Node, path, loop []int) error {
 	switch v := n.(type) {
 	case *InvokeTool:
 		site := CallSite{Bind: v.Bind, Path: path, Loop: loop}
-		return r.invoke(scope, v.Bind, v.Args, func(a map[string]any) (any, error) {
+		return r.invoke(scope, v.Bind, site, v.Args, func(a map[string]any) (any, error) {
 			return r.in.Invoker.InvokeTool(r.ctx, site, v.Uses, a)
 		})
 	case *InvokeAgent:
 		site := CallSite{Bind: v.Bind, Path: path, Loop: loop}
-		return r.invoke(scope, v.Bind, v.Args, func(a map[string]any) (any, error) {
+		return r.invoke(scope, v.Bind, site, v.Args, func(a map[string]any) (any, error) {
 			return r.in.Invoker.InvokeAgent(r.ctx, site, v.Agent, a)
 		})
 	case *InvokeWorkflow:
 		site := CallSite{Bind: v.Bind, Path: path, Loop: loop}
-		return r.invoke(scope, v.Bind, v.Args, func(a map[string]any) (any, error) {
+		return r.invoke(scope, v.Bind, site, v.Args, func(a map[string]any) (any, error) {
 			return r.in.Invoker.InvokeWorkflow(r.ctx, site, v.Workflow, a)
 		})
 	case *Let:
@@ -190,24 +333,45 @@ func (r *runner) exec(scope map[string]any, n Node, path, loop []int) error {
 		r.done = true
 		return nil
 	case *Approval:
-		// A human pause suspends and resumes through the engine's checkpoint
-		// machinery (Phase 2, #258); treating it as a no-op here would silently
-		// skip a gate, so it fails loudly.
-		return fmt.Errorf("execir: Approval node execution is not implemented (durable suspend/resume, issue #258)")
+		site := CallSite{Bind: v.Bind, Path: path, Loop: loop}
+		info := ApprovalInfo{Description: v.Description, RedactKeys: v.RedactKeys}
+		return r.invoke(scope, v.Bind, site, v.Args, func(a map[string]any) (any, error) {
+			return r.in.Invoker.InvokeApproval(r.ctx, site, info, a)
+		})
 	default:
 		return fmt.Errorf("execir: unknown node %T", n)
 	}
 }
 
-func (r *runner) invoke(scope map[string]any, bind string, args map[string]Value, call func(map[string]any) (any, error)) error {
+// invoke runs one leaf with durable memoization and suspend handling (issue
+// #258). A memoized result is replayed WITHOUT re-invoking (no duplicate side
+// effect on resume). An [ErrSuspend] halts the walk cleanly on the sequential
+// path and is a loud error inside a concurrent construct (Tier B).
+func (r *runner) invoke(scope map[string]any, bind string, site CallSite, args map[string]Value, call func(map[string]any) (any, error)) error {
+	key := CallKey(site)
+	if v, ok := r.sess.getMemo(key); ok {
+		if bind != "" {
+			scope[bind] = v
+		}
+		return nil
+	}
 	a, err := evalArgs(scope, args)
 	if err != nil {
 		return err
 	}
 	res, err := call(a)
 	if err != nil {
+		if errors.Is(err, ErrSuspend) {
+			if r.concurrent {
+				return fmt.Errorf("execir: suspend inside a concurrent construct is not supported yet (#258 Tier B): %s", key)
+			}
+			r.sess.markSuspended(key)
+			r.done = true // halt this walk; the run is now waiting on a human
+			return nil
+		}
 		return err
 	}
+	r.sess.putMemo(key, res)
 	if bind != "" {
 		scope[bind] = res
 	}
@@ -217,6 +381,13 @@ func (r *runner) invoke(scope map[string]any, bind string, args map[string]Value
 func (r *runner) execBranch(scope map[string]any, b *Branch, path, loop []int) error {
 	cond, err := evalExpr(scope, b.Cond)
 	if err != nil {
+		return err
+	}
+	taken := 0
+	if cond {
+		taken = 1
+	}
+	if err := r.sess.checkControl(controlKey("br:", path, loop), taken); err != nil {
 		return err
 	}
 	if cond {
@@ -248,7 +419,7 @@ func (r *runner) execFork(scope map[string]any, f *Fork, path, loop []int) error
 			defer wg.Done()
 			defer func() { <-sem }()
 			child := childScope(scope)
-			sub := &runner{in: r.in, ctx: r.ctx}
+			sub := &runner{in: r.in, ctx: r.ctx, sess: r.sess, concurrent: true}
 			if err := sub.execAll(child, br.Nodes, extend(path, i), loop); err != nil {
 				results[i] = result{err: err}
 				return
@@ -276,6 +447,9 @@ func (r *runner) execLoop(scope map[string]any, l *Loop, path, loop []int) error
 	}
 	if max := r.in.maxIters(); len(items) > max {
 		return fmt.Errorf("execir: loop over %d items exceeds the maximum of %d iterations (raise limits.maxLoopIterations)", len(items), max)
+	}
+	if err := r.sess.checkControl(controlKey("loop:", path, loop), len(items)); err != nil {
+		return err
 	}
 	if l.Parallel {
 		return r.execLoopParallel(scope, l, items, path, loop)
@@ -314,7 +488,7 @@ func (r *runner) execLoopParallel(scope map[string]any, l *Loop, items []any, pa
 			defer func() { <-sem }()
 			child := childScope(scope)
 			child[l.Var] = item
-			sub := &runner{in: r.in, ctx: r.ctx}
+			sub := &runner{in: r.in, ctx: r.ctx, sess: r.sess, concurrent: true}
 			errs[i] = sub.execAll(child, l.Body, path, extend(loop, i))
 		}(i, item)
 	}
@@ -399,7 +573,7 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 				mu.Lock()
 				local := childScope(scope)
 				mu.Unlock()
-				sub := &runner{in: r.in, ctx: ctx}
+				sub := &runner{in: r.in, ctx: ctx, sess: r.sess, concurrent: true}
 				err := sub.exec(local, gn.Run, extend(path, rank[i]), loop)
 				mu.Lock()
 				if err != nil {

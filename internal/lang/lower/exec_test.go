@@ -34,6 +34,9 @@ func (e *endToEndInvoker) InvokeAgent(_ context.Context, _ execir.CallSite, a st
 func (e *endToEndInvoker) InvokeWorkflow(_ context.Context, _ execir.CallSite, w string, _ map[string]any) (any, error) {
 	return nil, nil
 }
+func (e *endToEndInvoker) InvokeApproval(_ context.Context, _ execir.CallSite, _ execir.ApprovalInfo, args map[string]any) (any, error) {
+	return args, nil
+}
 
 // TestExec_ParseLowerExecute is the primary acceptance path: a control-flow
 // .agent workflow parses, lowers to the execution IR, and executes — the
