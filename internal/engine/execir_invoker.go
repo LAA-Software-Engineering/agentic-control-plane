@@ -45,13 +45,15 @@ type engineInvoker struct {
 	cost         *liveCost
 	runStartedAt time.Time
 
-	mu             sync.Mutex
-	ictx           Context           // Input + accumulated Steps, for buildWorkflowOutput after the run
-	suspendClaimed bool              // one suspension cause per run cycle (first-wins across gates/subworkflows)
-	pending        *PendingHitlState // the ONE new gate this run cycle suspends at (set first-wins on a fresh suspend)
-	pendingSeed    *PendingHitlState // the gate loaded from the checkpoint that THIS resume resolves (claimed by the matching branch, #275)
-	nested         *nestedSuspension // a suspended subworkflow frame (set first-wins on a fresh suspend, #270)
-	nestedSeed     *NestedRunState   // a suspended subworkflow to resume (seeded from the checkpoint on resume)
+	mu   sync.Mutex
+	ictx Context // Input + accumulated Steps, for buildWorkflowOutput after the run
+	// pending and nested are the ONE presented suspension cause this run cycle: a
+	// direct gate (first-wins) or a suspended subworkflow, which preempts a direct
+	// gate because its frame carries committed work (#275). At most one is set.
+	pending     *PendingHitlState // the direct gate this run cycle suspends at
+	pendingSeed *PendingHitlState // the gate loaded from the checkpoint that THIS resume resolves (claimed by the matching branch, #275)
+	nested      *nestedSuspension // a suspended subworkflow frame; preempts a direct gate (#275/#270)
+	nestedSeed  *NestedRunState   // a suspended subworkflow to resume (seeded from the checkpoint on resume)
 }
 
 // nestedSuspension is a subworkflow that suspended: the callee's completed steps +
@@ -94,29 +96,37 @@ func (a *engineInvoker) claimPending(key string) *PendingHitlState {
 	return nil
 }
 
-// setPendingIfFirst records a direct gate as the run's one suspension cause iff
-// none is claimed yet (first-suspend wins), returning whether it won. A racing
-// second gate is dropped and re-runs on resume — the DAG's cancel-on-first-interrupt.
+// setPendingIfFirst records a direct gate as the run's one presented suspension
+// cause iff none is claimed yet (first-suspend wins), returning whether it won. A
+// racing second gate is dropped and re-runs on resume — safe because a direct
+// gate carries no committed work (it IS the pre-dispatch pause). A suspended
+// subworkflow (setNestedIfFirst) has priority over a direct gate: since siblings
+// are no longer cancelled on suspend (#275), a direct gate must yield the slot to
+// a nested frame that already committed inner effects, or that work would be
+// dropped and re-run (S7).
 func (a *engineInvoker) setPendingIfFirst(p *PendingHitlState) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.suspendClaimed {
+	if a.nested != nil || a.pending != nil {
 		return false
 	}
-	a.suspendClaimed = true
 	a.pending = p
 	return true
 }
 
-// setNestedIfFirst records a suspended subworkflow as the run's one suspension
-// cause iff none is claimed yet.
+// setNestedIfFirst records a suspended subworkflow as the run's one presented
+// suspension cause, returning whether it was recorded. Its frame carries the
+// callee's committed inner memo, which would re-run (duplicate side effect, S7)
+// if dropped — so it PREEMPTS a direct gate already in the slot (that gate re-runs
+// safely on resume). A second nested frame cannot be preserved in one slot and is
+// rejected (false); the caller fails closed rather than risk an S7 duplicate.
 func (a *engineInvoker) setNestedIfFirst(n *nestedSuspension) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.suspendClaimed {
+	if a.nested != nil {
 		return false
 	}
-	a.suspendClaimed = true
+	a.pending = nil // preempt a direct gate; it carries no committed work and re-runs safely
 	a.nested = n
 	return true
 }
@@ -476,9 +486,6 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 		}
 		childInv.ictx = Context{Input: in, Steps: steps, PendingHitl: ns.PendingHitl}
 		childInv.pendingSeed = ns.PendingHitl
-		if ns.PendingHitl != nil {
-			childInv.suspendClaimed = false // allow re-claim on resume
-		}
 		childSeed = &execir.RunState{Memo: ns.ExecMemo, Control: ns.ExecControl}
 	} else if a.e.Trace != nil {
 		_, _ = a.e.Trace.Append(ctx, a.in.RunID, a.e.qualID(site.Bind), trace.EventWorkflowCallStarted, trace.ActorSystem, map[string]any{
@@ -493,13 +500,20 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 	}
 	if childState.Suspended {
 		snap := childInv.snapshotIctx()
-		a.setNestedIfFirst(&nestedSuspension{
+		// The child suspended with (possibly) committed inner effects in its memo.
+		// setNestedIfFirst preempts a direct gate to preserve them, but a SECOND
+		// suspended subworkflow in the same concurrent group cannot be preserved in
+		// the single nested slot — dropping its frame would re-run its committed
+		// inner steps on resume (S7). Fail closed rather than duplicate side effects.
+		if !a.setNestedIfFirst(&nestedSuspension{
 			key:    key,
 			stepID: site.Bind,
 			callee: workflow,
 			ictx:   Context{Input: snap.Input, Steps: snap.Steps, PendingHitl: childInv.getPending()},
 			state:  childState,
-		})
+		}) {
+			return nil, fmt.Errorf("engine: step %q: a second subworkflow suspended for human decision in the same concurrent group is not yet supported (issue #275); a single concurrent subworkflow, or independent direct gates, do resume", site.Bind)
+		}
 		return nil, execir.ErrSuspend
 	}
 

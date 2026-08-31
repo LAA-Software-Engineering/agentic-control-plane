@@ -366,6 +366,91 @@ func TestExecIRResume_TwoConcurrentGates_RejectAborts(t *testing.T) {
 	}
 }
 
+// directGateWithSubworkflowGraph is a needs-DAG whose two concurrent roots are a
+// direct HITL gate ("g") and a subworkflow call ("w") whose callee runs an
+// ungated step ("innerprep") then an inner HITL gate ("innergate"). It exercises
+// the interaction of the #275 no-cancel change with the single suspension slot:
+// the direct gate can win the slot while the child has already committed its
+// inner step (issue #275 review).
+func directGateWithSubworkflowGraph() *spec.ProjectGraph {
+	return &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{
+			"helper": {APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "helper"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}}},
+			"pub1":   {APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "pub1"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(true)}}},
+			"pub2":   {APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: "pub2"}, Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(true)}}},
+		},
+		Policies: map[string]*spec.PolicyResource{
+			"gate": {Spec: spec.PolicySpec{
+				Approvals: &spec.PolicyApprovals{RequiredFor: []string{"tool.pub1.echo", "tool.pub2.echo"}},
+				Hitl: &spec.HitlPolicy{InterruptOn: map[string]spec.HitlInterruptValue{
+					"pub1": {Enabled: true, Config: &spec.HitlInterruptConfig{AllowedDecisions: []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject}}},
+					"pub2": {Enabled: true, Config: &spec.HitlInterruptConfig{AllowedDecisions: []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject}}},
+				}},
+			}},
+		},
+		Workflows: map[string]*spec.WorkflowResource{
+			"child": {
+				APIVersion: spec.APIVersionV0, Kind: spec.KindWorkflow, Metadata: spec.Metadata{Name: "child"},
+				Spec: spec.WorkflowSpec{
+					Policy: "gate",
+					Steps: []spec.WorkflowStep{
+						{ID: "innerprep", Uses: "tool.helper.echo", With: map[string]any{"topic": "${input.topic}"}},
+						{ID: "innergate", Uses: "tool.pub2.echo", With: map[string]any{"y": "${steps.innerprep.output.echo.topic}"}},
+					},
+					Output: &spec.WorkflowOutput{Value: map[string]any{"r": "${steps.innergate.output}"}},
+				},
+			},
+			"parent": {
+				APIVersion: spec.APIVersionV0, Kind: spec.KindWorkflow, Metadata: spec.Metadata{Name: "parent"},
+				Spec: spec.WorkflowSpec{
+					Policy: "gate",
+					Steps: []spec.WorkflowStep{
+						{ID: "g", Uses: "tool.pub1.echo", With: map[string]any{"x": "1"}, NeedsDeclared: true},
+						{ID: "w", Workflow: "child", With: map[string]any{"topic": "hi"}, NeedsDeclared: true},
+					},
+					Output: &spec.WorkflowOutput{Value: map[string]any{"g": "${steps.g.output}", "w": "${steps.w.output}"}},
+				},
+			},
+		},
+	}
+}
+
+// TestExecIRResume_DirectGateWithConcurrentSubworkflow proves that a subworkflow
+// running concurrently with a direct gate does not re-run its already-committed
+// inner step on resume, even when the direct gate wins the single suspension slot
+// (issue #275 review, SOUNDNESS.md S7). Resolving every gate over successive
+// resumes must run each tool exactly once.
+func TestExecIRResume_DirectGateWithConcurrentSubworkflow(t *testing.T) {
+	t.Parallel()
+	ex, ct, runID, started := newResumeExecutor(t, directGateWithSubworkflowGraph(), "parent")
+	ctx := context.Background()
+	approve := HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"}}
+
+	err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{}, UseExecIR: true})
+	if !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("fresh run should interrupt, got %v", err)
+	}
+	// Resolve every outstanding gate across successive resumes (bounded).
+	for i := 0; i < 5 && errors.Is(err, ErrInterrupted); i++ {
+		err = ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{}, Resume: true, Hitl: approve})
+	}
+	if err != nil {
+		t.Fatalf("run did not complete across resumes: %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusSucceeded {
+		t.Fatalf("status = %q err=%q", run.Status, run.ErrorText)
+	}
+	if got := ct.count("tool.helper.echo"); got != 1 {
+		t.Fatalf("inner prep re-ran on resume (%d): a committed inner step must not fire twice (S7)", got)
+	}
+	if got := ct.count("tool.pub1.echo"); got != 1 {
+		t.Fatalf("direct gate tool should run exactly once, got %d", got)
+	}
+	if got := ct.count("tool.pub2.echo"); got != 1 {
+		t.Fatalf("inner gate tool should run exactly once, got %d", got)
+	}
+}
+
 // nestedSubworkflowGraph is a parent workflow whose only step calls a child that
 // has an ungated step then a HITL-gated step.
 func nestedSubworkflowGraph() *spec.ProjectGraph {
