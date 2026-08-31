@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -276,11 +278,24 @@ func parallelApprovalGraph() *spec.ProjectGraph {
 							With:          map[string]any{"which": "sib"},
 							NeedsDeclared: true,
 						},
+						// arm is a concurrent sibling of sib that the approval
+						// branch depends on: it runs in parallel with sib but
+						// blocks until sib's tool has returned, so the gate can
+						// never suspend-and-cancel sib mid-flight. That cancel
+						// race is the flake in issue #276; sib stays a genuine
+						// concurrent sibling, only its pre-suspend completion is
+						// made deterministic.
 						{
-							ID:            "gate",
-							Approval:      &spec.WorkflowApprovalValue{Enabled: true},
-							With:          map[string]any{"note": "pause"},
+							ID:            "arm",
+							Uses:          "tool.helper.echo",
+							With:          map[string]any{"which": "arm"},
 							NeedsDeclared: true,
+						},
+						{
+							ID:       "gate",
+							Approval: &spec.WorkflowApprovalValue{Enabled: true},
+							With:     map[string]any{"note": "pause"},
+							Needs:    []string{"arm"},
 						},
 						{
 							ID:    "join",
@@ -307,6 +322,30 @@ func parallelApprovalGraph() *spec.ProjectGraph {
 func TestRun_approvalStep_parallelSuspendsOnlyItsBranch(t *testing.T) {
 	graph := parallelApprovalGraph()
 	ex, st, started := setupApprovalExecutor(t, graph, "run-appr-par")
+
+	// Order sib's completion before the gate suspends without serializing the
+	// group: sib and arm are concurrent roots; arm (which the gate needs) holds
+	// the approval branch until sib's tool has returned. This removes the
+	// scheduler-timing dependency in issue #276 while keeping sib a genuine
+	// concurrent sibling of the suspending branch.
+	sibReturned := make(chan struct{})
+	var sibOnce sync.Once
+	ex.Tools = &tools.MockExecutor{Fn: func(ctx context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
+		switch whichOf(req) {
+		case "sib":
+			sibOnce.Do(func() { close(sibReturned) })
+		case "arm":
+			select {
+			case <-sibReturned:
+			case <-ctx.Done():
+				return tools.ToolCallResponse{}, ctx.Err()
+			case <-time.After(5 * time.Second):
+				return tools.ToolCallResponse{}, fmt.Errorf("arm: sib did not return in time")
+			}
+		}
+		return tools.ToolCallResponse{Output: map[string]any{"echo": req.With}}, nil
+	}}
+
 	ctx := context.Background()
 	err := ex.Run(ctx, RunInput{
 		RunID: "run-appr-par", WorkflowName: "fan", Env: "dev", StartedAt: started, Input: map[string]any{},
