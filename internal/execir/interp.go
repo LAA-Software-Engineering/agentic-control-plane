@@ -22,10 +22,12 @@ const DefaultMaxConcurrency = 8
 // walk cleanly, leaving [RunState.Suspended] set and the completed-leaf memo
 // intact so a later resume replays without re-issuing side effects.
 //
-// It is a clean pause, not a failure: a suspend inside a straight-line walk is
-// not propagated as an error. A suspend inside a concurrent construct
-// (Fork/Graph/parallel Loop) is NOT supported yet (#258 Tier B) and surfaces as
-// a loud error rather than a mis-anchored checkpoint.
+// It is a clean pause, not a failure: it propagates up as a signal that
+// RunResumable maps to [RunState.Suspended]. Inside a concurrent construct
+// (Fork/Graph/parallel Loop) it suspends the run per-branch (#270): the branch
+// that paused wins the one suspension slot, its siblings are cancelled (a
+// completed sibling is memoized and replays on resume; an in-flight one re-runs),
+// and the whole run pauses at the join.
 var ErrSuspend = errors.New("execir: suspended for human decision")
 
 // ApprovalInfo is the review presentation an [Approval] node carries to the
@@ -151,7 +153,9 @@ func (in *Interp) RunResumable(ctx context.Context, prog *Program, input map[str
 	}
 	scope := paramScope(prog.Params, input)
 	r := &runner{in: in, ctx: ctx, sess: sess}
-	if err := r.execAll(scope, prog.Body, nil, nil); err != nil {
+	// A top-level ErrSuspend is a clean pause, not a failure: the run is now
+	// waiting on a human decision and RunState reports where (issue #258/#270).
+	if err := r.execAll(scope, prog.Body, nil, nil); err != nil && !errors.Is(err, ErrSuspend) {
 		return nil, nil, err
 	}
 	st := &RunState{
@@ -195,6 +199,12 @@ func (s *session) markSuspended(key string) {
 		s.suspendKey = key
 	}
 	s.mu.Unlock()
+}
+
+func (s *session) isSuspended() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.suspended
 }
 
 // checkControl records a pure control-flow decision at addr, or, on replay,
@@ -267,9 +277,29 @@ type runner struct {
 	sess   *session // shared memo/control/suspend state (issue #258)
 	output any
 	done   bool // a Return has fired OR this walk suspended; stop executing subsequent nodes
-	// concurrent is true for a runner executing inside a Fork/Graph/parallel Loop
-	// branch. A suspend there is Tier B (#258) — flagged loudly, not checkpointed.
-	concurrent bool
+}
+
+// isCanceled reports a context cancellation, used to distinguish a sibling
+// abandoned by a suspend/failure cancel from a genuine branch error.
+func isCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// classifyConcurrent decides the result of a concurrent construct (Fork/Graph/
+// parallel Loop) after its branches join. A suspend anywhere wins (the run pauses,
+// #270 — completed siblings are already memoized; in-flight ones were cancelled
+// and re-run on resume). Otherwise the first genuine branch error surfaces; a
+// context cancellation is a sibling abandoned by the cancel, not a fault.
+func classifyConcurrent(suspended bool, errs []error) error {
+	if suspended {
+		return ErrSuspend
+	}
+	for _, e := range errs {
+		if e != nil && !isCanceled(e) {
+			return e
+		}
+	}
+	return nil
 }
 
 // execAll runs nodes in order against scope, stopping early once a Return fires.
@@ -362,12 +392,12 @@ func (r *runner) invoke(scope map[string]any, bind string, site CallSite, args m
 	res, err := call(a)
 	if err != nil {
 		if errors.Is(err, ErrSuspend) {
-			if r.concurrent {
-				return fmt.Errorf("execir: suspend inside a concurrent construct is not supported yet (#258 Tier B): %s", key)
-			}
 			r.sess.markSuspended(key)
 			r.done = true // halt this walk; the run is now waiting on a human
-			return nil
+			// Propagate the suspend signal up to the nearest concurrency boundary
+			// (Fork/Graph/parallel Loop cancels its siblings) and on to the top,
+			// where RunResumable maps it to a clean Suspended state (#270).
+			return err
 		}
 		return err
 	}
@@ -403,13 +433,15 @@ func (r *runner) execBranch(scope map[string]any, b *Branch, path, loop []int) e
 // permitted to escape the join — the surface never lowers one there — so branch
 // runners do not propagate r.done.
 func (r *runner) execFork(scope map[string]any, f *Fork, path, loop []int) error {
+	ctx, cancel := context.WithCancel(r.ctx)
+	defer cancel()
 	type result struct {
 		bind string
 		val  any
 		ok   bool
-		err  error
 	}
 	results := make([]result, len(f.Branches))
+	errs := make([]error, len(f.Branches))
 	sem := make(chan struct{}, r.in.maxConc())
 	var wg sync.WaitGroup
 	for i, br := range f.Branches {
@@ -419,9 +451,10 @@ func (r *runner) execFork(scope map[string]any, f *Fork, path, loop []int) error
 			defer wg.Done()
 			defer func() { <-sem }()
 			child := childScope(scope)
-			sub := &runner{in: r.in, ctx: r.ctx, sess: r.sess, concurrent: true}
+			sub := &runner{in: r.in, ctx: ctx, sess: r.sess}
 			if err := sub.execAll(child, br.Nodes, extend(path, i), loop); err != nil {
-				results[i] = result{err: err}
+				errs[i] = err
+				cancel() // a suspend or failure stops the sibling branches
 				return
 			}
 			val, ok := child[br.Bind]
@@ -429,10 +462,10 @@ func (r *runner) execFork(scope map[string]any, f *Fork, path, loop []int) error
 		}(i, br)
 	}
 	wg.Wait()
+	if err := classifyConcurrent(r.sess.isSuspended(), errs); err != nil {
+		return err
+	}
 	for _, res := range results {
-		if res.err != nil {
-			return res.err
-		}
 		if res.bind != "" && res.ok {
 			scope[res.bind] = res.val
 		}
@@ -477,6 +510,8 @@ func (r *runner) execLoop(scope map[string]any, l *Loop, path, loop []int) error
 // running with bounded concurrency. Each iteration has an isolated child scope,
 // so iterations never race, and a body binding does not escape the loop.
 func (r *runner) execLoopParallel(scope map[string]any, l *Loop, items []any, path, loop []int) error {
+	ctx, cancel := context.WithCancel(r.ctx)
+	defer cancel()
 	errs := make([]error, len(items))
 	sem := make(chan struct{}, r.in.maxConc())
 	var wg sync.WaitGroup
@@ -488,17 +523,15 @@ func (r *runner) execLoopParallel(scope map[string]any, l *Loop, items []any, pa
 			defer func() { <-sem }()
 			child := childScope(scope)
 			child[l.Var] = item
-			sub := &runner{in: r.in, ctx: r.ctx, sess: r.sess, concurrent: true}
-			errs[i] = sub.execAll(child, l.Body, path, extend(loop, i))
+			sub := &runner{in: r.in, ctx: ctx, sess: r.sess}
+			if err := sub.execAll(child, l.Body, path, extend(loop, i)); err != nil {
+				errs[i] = err
+				cancel() // a suspend or failure in one iteration stops the others
+			}
 		}(i, item)
 	}
 	wg.Wait()
-	for _, err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return classifyConcurrent(r.sess.isSuspended(), errs)
 }
 
 // execGraph runs a general needs-DAG (issue #256/#257): each node runs as soon
@@ -514,16 +547,19 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 	if n == 0 {
 		return nil
 	}
-	var mu sync.Mutex // guards scope writes, completed, running, firstErr
+	var mu sync.Mutex // guards scope writes, completed, running, firstErr, suspended
 	completed := make(map[string]struct{}, n)
 	running := make(map[int]struct{}, n)
 	var firstErr error
+	var suspended bool
 	sem := make(chan struct{}, r.in.maxConc())
 	completion := make(chan struct{}, n)
 	var wg sync.WaitGroup
-	// On the first failure, cancel in-flight siblings so a partial-failure graph
-	// stops promptly — matching the engine DAG, which cancels the run context on a
-	// step error rather than letting siblings run to completion.
+	// On the first failure OR suspend, cancel in-flight siblings so the graph stops
+	// promptly — matching the engine DAG, which cancels the run context on a step
+	// error / HITL interrupt rather than letting siblings run to completion. A
+	// completed sibling is already memoized (replayed on resume); a cancelled one
+	// re-runs (#270).
 	ctx, cancel := context.WithCancel(r.ctx)
 	defer cancel()
 
@@ -548,7 +584,7 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 
 	// trySchedule launches every currently-runnable node. Caller holds mu.
 	trySchedule := func() {
-		if firstErr != nil {
+		if firstErr != nil || suspended {
 			return
 		}
 		for i, gn := range g.Nodes {
@@ -573,21 +609,30 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 				mu.Lock()
 				local := childScope(scope)
 				mu.Unlock()
-				sub := &runner{in: r.in, ctx: ctx, sess: r.sess, concurrent: true}
+				sub := &runner{in: r.in, ctx: ctx, sess: r.sess}
 				err := sub.exec(local, gn.Run, extend(path, rank[i]), loop)
 				mu.Lock()
-				if err != nil {
-					if firstErr == nil {
-						firstErr = err
-						cancel()
-					}
-				} else {
+				switch {
+				case err == nil:
 					if gn.ID != "" {
 						if v, ok := local[gn.ID]; ok {
 							scope[gn.ID] = v
 						}
 					}
 					completed[gn.ID] = struct{}{}
+				case errors.Is(err, ErrSuspend):
+					// This node paused for a human; stop scheduling and cancel the
+					// in-flight siblings. It is NOT marked completed, so on resume it
+					// re-runs and its gate resolves.
+					suspended = true
+					cancel()
+				case isCanceled(err) && (suspended || firstErr != nil):
+					// A sibling abandoned by the cancel above — re-runs on resume.
+				default:
+					if firstErr == nil {
+						firstErr = err
+						cancel()
+					}
 				}
 				delete(running, i)
 				mu.Unlock()
@@ -600,8 +645,8 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 	trySchedule()
 	for {
 		allDone := len(completed) == n
-		stuck := firstErr == nil && !allDone && len(running) == 0
-		if firstErr != nil || allDone || stuck {
+		stuck := firstErr == nil && !suspended && !allDone && len(running) == 0
+		if firstErr != nil || suspended || allDone || stuck {
 			mu.Unlock()
 			break
 		}
@@ -614,6 +659,9 @@ func (r *runner) execGraph(scope map[string]any, g *Graph, path, loop []int) err
 
 	mu.Lock()
 	defer mu.Unlock()
+	if suspended {
+		return ErrSuspend
+	}
 	if firstErr != nil {
 		return firstErr
 	}

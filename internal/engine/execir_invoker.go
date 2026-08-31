@@ -49,24 +49,101 @@ type engineInvoker struct {
 	// checkpoint, anchored by its execir CallKey (issue #258).
 	resuming bool
 
-	mu      sync.Mutex
-	ictx    Context           // Input + accumulated Steps, for buildWorkflowOutput after the run
-	pending *PendingHitlState // the leaf awaiting a decision (seeded on resume; set on a fresh suspend)
-	// resumeApproved is the uses string an operator just approved on resume; it is
-	// added to ApprovedActions for the resolved dispatch so its CheckToolCall
-	// passes (mirroring the DAG's executeOneStep). Sequential (the gate resolves on
-	// one goroutine), so a plain field is safe.
-	resumeApproved string
+	mu             sync.Mutex
+	ictx           Context           // Input + accumulated Steps, for buildWorkflowOutput after the run
+	suspendClaimed bool              // one suspension cause per run cycle (first-wins across gates/subworkflows)
+	pending        *PendingHitlState // a direct gate awaiting a decision (seeded on resume; set first-wins on a fresh suspend)
+	nested         *nestedSuspension // a suspended subworkflow frame (set first-wins on a fresh suspend, #270)
+	nestedSeed     *NestedRunState   // a suspended subworkflow to resume (seeded from the checkpoint on resume)
 }
 
-// approvedActions returns the run's approved actions plus any action just resolved
-// on resume.
-func (a *engineInvoker) approvedActions() []string {
+// nestedSuspension is a subworkflow that suspended: the callee's completed steps +
+// pending (ictx) and its interpreter durable state (memo/control), anchored to the
+// parent's InvokeWorkflow CallSite key.
+type nestedSuspension struct {
+	key    string
+	stepID string // the parent's workflow: step id (NestedRunState.StepID anchor)
+	callee string
+	ictx   Context
+	state  *execir.RunState
+}
+
+// approvedActions returns the run's approved actions plus, for a resolved resume
+// dispatch, the just-approved uses (extra) — so its CheckToolCall passes, mirroring
+// the DAG's executeOneStep. extra is passed per-call (not shared state), which is
+// what keeps concurrent per-branch dispatch race-free.
+func (a *engineInvoker) approvedActions(extra string) []string {
 	out := append([]string(nil), a.in.ApprovedActions...)
-	if a.resumeApproved != "" {
-		out = append(out, a.resumeApproved)
+	if extra != "" {
+		out = append(out, extra)
 	}
 	return out
+}
+
+// claimPending atomically returns and clears the pending gate iff it is anchored
+// to key (the leaf being resumed); nil otherwise. Concurrency-safe: a Graph/Fork
+// resumes and re-runs branches from several goroutines.
+func (a *engineInvoker) claimPending(key string) *PendingHitlState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.pending != nil && a.pending.ExecKey == key {
+		p := a.pending
+		a.pending = nil
+		return p
+	}
+	return nil
+}
+
+// setPendingIfFirst records a direct gate as the run's one suspension cause iff
+// none is claimed yet (first-suspend wins), returning whether it won. A racing
+// second gate is dropped and re-runs on resume — the DAG's cancel-on-first-interrupt.
+func (a *engineInvoker) setPendingIfFirst(p *PendingHitlState) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.suspendClaimed {
+		return false
+	}
+	a.suspendClaimed = true
+	a.pending = p
+	return true
+}
+
+// setNestedIfFirst records a suspended subworkflow as the run's one suspension
+// cause iff none is claimed yet.
+func (a *engineInvoker) setNestedIfFirst(n *nestedSuspension) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.suspendClaimed {
+		return false
+	}
+	a.suspendClaimed = true
+	a.nested = n
+	return true
+}
+
+func (a *engineInvoker) getPending() *PendingHitlState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.pending
+}
+
+func (a *engineInvoker) getNested() *nestedSuspension {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.nested
+}
+
+// claimNestedSeed returns the seeded subworkflow frame to resume iff it is
+// anchored to key, clearing it so a re-run branch does not double-resume.
+func (a *engineInvoker) claimNestedSeed(key string) *NestedRunState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.nestedSeed != nil && a.nestedSeed.ExecKey == key {
+		ns := a.nestedSeed
+		a.nestedSeed = nil
+		return ns
+	}
+	return nil
 }
 
 // runViaExecIR lowers the workflow to an execir.Program and runs it via
@@ -85,14 +162,15 @@ func (e *Executor) runViaExecIR(ctx context.Context, in RunInput, wf *spec.Workf
 
 	var seed *execir.RunState
 	if in.Resume {
-		ictx, totalCost, state, err := e.loadExecResumeState(ctx, in, wf)
+		ictx, totalCost, state, nested, err := e.loadExecResumeState(ctx, in, wf)
 		if err != nil {
 			return e.failRun(ctx, in, err, 0)
 		}
 		inv.resuming = true
 		inv.ictx = ictx // seed completed steps for output + interpolation
 		inv.pending = ictx.PendingHitl
-		cost.add(totalCost) // memoized leaves are not re-invoked, so their cost is already counted
+		inv.nestedSeed = nested // a suspended subworkflow to resume (#270)
+		cost.add(totalCost)     // memoized leaves are not re-invoked, so their cost is already counted
 		seed = state
 	}
 
@@ -133,23 +211,22 @@ func (a *engineInvoker) InvokeTool(ctx context.Context, site execir.CallSite, us
 
 	// Resume at the suspended gate: apply the operator decision, then dispatch the
 	// resolved call. resolvePendingHitl re-runs CheckToolCall for the resolved
-	// uses and emits the decision trace (audit parity with the DAG path).
-	if a.resuming && a.pending != nil && a.pending.ExecKey == key {
-		p := a.pending
-		a.pending = nil
+	// uses and emits the decision trace (audit parity with the DAG path). claim
+	// is atomic so, under a concurrent Graph/Fork resume, only the matching branch
+	// resolves it.
+	if p := a.claimPending(key); p != nil {
 		step := spec.WorkflowStep{ID: site.Bind, Uses: p.Uses}
-		resolvedUses, resolvedWith, rerr := a.e.resolvePendingHitl(ctx, a.in, step, a.wfPol, a.pctxNow(), p)
+		resolvedUses, resolvedWith, rerr := a.e.resolvePendingHitl(ctx, a.in, step, a.wfPol, a.pctx(""), p)
 		if rerr != nil {
 			return nil, rerr
 		}
-		a.resumeApproved = resolvedUses
-		defer func() { a.resumeApproved = "" }()
-		return a.dispatchTool(ctx, site, resolvedUses, resolvedWith)
+		return a.dispatchTool(ctx, site, resolvedUses, resolvedWith, resolvedUses)
 	}
 
 	// Fresh run: a gated uses: call suspends (or, under auto-approve, records and
-	// proceeds). On a resume past the gate, the pending is already cleared and the
-	// call dispatches normally.
+	// proceeds). On a resume, gates are NOT re-suspended (a.resuming): the one
+	// pending gate is resolved above, and any other gated call dispatches — where
+	// CheckToolCall fails closed if still unapproved (same as the DAG).
 	if !a.resuming {
 		step := spec.WorkflowStep{ID: site.Bind, Uses: uses}
 		// A gate-builder error is advisory only — the authoritative deny is
@@ -161,20 +238,22 @@ func (a *engineInvoker) InvokeTool(ctx context.Context, site execir.CallSite, us
 			if a.in.Hitl.AutoApprove {
 				a.e.recordAutoApproveHitl(ctx, a.in.RunID, step, 0, *gate, a.in.Hitl.Actor)
 			} else {
-				a.pending = &PendingHitlState{StepID: step.ID, Uses: gate.Uses, With: gate.With, Review: gate.Review, ExecKey: key}
-				a.emitHitlRequest(ctx, step, gate)
+				if a.setPendingIfFirst(&PendingHitlState{StepID: step.ID, Uses: gate.Uses, With: gate.With, Review: gate.Review, ExecKey: key}) {
+					a.emitHitlRequest(ctx, step, gate)
+				}
 				return nil, execir.ErrSuspend
 			}
 		}
 	}
-	return a.dispatchTool(ctx, site, uses, args)
+	return a.dispatchTool(ctx, site, uses, args, "")
 }
 
 // dispatchTool runs a (possibly HITL-resolved) tool call through the shared
-// per-step envelope.
-func (a *engineInvoker) dispatchTool(ctx context.Context, site execir.CallSite, uses string, args map[string]any) (any, error) {
+// per-step envelope. extraApproved is the just-approved uses on a resume (empty
+// for a fresh dispatch).
+func (a *engineInvoker) dispatchTool(ctx context.Context, site execir.CallSite, uses string, args map[string]any, extraApproved string) (any, error) {
 	step := spec.WorkflowStep{ID: site.Bind, Uses: uses}
-	return a.run(ctx, step, args, func(pctx policy.RunContext) (map[string]any, float64, error) {
+	return a.run(ctx, step, args, extraApproved, func(pctx policy.RunContext) (map[string]any, float64, error) {
 		out, meta, err := a.e.runToolStep(ctx, a.runHandle, a.wfPol, a.wf, a.in.RunID, step, args, pctx, uses, args)
 		return out, meta.CostUSD, err
 	})
@@ -187,29 +266,31 @@ func (a *engineInvoker) InvokeApproval(ctx context.Context, site execir.CallSite
 	key := execir.CallKey(site)
 	step := approvalStepFromInfo(site.Bind, info)
 
-	if a.resuming && a.pending != nil && a.pending.ExecKey == key {
-		p := a.pending
-		a.pending = nil
-		_, resolved, rerr := a.e.resolvePendingHitl(ctx, a.in, step, a.wfPol, a.pctxNow(), p)
+	if p := a.claimPending(key); p != nil {
+		_, resolved, rerr := a.e.resolvePendingHitl(ctx, a.in, step, a.wfPol, a.pctx(""), p)
 		if rerr != nil {
 			return nil, rerr
 		}
 		if resolved == nil {
 			resolved = map[string]any{}
 		}
-		return a.run(ctx, step, resolved, func(policy.RunContext) (map[string]any, float64, error) { return resolved, 0, nil })
+		return a.run(ctx, step, resolved, "", func(policy.RunContext) (map[string]any, float64, error) { return resolved, 0, nil })
 	}
 
+	// An unclaimed approval node always needs a decision (there is no dispatch
+	// fallback as for a tool gate): auto-approve records and proceeds, otherwise it
+	// suspends — whether fresh or a not-yet-resolved approval reached on resume.
 	gate := approvalHitlGate(step, args)
 	if a.in.Hitl.AutoApprove {
 		a.e.recordAutoApproveHitl(ctx, a.in.RunID, step, 0, gate, a.in.Hitl.Actor)
 		if args == nil {
 			args = map[string]any{}
 		}
-		return a.run(ctx, step, args, func(policy.RunContext) (map[string]any, float64, error) { return args, 0, nil })
+		return a.run(ctx, step, args, "", func(policy.RunContext) (map[string]any, float64, error) { return args, 0, nil })
 	}
-	a.pending = &PendingHitlState{StepID: step.ID, Uses: gate.Uses, With: gate.With, Review: gate.Review, Kind: PendingHitlKindApproval, ExecKey: key}
-	a.emitHitlRequest(ctx, step, &gate)
+	if a.setPendingIfFirst(&PendingHitlState{StepID: step.ID, Uses: gate.Uses, With: gate.With, Review: gate.Review, Kind: PendingHitlKindApproval, ExecKey: key}) {
+		a.emitHitlRequest(ctx, step, &gate)
+	}
 	return nil, execir.ErrSuspend
 }
 
@@ -226,12 +307,12 @@ func approvalStepFromInfo(bind string, info execir.ApprovalInfo) spec.WorkflowSt
 	}
 }
 
-func (a *engineInvoker) pctxNow() policy.RunContext {
+func (a *engineInvoker) pctx(extraApproved string) policy.RunContext {
 	return policy.RunContext{
 		StartedAt:          a.runStartedAt,
 		Elapsed:            a.e.now().Sub(a.runStartedAt),
 		AccumulatedCostUSD: a.cost.get(),
-		ApprovedActions:    a.approvedActions(),
+		ApprovedActions:    a.approvedActions(extraApproved),
 	}
 }
 
@@ -239,7 +320,7 @@ func (a *engineInvoker) pctxNow() policy.RunContext {
 // ungated. Non-nil means the fresh run must suspend (or auto-record).
 func (a *engineInvoker) buildToolGate(step spec.WorkflowStep, uses string, args map[string]any) (*policy.HitlGate, error) {
 	return policy.BuildHitlGateWithEvaluator(a.e.Graph, a.wfPol, policySpecFromEvaluator(a.wfPol), policy.ToolCallContext{
-		Run: a.pctxNow(), StepID: step.ID, Uses: uses, With: args,
+		Run: a.pctx(""), StepID: step.ID, Uses: uses, With: args,
 	})
 }
 
@@ -270,36 +351,142 @@ func (a *engineInvoker) InvokeAgent(ctx context.Context, site execir.CallSite, a
 	if !ok || ar == nil {
 		return nil, fmt.Errorf("engine: unknown agent %q", agentName)
 	}
-	return a.run(ctx, step, args, func(pctx policy.RunContext) (map[string]any, float64, error) {
+	return a.run(ctx, step, args, "", func(pctx policy.RunContext) (map[string]any, float64, error) {
 		out, meta, err := a.e.runAgentStep(ctx, a.runHandle, a.wfPol, a.wf, a.in.RunID, step, args, pctx, ar)
 		return out, meta.CostUSD, err
 	})
 }
 
-// InvokeWorkflow is not supported on the execir path in Phase 1: a workflow: step
-// re-enters the DAG runtime (runSubworkflowStep is bound to *dagRuntime + nested
-// checkpoint state), which is out of scope for this non-resumable flag. The DAG
-// path still handles workflow: steps in production; the differential corpus does
-// not use them.
-func (a *engineInvoker) InvokeWorkflow(_ context.Context, _ execir.CallSite, workflow string, _ map[string]any) (any, error) {
-	return nil, fmt.Errorf("engine: workflow: step %q is not yet supported on the execir run path (issue #257 Phase 1; use the DAG path)", workflow)
+// InvokeWorkflow runs a subworkflow as a NESTED execir run (issue #270): the
+// callee lowers to its own execir.Program and executes through a child
+// engineInvoker that shares the run-wide cost, nests trace/persistence ids, and
+// applies the stricter of caller/callee policy — the execir counterpart to the
+// DAG's runSubworkflowStep. On the callee suspending, the parent records a nested
+// frame (callee memo + pending) and suspends; on resume the child is seeded from
+// that frame so its completed inner steps replay, never re-run. A subworkflow that
+// COMPLETED is instead replayed via the parent's own memo (invoke wraps this call),
+// so it is never re-entered at all.
+func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite, workflow string, args map[string]any) (any, error) {
+	key := execir.CallKey(site)
+	callee, err := lookupWorkflow(a.e.Graph, workflow)
+	if err != nil {
+		return nil, fmt.Errorf("engine: step %q: %w", site.Bind, err)
+	}
+
+	limitWF := a.wf
+	if a.e.rootWF != nil {
+		limitWF = a.e.rootWF
+	}
+	maxDepth := spec.ResolveMaxWorkflowNesting(&a.e.Graph.Spec, &limitWF.Spec)
+	depth := a.in.WorkflowDepth + 1
+	if depth > maxDepth {
+		return nil, fmt.Errorf("engine: step %q: workflow nesting depth %d exceeds maxWorkflowNesting %d", site.Bind, depth, maxDepth)
+	}
+	if err := a.e.validateWorkflowInputSchema(callee, args); err != nil {
+		return nil, fmt.Errorf("engine: step %q subworkflow %q input: %w", site.Bind, workflow, err)
+	}
+
+	calleePol, err := compiledWorkflowEvaluator(a.e.ProjectRoot, a.e.Graph, strings.TrimSpace(callee.Spec.Policy), a.e.PinnedGraph)
+	if err != nil {
+		return nil, err
+	}
+	wfPol := policy.StricterOf(a.wfPol, calleePol)
+
+	child := *a.e
+	prefix, err := qualifyStepID(a.e.stepPrefix, site.Bind)
+	if err != nil {
+		return nil, err
+	}
+	child.stepPrefix = prefix
+	if a.e.rootWF != nil {
+		child.rootWF = a.e.rootWF
+	} else {
+		child.rootWF = a.wf
+	}
+	callStack := append(append([]string(nil), a.in.CallStack...), workflow)
+	if child.Trace != nil {
+		child.Trace = child.Trace.WithCallStack(callStack)
+	}
+
+	childIn := a.in
+	childIn.WorkflowName = workflow
+	childIn.WorkflowDepth = depth
+	childIn.CallStack = callStack
+	childIn.Resume = false // nested resume is driven by the seeded frame, not RunInput
+
+	childProg, diags := lower.LowerWorkflowResource(callee)
+	if derr := diags.AsError(); derr != nil {
+		return nil, fmt.Errorf("engine: lower subworkflow %q to execir: %w", workflow, derr)
+	}
+
+	childInv := newEngineInvoker(&child, childIn, callee, wfPol, a.runHandle, a.cost, a.runStartedAt)
+	childInv.ictx = Context{Input: args, Steps: map[string]StepResult{}}
+
+	var childSeed *execir.RunState
+	if ns := a.claimNestedSeed(key); ns != nil && strings.TrimSpace(ns.Workflow) == workflow {
+		childInv.resuming = true
+		in := ns.Input
+		if in == nil {
+			in = args
+		}
+		steps := ns.Steps
+		if steps == nil {
+			steps = map[string]StepResult{}
+		}
+		childInv.ictx = Context{Input: in, Steps: steps, PendingHitl: ns.PendingHitl}
+		childInv.pending = ns.PendingHitl
+		if ns.PendingHitl != nil {
+			childInv.suspendClaimed = false // allow re-claim on resume
+		}
+		childSeed = &execir.RunState{Memo: ns.ExecMemo, Control: ns.ExecControl}
+	} else if a.e.Trace != nil {
+		_, _ = a.e.Trace.Append(ctx, a.in.RunID, a.e.qualID(site.Bind), trace.EventWorkflowCallStarted, trace.ActorSystem, map[string]any{
+			"workflow": workflow, "depth": depth, "stepId": site.Bind,
+		})
+	}
+
+	childInterp := &execir.Interp{Invoker: childInv, MaxConcurrency: a.in.MaxConcurrentSteps}
+	_, childState, rerr := childInterp.RunResumable(ctx, childProg, childInv.ictx.Input, childSeed)
+	if rerr != nil {
+		return nil, rerr
+	}
+	if childState.Suspended {
+		snap := childInv.snapshotIctx()
+		a.setNestedIfFirst(&nestedSuspension{
+			key:    key,
+			stepID: site.Bind,
+			callee: workflow,
+			ictx:   Context{Input: snap.Input, Steps: snap.Steps, PendingHitl: childInv.getPending()},
+			state:  childState,
+		})
+		return nil, execir.ErrSuspend
+	}
+
+	out, oerr := buildWorkflowOutput(callee, childInv.snapshotIctx())
+	if oerr != nil {
+		return nil, fmt.Errorf("engine: step %q subworkflow %q output: %w", site.Bind, workflow, oerr)
+	}
+	if a.e.Trace != nil {
+		_, _ = a.e.Trace.Append(ctx, a.in.RunID, a.e.qualID(site.Bind), trace.EventWorkflowCallFinished, trace.ActorSystem, map[string]any{
+			"workflow": workflow, "depth": depth, "stepId": site.Bind,
+		})
+	}
+	a.mu.Lock()
+	a.ictx.Steps[site.Bind] = StepResult{Output: out, Meta: map[string]any{}}
+	a.mu.Unlock()
+	return out, nil
 }
 
 // run wraps one leaf invocation with the admit/persist/cost/commit envelope the
 // DAG applies per step (executeOneStep + commitDAGStepSuccess), so the two paths
 // emit the same rows, trace, and cost. dispatch performs the actual leaf call and
 // returns its output and cost.
-func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args map[string]any, dispatch func(policy.RunContext) (map[string]any, float64, error)) (any, error) {
+func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args map[string]any, extraApproved string, dispatch func(policy.RunContext) (map[string]any, float64, error)) (any, error) {
 	qid := a.e.qualID(step.ID)
 	inJSON, _ := json.Marshal(args)
 
 	// Pre-admit against already-accumulated cost/elapsed (mirrors executeOneStep).
-	admitCtx := policy.RunContext{
-		StartedAt:          a.runStartedAt,
-		Elapsed:            a.e.now().Sub(a.runStartedAt),
-		AccumulatedCostUSD: a.cost.get(),
-		ApprovedActions:    a.approvedActions(),
-	}
+	admitCtx := a.pctx(extraApproved)
 	if err := a.wfPol.CheckRun(ctx, admitCtx); err != nil {
 		a.e.appendCostLimitHit(ctx, a.in.RunID, qid, err)
 		a.failStepRow(ctx, qid, inJSON, err, 0)
@@ -322,12 +509,8 @@ func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args ma
 	// Commit cost, then re-check the run budget so two in-flight branches cannot
 	// jointly exceed maxTotalCostUsd (mirrors commitDAGStepSuccess).
 	total := a.cost.add(stepCost)
-	commitCtx := policy.RunContext{
-		StartedAt:          a.runStartedAt,
-		Elapsed:            a.e.now().Sub(a.runStartedAt),
-		AccumulatedCostUSD: total,
-		ApprovedActions:    a.approvedActions(),
-	}
+	commitCtx := a.pctx(extraApproved)
+	commitCtx.AccumulatedCostUSD = total
 	if err := a.wfPol.CheckRun(ctx, commitCtx); err != nil {
 		a.e.appendCostLimitHit(ctx, a.in.RunID, qid, err)
 		a.failStepRow(ctx, qid, inJSON, err, stepCost)
@@ -371,26 +554,46 @@ func (a *engineInvoker) failStepRow(ctx context.Context, qid string, inJSON []by
 // + pending gate) and marks the run interrupted (issue #258), mirroring the DAG
 // interruptForHitlGate's status/otel/trace so the audit chain matches.
 func (e *Executor) suspendExecIR(ctx context.Context, in RunInput, wf *spec.WorkflowResource, inv *engineInvoker, runState *execir.RunState, totalCost float64) error {
-	if inv.pending == nil {
-		return e.failRun(ctx, in, fmt.Errorf("engine: execir run suspended without a pending gate"), totalCost)
+	pending := inv.getPending()
+	nested := inv.getNested()
+	if pending == nil && nested == nil {
+		return e.failRun(ctx, in, fmt.Errorf("engine: execir run suspended without a pending gate or nested subworkflow"), totalCost)
 	}
 	ictx := inv.snapshotIctx()
-	ictx.PendingHitl = inv.pending
+	ictx.PendingHitl = pending // nil when the suspension is inside a subworkflow
+	anchorStep := ""
+	if pending != nil {
+		anchorStep = pending.StepID
+	}
+	if nested != nil {
+		ictx.Nested = &NestedRunState{
+			StepID:      nested.stepID,
+			Workflow:    nested.callee,
+			Input:       nested.ictx.Input,
+			Steps:       nested.ictx.Steps,
+			Completed:   completedStepIDs(nested.ictx.Steps),
+			PendingHitl: nested.ictx.PendingHitl,
+			ExecKey:     nested.key,
+			ExecMemo:    nested.state.Memo,
+			ExecControl: nested.state.Control,
+		}
+		anchorStep = nested.stepID
+	}
 	if inv.runHandle != nil {
 		inv.runHandle.MarkInterrupted()
 		ref := inv.runHandle.SpanRef()
 		ictx.OtelInterrupt = &ref
 	}
-	stepIndex := execStepIndex(wf, inv.pending.StepID)
-	if err := e.saveExecCheckpoint(ctx, wf, in, stepIndex, ictx, totalCost, runState); err != nil {
+	stepIndex := execStepIndex(wf, anchorStep)
+	if err := e.saveExecCheckpoint(ctx, wf, in, stepIndex, anchorStep, ictx, totalCost, runState); err != nil {
 		return e.failRun(ctx, in, fmt.Errorf("engine: save execir checkpoint: %w", err), totalCost)
 	}
 	if err := e.Store.UpdateRunStatus(ctx, in.RunID, state.RunStatusInterrupted); err != nil {
 		return fmt.Errorf("engine: mark run interrupted: %w", err)
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, in.RunID, e.qualID(inv.pending.StepID), trace.EventRunError, trace.ActorSystem, map[string]any{
-			"stepIndex": stepIndex, "stepId": inv.pending.StepID, "reason": traceInterruptReasonHITL, "interrupted": true,
+		_, _ = e.Trace.Append(ctx, in.RunID, e.qualID(anchorStep), trace.EventRunError, trace.ActorSystem, map[string]any{
+			"stepIndex": stepIndex, "stepId": anchorStep, "reason": traceInterruptReasonHITL, "interrupted": true,
 		})
 	}
 	return ErrInterrupted
@@ -411,7 +614,7 @@ func execStepIndex(wf *spec.WorkflowResource, stepID string) int {
 
 // saveExecCheckpoint writes an execir checkpoint (ExecIR marker + memo/control),
 // reusing the size enforcement the DAG checkpoint uses.
-func (e *Executor) saveExecCheckpoint(ctx context.Context, wf *spec.WorkflowResource, in RunInput, stepIndex int, ictx Context, totalCost float64, runState *execir.RunState) error {
+func (e *Executor) saveExecCheckpoint(ctx context.Context, wf *spec.WorkflowResource, in RunInput, stepIndex int, anchorStep string, ictx Context, totalCost float64, runState *execir.RunState) error {
 	payload := checkpointPayload{
 		Version:       checkpointPayloadVersion,
 		Input:         ictx.Input,
@@ -420,6 +623,7 @@ func (e *Executor) saveExecCheckpoint(ctx context.Context, wf *spec.WorkflowReso
 		TotalCostUSD:  totalCost,
 		PendingHitl:   ictx.PendingHitl,
 		OtelInterrupt: ictx.OtelInterrupt,
+		Nested:        ictx.Nested,
 		ExecIR:        true,
 		ExecMemo:      runState.Memo,
 		ExecControl:   runState.Control,
@@ -438,8 +642,8 @@ func (e *Executor) saveExecCheckpoint(ctx context.Context, wf *spec.WorkflowReso
 		return fmt.Errorf("engine: execir checkpoint context exceeds absolute maximum %d bytes", maxCheckpointContextBytes)
 	}
 	stepID := e.qualID(strings.TrimSpace(in.WorkflowName))
-	if inv := strings.TrimSpace(ictx.PendingHitl.StepID); inv != "" {
-		stepID = e.qualID(inv)
+	if s := strings.TrimSpace(anchorStep); s != "" {
+		stepID = e.qualID(s)
 	}
 	if err := e.enforceCheckpointSize(ctx, wf, in.RunID, stepID, string(ctxJSON)); err != nil {
 		return err
@@ -457,28 +661,28 @@ func (e *Executor) saveExecCheckpoint(ctx context.Context, wf *spec.WorkflowReso
 // loadExecResumeState hydrates the seeded interpolation context (completed steps
 // + pending gate), the accumulated cost, and the interpreter durable state from
 // the latest execir checkpoint.
-func (e *Executor) loadExecResumeState(ctx context.Context, in RunInput, wf *spec.WorkflowResource) (Context, float64, *execir.RunState, error) {
+func (e *Executor) loadExecResumeState(ctx context.Context, in RunInput, wf *spec.WorkflowResource) (Context, float64, *execir.RunState, *NestedRunState, error) {
 	cp, err := e.Store.GetLatestCheckpoint(ctx, in.RunID)
 	if err != nil {
-		return Context{}, 0, nil, fmt.Errorf("engine: load execir checkpoint: %w", err)
+		return Context{}, 0, nil, nil, fmt.Errorf("engine: load execir checkpoint: %w", err)
 	}
 	switch cp.Status {
 	case state.CheckpointStatusRunning, state.CheckpointStatusInterrupted:
 	default:
-		return Context{}, 0, nil, fmt.Errorf("engine: checkpoint status %q is not resumable", cp.Status)
+		return Context{}, 0, nil, nil, fmt.Errorf("engine: checkpoint status %q is not resumable", cp.Status)
 	}
 	ictx, totalCost, err := unmarshalCheckpointPayload(cp.ContextJSON, e.Graph, wf, cp.StepIndex)
 	if err != nil {
-		return Context{}, 0, nil, err
+		return Context{}, 0, nil, nil, err
 	}
 	var payload checkpointPayload
 	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err != nil {
-		return Context{}, 0, nil, fmt.Errorf("engine: unmarshal execir checkpoint: %w", err)
+		return Context{}, 0, nil, nil, fmt.Errorf("engine: unmarshal execir checkpoint: %w", err)
 	}
 	if !payload.ExecIR {
-		return Context{}, 0, nil, fmt.Errorf("engine: resume routed to execir but checkpoint is not an execir checkpoint")
+		return Context{}, 0, nil, nil, fmt.Errorf("engine: resume routed to execir but checkpoint is not an execir checkpoint")
 	}
-	return ictx, totalCost, &execir.RunState{Memo: payload.ExecMemo, Control: payload.ExecControl}, nil
+	return ictx, totalCost, &execir.RunState{Memo: payload.ExecMemo, Control: payload.ExecControl}, payload.Nested, nil
 }
 
 // resumeIsExecIR reports whether the run's latest checkpoint was written by the
