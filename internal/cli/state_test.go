@@ -48,7 +48,7 @@ func TestStateList_afterApply_table(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestStateList_afterApply_json(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestStateShow_afterApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestStateShow_json_fullSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

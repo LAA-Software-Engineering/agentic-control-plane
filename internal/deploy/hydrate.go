@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
@@ -19,6 +20,9 @@ type Hydrated struct {
 	// run start. A pinned resume validates against these rather than re-reading files on disk. Nil
 	// or empty when the run captured no schemas.
 	Schemas map[string]string
+	// Executables is the pinned execution IR per workflow (issue #260): a resume executes these,
+	// hydrated from the snapshot, never re-lowered. Nil when the snapshot pinned no programs.
+	Executables map[string]*execir.Program
 }
 
 // HydrateGraph reconstructs the resolved graph a run pinned at start from its deployment snapshot,
@@ -76,7 +80,25 @@ func HydrateGraph(ctx context.Context, store state.ArtifactStore, snapshotDigest
 			return nil, err
 		}
 	}
-	return &Hydrated{Graph: graph, Snapshot: snap, Schemas: schemas}, nil
+
+	var executables map[string]*execir.Program
+	if strings.TrimSpace(snap.ExecutionIRDigest) != "" {
+		exArt, err := store.GetArtifact(ctx, snap.ExecutionIRDigest)
+		if err != nil {
+			return nil, fmt.Errorf("deploy: load execution IR artifact %s: %w", short(snap.ExecutionIRDigest), err)
+		}
+		if exArt.FormatVersion != FormatExecutionIRV1 {
+			return nil, fmt.Errorf(
+				"%w: cannot resume: execution IR format %s is not supported by this runtime (supports %s)",
+				ErrUnsupportedFormat, exArt.FormatVersion, FormatExecutionIRV1,
+			)
+		}
+		executables, err = execir.UnmarshalPrograms(exArt.Payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &Hydrated{Graph: graph, Snapshot: snap, Schemas: schemas, Executables: executables}, nil
 }
 
 func short(digest string) string {

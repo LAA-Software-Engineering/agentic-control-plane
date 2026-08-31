@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
 	"github.com/LAA-Software-Engineering/terfyn/internal/lang/check"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
@@ -51,13 +52,13 @@ func IsAgentSource(path string) bool {
 // Discovery scans the project tree and skips dot-directories (e.g. .agentic
 // deployment state), so authors drop .agent files anywhere in the project rather
 // than wiring each into spec.imports the way machine-generated YAML is.
-func compileAgentSources(g *spec.ProjectGraph, rootAbs string) error {
+func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*execir.Program, error) {
 	paths, err := discoverAgentFiles(rootAbs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(paths) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var diags lang.Diagnostics
@@ -65,7 +66,7 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) error {
 	for _, p := range paths {
 		src, err := os.ReadFile(p)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", p, err)
+			return nil, fmt.Errorf("read %s: %w", p, err)
 		}
 		f, d := lang.Parse(p, string(src))
 		diags = append(diags, d...)
@@ -87,7 +88,7 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) error {
 	diags = append(diags, checkDiags...)
 
 	if diags.HasErrors() {
-		return fmt.Errorf(".agent compilation failed:\n%s", formatDiagnostics(errorDiags(diags)))
+		return nil, fmt.Errorf(".agent compilation failed:\n%s", formatDiagnostics(errorDiags(diags)))
 	}
 
 	// Fold the checked .agent resources into g. Names already present are YAML
@@ -106,7 +107,13 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) error {
 			}
 		}
 	}
-	return nil
+	// The checked execution IR (positional-arg rebinds included) is the pinned
+	// program for every .agent workflow (issue #260); the loader previously
+	// dropped it.
+	if prog != nil {
+		return prog.Executables, nil
+	}
+	return nil, nil
 }
 
 // controlFlowGate reports a diagnostic for every workflow that uses a

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
@@ -17,7 +18,10 @@ type desiredRow struct {
 }
 
 // ComputePlan compares the normalized desired graph to deployment rows for env (§12.2, issue #12).
-func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGraph) (*Plan, error) {
+// execs is the execution IR per workflow (issue #260): a workflow's spec_hash folds in its program
+// digest, so a lowering-only change (same resource projection, different Program) is a visible plan
+// change. Pass nil to hash the resource projection alone (the pre-#260 behavior).
+func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGraph, execs map[string]*execir.Program) (*Plan, error) {
 	if p == nil || p.Deploy == nil {
 		return nil, errors.New("plan: nil deployment store")
 	}
@@ -28,7 +32,7 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 		return nil, errors.New("plan: empty env")
 	}
 
-	desired, err := desiredRows(g)
+	desired, err := desiredRows(g, execs)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +127,7 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 	}, nil
 }
 
-func desiredRows(g *spec.ProjectGraph) ([]desiredRow, error) {
+func desiredRows(g *spec.ProjectGraph, execs map[string]*execir.Program) ([]desiredRow, error) {
 	var rows []desiredRow
 
 	proj := spec.ProjectResource{
@@ -160,7 +164,7 @@ func desiredRows(g *spec.ProjectGraph) ([]desiredRow, error) {
 			continue
 		}
 		id := spec.ResourceID{Kind: spec.KindWorkflow, Name: w.Metadata.Name}
-		if err := appendDesired(&rows, id, w); err != nil {
+		if err := appendDesiredWorkflow(&rows, id, w, digestOf(execs[w.Metadata.Name])); err != nil {
 			return nil, err
 		}
 	}
@@ -206,6 +210,31 @@ func appendDesired(rows *[]desiredRow, id spec.ResourceID, v any) error {
 	return nil
 }
 
+// appendDesiredWorkflow hashes a workflow with its execution-IR digest folded in
+// (issue #260). NormalizedSpecJSON stays the resource projection; only the
+// spec_hash commits to the executable IR. An empty execDigest yields exactly the
+// historical resource-only hash.
+func appendDesiredWorkflow(rows *[]desiredRow, id spec.ResourceID, w *spec.WorkflowResource, execDigest string) error {
+	raw, err := canonicalResourceJSON(w)
+	if err != nil {
+		return fmt.Errorf("plan: canonical json for %s: %w", id.String(), err)
+	}
+	h, err := WorkflowSpecHashWithExec(w, execDigest)
+	if err != nil {
+		return fmt.Errorf("plan: hash for %s: %w", id.String(), err)
+	}
+	*rows = append(*rows, desiredRow{id: id, json: string(raw), hash: h})
+	return nil
+}
+
+// digestOf returns the program's digest, or "" when there is no program.
+func digestOf(p *execir.Program) string {
+	if p == nil {
+		return ""
+	}
+	return p.Digest()
+}
+
 func resourceMapKey(kind, name string) string {
 	return kind + "\x00" + name
 }
@@ -228,7 +257,7 @@ func ListDesiredResourceIDs(g *spec.ProjectGraph) ([]spec.ResourceID, error) {
 	if g == nil {
 		return nil, errors.New("plan: nil project graph")
 	}
-	rows, err := desiredRows(g)
+	rows, err := desiredRows(g, nil)
 	if err != nil {
 		return nil, err
 	}

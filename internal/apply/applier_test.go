@@ -46,7 +46,7 @@ func TestApplyPlan_thenListShowsResources(t *testing.T) {
 
 	g := minimalGraph()
 	pl := plan.NewPlanner(st)
-	p, err := pl.ComputePlan(ctx, "dev", g)
+	p, err := pl.ComputePlan(ctx, "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestApplyPlan_deleteRemovesRow(t *testing.T) {
 	t1 := t0.Add(time.Hour)
 
 	gFull := graphWithAgent()
-	p1, err := pl.ComputePlan(ctx, "dev", gFull)
+	p1, err := pl.ComputePlan(ctx, "dev", gFull, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestApplyPlan_deleteRemovesRow(t *testing.T) {
 	}
 
 	gOnly := minimalGraph()
-	p2, err := pl.ComputePlan(ctx, "dev", gOnly)
+	p2, err := pl.ComputePlan(ctx, "dev", gOnly, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestApplyPlan_rejectsStaleDeploymentBaseline(t *testing.T) {
 	t0 := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
 
 	gFull := graphWithAgent()
-	pCreate, err := pl.ComputePlan(ctx, "dev", gFull)
+	pCreate, err := pl.ComputePlan(ctx, "dev", gFull, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestApplyPlan_rejectsStaleDeploymentBaseline(t *testing.T) {
 	}
 
 	gOnly := minimalGraph()
-	pDelete, err := pl.ComputePlan(ctx, "dev", gOnly)
+	pDelete, err := pl.ComputePlan(ctx, "dev", gOnly, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

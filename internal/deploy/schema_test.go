@@ -82,7 +82,7 @@ func TestSchemaBundle_capturedAndHydrated(t *testing.T) {
 	store := newMemStore()
 	g := graphWithInputSchema("./in.json")
 
-	digest, warnings, err := BuildAndPersist(ctx, store, g, "local", "v1", root)
+	digest, warnings, err := BuildAndPersist(ctx, store, g, "local", "v1", root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +110,11 @@ func TestSchemaBundle_capturedAndHydrated(t *testing.T) {
 func TestSchemaBundle_absentWhenNoSchemasAndDigestUnchanged(t *testing.T) {
 	// A schema-less project keeps the same snapshot digest it had before schema capture (the
 	// identity field is omitempty), so existing snapshots are unaffected.
-	withEmptyRoot, err := Build(graphWithPolicy([]string{"github.read"}), "local", "v1", nil)
+	withEmptyRoot, err := Build(graphWithPolicy([]string{"github.read"}), "local", "v1", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	withEmptyMap, err := Build(graphWithPolicy([]string{"github.read"}), "local", "v1", map[string]string{})
+	withEmptyMap, err := Build(graphWithPolicy([]string{"github.read"}), "local", "v1", map[string]string{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

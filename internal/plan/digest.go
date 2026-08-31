@@ -14,7 +14,7 @@ func ResolvedGraphDigest(g *spec.ProjectGraph) (string, error) {
 	if g == nil {
 		return "", fmt.Errorf("plan: nil project graph")
 	}
-	rows, err := desiredRows(g)
+	rows, err := desiredRows(g, nil)
 	if err != nil {
 		return "", err
 	}

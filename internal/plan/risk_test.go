@@ -71,7 +71,7 @@ func TestRiskSummary_costCeilingIncreased(t *testing.T) {
 	newG := graphWithPolicy(10.0)
 
 	p := NewPlanner(&fakeDeploy{list: applied})
-	pl, err := p.ComputePlan(context.Background(), "dev", newG)
+	pl, err := p.ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestRiskSummary_costCeilingIncreased(t *testing.T) {
 func TestRiskSummary_newToolCreate_flagsWriteLikeWhenNoPriorState(t *testing.T) {
 	g := graphWithTool([]string{"issues.write"})
 	p := NewPlanner(&fakeDeploy{list: nil})
-	pl, err := p.ComputePlan(context.Background(), "dev", g)
+	pl, err := p.ComputePlan(context.Background(), "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestRiskSummary_effectPermitWidening(t *testing.T) {
 	newG.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github.read", "github.write"}}
 
 	p := NewPlanner(&fakeDeploy{list: applied})
-	pl, err := p.ComputePlan(context.Background(), "dev", newG)
+	pl, err := p.ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestRiskSummary_effectPermitWidening(t *testing.T) {
 	applied2 := appliedFromDesired(t, "dev", covered)
 	child := graphWithPolicyBudget(3, 0, nil)
 	child.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github", "github.read"}}
-	pl2, err := NewPlanner(&fakeDeploy{list: applied2}).ComputePlan(context.Background(), "dev", child)
+	pl2, err := NewPlanner(&fakeDeploy{list: applied2}).ComputePlan(context.Background(), "dev", child, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestRiskSummary_effectPermitWidening_unattendedPromotion(t *testing.T) {
 	newG.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github.write"}}
 
 	p := NewPlanner(&fakeDeploy{list: applied})
-	pl, err := p.ComputePlan(context.Background(), "dev", newG)
+	pl, err := p.ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestRiskSummary_effectPermitWidening_unattendedPromotion(t *testing.T) {
 		Permit:             []string{"github.write"},
 		PermitWithApproval: []string{"github.write"},
 	}
-	plDual, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", dual)
+	plDual, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", dual, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestRiskSummary_newWriteLikeToolPermissions(t *testing.T) {
 	newG := graphWithTool([]string{"contents.read", "issues.write"})
 
 	p := NewPlanner(&fakeDeploy{list: applied})
-	pl, err := p.ComputePlan(context.Background(), "dev", newG)
+	pl, err := p.ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestRiskSummary_approvalRemovalAndCostIncrease_distinctItems(t *testing.T) 
 	newG := graphWithPolicyBudget(10, 60, []string{"tool.github.issues.write"})
 
 	p := NewPlanner(&fakeDeploy{list: applied})
-	pl, err := p.ComputePlan(context.Background(), "dev", newG)
+	pl, err := p.ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestRiskSummary_wallClockCeilingIncreased(t *testing.T) {
 	applied := appliedFromDesired(t, "dev", oldG)
 	newG := graphWithPolicyBudget(3, 120, nil)
 
-	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestRiskSummary_agentModelChanged(t *testing.T) {
 	applied := appliedFromDesired(t, "dev", oldG)
 	newG := graphWithAgent("mock/gpt-4o")
 
-	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestRiskSummary_agentToolsListGained(t *testing.T) {
 	applied := appliedFromDesired(t, "dev", oldG)
 	newG := graphWithAgentTools([]string{"helper"}, []string{"issues.write"})
 
-	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

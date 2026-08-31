@@ -153,9 +153,18 @@ func (a *engineInvoker) claimNestedSeed(key string) *NestedRunState {
 // memo and returns ErrInterrupted. Completion finishes through the shared
 // success tail so output/cost bookkeeping matches the DAG path.
 func (e *Executor) runViaExecIR(ctx context.Context, in RunInput, wf *spec.WorkflowResource, wfPol policy.PolicyEvaluator, runStartedAt time.Time, runHandle *telemetry.RunHandle) error {
-	prog, diags := lower.LowerWorkflowResource(wf)
-	if err := diags.AsError(); err != nil {
-		return e.failRun(ctx, in, fmt.Errorf("engine: lower workflow %q to execir: %w", in.WorkflowName, err), 0)
+	// Prefer the PINNED program (issue #260): the exact execir.Program captured in
+	// the deployment snapshot — for a fresh Invoke from resolved config, for a
+	// resume hydrated from the snapshot — so the runtime never re-lowers from
+	// source (ADR 001). Fall back to lowering only when no program was pinned
+	// (e.g. a store without artifact support).
+	prog := e.Executables[in.WorkflowName]
+	if prog == nil {
+		lowered, diags := lower.LowerWorkflowResource(wf)
+		if err := diags.AsError(); err != nil {
+			return e.failRun(ctx, in, fmt.Errorf("engine: lower workflow %q to execir: %w", in.WorkflowName, err), 0)
+		}
+		prog = lowered
 	}
 	cost := &liveCost{}
 	inv := newEngineInvoker(e, in, wf, wfPol, runHandle, cost, runStartedAt)
@@ -414,9 +423,13 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 	childIn.CallStack = callStack
 	childIn.Resume = false // nested resume is driven by the seeded frame, not RunInput
 
-	childProg, diags := lower.LowerWorkflowResource(callee)
-	if derr := diags.AsError(); derr != nil {
-		return nil, fmt.Errorf("engine: lower subworkflow %q to execir: %w", workflow, derr)
+	childProg := a.e.Executables[workflow]
+	if childProg == nil {
+		lowered, diags := lower.LowerWorkflowResource(callee)
+		if derr := diags.AsError(); derr != nil {
+			return nil, fmt.Errorf("engine: lower subworkflow %q to execir: %w", workflow, derr)
+		}
+		childProg = lowered
 	}
 
 	childInv := newEngineInvoker(&child, childIn, callee, wfPol, a.runHandle, a.cost, a.runStartedAt)

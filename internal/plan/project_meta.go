@@ -12,7 +12,7 @@ func ProjectDeploymentMeta(g *spec.ProjectGraph) (projectName string, projectSpe
 	if g == nil {
 		return "", "", fmt.Errorf("plan: nil project graph")
 	}
-	rows, err := desiredRows(g)
+	rows, err := desiredRows(g, nil)
 	if err != nil {
 		return "", "", err
 	}

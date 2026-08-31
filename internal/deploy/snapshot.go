@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
@@ -29,6 +30,7 @@ const (
 	FormatGraphV1        = "agentic.dev/graph/v1"
 	FormatManifestV1     = "agentic.dev/manifest/v1"
 	FormatSchemaBundleV1 = "agentic.dev/schemabundle/v1"
+	FormatExecutionIRV1  = "agentic.dev/executionir/v1"
 )
 
 // ErrUnsupportedFormat is returned when an artifact or snapshot format_version is not decodable by
@@ -130,7 +132,7 @@ func snapshotDigest(id snapshotIdentityV1) (string, error) {
 // Build assembles the deployment snapshot and its artifacts for a resolved graph. It is pure (no
 // I/O): callers collect schemas with [CollectSchemas] (authoring-time I/O) and pass them here.
 // compilerVersion is provenance for the compilation as a whole.
-func Build(g *spec.ProjectGraph, environment, compilerVersion string, schemas map[string]string) (Built, error) {
+func Build(g *spec.ProjectGraph, environment, compilerVersion string, schemas map[string]string, execs map[string]*execir.Program) (Built, error) {
 	if g == nil {
 		return Built{}, fmt.Errorf("deploy: nil project graph")
 	}
@@ -150,6 +152,22 @@ func Build(g *spec.ProjectGraph, environment, compilerVersion string, schemas ma
 		{Digest: manifestDigest, Kind: state.ArtifactKindCapabilityManifest, FormatVersion: FormatManifestV1, Payload: manifestPayload},
 	}
 
+	// Pin the execution IR (issue #260): the exact Program each workflow executes,
+	// so a fresh Invoke and a resume run the pinned program (hydrated, never
+	// re-lowered). Empty for a project with no lowerable workflow — then
+	// ExecutionIRDigest stays "" and the snapshot digest is unchanged.
+	execIRDigest := ""
+	if len(execs) > 0 {
+		execPayload, err := execir.MarshalPrograms(execs)
+		if err != nil {
+			return Built{}, fmt.Errorf("deploy: marshal execution IR: %w", err)
+		}
+		execIRDigest = contentDigest(execPayload)
+		artifacts = append(artifacts, state.DeploymentArtifact{
+			Digest: execIRDigest, Kind: state.ArtifactKindExecutionIR, FormatVersion: FormatExecutionIRV1, Payload: execPayload,
+		})
+	}
+
 	schemaBundleDigest := ""
 	if len(schemas) > 0 {
 		bundlePayload, err := MarshalSchemaBundle(schemas)
@@ -167,7 +185,7 @@ func Build(g *spec.ProjectGraph, environment, compilerVersion string, schemas ma
 		CompilerVersion:          strings.TrimSpace(compilerVersion),
 		Environment:              environment,
 		GraphDigest:              graphDigest,
-		ExecutionIRDigest:        "", // execution IR is not yet wired into the engine (execir).
+		ExecutionIRDigest:        execIRDigest,
 		CapabilityManifestDigest: manifestDigest,
 		SchemaBundleDigest:       schemaBundleDigest,
 	}
@@ -183,7 +201,7 @@ func Build(g *spec.ProjectGraph, environment, compilerVersion string, schemas ma
 			CompilerVersion:          id.CompilerVersion,
 			Environment:              id.Environment,
 			GraphDigest:              graphDigest,
-			ExecutionIRDigest:        "",
+			ExecutionIRDigest:        execIRDigest,
 			CapabilityManifestDigest: manifestDigest,
 			SchemaBundleDigest:       schemaBundleDigest,
 		},
@@ -212,7 +230,7 @@ func Persist(ctx context.Context, store state.ArtifactStore, b Built) (string, e
 // BuildAndPersist collects schemas under projectRoot, builds the snapshot for g, and persists it,
 // returning the snapshot digest and any warnings. Both run-start pinning and apply use this. An
 // empty projectRoot skips schema capture (no schemas pinned).
-func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.ProjectGraph, environment, compilerVersion, projectRoot string) (digest string, warnings []string, err error) {
+func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.ProjectGraph, environment, compilerVersion, projectRoot string, execs map[string]*execir.Program) (digest string, warnings []string, err error) {
 	var schemas map[string]string
 	var schemaWarnings []string
 	if strings.TrimSpace(projectRoot) != "" {
@@ -221,7 +239,7 @@ func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.Pro
 			return "", nil, err
 		}
 	}
-	b, err := Build(g, environment, compilerVersion, schemas)
+	b, err := Build(g, environment, compilerVersion, schemas, execs)
 	if err != nil {
 		return "", nil, err
 	}

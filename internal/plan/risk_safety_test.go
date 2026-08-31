@@ -19,7 +19,7 @@ func TestRiskSummary_newTool_flagsSafetyApproval(t *testing.T) {
 	spec.NormalizeProjectGraph(g)
 
 	p := NewPlanner(&fakeDeploy{list: nil})
-	pl, err := p.ComputePlan(context.Background(), "dev", g)
+	pl, err := p.ComputePlan(context.Background(), "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestRiskSummary_trustedTool_noSafetyApprovalRisk(t *testing.T) {
 	spec.NormalizeProjectGraph(g)
 
 	p := NewPlanner(&fakeDeploy{list: nil})
-	pl, err := p.ComputePlan(context.Background(), "dev", g)
+	pl, err := p.ComputePlan(context.Background(), "dev", g, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

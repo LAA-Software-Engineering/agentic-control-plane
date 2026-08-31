@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
 	"github.com/LAA-Software-Engineering/terfyn/internal/models"
 	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
@@ -31,8 +32,12 @@ type Executor struct {
 	// (issue #207 follow-up). On a pinned resume, input/output validation uses these instead of
 	// re-reading files under ProjectRoot. Empty on fresh runs (disk-backed validation).
 	Schemas map[string]string
-	Tools   tools.ToolExecutor
-	Models  *models.Registry
+	// Executables is the pinned execution IR per workflow (issue #260). The execir run path executes
+	// the pinned program (fresh run: from resolved config; resume: hydrated from the snapshot) rather
+	// than re-lowering. Nil falls back to lowering the resolved graph.
+	Executables map[string]*execir.Program
+	Tools       tools.ToolExecutor
+	Models      *models.Registry
 	// ModelResolve, if set, is used instead of Models.ClientFor (tests inject mocks).
 	ModelResolve func(modelRef string) (models.ModelClient, string, error)
 	Store        state.RuntimeStore

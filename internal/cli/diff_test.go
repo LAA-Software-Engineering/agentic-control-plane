@@ -57,7 +57,7 @@ func TestDiff_afterApply_noDifferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestDiff_singleResource_inSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestDiff_singleResource_policyUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl0, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl0, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestDiff_json_inSyncSingleTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph)
+	pl, err := plan.NewPlanner(st).ComputePlan(ctx, "local", graph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
