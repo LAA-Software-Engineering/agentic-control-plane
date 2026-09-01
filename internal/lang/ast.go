@@ -143,6 +143,7 @@ type WorkflowDecl struct {
 	Params      []*Param
 	Result      *TypeRef     // return type after ->; nil if omitted
 	Description *StringLit   // description "..."; nil if omitted (lowers to WorkflowSpec.Description)
+	Policy      *Ident       // policy <name>; nil if omitted (lowers to WorkflowSpec.Policy)
 	Effects     []*EffectRef // effects { github.read, ... }; nil if no clause
 	Body        []Stmt
 }

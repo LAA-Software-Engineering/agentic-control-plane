@@ -401,6 +401,11 @@ func (p *parser) parseWorkflow() *WorkflowDecl {
 			decl.Description = p.parseStringLit("after workflow 'description'")
 			continue
 		}
+		if p.cur.Kind == KindIdent && p.cur.Lit == "policy" && decl.Policy == nil {
+			p.advance()
+			decl.Policy = p.ident("after workflow 'policy'")
+			continue
+		}
 		if p.cur.Kind == KindIdent && p.cur.Lit == "effects" && decl.Effects == nil {
 			p.advance()
 			decl.Effects = p.parseEffects()

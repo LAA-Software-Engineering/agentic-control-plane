@@ -281,6 +281,9 @@ func (l *lowerer) workflow(d *lang.WorkflowDecl) *spec.WorkflowResource {
 	if d.Description != nil {
 		wr.Spec.Description = d.Description.Value
 	}
+	if d.Policy != nil {
+		wr.Spec.Policy = d.Policy.Name
+	}
 	l.sm.set(KeyWorkflow(name), d.Pos)
 
 	// Param/result types and the effects { } clause are diagnostic-only for the

@@ -91,3 +91,25 @@ func TestConstraintsAndDescriptionRoundTrip(t *testing.T) {
 		t.Fatalf("not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", once, twice)
 	}
 }
+
+func TestParseWorkflowPolicy(t *testing.T) {
+	src := "workflow W(input: T) -> T\n    description \"d\"\n    policy cheap-ceiling\n    effects { a.read }\n{\n    return input\n}\n"
+	f, diags := Parse("w.agent", src)
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diags: %s", diags.Error())
+	}
+	w := f.Decls[0].(*WorkflowDecl)
+	if w.Policy == nil || w.Policy.Name != "cheap-ceiling" {
+		t.Fatalf("workflow policy: %+v", w.Policy)
+	}
+	// Round-trips.
+	once, _ := Format("w.agent", src)
+	twice, _ := Format("w.agent", once)
+	if once != twice {
+		t.Fatalf("not idempotent:\n%s\n---\n%s", once, twice)
+	}
+	f2, _ := Parse("w.agent", once)
+	if f2.Decls[0].(*WorkflowDecl).Policy.Name != "cheap-ceiling" {
+		t.Fatalf("policy lost on round-trip")
+	}
+}
