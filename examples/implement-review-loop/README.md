@@ -77,6 +77,12 @@ not. (Enforced at the tool-resolution boundary — see
 `TestImplementReviewLoop_ReviewerCannotWrite` in
 [`internal/engine/implement_review_test.go`](../../internal/engine/implement_review_test.go).)
 
+This invariant is also **checked in CI, statically, with no model**:
+[`tests/capabilities.yaml`](tests/capabilities.yaml) asserts `forbidEffect {agent: Reviewer,
+effect: workspace.write}` (and that the Implementer autonomously may), verified by
+`terfyn test` over the plan's effect bound. The guarantee lives next to the agents and fails
+the build if a grant change ever lets the Reviewer reach `workspace.write` (issue #332).
+
 ## What is bounded vs. what is free
 
 | The agents may nondeterministically… | Terfyn statically bounds… |

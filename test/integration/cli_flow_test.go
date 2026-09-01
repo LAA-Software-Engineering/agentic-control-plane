@@ -83,6 +83,23 @@ func TestCLI_RuntimeSelection(t *testing.T) {
 	}
 }
 
+// TestCLI_CapabilityAssertions exercises the declarative capability assertions (issue #332): the
+// flagship's tests/capabilities.yaml is checked statically by `terfyn test` (no model, no run), and
+// the invariants ("Reviewer can never write", "Implementer autonomously may") hold.
+func TestCLI_CapabilityAssertions(t *testing.T) {
+	proj := filepath.Join(repoRoot(t), "examples", "implement-review-loop")
+	out, err := runCLI(t, "test", "--project", proj)
+	if err != nil {
+		t.Fatalf("capability invariants should pass: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "forbid Reviewer") || !strings.Contains(out, "expectAutonomous Implementer") {
+		t.Fatalf("expected capability assertion rows:\n%s", out)
+	}
+	if !strings.Contains(out, "3 passed, 0 failed") {
+		t.Fatalf("expected all invariants to pass:\n%s", out)
+	}
+}
+
 func copyExampleTree(t *testing.T, src, dst string) {
 	t.Helper()
 	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {

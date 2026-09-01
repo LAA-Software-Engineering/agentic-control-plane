@@ -1,0 +1,10 @@
+name: capability-invariants
+assert:
+  forbidEffect:
+    - agent: Reviewer
+      effect: workspace.write
+  expectAutonomous:
+    - agent: Implementer
+      effect: workspace.write
+    - agent: Implementer
+      effect: process.exec
