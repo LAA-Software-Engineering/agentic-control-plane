@@ -16,6 +16,7 @@ type dispatchHandler func(ctx context.Context, with map[string]any, start time.T
 var dispatchHandlers = map[string]dispatchHandler{
 	"check_runs.list":            dispatchCheckRunsList,
 	"commit_status.create":       dispatchGitHubJSON(githubCommitStatusCreate),
+	"create_branch":              dispatchGitCreateBranch,
 	"echo":                       dispatchEcho,
 	"identity":                   dispatchIdentity,
 	"issues.comment":             dispatchGitHubJSON(githubIssuesComment),
@@ -27,6 +28,7 @@ var dispatchHandlers = map[string]dispatchHandler{
 	"pull_request.fetch":         dispatchPullRequestFetch,
 	"pull_request.get":           dispatchPullRequestGet,
 	"pull_request.post_comment":  dispatchPullRequestPostComment,
+	"push_branch":                dispatchGitPushBranch,
 	"read_file":                  dispatchWorkspaceReadFile,
 	"write_file":                 dispatchWorkspaceWriteFile,
 	"run_tests":                  dispatchWorkspaceRunTests,

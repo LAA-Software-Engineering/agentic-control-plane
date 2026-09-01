@@ -28,6 +28,13 @@
 // (spec.workspace.root / testCommand — a relative root resolves against the project root) or, when
 // absent, taken from TERFYN_WORKSPACE_ROOT / TERFYN_WORKSPACE_TEST_COMMAND. Declared config wins.
 //
+// Git (runs in TERFYN_WORKSPACE_ROOT; remote from TERFYN_GIT_REMOTE, default origin; push uses the
+// ambient git credentials): create_branch (git switch -c) and push_branch (push the branch to the
+// remote). Deliberately narrow — no push to the default branch, no --force, no delete, no arbitrary
+// git; branch names are validated so they cannot be read as a flag or a delete refspec. push_branch
+// is meant to sit in approvals.requiredFor so the run suspends for approval before anything leaves
+// the machine.
+//
 // Every operation here is a concrete capability; the effect classes it may produce are declared on
 // the Tool resource's operations manifest (issue #188 / #204), not in this package.
 package native

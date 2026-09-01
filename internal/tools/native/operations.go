@@ -36,6 +36,8 @@ var operationCatalog = map[string][]string{
 	"commit_status.create":       {"owner", "repo", "sha", "state", "context", "description", "target_url"},
 	"message.send":               {"channel", "text", "thread_ts"},
 	"message.update":             {"channel", "ts", "text"},
+	"create_branch":              {"name"},
+	"push_branch":                {"branch"},
 	"read_file":                  {"path"},
 	"write_file":                 {"path", "content"},
 	"run_tests":                  {}, // command comes from TERFYN_WORKSPACE_TEST_COMMAND, not tool args
