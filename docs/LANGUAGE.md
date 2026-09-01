@@ -92,7 +92,7 @@ The reference implementation is [`internal/lang`](../internal/lang):
 
 ```ebnf
 File        = { Declaration } ;
-Declaration = AgentDecl | WorkflowDecl ;
+Declaration = AgentDecl | WorkflowDecl | ToolDecl | PolicyDecl ;   (* ToolDecl/PolicyDecl: ADR 005, #333 *)
 
 AgentDecl   = "agent" Ident "{" { AgentField } "}" ;
 AgentField  = "model"  ModelRef
@@ -177,6 +177,49 @@ Notes:
 - Requiredness of agent fields, argument style (all-positional vs. all-named), reference
   resolution, and effect soundness are **not** enforced by the parser — they are
   checking concerns (#198). A field the author omitted is a nil node, not a parse error.
+
+## Inline tool and policy declarations ([ADR 005](adr/005-inline-resource-declarations.md), #333)
+
+A `.agent` file may also declare **tools** and **policies** at the top level, so a small project
+can be a single `.agent` file plus `project.yaml`. They lower to the **same** `spec.ToolResource` /
+`spec.PolicyResource` the YAML loader produces (one IR, one validator); YAML remains a first-class
+ingress, and a duplicate `(kind, name)` across any ingress — inline↔inline or inline↔YAML — is a
+**load error** with no precedence.
+
+```agent
+tool workspace {
+    type native
+    safety {
+        trusted true
+        sideEffects true
+    }
+    operations {                       // presence — even an empty `operations {}` — is a CLOSED,
+        read_file  { effects { workspace.read } }   // deny-all manifest (OperationsDeclared, #204).
+        write_file { effects { workspace.write } }  // Omitting the block leaves the callable set open.
+    }
+}
+
+policy coding {
+    execution { maxTotalCostUsd 5   maxWallClockSeconds 300 }
+    approvals { requiredFor { tool.workspace.run_tests } }
+    effects {
+        permit             { workspace.read }
+        permitWithApproval { workspace.write }   // allowed only behind approval
+    }
+}
+```
+
+- Fields are newline- (or whitespace-) separated, like `constraints` / `grants`; there is no `;`.
+- Tool: `type` (native/mock/mcp/http), `safety { trusted / sideEffects / requiresApproval }`,
+  `operations { <op> { effects { … } } }`. An operation name may be dotted (`pull_request.get`).
+- Policy: `execution { maxTotalCostUsd / maxWallClockSeconds / requireStructuredOutput }`,
+  `approvals { requiredFor { … } / requireAllTools / permissive }`, and the full effect model
+  `effects { permit { … } permitWithApproval { … } }`.
+- `tool` and `policy` are **contextual**: only a top-level `tool <Name> {` / `policy <Name> {`
+  opens a declaration; the grant path `tool.<name>.<op>` and the agent field `policy <name>` are
+  unchanged. Transport config (mcp/http), the native `workspace { … }` block, `hitl`, and `preset`
+  are follow-on fields (ADR 005 §4); until a field exists in the grammar, author that resource in
+  YAML and import it.
 
 ## The normative program
 

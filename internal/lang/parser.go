@@ -75,13 +75,17 @@ func (p *parser) ident(context string) *Ident {
 func (p *parser) parseFile() *File {
 	f := &File{Pos: p.cur.Pos}
 	for p.cur.Kind != KindEOF {
-		switch p.cur.Kind {
-		case KindAgent:
+		switch {
+		case p.cur.Kind == KindAgent:
 			f.Decls = append(f.Decls, p.parseAgent())
-		case KindWorkflow:
+		case p.cur.Kind == KindWorkflow:
 			f.Decls = append(f.Decls, p.parseWorkflow())
+		case p.cur.Kind == KindIdent && p.cur.Lit == "tool":
+			f.Decls = append(f.Decls, p.parseTool())
+		case p.cur.Kind == KindIdent && p.cur.Lit == "policy":
+			f.Decls = append(f.Decls, p.parsePolicy())
 		default:
-			p.errorf(p.cur.Pos, "expected 'agent' or 'workflow' declaration, got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected 'agent', 'workflow', 'tool', or 'policy' declaration, got %s", p.cur)
 			p.syncTopLevel()
 		}
 	}
@@ -92,7 +96,7 @@ func (p *parser) parseFile() *File {
 // consuming at least one token so parseFile cannot loop.
 func (p *parser) syncTopLevel() {
 	p.advance()
-	for p.cur.Kind != KindEOF && p.cur.Kind != KindAgent && p.cur.Kind != KindWorkflow {
+	for p.cur.Kind != KindEOF && p.cur.Kind != KindAgent && p.cur.Kind != KindWorkflow && !p.isResourceDeclKeyword() {
 		p.advance()
 	}
 }
