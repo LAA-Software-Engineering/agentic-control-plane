@@ -151,7 +151,7 @@ func (p *parser) parseAgent() *AgentDecl {
 	}
 	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
 		if p.cur.Kind != KindIdent {
-			p.errorf(p.cur.Pos, "expected agent field (model, policy, instructions, grants, input, output), got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected agent field (model, policy, description, instructions, constraints, grants, input, output), got %s", p.cur)
 			p.syncLine()
 			continue
 		}
@@ -167,10 +167,20 @@ func (p *parser) parseAgent() *AgentDecl {
 			if id := p.ident("after 'policy'"); !dup(field, fpos) {
 				decl.Policy = id
 			}
+		case "description":
+			p.advance()
+			if s := p.parseStringLit("after 'description'"); !dup(field, fpos) {
+				decl.Description = s
+			}
 		case "instructions":
 			p.advance()
 			if s := p.parseStringLit("after 'instructions'"); !dup(field, fpos) {
 				decl.Instructions = s
+			}
+		case "constraints":
+			p.advance()
+			if c := p.parseConstraints(); !dup(field, fpos) {
+				decl.Constraints = c
 			}
 		case "grants":
 			p.advance()
@@ -188,7 +198,7 @@ func (p *parser) parseAgent() *AgentDecl {
 				decl.Output = t
 			}
 		default:
-			p.errorf(fpos, "unknown agent field %q (want model, policy, instructions, grants, input, or output)", field)
+			p.errorf(fpos, "unknown agent field %q (want model, policy, description, instructions, constraints, grants, input, or output)", field)
 			p.syncLine()
 		}
 	}
@@ -207,6 +217,96 @@ func (p *parser) parseStringLit(where string) *StringLit {
 	s := &StringLit{Pos: p.cur.Pos, Value: p.cur.Lit}
 	p.advance()
 	return s
+}
+
+// parseConstraints parses `{ maxIterations N timeoutSeconds N ... }` — the fixed
+// set of agent execution bounds (#310). Each field appears at most once; an unknown
+// field or a wrong value type is a diagnostic. The field words are contextual.
+func (p *parser) parseConstraints() *Constraints {
+	c := &Constraints{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open constraints block"); !ok {
+		return c
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a constraint field (maxIterations, timeoutSeconds, temperature, requireStructuredOutput), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate constraint %q (each appears at most once)", field)
+		}
+		seen[field] = true
+		switch field {
+		case "maxIterations":
+			if n, ok := p.constraintInt(field); ok {
+				c.MaxIterations = &n
+			}
+		case "timeoutSeconds":
+			if n, ok := p.constraintInt(field); ok {
+				c.TimeoutSeconds = &n
+			}
+		case "temperature":
+			if f, ok := p.constraintFloat(field); ok {
+				c.Temperature = &f
+			}
+		case "requireStructuredOutput":
+			if b, ok := p.constraintBool(field); ok {
+				c.RequireStructuredOutput = &b
+			}
+		default:
+			p.errorf(fpos, "unknown constraint %q (want maxIterations, timeoutSeconds, temperature, or requireStructuredOutput)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close constraints block")
+	return c
+}
+
+func (p *parser) constraintInt(field string) (int, bool) {
+	if p.cur.Kind != KindNumber || strings.Contains(p.cur.Lit, ".") {
+		p.errorf(p.cur.Pos, "constraint %q wants a positive integer, got %s", field, p.cur)
+		p.syncLine()
+		return 0, false
+	}
+	n, err := strconv.ParseInt(p.cur.Lit, 10, 64)
+	if err != nil || n <= 0 {
+		p.errorf(p.cur.Pos, "constraint %q wants a positive integer, got %q", field, p.cur.Lit)
+		p.advance()
+		return 0, false
+	}
+	p.advance()
+	return int(n), true
+}
+
+func (p *parser) constraintFloat(field string) (float64, bool) {
+	if p.cur.Kind != KindNumber {
+		p.errorf(p.cur.Pos, "constraint %q wants a number, got %s", field, p.cur)
+		p.syncLine()
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(p.cur.Lit, 64)
+	if err != nil {
+		p.errorf(p.cur.Pos, "constraint %q: invalid number %q", field, p.cur.Lit)
+		p.advance()
+		return 0, false
+	}
+	p.advance()
+	return f, true
+}
+
+func (p *parser) constraintBool(field string) (bool, bool) {
+	if p.cur.Kind == KindIdent && (p.cur.Lit == "true" || p.cur.Lit == "false") {
+		v := p.cur.Lit == "true"
+		p.advance()
+		return v, true
+	}
+	p.errorf(p.cur.Pos, "constraint %q wants true or false, got %s", field, p.cur)
+	p.syncLine()
+	return false, false
 }
 
 // parseModelRef parses <provider>/<name> (e.g. openai/gpt-5).
@@ -293,10 +393,20 @@ func (p *parser) parseWorkflow() *WorkflowDecl {
 		p.advance()
 		decl.Result = p.parseTypeRef("after '->'")
 	}
-	// The effects clause is introduced by the contextual keyword 'effects'.
-	if p.cur.Kind == KindIdent && p.cur.Lit == "effects" {
-		p.advance()
-		decl.Effects = p.parseEffects()
+	// Optional header clauses before the body: `description "..."` and the
+	// `effects { }` clause, in either order (each contextual, each at most once).
+	for {
+		if p.cur.Kind == KindIdent && p.cur.Lit == "description" && decl.Description == nil {
+			p.advance()
+			decl.Description = p.parseStringLit("after workflow 'description'")
+			continue
+		}
+		if p.cur.Kind == KindIdent && p.cur.Lit == "effects" && decl.Effects == nil {
+			p.advance()
+			decl.Effects = p.parseEffects()
+			continue
+		}
+		break
 	}
 	decl.Body = p.parseBlock("to open workflow body")
 	return decl

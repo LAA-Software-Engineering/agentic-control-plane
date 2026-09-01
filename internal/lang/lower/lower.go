@@ -182,6 +182,12 @@ func (l *lowerer) agent(d *lang.AgentDecl) *spec.AgentResource {
 	if d.Policy != nil {
 		ar.Spec.Policy = d.Policy.Name
 	}
+	if d.Description != nil {
+		ar.Spec.Description = d.Description.Value
+	}
+	if d.Constraints != nil {
+		ar.Spec.Constraints = lowerConstraints(d.Constraints)
+	}
 	// instructions -> AgentSpec.Instructions: the agent prompt, copied verbatim
 	// (the lexer already normalized a multiline body). No new prompt abstraction
 	// and no new runtime semantics — the existing agent runtime consumes it.
@@ -230,6 +236,25 @@ func SchemaRef(typeName string) string {
 	return "schemas/" + typeName + ".json"
 }
 
+// lowerConstraints converts a parsed constraints block into spec.AgentConstraints,
+// copying only the fields the author set (#310).
+func lowerConstraints(c *lang.Constraints) *spec.AgentConstraints {
+	out := &spec.AgentConstraints{}
+	if c.MaxIterations != nil {
+		out.MaxIterations = *c.MaxIterations
+	}
+	if c.TimeoutSeconds != nil {
+		out.TimeoutSeconds = *c.TimeoutSeconds
+	}
+	if c.Temperature != nil {
+		out.Temperature = *c.Temperature
+	}
+	if c.RequireStructuredOutput != nil {
+		out.RequireStructuredOutput = *c.RequireStructuredOutput
+	}
+	return out
+}
+
 func grantUses(g *lang.Grant) string {
 	tn := g.ToolName()
 	op := g.OperationName()
@@ -252,6 +277,9 @@ func (l *lowerer) workflow(d *lang.WorkflowDecl) *spec.WorkflowResource {
 		Kind:       spec.KindWorkflow,
 		Metadata:   spec.Metadata{Name: name},
 		Pos:        d.Pos,
+	}
+	if d.Description != nil {
+		wr.Spec.Description = d.Description.Value
 	}
 	l.sm.set(KeyWorkflow(name), d.Pos)
 
