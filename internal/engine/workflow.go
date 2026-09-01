@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/schema"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func lookupWorkflow(g *spec.ProjectGraph, name string) (*spec.WorkflowResource, error) {

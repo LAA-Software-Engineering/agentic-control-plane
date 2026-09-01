@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/audit"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/util"
+	"github.com/Terfyn/terfyn/internal/audit"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/util"
 )
 
 const runSelectColumns = `run_id, workflow_name, env, status, started_at, finished_at, input_json, output_json, error_text, total_cost_usd, workflow_spec_hash, environment_name, deployment_snapshot_digest, tenant_id, thread_id, actor_id, parent_run_id, request_id, idempotency_key, source`

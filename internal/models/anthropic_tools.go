@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/models/anthropic"
+	"github.com/Terfyn/terfyn/internal/models/anthropic"
 )
 
 // defaultAnthropicInputSchema is sent when ToolDef.Parameters is empty.

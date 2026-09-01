@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
-	"github.com/LAA-Software-Engineering/terfyn/internal/render"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/plan"
+	"github.com/Terfyn/terfyn/internal/render"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 	"github.com/spf13/cobra"
 )
 

@@ -3,7 +3,7 @@ package models
 import (
 	"net/http"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // OpenAI-compatible provider base URLs. xAI Grok, Google Gemini, and Moonshot

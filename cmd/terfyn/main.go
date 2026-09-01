@@ -1,6 +1,6 @@
 package main
 
-import "github.com/LAA-Software-Engineering/terfyn/internal/app"
+import "github.com/Terfyn/terfyn/internal/app"
 
 func main() {
 	app.New().RunAndExit()

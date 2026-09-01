@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func TestExecute_httptest_GET_success(t *testing.T) {

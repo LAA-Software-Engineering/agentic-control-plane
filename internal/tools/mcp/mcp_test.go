@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func mockMCPExecutable(t *testing.T) string {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 func openTestStore(t *testing.T) (*Store, context.Context) {

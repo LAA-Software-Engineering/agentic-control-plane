@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/inspect"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/inspect"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 	"github.com/spf13/cobra"
 )
 

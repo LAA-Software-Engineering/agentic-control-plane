@@ -3,7 +3,7 @@ package check
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // TestCheck_AgentSchemasWired proves an .agent agent's input/output type refs are

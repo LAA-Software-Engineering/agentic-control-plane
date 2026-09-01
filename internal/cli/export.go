@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/project"
+	"github.com/Terfyn/terfyn/internal/project"
 	"github.com/spf13/cobra"
 )
 

@@ -20,7 +20,7 @@ flowchart TB
 
 | Stage | What happens |
 |-------|----------------|
-| **Source graph** | Versioned resources (`Project`, `Agent`, `Tool`, `Workflow`, `Policy`, `Environment`). Today that graph is YAML — interchange / compilation output, not the long-term authoring surface. [`.agent`](adr/002-language-frontend-and-ir-expressiveness.md) is planned ([#200](https://github.com/LAA-Software-Engineering/terfyn/issues/200)). |
+| **Source graph** | Versioned resources (`Project`, `Agent`, `Tool`, `Workflow`, `Policy`, `Environment`). Today that graph is YAML — interchange / compilation output, not the long-term authoring surface. [`.agent`](adr/002-language-frontend-and-ir-expressiveness.md) is planned ([#200](https://github.com/Terfyn/terfyn/issues/200)). |
 | **validate / plan** | Load, normalize, overlay environments, lint policy, then **diff** desired graph vs SQLite deployment state. Plan output includes field diffs, C1 `RiskItem`s (permissions, approvals, models, budgets, tool surface), the desired **effect bound**, and an **authority delta** vs deployed state. |
 | **SQLite desired state** | Applied resources live in `.agentic/state.db` (override with `--state`). Deployment rows are separate from run traces in the same file. |
 | **engine** | `terfyn run` executes a workflow against the applied snapshot. Policy gates tool calls; HITL / `--approve` / fail-closed denials are recorded. |
@@ -29,7 +29,7 @@ flowchart TB
 
 ## Plan-time bounds
 
-The uncopyable capability is a **plan-time effect bound**: a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)). Compute over the desired graph is [`internal/effects.Compute`](../internal/effects) (#189); `terfyn plan` prints the bound and `bound(desired)` vs `bound(deployed)` authority delta (#191).
+The uncopyable capability is a **plan-time effect bound**: a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/Terfyn/terfyn/issues/189) / [#191](https://github.com/Terfyn/terfyn/issues/191)). Compute over the desired graph is [`internal/effects.Compute`](../internal/effects) (#189); `terfyn plan` prints the bound and `bound(desired)` vs `bound(deployed)` authority delta (#191).
 
 **What `terfyn plan` diffs today:**
 

@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // LowerWorkflowResource lowers a YAML Workflow resource into the execution IR

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
+	"github.com/Terfyn/terfyn/internal/statejson"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 func TestLogs_eventFilter(t *testing.T) {

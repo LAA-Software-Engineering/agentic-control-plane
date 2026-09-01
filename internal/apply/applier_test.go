@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/plan"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 )
 
 func minimalGraph() *spec.ProjectGraph {

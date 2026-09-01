@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/tools"
 )
 
 // ResolvedHitlReview is the merged review configuration for one gated tool call.

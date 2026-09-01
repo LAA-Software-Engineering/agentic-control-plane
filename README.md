@@ -1,10 +1,10 @@
 # Terfyn
 
-[![CI](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/ci.yml)
-[![Release](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml)
+[![CI](https://github.com/Terfyn/terfyn/actions/workflows/ci.yml/badge.svg)](https://github.com/Terfyn/terfyn/actions/workflows/ci.yml)
+[![Release](https://github.com/Terfyn/terfyn/actions/workflows/release.yml/badge.svg)](https://github.com/Terfyn/terfyn/actions/workflows/release.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev/dl/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
-[![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/terfyn.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/terfyn)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Terfyn/terfyn.svg)](https://pkg.go.dev/github.com/Terfyn/terfyn)
 
 **Terfyn runs LLM agents behind a capability boundary you can review as a diff — before they run.**
 
@@ -23,7 +23,7 @@ No API keys needed — `init` scaffolds a mock model and a local `echo` tool, so
 
 ```bash
 # install the CLI (Go 1.22+) — puts `terfyn` on your PATH via $GOBIN / $GOPATH/bin
-go install github.com/LAA-Software-Engineering/terfyn/cmd/terfyn@latest
+go install github.com/Terfyn/terfyn/cmd/terfyn@latest
 # (no Go toolchain? grab a release binary instead — see Install and project setup below)
 
 terfyn init my-agent-system                       # scaffold main.agent + project.yaml
@@ -92,7 +92,7 @@ Expanded diagram, plan-time bounds, and closed-world caveats: [`docs/architectur
 
 ## The differentiator: plan-time bounds on authority
 
-This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. Terfyn's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)). `terfyn plan` prints that bound and the authority delta vs stored deployment state.
+This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. Terfyn's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/Terfyn/terfyn/issues/189) / [#191](https://github.com/Terfyn/terfyn/issues/191)). `terfyn plan` prints that bound and the authority delta vs stored deployment state.
 
 **Today** `terfyn plan` diffs **permissions**, **approvals**, **models**, **budgets**, **C1 risk items**, and **effect/capability/authority** against SQLite desired state:
 
@@ -135,7 +135,7 @@ Authority:
   autonomous  -> WIDENED
 ```
 
-Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Workflows run end-to-end, **including conditionals, loops, and dynamic fan-out** ([#199](https://github.com/LAA-Software-Engineering/terfyn/issues/199)/[#259](https://github.com/LAA-Software-Engineering/terfyn/issues/259)): a control-flow workflow lowers to the execution IR, is pinned into the deployment snapshot, and runs on the `execir` interpreter (see `examples/agent-control-flow`). YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the existing fixtures work), and `terfyn export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
+Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Workflows run end-to-end, **including conditionals, loops, and dynamic fan-out** ([#199](https://github.com/Terfyn/terfyn/issues/199)/[#259](https://github.com/Terfyn/terfyn/issues/259)): a control-flow workflow lowers to the execution IR, is pinned into the deployment snapshot, and runs on the `execir` interpreter (see `examples/agent-control-flow`). YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the existing fixtures work), and `terfyn export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
 
 ## Examples
 
@@ -184,9 +184,9 @@ Terfyn is the **declarative governance/config layer** for agent systems — not 
 | Durable execution / distributed scheduling | No | No | Optional checkpointers; not a durable-execution engine | Yes | N/A |
 | Code-first agent runtime | No (resource graph; `.agent` authoring, YAML compilation output) | Yes | Yes | Workflow SDK, not an agent runtime | No |
 | Desired-state plan / apply | Yes (`terfyn plan` / `apply` vs SQLite) | No | No | No | Yes |
-| Plan-time effect bound | **Shipped** ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#190](https://github.com/LAA-Software-Engineering/terfyn/issues/190) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `terfyn plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
+| Plan-time effect bound | **Shipped** ([#189](https://github.com/Terfyn/terfyn/issues/189) / [#190](https://github.com/Terfyn/terfyn/issues/190) / [#191](https://github.com/Terfyn/terfyn/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `terfyn plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
 
-The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204)) is **enforced** at dispatch: an operation outside a tool's deployed capability manifest is denied on the policy path, so a live MCP `tools/list` can no longer expand the callable world (discovery merges only `spec.safety`, never the operation set). A resumed run enforces the manifest it started with — hydrated from its deployment snapshot ([#207](https://github.com/LAA-Software-Engineering/terfyn/issues/207)) — so a widening apply between suspend and resume does not widen the resumed run's authority. `terfyn plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
+The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/Terfyn/terfyn/issues/204)) is **enforced** at dispatch: an operation outside a tool's deployed capability manifest is denied on the policy path, so a live MCP `tools/list` can no longer expand the callable world (discovery merges only `spec.safety`, never the operation set). A resumed run enforces the manifest it started with — hydrated from its deployment snapshot ([#207](https://github.com/Terfyn/terfyn/issues/207)) — so a widening apply between suspend and resume does not widen the resumed run's authority. `terfyn plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
 
 ---
 
@@ -221,7 +221,7 @@ project is authored.
 **Recommended — `go install`** ([Go 1.22+](https://go.dev/dl/)) puts `terfyn` on your `PATH` (in `$GOBIN`, or `$GOPATH/bin` — ensure that directory is on `PATH`):
 
 ```bash
-go install github.com/LAA-Software-Engineering/terfyn/cmd/terfyn@latest
+go install github.com/Terfyn/terfyn/cmd/terfyn@latest
 ```
 
 **No Go toolchain?** Download a [release binary](#prebuilt-binaries) and put `terfyn` (or `terfyn.exe`) on your `PATH`.
@@ -229,14 +229,14 @@ go install github.com/LAA-Software-Engineering/terfyn/cmd/terfyn@latest
 **From a clone** (for development): `make build` writes `bin/terfyn`; `make install` runs `go install ./cmd/terfyn` (`-trimpath`).
 
 ```bash
-git clone https://github.com/LAA-Software-Engineering/terfyn.git
+git clone https://github.com/Terfyn/terfyn.git
 cd terfyn
 make build   # writes bin/terfyn
 ```
 
 ### Prebuilt binaries
 
-[GitHub Releases](https://github.com/LAA-Software-Engineering/terfyn/releases) ship **`terfyn`** for common platforms (`.tar.gz` on Linux/macOS, `.zip` on Windows) plus **`SHA256SUMS.txt`**. Pick the archive that matches your machine, for example:
+[GitHub Releases](https://github.com/Terfyn/terfyn/releases) ship **`terfyn`** for common platforms (`.tar.gz` on Linux/macOS, `.zip` on Windows) plus **`SHA256SUMS.txt`**. Pick the archive that matches your machine, for example:
 
 | Platform | Asset suffix |
 |----------|----------------|
@@ -248,7 +248,7 @@ make build   # writes bin/terfyn
 
 `terfyn version` reports the release tag (e.g. `v0.1.4`).
 
-Releases are **created automatically** when changes land on **`main`**, using a **patch** semver bump over the latest `vMAJOR.MINOR.PATCH` tag (merges that only touch Markdown or the root `Makefile` do not trigger a release). To cut **minor** or **major** bumps on demand, run the [**Release** workflow](https://github.com/LAA-Software-Engineering/terfyn/actions/workflows/release.yml) manually (**Actions → Release → Run workflow**) and choose the bump type.
+Releases are **created automatically** when changes land on **`main`**, using a **patch** semver bump over the latest `vMAJOR.MINOR.PATCH` tag (merges that only touch Markdown or the root `Makefile` do not trigger a release). To cut **minor** or **major** bumps on demand, run the [**Release** workflow](https://github.com/Terfyn/terfyn/actions/workflows/release.yml) manually (**Actions → Release → Run workflow**) and choose the bump type.
 
 ### Create a project and run the loop
 
@@ -416,17 +416,17 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 
 ### Recently shipped
 
-- **Execution-IR convergence** ([#255](https://github.com/LAA-Software-Engineering/terfyn/issues/255)): both ingress paths (`.agent` and YAML) compile to one `execir` program, which is the **single run path** — the parallel `WorkflowStep` DAG runtime has been retired ([#278](https://github.com/LAA-Software-Engineering/terfyn/issues/278)).
-- **Control flow end-to-end** ([#259](https://github.com/LAA-Software-Engineering/terfyn/issues/259)): `.agent` `if` / `for` / `parallel for` lower to the pinned execution IR and run on the engine (`examples/agent-control-flow`).
-- **Parallel branches, subworkflows, and workflow-level approval steps** ([#192](https://github.com/LAA-Software-Engineering/terfyn/issues/192) / [#194](https://github.com/LAA-Software-Engineering/terfyn/issues/194) / [#195](https://github.com/LAA-Software-Engineering/terfyn/issues/195)), durable across checkpoint/resume including concurrent per-branch HITL suspend ([#258](https://github.com/LAA-Software-Engineering/terfyn/issues/258) / [#270](https://github.com/LAA-Software-Engineering/terfyn/issues/270)).
-- **`terfyn test`** fixture runner ([#176](https://github.com/LAA-Software-Engineering/terfyn/issues/176); see [`docs/TESTING.md`](docs/TESTING.md) and [`examples/regression-test`](examples/regression-test)).
-- **Author real agents in `.agent`** — first-class `instructions` / `description` / `constraints`, bounded state-carrying `while`, argument `${...}` templates, and a flagship implement/review loop ([#285](https://github.com/LAA-Software-Engineering/terfyn/issues/285), epic complete).
-- **Manifest pin enforcement** so the effect bound has a closed world ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) / [#207](https://github.com/LAA-Software-Engineering/terfyn/issues/207)): an operation outside a tool's deployed capability manifest is denied at dispatch, so a live MCP `tools/list` can no longer expand the callable set — and a resumed run enforces the manifest it started with, hydrated from its deployment snapshot, rather than whatever is deployed at resume time.
+- **Execution-IR convergence** ([#255](https://github.com/Terfyn/terfyn/issues/255)): both ingress paths (`.agent` and YAML) compile to one `execir` program, which is the **single run path** — the parallel `WorkflowStep` DAG runtime has been retired ([#278](https://github.com/Terfyn/terfyn/issues/278)).
+- **Control flow end-to-end** ([#259](https://github.com/Terfyn/terfyn/issues/259)): `.agent` `if` / `for` / `parallel for` lower to the pinned execution IR and run on the engine (`examples/agent-control-flow`).
+- **Parallel branches, subworkflows, and workflow-level approval steps** ([#192](https://github.com/Terfyn/terfyn/issues/192) / [#194](https://github.com/Terfyn/terfyn/issues/194) / [#195](https://github.com/Terfyn/terfyn/issues/195)), durable across checkpoint/resume including concurrent per-branch HITL suspend ([#258](https://github.com/Terfyn/terfyn/issues/258) / [#270](https://github.com/Terfyn/terfyn/issues/270)).
+- **`terfyn test`** fixture runner ([#176](https://github.com/Terfyn/terfyn/issues/176); see [`docs/TESTING.md`](docs/TESTING.md) and [`examples/regression-test`](examples/regression-test)).
+- **Author real agents in `.agent`** — first-class `instructions` / `description` / `constraints`, bounded state-carrying `while`, argument `${...}` templates, and a flagship implement/review loop ([#285](https://github.com/Terfyn/terfyn/issues/285), epic complete).
+- **Manifest pin enforcement** so the effect bound has a closed world ([#204](https://github.com/Terfyn/terfyn/issues/204) / [#207](https://github.com/Terfyn/terfyn/issues/207)): an operation outside a tool's deployed capability manifest is denied at dispatch, so a live MCP `tools/list` can no longer expand the callable set — and a resumed run enforces the manifest it started with, hydrated from its deployment snapshot, rather than whatever is deployed at resume time.
 
 ### Near term
 
 - More **`diff` / drift** UX where the design doc calls for it (beyond today’s resource-level diff)  
-- Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/LAA-Software-Engineering/terfyn/issues/109))  
+- Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/Terfyn/terfyn/issues/109))  
 
 ### Post-MVP (from design doc section 19)
 

@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
-	"github.com/LAA-Software-Engineering/terfyn/internal/project"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/plan"
+	"github.com/Terfyn/terfyn/internal/project"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/tools"
 )
 
 // ErrResolvedConfigDrift means the resolved config digest differs from the stored snapshot.

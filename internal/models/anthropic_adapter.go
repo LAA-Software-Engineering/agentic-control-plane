@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/models/anthropic"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/models/anthropic"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // anthropicClient adapts [anthropic.Client] to [ModelClient] (issue #69, #158).

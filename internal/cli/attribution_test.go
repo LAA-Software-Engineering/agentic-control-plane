@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 func TestResolveRunAttributionFlags_envOverrides(t *testing.T) {

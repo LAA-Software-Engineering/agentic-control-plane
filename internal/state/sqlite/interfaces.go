@@ -1,6 +1,6 @@
 package sqlite
 
-import "github.com/LAA-Software-Engineering/terfyn/internal/state"
+import "github.com/Terfyn/terfyn/internal/state"
 
 // Compile-time check: *Store implements state facades (issue #11).
 var (

@@ -3,7 +3,7 @@ package runtime
 import (
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // WorkflowRuntimeName returns the effective runtime for a workflow after defaults are applied.

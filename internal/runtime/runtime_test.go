@@ -3,7 +3,7 @@ package runtime
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func TestWorkflowRuntimeName_defaultsToLocal(t *testing.T) {

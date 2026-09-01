@@ -3,8 +3,8 @@ package lower_test
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang/lower"
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/lang/lower"
 )
 
 // TestLower_DescriptionAndConstraints asserts the .agent description/constraints

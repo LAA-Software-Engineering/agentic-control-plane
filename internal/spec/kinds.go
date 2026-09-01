@@ -1,6 +1,6 @@
 package spec
 
-import "github.com/LAA-Software-Engineering/terfyn/internal/schema"
+import "github.com/Terfyn/terfyn/internal/schema"
 
 // --- Project (design doc §7.1) ---
 

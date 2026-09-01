@@ -3,8 +3,8 @@ package policy
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/tools"
 )
 
 func checkKnownTool(graph *spec.ProjectGraph, uses string, toolsPol *spec.PolicyTools) error {

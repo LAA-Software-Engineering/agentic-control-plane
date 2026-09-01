@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // LowerExec lowers one workflow declaration into its execution IR (ADR 002 §5,

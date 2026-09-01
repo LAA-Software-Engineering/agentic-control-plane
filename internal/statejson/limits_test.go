@@ -3,7 +3,7 @@ package statejson
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 func TestParseRunListLimit(t *testing.T) {

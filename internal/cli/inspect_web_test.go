@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/inspect"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/inspect"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 )
 
 func TestInspect_web_flagsAndAPI(t *testing.T) {

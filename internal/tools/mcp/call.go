@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // ExecMeta is timing/cost metadata for an MCP call (§13.2 placeholders).

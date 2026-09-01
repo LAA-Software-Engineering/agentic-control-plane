@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 // Hydrated is the configuration reconstructed from a pinned deployment snapshot.

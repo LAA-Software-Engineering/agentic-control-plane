@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	sqlitemigrations "github.com/LAA-Software-Engineering/terfyn/migrations/sqlite"
+	sqlitemigrations "github.com/Terfyn/terfyn/migrations/sqlite"
 )
 
 const createMigrationsTable = `

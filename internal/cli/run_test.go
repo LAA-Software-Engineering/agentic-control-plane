@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/config"
-	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
-	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
-	"github.com/LAA-Software-Engineering/terfyn/internal/project"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/config"
+	"github.com/Terfyn/terfyn/internal/plan"
+	"github.com/Terfyn/terfyn/internal/policy"
+	"github.com/Terfyn/terfyn/internal/project"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 )
 
 func runProjRoot(t *testing.T) string {

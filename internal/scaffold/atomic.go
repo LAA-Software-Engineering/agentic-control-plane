@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/util"
+	"github.com/Terfyn/terfyn/internal/util"
 )
 
 // stagedWrite tracks a temp file pending rename to its final path.

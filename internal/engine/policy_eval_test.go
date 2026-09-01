@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func TestCompiledWorkflowEvaluator_unknownPolicyErrors(t *testing.T) {

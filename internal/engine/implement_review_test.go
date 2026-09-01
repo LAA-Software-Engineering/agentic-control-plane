@@ -7,10 +7,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang/lower"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/lang/lower"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // flagshipProgram lowers the ImplementAndReview workflow from the checked-in

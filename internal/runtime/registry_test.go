@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/config"
-	"github.com/LAA-Software-Engineering/terfyn/internal/runtime/catalog"
+	"github.com/Terfyn/terfyn/internal/config"
+	"github.com/Terfyn/terfyn/internal/runtime/catalog"
 )
 
 func TestLookup_unknownRuntime(t *testing.T) {

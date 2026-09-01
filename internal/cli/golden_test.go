@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/apply"
-	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/apply"
+	"github.com/Terfyn/terfyn/internal/plan"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 	"gopkg.in/yaml.v3"
 )
 

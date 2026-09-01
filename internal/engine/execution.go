@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/models"
-	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/models"
+	"github.com/Terfyn/terfyn/internal/policy"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/telemetry"
+	"github.com/Terfyn/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 // Executor runs a workflow on the execir interpreter (design doc §12.2/§13; the

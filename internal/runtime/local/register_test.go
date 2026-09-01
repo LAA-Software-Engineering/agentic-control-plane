@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/runtime"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 )
 
 func TestRegister_localFactory(t *testing.T) {

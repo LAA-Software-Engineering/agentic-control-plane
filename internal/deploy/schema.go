@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/schema"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // CollectSchemas reads every JSON Schema file the graph references (workflow input, agent input and

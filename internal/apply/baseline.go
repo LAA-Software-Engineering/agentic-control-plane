@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/plan"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 func assertDeploymentBaseline(ctx context.Context, dep state.DeploymentStore, env, projectName string, p *plan.Plan) error {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
+	"github.com/Terfyn/terfyn/internal/schema"
 )
 
 func TestValidateProjectGraph_schemaMismatchReportsPosition(t *testing.T) {

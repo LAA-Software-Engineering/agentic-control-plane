@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 // SaveCheckpoint appends one checkpoint row with the next monotonic seq for run_id.

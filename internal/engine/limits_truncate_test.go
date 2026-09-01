@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 func TestTruncateMapInPlace_preservesTopLevelKeys(t *testing.T) {

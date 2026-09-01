@@ -1,4 +1,4 @@
-module github.com/LAA-Software-Engineering/terfyn
+module github.com/Terfyn/terfyn
 
 go 1.25.0
 

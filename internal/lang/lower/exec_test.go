@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/lang"
 )
 
 // endToEndInvoker records tool calls and returns a per-uses canned result.

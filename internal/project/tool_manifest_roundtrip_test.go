@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/tools"
 )
 
 // ADR 003 acceptance for the closed-world capability manifest (#204 / PR #251 review): a

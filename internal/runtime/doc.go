@@ -6,5 +6,5 @@
 // and report status; they must not reload project YAML/TOML themselves.
 //
 // The MVP local disk-backed implementation lives in
-// [github.com/LAA-Software-Engineering/terfyn/internal/runtime/local].
+// [github.com/Terfyn/terfyn/internal/runtime/local].
 package runtime

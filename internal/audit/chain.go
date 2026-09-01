@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 const genesisPrefix = "terfyn-audit-genesis-v1:"

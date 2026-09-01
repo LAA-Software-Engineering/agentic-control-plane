@@ -3,7 +3,7 @@ package check
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/lang"
 )
 
 // TestCheck_FilesWorkflowsAreCheckedNotJustLowered is the #198 review finding

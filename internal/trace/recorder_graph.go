@@ -1,8 +1,8 @@
 package trace
 
 import (
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 // NewRecorderForGraph returns a recorder with redaction options from project spec.

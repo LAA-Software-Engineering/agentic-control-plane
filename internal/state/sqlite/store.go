@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state"
 	_ "modernc.org/sqlite" // register "sqlite" driver
 )
 

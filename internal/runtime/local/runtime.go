@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/runtime"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 // Compile-time check that [Runtime] implements the runtime adapter contract.

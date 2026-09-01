@@ -3,7 +3,7 @@ package policy
 import (
 	"context"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // PolicyEvaluator decides whether run/step/tool actions are allowed (design doc section 12.2 H).

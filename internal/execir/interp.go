@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // DefaultMaxConcurrency bounds goroutine fan-out for a parallel Loop or Fork

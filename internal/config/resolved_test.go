@@ -9,7 +9,7 @@ import (
 
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func writeProject(t *testing.T, root string, specDefaults map[string]string) {

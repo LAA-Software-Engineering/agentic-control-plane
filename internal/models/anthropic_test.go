@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/models/anthropic"
+	"github.com/Terfyn/terfyn/internal/models/anthropic"
 )
 
 func TestAnthropicClient_Generate_toolCalling(t *testing.T) {

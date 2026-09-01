@@ -101,7 +101,7 @@ jobs:
           set -euo pipefail
           version="${TERFYN_VERSION}"
           asset="terfyn-${version}-linux-amd64.tar.gz"
-          url="https://github.com/LAA-Software-Engineering/terfyn/releases/download/${version}/${asset}"
+          url="https://github.com/Terfyn/terfyn/releases/download/${version}/${asset}"
           curl -fsSL "$url" -o /tmp/terfyn.tgz
           tar -xzf /tmp/terfyn.tgz -C /tmp
           if [[ ! -x /tmp/terfyn ]]; then
