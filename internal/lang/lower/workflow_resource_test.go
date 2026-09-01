@@ -83,6 +83,54 @@ workflow W(input: PR) {
 	}
 }
 
+// TestLowerWorkflowResource_TemplateParity is the acceptance bar for issue #316:
+// an `.agent` argument with an embedded `${binding.field}` token lowers to the same
+// program as the YAML twin whose `${steps.<id>.output.field}` interpolation names
+// the resolved step directly. The head binding is resolved through the workflow's
+// binding environment, so the twins share a digest and the templated step gains the
+// referenced step as a predecessor.
+func TestLowerWorkflowResource_TemplateParity(t *testing.T) {
+	t.Parallel()
+
+	yamlProg, ydiags := lowerYAMLWorkflowOrFatal(t, `
+apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: W
+spec:
+  steps:
+    - id: review
+      agent: reviewer
+      with:
+        arg0: ${input}
+    - id: post
+      uses: tool.github.post
+      with:
+        body: "## Review\n${steps.review.output.summary}\ndone"
+  output:
+    value:
+      value: ${steps.post.output}
+`)
+	if ydiags.HasErrors() {
+		t.Fatalf("YAML lowering diagnostics: %v", ydiags)
+	}
+
+	agentProg, adiags := lowerExecOrFatal(t, `
+workflow W(input: PR) {
+    review = reviewer(input)
+    post = github.post(body: "## Review\n${review.summary}\ndone")
+    return post
+}
+`, nil)
+	if adiags.HasErrors() {
+		t.Fatalf(".agent lowering diagnostics: %v", adiags)
+	}
+
+	if yamlProg.Digest() != agentProg.Digest() {
+		t.Fatalf("template twins differ:\n YAML:   %s\n .agent: %s", yamlProg.Digest(), agentProg.Digest())
+	}
+}
+
 // TestLowerWorkflowResource_LiteralParity guards the twin digest across every
 // scalar literal type. yaml.v3 decodes an authored integer as Go `int` while the
 // `.agent` parser produces `int64`, and execir.litKey tokenizes those

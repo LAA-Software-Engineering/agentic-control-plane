@@ -255,6 +255,54 @@ workflow W(input: PR) {
 	}
 }
 
+func TestLowerExec_StringTemplateArg(t *testing.T) {
+	t.Parallel()
+	// A single whole-string `${...}` token lowers to a bare Ref; a string with
+	// embedded tokens lowers to a Template whose Parts alternate literal/Ref.
+	prog, diags := lowerExecOrFatal(t, `
+workflow W(input: PR) {
+    review = Reviewer(input)
+    github.post(whole: "${review.summary}", mixed: "## Review\n${review.summary}\ndone")
+}
+`, nil)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	var post *execir.InvokeTool
+	for _, n := range prog.Body {
+		if it, ok := n.(*execir.InvokeTool); ok && it.Uses == "tool.github.post" {
+			post = it
+		}
+	}
+	if post == nil {
+		t.Fatalf("expected a tool.github.post invocation in %#v", prog.Body)
+	}
+	ref, ok := post.Args["whole"].(execir.Ref)
+	if !ok {
+		t.Fatalf("whole arg should be a bare Ref, got %#v", post.Args["whole"])
+	}
+	if len(ref.Path) != 2 || ref.Path[0] != "review" || ref.Path[1] != "summary" {
+		t.Fatalf("whole Ref path should be [review summary], got %v", ref.Path)
+	}
+	tmpl, ok := post.Args["mixed"].(execir.Template)
+	if !ok {
+		t.Fatalf("mixed arg should be a Template, got %#v", post.Args["mixed"])
+	}
+	// "## Review\n" , Ref(review.summary) , "\ndone"
+	if len(tmpl.Parts) != 3 {
+		t.Fatalf("expected 3 template parts, got %d: %#v", len(tmpl.Parts), tmpl.Parts)
+	}
+	if _, ok := tmpl.Parts[0].(execir.Lit); !ok {
+		t.Fatalf("part 0 should be a Lit, got %#v", tmpl.Parts[0])
+	}
+	if r, ok := tmpl.Parts[1].(execir.Ref); !ok || len(r.Path) != 2 || r.Path[1] != "summary" {
+		t.Fatalf("part 1 should be Ref(review.summary), got %#v", tmpl.Parts[1])
+	}
+	if _, ok := tmpl.Parts[2].(execir.Lit); !ok {
+		t.Fatalf("part 2 should be a Lit, got %#v", tmpl.Parts[2])
+	}
+}
+
 func TestLowerExec_WorkflowCalleeClassification(t *testing.T) {
 	t.Parallel()
 	prog, diags := lowerExecOrFatal(t, `

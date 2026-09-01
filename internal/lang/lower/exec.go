@@ -230,6 +230,11 @@ func (el *execLowerer) lowerValue(e lang.Expr, pre *[]execir.Node) execir.Value 
 	case *lang.RefExpr:
 		return el.lowerRef(v)
 	case *lang.LitExpr:
+		if s, ok := v.Value.(string); ok {
+			if tv, isTemplate := stringTemplateValue(s, v.Pos); isTemplate {
+				return tv
+			}
+		}
 		return execir.Lit{Pos: v.Pos, V: v.Value}
 	case *lang.CallExpr:
 		temp := el.freshTemp()
@@ -295,6 +300,49 @@ func (el *execLowerer) lowerCondLeaf(e lang.Expr) execir.Value {
 		el.diag(e.Position(), "comparison operand must be a reference or literal")
 		return execir.Lit{V: nil}
 	}
+}
+
+// stringTemplateValue lowers a string ARGUMENT value that embeds `${<binding>}`
+// interpolation into an execir value (#316): a whole-field `${x}` becomes a Ref, a
+// string mixing prose and tokens becomes a Template (literal chunks + Refs). Each
+// token's inner is a `.agent` binding path used directly (the execution IR references
+// values by source binding name), so `${review.summary}` -> Ref{[review, summary]}.
+// A string with no token returns (nil, false) so the caller keeps it a plain Lit;
+// `instructions`/`description` never reach here (they are StringLit, not LitExpr).
+func stringTemplateValue(s string, pos spec.Pos) (execir.Value, bool) {
+	locs := interpTokenRE.FindAllStringSubmatchIndex(s, -1)
+	if len(locs) == 0 {
+		return nil, false
+	}
+	// A single token spanning the whole string is the referent's own value.
+	if len(locs) == 1 && locs[0][0] == 0 && locs[0][1] == len(s) {
+		return execir.Ref{Pos: pos, Path: interpPath(s[locs[0][2]:locs[0][3]])}, true
+	}
+	var parts []execir.Value
+	last := 0
+	for _, loc := range locs {
+		if loc[0] > last {
+			parts = append(parts, execir.Lit{Pos: pos, V: s[last:loc[0]]})
+		}
+		parts = append(parts, execir.Ref{Pos: pos, Path: interpPath(s[loc[2]:loc[3]])})
+		last = loc[1]
+	}
+	if last < len(s) {
+		parts = append(parts, execir.Lit{Pos: pos, V: s[last:]})
+	}
+	return execir.Template{Pos: pos, Parts: parts}, true
+}
+
+// interpPath splits a `${...}` inner into a dotted binding path.
+func interpPath(inner string) []string {
+	inner = strings.TrimSpace(inner)
+	out := make([]string, 0)
+	for _, p := range strings.Split(inner, ".") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func usesFromCallee(callee *lang.RefExpr) string {
