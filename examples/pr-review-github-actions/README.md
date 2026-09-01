@@ -11,9 +11,9 @@ For the **mock-only** live GitHub path (no OpenAI key, good for CI and integrati
 
 | Path | Purpose |
 |------|---------|
-| `project.yaml` | Imports policies, tools, agent, workflow; **`defaults.model: openai/gpt-4o-mini`**; **`OPENAI_API_KEY`** via `apiKeyFrom` |
-| `agents/reviewer.yaml` | **`spec.model: openai/gpt-4o-mini`**, structured JSON output |
-| `workflows/pr-review-github.yaml` | GitHub REST read → reviewer → `post_comment` with **`comment_strategy: replace`** (one sticky comment per PR) |
+| `project.yaml` | Imports policies + tools; **`defaults.model: openai/gpt-4o-mini`**; **`OPENAI_API_KEY`** via `apiKeyFrom` |
+| `main.agent` | The `reviewer` agent (**`openai/gpt-4o-mini`**, structured JSON output) and the `pr-review-github` workflow (GitHub REST read → reviewer → `post_comment` with **`comment_strategy: replace`**), authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. The comment `body` is templated from the review via `${review_diff.findings_markdown}`. |
+| `schemas/GitHubPRInput.json`, `schemas/ReviewOutput.json` | JSON Schema for workflow input and agent output (type names match the `.agent` references) |
 | [`.github/workflows/terfyn-pr-review.yml`](../../.github/workflows/terfyn-pr-review.yml) | Runs on PRs; **`AGENTIC_PROJECT`** = **`examples/pr-review-github-actions`** |
 | [`.github/workflows/terfyn-pr-review-publish.yml`](../../.github/workflows/terfyn-pr-review-publish.yml) | Optional manual **`workflow_dispatch`** to post an approved PR comment |
 

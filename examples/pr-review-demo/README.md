@@ -4,26 +4,26 @@ This example shows **why a declarative control plane beats ad-hoc glue code** fo
 
 ## What it demonstrates
 
-- **Workflow as data** — `workflows/pr-review.yaml` reads like a runbook: fetch PR context → review → post a comment.
-- **Structured agent output** — the reviewer must return JSON validated by `schemas/review-output.json` (summary + findings), not an unparseable blob.
+- **Workflow as code** — `main.agent` reads like a runbook: fetch PR context → review → post a comment. Authored in [`.agent`](../../docs/LANGUAGE.md), discovered (not imported).
+- **Structured agent output** — the reviewer must return JSON validated by `schemas/ReviewOutput.json` (summary + findings), not an unparseable blob.
+- **`${...}` argument templates** — the comment `body` is templated directly from the review's structured output (`${review_diff.summary}`, `${review_diff.findings}`), resolved through the workflow's binding environment.
 - **First-class policy** — `policies/guarded-writes.yaml` lists which tool `uses` strings require explicit approval.
-- **Safe-by-default writes** — the `post_comment` step calls a **simulated** native GitHub tool (`tools/github.yaml`). Without approval, **policy blocks the call** before any side effect.
-- **Traceable behavior** — `terfyn logs` shows normal step progress plus a **`policy.denied`** event on the blocked step.
+- **Human-in-the-loop writes** — the `post_comment` step calls a **simulated** native GitHub tool (`tools/github.yaml`). As a workflow `uses:` step gated by policy, an unapproved run **pauses for approval** (HITL interrupt) before any side effect — it does not silently proceed.
+- **Traceable behavior** — `terfyn logs` shows normal step progress plus the **approval interrupt** on the gated step.
 
 ## Why this matters
 
-In a typical script, “call the model, then maybe post to GitHub” is buried in code paths that are hard to review, diff, and audit. Here, **permissions and sequencing are YAML** you can put in code review, and the runtime **enforces** them with **exit codes** and **SQLite traces**.
+In a typical script, “call the model, then maybe post to GitHub” is buried in code paths that are hard to review, diff, and audit. Here, **permissions and sequencing are reviewable code** you can put in code review, and the runtime **enforces** them with **approval gates** and **SQLite traces**.
 
 ## Project layout
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports resources; defaults to `mock` model (no API keys). |
-| `workflows/pr-review.yaml` | Three steps: `fetch_pr`, `review_diff`, `post_comment`. |
-| `agents/reviewer.yaml` | Reviewer instructions + output schema. |
+| `project.yaml` | Imports the tool + policy; defaults to `mock` model (no API keys). |
+| `main.agent` | The `reviewer` agent and the three-statement `pr-review` workflow (`fetch_pr`, `review_diff`, `post_comment`), authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
 | `tools/github.yaml` | `native` tool; operations are implemented offline in the binary. |
-| `policies/guarded-writes.yaml` | Requires `--approve` for `tool.github.pull_request.post_comment`. |
-| `schemas/*.json` | JSON Schema for workflow input and agent output. |
+| `policies/guarded-writes.yaml` | Requires approval for `tool.github.pull_request.post_comment`. |
+| `schemas/PRReviewInput.json`, `schemas/ReviewOutput.json` | JSON Schema for workflow input and agent output (type names match the `.agent` `input:` / `output` references). |
 | `fixtures/sample-pr.json` | Sample input (no GitHub network or tokens). |
 
 ## Prerequisites
@@ -40,7 +40,7 @@ terfyn plan --project examples/pr-review-demo --state /tmp/pr-review-state.db
 terfyn apply --project examples/pr-review-demo --state /tmp/pr-review-state.db --auto-approve
 ```
 
-### Default run (comment blocked)
+### Default run (comment gated → approval interrupt)
 
 ```bash
 terfyn run workflow/pr-review \
@@ -49,14 +49,23 @@ terfyn run workflow/pr-review \
   --input-file examples/pr-review-demo/fixtures/sample-pr.json
 ```
 
-- Exit code **5** = policy denial (by design).
+- Status **`interrupted`** (exit **0**) = the workflow paused at the gated `post_comment` step for a human decision (by design). No comment is posted yet.
+- Resume with the printed **Run ID** and a decision:
+
+```bash
+terfyn run --resume <run-id> --decision approve \
+  --project examples/pr-review-demo --state /tmp/pr-review-state.db
+```
+
+`--decision approve` continues and records a simulated comment; `--decision reject` ends the run without the write.
+
 - Inspect the trace (use the printed **Run ID**):
 
 ```bash
 terfyn logs --project examples/pr-review-demo --state /tmp/pr-review-state.db --run <run-id>
 ```
 
-You should see steps through `review_diff`, then **`policy.denied`** on `post_comment` with reason **`approval_required`**.
+You should see steps through `review_diff`, then the **approval interrupt** on `post_comment`.
 
 Verify the trace chain was not tampered with:
 
@@ -64,7 +73,7 @@ Verify the trace chain was not tampered with:
 terfyn audit verify --project examples/pr-review-demo --state /tmp/pr-review-state.db --run <run-id>
 ```
 
-### Optional: allow the write (full success)
+### Optional: pre-approve the write (full success, no pause)
 
 ```bash
 terfyn run workflow/pr-review \
@@ -74,13 +83,13 @@ terfyn run workflow/pr-review \
   --approve tool.github.pull_request.post_comment
 ```
 
-This records a simulated comment result (still **no** real GitHub traffic).
+This records a simulated comment result (still **no** real GitHub traffic) and returns the review as the workflow output.
 
 ## Expected highlights
 
 1. **`fetch_pr`** completes — native tool normalizes the `pr` object from input JSON.
 2. **`review_diff`** completes — mock model returns fixed structured JSON that satisfies the schema.
-3. **`post_comment`** is **blocked** unless approved — CLI prints a clear **policy** line naming the gated `uses` string.
+3. **`post_comment`** **pauses for approval** unless pre-approved — the CLI prints the resume command naming the gated `uses` string.
 
 ## Design note (no real GitHub)
 
@@ -90,8 +99,8 @@ This records a simulated comment result (still **no** real GitHub traffic).
 
 | Concern | This demo | Typical script |
 |--------|-----------|----------------|
-| Order of operations | Workflow YAML | Implicit control flow |
-| “Can we post?” | Policy resource + trace | Easy to forget a guard |
+| Order of operations | `.agent` workflow | Implicit control flow |
+| “Can we post?” | Policy resource + approval gate + trace | Easy to forget a guard |
 | Model output shape | JSON Schema on the agent | String parsing / hope |
 | Audit trail | `terfyn logs`; `terfyn audit verify` for tamper detection | Printf / none |
 

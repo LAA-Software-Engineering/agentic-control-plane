@@ -78,7 +78,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .agentic/ci-pr-review.db
-          key: ${{ runner.os }}-agentic-pr-review-${{ hashFiles('examples/pr-review-github-actions/**/*.yaml', 'examples/pr-review-github-actions/project.yaml') }}
+          key: ${{ runner.os }}-agentic-pr-review-${{ hashFiles('examples/pr-review-github-actions/**/*.yaml', 'examples/pr-review-github-actions/**/*.agent', 'examples/pr-review-github-actions/project.yaml') }}
 
       - name: Set up Go (build terfyn from checkout)
         if: env.TERFYN_INSTALL == 'go-build'

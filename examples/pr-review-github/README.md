@@ -12,6 +12,8 @@ This example wires **Phase B + C** of the GitHub integration:
   Without repo context it stays **simulated** (as in `examples/pr-review-demo`). The step is **policy-gated**
   unless you pass `--approve tool.github.pull_request.post_comment`.
 
+The reviewer agent and the four-statement workflow are authored in [`main.agent`](main.agent) ([`.agent`](../../docs/LANGUAGE.md)); the comment `body` is templated from the review's structured output via `${review_diff.summary}` / `${review_diff.findings}`. Tools, policy, and JSON Schemas stay YAML.
+
 ## Prerequisites
 
 - **`GITHUB_TOKEN`** with at least **`pull_requests: read`** for the read steps, and
@@ -46,8 +48,8 @@ terfyn run workflow/pr-review-github \
   --input '{"owner":"YOUR_ORG","repo":"YOUR_REPO","number":123}'
 ```
 
-Without `--approve tool.github.pull_request.post_comment`, the final step is **blocked** by policy
-(exit code **5**), by design.
+Without `--approve tool.github.pull_request.post_comment`, the final step **pauses for approval** —
+a HITL interrupt (status **`interrupted`**, exit **0**), resumable with `terfyn run --resume <id> --decision approve`, by design.
 
 To **publish** the review comment (after policy review of your YAML / process):
 
