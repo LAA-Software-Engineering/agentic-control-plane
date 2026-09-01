@@ -14,8 +14,7 @@ This example shows **CI gating of a policy change**: a fixture case expects the 
 | Path | Role |
 |------|------|
 | `project.yaml` | Imports resources; `mock` model (no API keys). |
-| `workflows/gated-write.yaml` | One agent step that enters the tool loop. |
-| `agents/writer.yaml` | Declares `publish` first. |
+| `main.agent` | The `writer` agent (grants `tool.publish.default`) and the `gated-write` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
 | `tools/publish.yaml` | Trusted mutating `mock` tool. |
 | `policies/gated-publish.yaml` | `requiredFor: tool.publish.default`; ceiling **$5**. |
 | `tests/gated-write.yaml` | `expectError: true` for the unauthorized write. |

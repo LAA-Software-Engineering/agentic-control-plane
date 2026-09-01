@@ -1,0 +1,29 @@
+// Authored in .agent: the drafter agent and the publish workflow. The tool, policy,
+// project config, and JSON Schemas stay YAML.
+
+agent drafter {
+    model mock/gpt-4
+    policy gated-publish
+    constraints {
+        timeoutSeconds 60
+    }
+    instructions """
+    You draft a short publish summary from the user JSON. Respond with one JSON object
+    only (no markdown, no code fences). Use exactly this shape: {"summary": "<one line>"}
+    """
+    output DraftOutput
+}
+
+workflow publish(input: NoteInput)
+    description """
+    Offline demo: a mock agent drafts a summary, then a workflow uses: step publishes
+    it. Policy requires approval for tool.publish.default and HITL interruptOn pauses
+    the run (exit 0, status interrupted) with a checkpoint. Resume with
+    --decision approve. This is not agent-loop fail-closed exit 5.
+    """
+    policy gated-publish
+{
+    draft = drafter(topic: input.topic)
+    published = publish.default(summary: draft.summary)
+    return published
+}

@@ -14,8 +14,7 @@ This minimal example shows a **real agent tool loop** hitting `execution.maxTota
 | Path | Role |
 |------|------|
 | `project.yaml` | Imports resources; `mock` model (no API keys). |
-| `workflows/burn.yaml` | One agent step that enters the tool loop. |
-| `agents/burner.yaml` | Declares `helper`; output schema `{summary}`. |
+| `main.agent` | The `burner` agent (grants `tool.helper.default`, enters the tool loop) and the `burn` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
 | `tools/helper.yaml` | Read-only `mock` tool (`sideEffects: false`). |
 | `policies/tight-budget.yaml` | `maxTotalCostUsd: 0.03` (between one and two mock turns). |
 | `schemas/*.json` | Workflow input and agent output. |

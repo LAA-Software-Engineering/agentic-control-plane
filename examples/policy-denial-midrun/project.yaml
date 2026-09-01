@@ -6,8 +6,6 @@ spec:
   imports:
     - ./policies/tight-budget.yaml
     - ./tools/helper.yaml
-    - ./agents/burner.yaml
-    - ./workflows/burn.yaml
   defaults:
     policy: tight-budget
     model: mock/gpt-4

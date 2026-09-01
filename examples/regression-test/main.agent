@@ -1,0 +1,32 @@
+// Authored in .agent: the writer agent and the gated-write workflow. The tool,
+// policy, project config, test fixture, and JSON Schemas stay YAML.
+
+agent writer {
+    model mock/gpt-4
+    policy gated-publish
+    constraints {
+        timeoutSeconds 60
+        maxIterations 8
+    }
+    instructions """
+    You have a publish tool. Call it once if it is available, then respond with one JSON
+    object only (no markdown, no code fences):
+    {"summary": "<one line>"}
+    """
+    grants {
+        tool.publish.default
+    }
+    output StatusOutput
+}
+
+workflow gated-write(input: ArticleInput)
+    description """
+    Offline CI fixture: an agent tool loop calls a mutating mock publish. Policy
+    requiredFor gates tool.publish.default. Inner agent tools do not HITL; an
+    unapproved call fails closed (exit 5). terfyn test does not pass --approve.
+    """
+    policy gated-publish
+{
+    status = writer(article: input.article)
+    return status
+}
