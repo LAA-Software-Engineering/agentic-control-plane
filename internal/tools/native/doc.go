@@ -17,6 +17,11 @@
 //     (state error / failure / pending / success). Each returns a small curated subset of the
 //     GitHub payload rather than the whole object.
 //
+// Slack (require SLACK_BOT_TOKEN; SLACK_API_URL overrides the base, default https://slack.com/api):
+// message.send (chat.postMessage — channel, text, optional thread_ts) and message.update
+// (chat.update — channel, ts, text). Slack replies HTTP 200 even on logical failures, so the client
+// checks the response ok field.
+//
 // Workspace (sandboxed filesystem + test runner; TERFYN_WORKSPACE_ROOT bounds every path via
 // os.Root, TERFYN_WORKSPACE_TEST_COMMAND is the run_tests command): read_file, write_file,
 // run_tests.
