@@ -124,7 +124,42 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 		DeploymentBaseline: fp,
 		EffectBound:        ea.bound,
 		Authority:          ea.auth,
+		InvocationBounds:   invocationBounds(execs),
 	}, nil
+}
+
+// invocationBounds derives the per-workflow, per-callee invocation upper bounds
+// from the execution IR (issue #293). Only a workflow whose bound is interesting —
+// a bounded `while` or a data-bounded `for` makes some callee reachable more than
+// once — is included; a straight-line workflow (every callee ≤ 1) is omitted, so the
+// section stays signal, not noise. Workflows are emitted in name order.
+func invocationBounds(execs map[string]*execir.Program) []WorkflowInvocationBounds {
+	if len(execs) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(execs))
+	for name := range execs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []WorkflowInvocationBounds
+	for _, name := range names {
+		prog := execs[name]
+		bounds := execir.InvocationBounds(prog, spec.DefaultMaxLoopIterations)
+		interesting := false
+		items := make([]InvocationItem, 0, len(bounds))
+		for _, b := range bounds {
+			if b.Max > 1 || b.DataBounded {
+				interesting = true
+			}
+			items = append(items, InvocationItem{Kind: b.Kind, Callee: b.Callee, Max: b.Max, DataBounded: b.DataBounded})
+		}
+		if !interesting {
+			continue
+		}
+		out = append(out, WorkflowInvocationBounds{Workflow: name, Bounds: items})
+	}
+	return out
 }
 
 func desiredRows(g *spec.ProjectGraph, execs map[string]*execir.Program) ([]desiredRow, error) {

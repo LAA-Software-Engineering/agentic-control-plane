@@ -89,6 +89,9 @@ func planTableSections(p *Plan) []planTableSection {
 	if shouldShowAuthority(p, cap, eff) {
 		secs = append(secs, planTableSection{Title: "Authority", Body: formatAuthorityBody(p.Authority)})
 	}
+	if len(p.InvocationBounds) > 0 {
+		secs = append(secs, planTableSection{Title: "Invocation bounds", Body: formatInvocationBoundsBody(p.InvocationBounds)})
+	}
 
 	if len(other) > 0 {
 		secs = append(secs, planTableSection{Title: "Risk delta", Items: other})
@@ -182,6 +185,24 @@ func formatEffectDeltaBody(items []RiskItem) string {
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
+// formatInvocationBoundsBody renders the per-workflow invocation upper bounds
+// (issue #293): "agent Implementer: ≤ 3 per run", with a note when a `for` over
+// runtime data makes the bound the global cap rather than a source number.
+func formatInvocationBoundsBody(wbs []WorkflowInvocationBounds) string {
+	var b strings.Builder
+	for _, wb := range wbs {
+		fmt.Fprintf(&b, "Workflow/%s\n", wb.Workflow)
+		for _, it := range wb.Bounds {
+			note := " per run"
+			if it.DataBounded {
+				note = " per run (bounded by runtime data; global loop cap)"
+			}
+			fmt.Fprintf(&b, "  %s %s: ≤ %d%s\n", it.Kind, it.Callee, it.Max, note)
+		}
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
 func formatAuthorityBody(a AuthorityDelta) string {
 	return fmt.Sprintf("  static      -> %s\n  autonomous  -> %s",
 		formatAuthorityStatus(a.Static), formatAuthorityStatus(a.Autonomous))
@@ -236,12 +257,13 @@ func FormatRiskItem(it RiskItem) string {
 // on category, severity, target, and path. Effect bound, capability/effect deltas,
 // and authority status are structural fields for #191 CI gates.
 type RiskExport struct {
-	Risk            []string        `json:"risk" yaml:"risk"`
-	RiskItems       []RiskItem      `json:"riskItems" yaml:"riskItems"`
-	EffectBound     []BoundSection  `json:"effectBound,omitempty" yaml:"effectBound,omitempty"`
-	CapabilityDelta []RiskItem      `json:"capabilityDelta,omitempty" yaml:"capabilityDelta,omitempty"`
-	EffectDelta     []RiskItem      `json:"effectDelta,omitempty" yaml:"effectDelta,omitempty"`
-	Authority       *AuthorityDelta `json:"authority,omitempty" yaml:"authority,omitempty"`
+	Risk             []string                   `json:"risk" yaml:"risk"`
+	RiskItems        []RiskItem                 `json:"riskItems" yaml:"riskItems"`
+	EffectBound      []BoundSection             `json:"effectBound,omitempty" yaml:"effectBound,omitempty"`
+	CapabilityDelta  []RiskItem                 `json:"capabilityDelta,omitempty" yaml:"capabilityDelta,omitempty"`
+	EffectDelta      []RiskItem                 `json:"effectDelta,omitempty" yaml:"effectDelta,omitempty"`
+	Authority        *AuthorityDelta            `json:"authority,omitempty" yaml:"authority,omitempty"`
+	InvocationBounds []WorkflowInvocationBounds `json:"invocationBounds,omitempty" yaml:"invocationBounds,omitempty"`
 }
 
 // ExportRisk returns the machine-readable risk view for -o json and -o yaml.
@@ -270,6 +292,9 @@ func ExportRisk(p *Plan) RiskExport {
 	if shouldExportAuthority(p, out) {
 		auth := p.Authority
 		out.Authority = &auth
+	}
+	if len(p.InvocationBounds) > 0 {
+		out.InvocationBounds = p.InvocationBounds
 	}
 	return out
 }
