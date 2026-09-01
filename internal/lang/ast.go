@@ -44,17 +44,29 @@ func (i *Ident) Position() Pos { return i.Pos }
 // source order across kinds — the surface fixes their meaning by keyword, not
 // position.
 type AgentDecl struct {
-	Pos    Pos
-	Name   *Ident
-	Model  *ModelRef // model <provider>/<name>
-	Policy *Ident    // policy <name> (reference to a Policy resource)
-	Grants []*Grant  // grants { tool.<name>.<operation> ... }
-	Input  *TypeRef  // input <Type>
-	Output *TypeRef  // output <Type>
+	Pos          Pos
+	Name         *Ident
+	Model        *ModelRef  // model <provider>/<name>
+	Policy       *Ident     // policy <name> (reference to a Policy resource)
+	Instructions *StringLit // instructions "..." (the agent prompt; lowers to AgentSpec.Instructions)
+	Grants       []*Grant   // grants { tool.<name>.<operation> ... }
+	Input        *TypeRef   // input <Type>
+	Output       *TypeRef   // output <Type>
 }
 
 func (d *AgentDecl) Position() Pos { return d.Pos }
 func (d *AgentDecl) declNode()     {}
+
+// StringLit is a string literal occurrence with its position and decoded value.
+// It carries the same value whether the source used a single-quoted `"..."` or a
+// triple-quoted `"""..."""` literal (the multiline form is an ordinary string, not
+// a distinct AST type); the lexer has already normalized a multiline body.
+type StringLit struct {
+	Pos   Pos
+	Value string
+}
+
+func (s *StringLit) Position() Pos { return s.Pos }
 
 // ModelRef is a `<provider>/<name>` model reference such as openai/gpt-5.
 // Provider and Name preserve hyphens (gpt-5); Raw is the reassembled text.

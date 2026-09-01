@@ -86,6 +86,9 @@ func KeyAgentGrant(agent, uses string) string { return KeyAgent(agent) + "#grant
 // "Agent/<name>#type/input".
 func KeyAgentType(agent, which string) string { return KeyAgent(agent) + "#type/" + which }
 
+// KeyAgentInstructions is the source-map key for an agent's instructions field.
+func KeyAgentInstructions(agent string) string { return KeyAgent(agent) + "#instructions" }
+
 // KeyWorkflow identifies a Workflow resource: "Workflow/<name>".
 func KeyWorkflow(name string) string { return "Workflow/" + name }
 

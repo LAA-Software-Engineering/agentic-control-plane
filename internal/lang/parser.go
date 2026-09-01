@@ -151,7 +151,7 @@ func (p *parser) parseAgent() *AgentDecl {
 	}
 	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
 		if p.cur.Kind != KindIdent {
-			p.errorf(p.cur.Pos, "expected agent field (model, policy, grants, input, output), got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected agent field (model, policy, instructions, grants, input, output), got %s", p.cur)
 			p.syncLine()
 			continue
 		}
@@ -166,6 +166,11 @@ func (p *parser) parseAgent() *AgentDecl {
 			p.advance()
 			if id := p.ident("after 'policy'"); !dup(field, fpos) {
 				decl.Policy = id
+			}
+		case "instructions":
+			p.advance()
+			if s := p.parseStringLit("after 'instructions'"); !dup(field, fpos) {
+				decl.Instructions = s
 			}
 		case "grants":
 			p.advance()
@@ -183,12 +188,25 @@ func (p *parser) parseAgent() *AgentDecl {
 				decl.Output = t
 			}
 		default:
-			p.errorf(fpos, "unknown agent field %q (want model, policy, grants, input, or output)", field)
+			p.errorf(fpos, "unknown agent field %q (want model, policy, instructions, grants, input, or output)", field)
 			p.syncLine()
 		}
 	}
 	p.expect(KindRBrace, "to close agent body")
 	return decl
+}
+
+// parseStringLit consumes a string literal token (single- or triple-quoted; the
+// lexer has already decoded and, for the multiline form, normalized it). where
+// names the context for the diagnostic on a missing string.
+func (p *parser) parseStringLit(where string) *StringLit {
+	if p.cur.Kind != KindString {
+		p.errorf(p.cur.Pos, "expected a string literal %s, got %s", where, p.cur)
+		return nil
+	}
+	s := &StringLit{Pos: p.cur.Pos, Value: p.cur.Lit}
+	p.advance()
+	return s
 }
 
 // parseModelRef parses <provider>/<name> (e.g. openai/gpt-5).

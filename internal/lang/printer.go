@@ -49,6 +49,9 @@ func printAgent(b *strings.Builder, a *AgentDecl) {
 	if a.Policy != nil {
 		fmt.Fprintf(b, "    policy %s\n", a.Policy.Name)
 	}
+	if a.Instructions != nil {
+		printInstructions(b, a.Instructions.Value)
+	}
 	if len(a.Grants) > 0 {
 		b.WriteString("    grants {\n")
 		for _, g := range a.Grants {
@@ -63,6 +66,27 @@ func printAgent(b *strings.Builder, a *AgentDecl) {
 		fmt.Fprintf(b, "    output %s\n", a.Output.Name)
 	}
 	b.WriteString("}\n")
+}
+
+// printInstructions renders the agent prompt. A value with no newline prints as a
+// single-quoted literal; a multiline value prints as a canonical `"""…"""` block
+// whose body lines carry the field's 4-space indent and whose closing delimiter is
+// on its own indented line — the exact shape normalizeMultiline strips back to the
+// original value, so parse -> print -> parse is stable.
+func printInstructions(b *strings.Builder, v string) {
+	if !strings.Contains(v, "\n") {
+		fmt.Fprintf(b, "    instructions %s\n", strconv.Quote(v))
+		return
+	}
+	b.WriteString("    instructions \"\"\"\n")
+	for _, ln := range strings.Split(v, "\n") {
+		if ln == "" {
+			b.WriteString("\n")
+		} else {
+			b.WriteString("    " + ln + "\n")
+		}
+	}
+	b.WriteString("    \"\"\"\n")
 }
 
 func printWorkflow(b *strings.Builder, w *WorkflowDecl) {
