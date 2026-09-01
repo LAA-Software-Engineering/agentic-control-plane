@@ -15,13 +15,16 @@ import (
 
 // Workspace adapter (issue #323): a sandboxed filesystem + test-runner native tool.
 //
-// The sandbox root and the test command come from the environment, matching the github
-// adapter's env-based config (GITHUB_TOKEN / GITHUB_API_URL). Config lives outside the agent:
-//   - TERFYN_WORKSPACE_ROOT       — the sandbox root; every read/write path resolves within it.
+// The sandbox root and the test command are config that lives outside the agent. They may be
+// declared on the Tool resource (spec.workspace.root / testCommand, issue #323 follow-up) or, when
+// not declared, come from the environment:
+//   - TERFYN_WORKSPACE_ROOT         — the sandbox root; every read/write path resolves within it.
 //   - TERFYN_WORKSPACE_TEST_COMMAND — the run_tests command, run via `sh -c` in the root.
 //
-// run_tests takes its command from config, NEVER from tool-call arguments, so a granted agent
-// cannot choose an arbitrary command to execute — the capability boundary holds.
+// Declared config (carried on the context by the tools registry, which resolves a relative root
+// against the project root) takes precedence over the env fallback. run_tests takes its command
+// from config, NEVER from tool-call arguments, so a granted agent cannot choose an arbitrary
+// command to execute — the capability boundary holds.
 const (
 	envWorkspaceRoot        = "TERFYN_WORKSPACE_ROOT"
 	envWorkspaceTestCommand = "TERFYN_WORKSPACE_TEST_COMMAND"
@@ -32,32 +35,75 @@ const (
 	maxWorkspaceTestOutputBytes = 64 << 10 // 64 KiB
 )
 
-// workspaceRoot returns the absolute, existing sandbox root or an error naming the env var.
-func workspaceRoot() (string, error) {
-	root := strings.TrimSpace(os.Getenv(envWorkspaceRoot))
+// WorkspaceConfig is the declarative workspace config resolved from a Tool resource. Root is
+// already absolute (the registry resolves a relative spec.workspace.root against the project root).
+type WorkspaceConfig struct {
+	Root        string
+	TestCommand string
+}
+
+type workspaceConfigKey struct{}
+
+// WithWorkspaceConfig carries a Tool's resolved workspace config on ctx so the native handlers use
+// it in preference to the environment. The tools registry sets it per call when the Tool declares
+// spec.workspace.
+func WithWorkspaceConfig(ctx context.Context, cfg WorkspaceConfig) context.Context {
+	return context.WithValue(ctx, workspaceConfigKey{}, cfg)
+}
+
+func workspaceConfigFromContext(ctx context.Context) WorkspaceConfig {
+	if ctx == nil {
+		return WorkspaceConfig{}
+	}
+	cfg, _ := ctx.Value(workspaceConfigKey{}).(WorkspaceConfig)
+	return cfg
+}
+
+// workspaceRoot returns the absolute, existing sandbox root: the declared root on ctx if set,
+// otherwise TERFYN_WORKSPACE_ROOT.
+func workspaceRoot(ctx context.Context) (string, error) {
+	root := strings.TrimSpace(workspaceConfigFromContext(ctx).Root)
+	source := "spec.workspace.root"
 	if root == "" {
-		return "", fmt.Errorf("native: %s is not set (required for workspace operations)", envWorkspaceRoot)
+		root = strings.TrimSpace(os.Getenv(envWorkspaceRoot))
+		source = envWorkspaceRoot
+	}
+	if root == "" {
+		return "", fmt.Errorf("native: no workspace root (set spec.workspace.root or %s)", envWorkspaceRoot)
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
-		return "", fmt.Errorf("native: workspace root %q: %w", root, err)
+		return "", fmt.Errorf("native: workspace root %q (%s): %w", root, source, err)
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
-		return "", fmt.Errorf("native: workspace root %q: %w", abs, err)
+		return "", fmt.Errorf("native: workspace root %q (%s): %w", abs, source, err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("native: workspace root %q is not a directory", abs)
+		return "", fmt.Errorf("native: workspace root %q (%s) is not a directory", abs, source)
 	}
 	return abs, nil
+}
+
+// workspaceTestCommand returns the run_tests command: the declared testCommand on ctx if set,
+// otherwise TERFYN_WORKSPACE_TEST_COMMAND.
+func workspaceTestCommand(ctx context.Context) (string, error) {
+	cmd := strings.TrimSpace(workspaceConfigFromContext(ctx).TestCommand)
+	if cmd == "" {
+		cmd = strings.TrimSpace(os.Getenv(envWorkspaceTestCommand))
+	}
+	if cmd == "" {
+		return "", fmt.Errorf("native: run_tests requires spec.workspace.testCommand or %s", envWorkspaceTestCommand)
+	}
+	return cmd, nil
 }
 
 // openWorkspaceRoot opens the sandbox root as an [os.Root]. Every read/write goes through the
 // returned handle, whose methods resolve paths with openat semantics: a `..` component or a
 // symlink that would leave the root is refused at the OS level (not by a string check), which
 // also closes the check-then-open TOCTOU a lexical gate would leave. Callers must Close it.
-func openWorkspaceRoot() (*os.Root, error) {
-	dir, err := workspaceRoot()
+func openWorkspaceRoot(ctx context.Context) (*os.Root, error) {
+	dir, err := workspaceRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -83,9 +129,9 @@ func cleanWorkspaceRel(rel string) (string, error) {
 	return rel, nil
 }
 
-func dispatchWorkspaceReadFile(_ context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
+func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
 	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
-	root, err := openWorkspaceRoot()
+	root, err := openWorkspaceRoot(ctx)
 	if err != nil {
 		return nil, meta, err
 	}
@@ -126,9 +172,9 @@ func dispatchWorkspaceReadFile(_ context.Context, with map[string]any, start tim
 	return out, meta, nil
 }
 
-func dispatchWorkspaceWriteFile(_ context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
+func dispatchWorkspaceWriteFile(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
 	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
-	root, err := openWorkspaceRoot()
+	root, err := openWorkspaceRoot(ctx)
 	if err != nil {
 		return nil, meta, err
 	}
@@ -183,13 +229,13 @@ func contentFromWith(with map[string]any) (string, error) {
 
 func dispatchWorkspaceRunTests(ctx context.Context, _ map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
 	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
-	root, err := workspaceRoot()
+	root, err := workspaceRoot(ctx)
 	if err != nil {
 		return nil, meta, err
 	}
-	command := strings.TrimSpace(os.Getenv(envWorkspaceTestCommand))
-	if command == "" {
-		return nil, meta, fmt.Errorf("native: run_tests requires %s to be set", envWorkspaceTestCommand)
+	command, err := workspaceTestCommand(ctx)
+	if err != nil {
+		return nil, meta, err
 	}
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = root

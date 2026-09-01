@@ -7,6 +7,15 @@ spec:
   safety:
     trusted: true
     sideEffects: true
+  # The sandbox root and test command may be declared here instead of via
+  # TERFYN_WORKSPACE_ROOT / TERFYN_WORKSPACE_TEST_COMMAND. A relative root resolves
+  # against the project root; declared config takes precedence over the env vars.
+  # This example uses the env vars (see README "Run it for real") so the sandbox can
+  # be a throwaway mktemp dir, but a fixed project sandbox would be:
+  #
+  # workspace:
+  #   root: ./sandbox
+  #   testCommand: go test ./...
   # The closed set of operations any agent may be granted on the workspace, each
   # with the effect class it can produce. The effect bound is computed over this
   # manifest; an operation not listed here is not callable.

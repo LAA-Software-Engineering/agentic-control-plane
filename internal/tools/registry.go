@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +18,9 @@ import (
 type Registry struct {
 	graph  *spec.ProjectGraph
 	native *native.Registry
+	// ProjectRoot resolves a relative spec.workspace.root for the native workspace adapter. Empty
+	// leaves a relative root to resolve against the process working directory.
+	ProjectRoot string
 	// Mock is optional; when set, ToolSpec type "mock" delegates here. Otherwise a canned JSON body is returned.
 	Mock ToolExecutor
 }
@@ -27,6 +31,25 @@ func NewRegistry(g *spec.ProjectGraph) *Registry {
 		graph:  g,
 		native: native.NewRegistry(),
 	}
+}
+
+// NewRegistryWithRoot builds a registry that resolves a relative spec.workspace.root against
+// projectRoot (issue #323 follow-up). Equivalent to NewRegistry with ProjectRoot set.
+func NewRegistryWithRoot(g *spec.ProjectGraph, projectRoot string) *Registry {
+	r := NewRegistry(g)
+	r.ProjectRoot = projectRoot
+	return r
+}
+
+// resolveWorkspaceRoot resolves a declared spec.workspace.root: an absolute path (or empty, for the
+// env fallback) is returned unchanged; a relative path is resolved against the registry's ProjectRoot
+// so the sandbox is reproducible regardless of the process working directory.
+func (r *Registry) resolveWorkspaceRoot(root string) string {
+	root = strings.TrimSpace(root)
+	if root == "" || filepath.IsAbs(root) || strings.TrimSpace(r.ProjectRoot) == "" {
+		return root
+	}
+	return filepath.Join(r.ProjectRoot, root)
 }
 
 // ParseUses splits tool.github.pull_request.get into tool name "github" and operation "pull_request.get".
@@ -71,6 +94,12 @@ func (r *Registry) Call(ctx context.Context, req ToolCallRequest) (ToolCallRespo
 	case "native":
 		if r.native == nil {
 			r.native = native.NewRegistry()
+		}
+		if ws := tr.Spec.Workspace; ws != nil {
+			ctx = native.WithWorkspaceConfig(ctx, native.WorkspaceConfig{
+				Root:        r.resolveWorkspaceRoot(ws.Root),
+				TestCommand: ws.TestCommand,
+			})
 		}
 		out, meta, err := r.native.Dispatch(ctx, operation, req.With)
 		if err != nil {

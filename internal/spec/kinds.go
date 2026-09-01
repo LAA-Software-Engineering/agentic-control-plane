@@ -132,6 +132,12 @@ type ToolSpec struct {
 	OperationsDeclared bool `yaml:"-" json:"operationsDeclared,omitempty"`
 	// Limits optionally overrides project execution byte limits for this tool (issue #117).
 	Limits *ExecutionLimits `yaml:"limits,omitempty" json:"limits,omitempty"`
+	// Workspace configures the native workspace adapter (read_file / write_file / run_tests) in the
+	// reviewed Tool resource rather than via environment variables (issue #323 follow-up). When set,
+	// it takes precedence over TERFYN_WORKSPACE_ROOT / TERFYN_WORKSPACE_TEST_COMMAND; when absent the
+	// env fallback applies (backward compatible). `omitempty` keeps the field out of the normalized
+	// spec hash for tools that do not declare it.
+	Workspace *ToolWorkspace `yaml:"workspace,omitempty" json:"workspace,omitempty"`
 }
 
 // ToolOperation is one named operation on a Tool and the effects it may produce.
@@ -175,6 +181,18 @@ type ToolMCP struct {
 type ToolHTTP struct {
 	BaseURL string            `yaml:"baseUrl,omitempty" json:"baseUrl,omitempty"`
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+}
+
+// ToolWorkspace is the declarative config for the native workspace adapter (issue #323 follow-up).
+type ToolWorkspace struct {
+	// Root is the sandbox directory read_file / write_file resolve within. A relative path is
+	// resolved against the project root; an absolute path is used as-is. Every access is confined to
+	// it via os.Root (symlink/`..` escapes refused). Empty falls back to TERFYN_WORKSPACE_ROOT.
+	Root string `yaml:"root,omitempty" json:"root,omitempty"`
+	// TestCommand is the command run_tests executes (via sh -c) in the root. It is operator config,
+	// never a tool-call argument, so an agent cannot choose an arbitrary command. Empty falls back to
+	// TERFYN_WORKSPACE_TEST_COMMAND.
+	TestCommand string `yaml:"testCommand,omitempty" json:"testCommand,omitempty"`
 }
 
 type ToolPermissions struct {

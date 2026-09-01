@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -108,6 +109,39 @@ func TestRegistry_workspace_readWriteRoundTrip(t *testing.T) {
 	}
 	if resp.Output["content"] != "package main\n" {
 		t.Fatalf("round-trip content = %q", resp.Output["content"])
+	}
+}
+
+// TestRegistry_workspace_declaredRootResolvedAgainstProjectRoot proves the declarative config
+// (issue #323 follow-up): a Tool's relative spec.workspace.root resolves against the registry's
+// ProjectRoot, with no env var set, and a write lands under <projectRoot>/<root>.
+func TestRegistry_workspace_declaredRootResolvedAgainstProjectRoot(t *testing.T) {
+	t.Setenv("TERFYN_WORKSPACE_ROOT", "") // ensure only the declared root is in play
+	proj := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(proj, "sandbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	graph := &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
+		"workspace": {
+			APIVersion: spec.APIVersionV0,
+			Kind:       spec.KindTool,
+			Metadata:   spec.Metadata{Name: "workspace"},
+			Spec: spec.ToolSpec{
+				Type:      "native",
+				Workspace: &spec.ToolWorkspace{Root: "sandbox"},
+			},
+		},
+	}}
+	reg := NewRegistryWithRoot(graph, proj)
+
+	if _, err := reg.Call(context.Background(), ToolCallRequest{
+		Uses: "tool.workspace.write_file",
+		With: map[string]any{"path": "a.txt", "content": "hi"},
+	}); err != nil {
+		t.Fatalf("write_file with a declared root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(proj, "sandbox", "a.txt")); err != nil {
+		t.Fatalf("declared relative root should resolve under the project root: %v", err)
 	}
 }
 

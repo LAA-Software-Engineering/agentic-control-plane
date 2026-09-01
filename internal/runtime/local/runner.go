@@ -243,7 +243,7 @@ func (r *Runtime) executeEngine(
 		PinnedGraph: prep.pinned,
 		Schemas:     prep.schemas,
 		Executables: prep.executables,
-		Tools:       tools.NewRegistry(prep.graph),
+		Tools:       tools.NewRegistryWithRoot(prep.graph, prep.root),
 		Models:      models.NewRegistry(prep.graph),
 		Store:       r.Store,
 		Trace:       rec,
