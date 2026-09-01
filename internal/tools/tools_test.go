@@ -71,6 +71,46 @@ func TestRegistry_unknownOperation_structuredError(t *testing.T) {
 	}
 }
 
+// TestRegistry_workspace_readWriteRoundTrip guards the flagship bug (issue #323): the
+// `tool.workspace.<op>` uses strings resolve through the registry to the native workspace
+// adapter and no longer return UnknownOperationError. A write_file followed by read_file
+// round-trips inside the sandbox root.
+func TestRegistry_workspace_readWriteRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("TERFYN_WORKSPACE_ROOT", t.TempDir())
+	graph := &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
+		"workspace": {
+			APIVersion: spec.APIVersionV0,
+			Kind:       spec.KindTool,
+			Metadata:   spec.Metadata{Name: "workspace"},
+			Spec:       spec.ToolSpec{Type: "native"},
+		},
+	}}
+	reg := NewRegistry(graph)
+
+	if _, err := reg.Call(ctx, ToolCallRequest{
+		Uses: "tool.workspace.write_file",
+		With: map[string]any{"path": "main.go", "content": "package main\n"},
+	}); err != nil {
+		t.Fatalf("write_file must resolve and dispatch, got %v", err)
+	}
+
+	resp, err := reg.Call(ctx, ToolCallRequest{
+		Uses: "tool.workspace.read_file",
+		With: map[string]any{"path": "main.go"},
+	})
+	if err != nil {
+		var u *UnknownOperationError
+		if errors.As(err, &u) {
+			t.Fatalf("read_file must be a known native operation now, got UnknownOperationError")
+		}
+		t.Fatalf("read_file: %v", err)
+	}
+	if resp.Output["content"] != "package main\n" {
+		t.Fatalf("round-trip content = %q", resp.Output["content"])
+	}
+}
+
 func TestParseUses_githubExample(t *testing.T) {
 	tool, op, err := ParseUses("tool.github.pull_request.get")
 	if err != nil {

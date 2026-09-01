@@ -141,7 +141,10 @@ func TestRun_parallelBranchesOverlapInTime(t *testing.T) {
 	graph := fanInWorkflowGraph(t)
 	runID := "run-overlap"
 	ctx, started, input := startFanInRun(t, st, runID)
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	// Generous so the rendezvous is not raced off the CPU on a slow/loaded CI runner
+	// (Windows under -race is ~20x slower); the assertion is still that both branches
+	// overlap, only the failsafe window is wider.
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	t.Cleanup(cancel)
 
 	gate := newStartBarrier()
@@ -155,7 +158,7 @@ func TestRun_parallelBranchesOverlapInTime(t *testing.T) {
 			out := map[string]any{"echo": w}
 			switch w {
 			case "left", "right":
-				met := gate.Wait(ctx, 5*time.Second)
+				met := gate.Wait(ctx, 30*time.Second)
 				if w == "left" {
 					leftMet.Store(met)
 					leftDone.Store(true)
