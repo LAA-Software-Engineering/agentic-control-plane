@@ -226,7 +226,7 @@ spec:
       # anthropic:
       #   type: anthropic
       #   apiKeyFrom: env:ANTHROPIC_API_KEY
-      # Optional OpenAI-compatible providers (models e.g. grok/grok-4, gemini/gemini-2.5-pro, kimi/kimi-k2):
+      # Optional OpenAI-compatible providers (models e.g. grok/grok-4.6, gemini/gemini-3.1-pro-preview, kimi/kimi-k3):
       # grok:
       #   type: grok            # xAI, https://api.x.ai/v1
       #   apiKeyFrom: env:XAI_API_KEY

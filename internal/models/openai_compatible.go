@@ -18,19 +18,21 @@ const (
 )
 
 // NewGrokClientFromConfig builds an xAI Grok client using apiKeyFrom
-// (e.g. env:XAI_API_KEY). Recommended models: grok-4 (flagship), grok-4-fast.
+// (e.g. env:XAI_API_KEY). Recommended models: grok-4.6 (flagship), grok-4-fast.
 func NewGrokClientFromConfig(cfg spec.ModelProviderConfig) (*OpenAIClient, error) {
 	return newOpenAICompatibleClient(cfg, defaultGrokBase, costProviderGrok)
 }
 
 // NewGeminiClientFromConfig builds a Google Gemini client using apiKeyFrom
-// (e.g. env:GEMINI_API_KEY). Recommended models: gemini-2.5-pro, gemini-2.5-flash.
+// (e.g. env:GEMINI_API_KEY). Recommended models: gemini-3.1-pro-preview,
+// gemini-3.5-flash, gemini-2.5-flash-lite.
 func NewGeminiClientFromConfig(cfg spec.ModelProviderConfig) (*OpenAIClient, error) {
 	return newOpenAICompatibleClient(cfg, defaultGeminiBase, costProviderGemini)
 }
 
 // NewKimiClientFromConfig builds a Moonshot Kimi client using apiKeyFrom
-// (e.g. env:MOONSHOT_API_KEY). Recommended model: kimi-k2.
+// (e.g. env:MOONSHOT_API_KEY). Recommended models: kimi-k3 (flagship),
+// kimi-k2.7-code.
 func NewKimiClientFromConfig(cfg spec.ModelProviderConfig) (*OpenAIClient, error) {
 	return newOpenAICompatibleClient(cfg, defaultKimiBase, costProviderKimi)
 }
