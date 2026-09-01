@@ -26,12 +26,14 @@ Creates a directory layout like:
 ```text
 my-agent-system/
   project.yaml
+  main.agent            # the hello workflow, authored in .agent (discovered, not imported)
   policies/default.yaml
   tools/helper.yaml
-  workflows/hello.yaml
 ```
 
-Sections **2–3** mirror what `init` creates. **Section 4** is a separate **`gpt-4o-mini`** project layout you can copy beside or instead of the scaffold.
+The scaffold leads on the **`.agent`** authoring surface (ADR 002 / [ADR 003](adr/003-yaml-as-compilation-output.md)): the workflow is a `.agent` source ([grammar reference](LANGUAGE.md)), while policies, tools, and project config stay YAML. `.agent` files anywhere under the project root are discovered and compiled automatically — they are **not** listed in `spec.imports`.
+
+YAML remains valid ingress and the compilation/interchange format, so a workflow can also be authored directly in YAML — that equivalent form is shown in **section 3** below. Sections **2–3** mirror the YAML companions `init` creates (project, policy, tool); **section 4** is a separate **`gpt-4o-mini`** project layout you can copy beside or instead of the scaffold.
 
 ---
 

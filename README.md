@@ -281,9 +281,11 @@ Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 | `internal/spec` | YAML types, normalize, validate |
 | `internal/config` | Layered config resolution, immutable snapshot |
 | `internal/project` | Load project + imports |
+| `internal/lang` | `.agent` frontend: lexer, parser, typed AST, checker, lowering to the resource + execution IR |
+| `internal/execir` | Execution IR: where control flow (`if`/`for`/`parallel`) lives; the single interpreted run form (ADR 002 §5) |
 | `internal/plan` | Planner and risk summary |
 | `internal/apply` | Apply plan to deployment store |
-| `internal/engine` | Workflow execution |
+| `internal/engine` | Workflow execution — runs the lowered `execir` program (the sole run path since #278) |
 | `internal/policy` | Policy evaluation |
 | `internal/state/sqlite` | SQLite deployment + runtime/trace tables |
 | `internal/audit` | Tamper-evident hash chain for trace events (issue #116) |
@@ -327,20 +329,26 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 
 ## Roadmap
 
-### Near term (MVP hardening)
+### Recently shipped
 
-Recent landings already cover much of “hardening”: **plan/apply optimistic concurrency** (exit **3** when deployment state drifts), **MCP** over **streamable HTTP** as well as stdio, **trace retention** (`spec.traces.retentionDays`), **`defaults.runtime`** / **`spec.runtime`** (MVP `local`), and clearer **defaults vs environment overlay** documentation. What is still open for near-term polish:
+- **Execution-IR convergence** ([#255](https://github.com/LAA-Software-Engineering/terfyn/issues/255)): both ingress paths (`.agent` and YAML) compile to one `execir` program, which is the **single run path** — the parallel `WorkflowStep` DAG runtime has been retired ([#278](https://github.com/LAA-Software-Engineering/terfyn/issues/278)).
+- **Control flow end-to-end** ([#259](https://github.com/LAA-Software-Engineering/terfyn/issues/259)): `.agent` `if` / `for` / `parallel for` lower to the pinned execution IR and run on the engine (`examples/agent-control-flow`).
+- **Parallel branches, subworkflows, and workflow-level approval steps** ([#192](https://github.com/LAA-Software-Engineering/terfyn/issues/192) / [#194](https://github.com/LAA-Software-Engineering/terfyn/issues/194) / [#195](https://github.com/LAA-Software-Engineering/terfyn/issues/195)), durable across checkpoint/resume including concurrent per-branch HITL suspend ([#258](https://github.com/LAA-Software-Engineering/terfyn/issues/258) / [#270](https://github.com/LAA-Software-Engineering/terfyn/issues/270)).
+- **`terfyn test`** fixture runner ([#176](https://github.com/LAA-Software-Engineering/terfyn/issues/176); see [`docs/TESTING.md`](docs/TESTING.md) and [`examples/regression-test`](examples/regression-test)).
+
+### Near term
 
 - More **`diff` / drift** UX where the design doc calls for it (beyond today’s resource-level diff)  
 - Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/LAA-Software-Engineering/terfyn/issues/109))  
-- **`terfyn test`**-style workflow fixtures (**stretch** per design doc)  
+- **Author real agents in `.agent`** — first-class `instructions`, bounded state-carrying `while`, and a flagship implement/review loop ([#285](https://github.com/LAA-Software-Engineering/terfyn/issues/285), planned)  
+- **Manifest pin enforcement** so the effect bound has a closed world ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) is declared but not yet enforced — MCP `tools/list` can still expand the callable set)  
 
 ### Post-MVP (from design doc section 19)
 
 - Modules/registry, remote shared state, reconciliation controllers  
-- Parallel steps, subworkflows, schedules/events  
+- Scheduled and event triggers  
 - Stronger drift semantics and multi-runtime targets  
-- Deeper approval workflows and multi-tenant controls  
+- Multi-tenant controls  
 
 The **recommended implementation phases** are outlined in **section 20** of [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md).
 
@@ -358,7 +366,7 @@ The **recommended implementation phases** are outlined in **section 20** of [`do
 - **[`examples/regression-test/README.md`](examples/regression-test/README.md)** — `terfyn test` is green on a gated publish and red after dropping `requiredFor` (issue #176).
 - **[`docs/EXAMPLES.md`](docs/EXAMPLES.md)** — copy-paste YAML and CLI examples (`init`, mock vs OpenAI, workflows, environment overlays).  
 - **[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)** — Contributor Covenant 2.1; participation expectations and reporting.  
-- **License:** [MIT](LICENSE)  
+- **License:** [Apache-2.0](LICENSE)  
 
 ---
 
