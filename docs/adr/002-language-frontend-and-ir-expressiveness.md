@@ -309,7 +309,10 @@ the `3` bounds executions, not effect classes. This ADR does **not** turn the ef
 quantitative (counting) effect algebra, and no future change may make it one under the banner of
 "bounding a loop." Surfacing a coarse invocation-count in `plan` (e.g. "agent X ≤ K invocations") is
 permitted as *analysis metadata* derived from the structural `limit`, but it is not part of the
-effect lattice.
+effect lattice. `plan` does surface this (#293): `execir.InvocationBounds` walks the execution IR,
+multiplying enclosing `while limit N` factors along the path (a data-`for` falls back to the global
+cap), and reports the per-agent/tool upper bound as an "Invocation bounds" section — separate from
+the effect bound, never multiplied into it.
 
 **Loop-carried state stays within the projection model.** Rebinding a name inside a bounded loop is
 loop-carried state, not a new mutable-global runtime: a name that existed *before* the loop may be

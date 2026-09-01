@@ -88,3 +88,27 @@ func TestExportRisk_includesWitnessHops(t *testing.T) {
 		t.Fatalf("witness %#v", exp.RiskItems[0].Witness)
 	}
 }
+
+func TestFormatPlan_invocationBounds(t *testing.T) {
+	p := &Plan{InvocationBounds: []WorkflowInvocationBounds{
+		{Workflow: "ImplementAndReview", Bounds: []InvocationItem{
+			{Kind: "agent", Callee: "Implementer", Max: 3},
+			{Kind: "agent", Callee: "Reviewer", Max: 3},
+			{Kind: "tool", Callee: "tool.t.op", Max: 1000, DataBounded: true},
+		}},
+	}}
+	got := FormatPlan(p)
+	if !strings.Contains(got, "Invocation bounds:") {
+		t.Fatalf("missing section:\n%s", got)
+	}
+	if !strings.Contains(got, "agent Implementer: ≤ 3 per run") {
+		t.Fatalf("missing Implementer bound:\n%s", got)
+	}
+	if !strings.Contains(got, "runtime data") {
+		t.Fatalf("data-bounded note missing:\n%s", got)
+	}
+	exp := ExportRisk(p)
+	if len(exp.InvocationBounds) != 1 || exp.InvocationBounds[0].Workflow != "ImplementAndReview" {
+		t.Fatalf("export missing invocation bounds: %+v", exp.InvocationBounds)
+	}
+}

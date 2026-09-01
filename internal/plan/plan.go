@@ -27,6 +27,28 @@ type Plan struct {
 	EffectBound []BoundSection
 	// Authority is bound(desired) vs bound(deployed) for CI gates (ADR 002 / issue #191).
 	Authority AuthorityDelta
+	// InvocationBounds is the per-workflow upper bound on how many times each agent,
+	// tool, or subworkflow may be invoked in one run, derived from the bounded loops
+	// in the execution IR (issue #293). Only workflows whose bound is interesting — a
+	// bounded `while` or a data-bounded `for` makes some callee reachable more than
+	// once — appear here; a straight-line workflow (every callee ≤ 1) is omitted.
+	InvocationBounds []WorkflowInvocationBounds
+}
+
+// WorkflowInvocationBounds is one workflow's per-callee invocation upper bounds.
+type WorkflowInvocationBounds struct {
+	Workflow string           `json:"workflow" yaml:"workflow"`
+	Bounds   []InvocationItem `json:"bounds" yaml:"bounds"`
+}
+
+// InvocationItem is an upper bound on one callee's invocations per run. DataBounded
+// is true when a `for` over a runtime collection is on the path, so Max is the global
+// loop-iteration ceiling rather than a source-decidable number.
+type InvocationItem struct {
+	Kind        string `json:"kind" yaml:"kind"`
+	Callee      string `json:"callee" yaml:"callee"`
+	Max         int    `json:"max" yaml:"max"`
+	DataBounded bool   `json:"dataBounded,omitempty" yaml:"dataBounded,omitempty"`
 }
 
 // BoundSection is one agent or workflow effect bound for table/JSON/YAML (issue #191).
