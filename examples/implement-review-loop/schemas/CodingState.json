@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodingState",
+  "type": "object",
+  "properties": {
+    "task": {"type": "string", "description": "The software engineering task to perform. Preserved across iterations."},
+    "approved": {"type": "boolean", "description": "Set true by the Reviewer only when the implementation is acceptable."},
+    "feedback": {"type": "array", "items": {"type": "string"}, "description": "Concrete review findings for the next Implementer attempt."},
+    "summary": {"type": "string", "description": "A concise summary of what the Implementer changed."}
+  },
+  "required": ["task", "approved", "feedback", "summary"],
+  "additionalProperties": false
+}

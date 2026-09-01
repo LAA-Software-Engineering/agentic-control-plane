@@ -385,3 +385,30 @@ this repo the PR workflow is **`.github/workflows/terfyn-pr-review.yml`**; manua
 arbitrary **`owner` / `repo` / `number`** is **`.github/workflows/terfyn-pr-review-publish.yml`**.
 
 Fixture-style **`terfyn test`** (no API keys) is **[`examples/regression-test/`](../examples/regression-test/README.md)** with sample job **`.github/workflows/terfyn-test.yml`**. See **[`TESTING.md`](TESTING.md)**.
+
+---
+
+## 8. Bounded multi-agent control (`.agent`)
+
+[**`examples/implement-review-loop/`**](../examples/implement-review-loop/README.md) is the flagship
+`.agent` program: an **Implementer** and an independent **Reviewer** pass a structured `CodingState`
+through a bounded `while … limit 3`, authored entirely in **`.agent`** (agent prompts in
+`instructions`, typed `CodingState` input/output, and per-agent capability grants) with only tool /
+policy / project **configuration** left in YAML.
+
+It demonstrates *deterministic bounded control around nondeterministic agents*:
+
+- the loop runs **at most three** implement/review rounds (the bound is explicit in source and
+  enforced by the runtime);
+- the Reviewer is granted `read_file` + `run_tests` but **not** `write_file`, so a Reviewer that
+  attempts to write is **denied by capability, not by its prompt**;
+- `terfyn plan` surfaces granting the Reviewer `write_file` as an **`AUTONOMOUS authority WIDENED`**
+  risk — reviewable before `apply`.
+
+```bash
+terfyn validate --project examples/implement-review-loop
+terfyn plan     --project examples/implement-review-loop
+```
+
+The example's README walks through the capability boundary and the plan authority-widening output;
+`mock/gpt-4` keeps it reproducible with no API keys.

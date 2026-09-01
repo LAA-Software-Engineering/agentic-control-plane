@@ -77,6 +77,8 @@ Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface s
 
 **Start here:** [`examples/incident-triage`](examples/incident-triage) — an offline agent that can page, read logs, and file a ticket, but **cannot restart a service** unless policy `approvals.requiredFor` includes `tool.restart.restart` and that uses string is **pre-approved** with `--approve tool.restart.restart`. Inner agent-loop tools do not HITL; unapproved `terfyn run` fail-closes with **exit 5** (`approval_required`). With `--approve` it completes and `audit verify` passes.
 
+**Bounded multi-agent control:** [`examples/implement-review-loop`](examples/implement-review-loop/README.md) — an Implementer and an independent Reviewer pass a structured `CodingState` through a bounded `while … limit 3`. Authored in [`.agent`](docs/LANGUAGE.md) (prompts, typed I/O, and capability grants), it shows *deterministic bounded control around nondeterministic agents*: the Reviewer holds `read_file` + `run_tests` but **not** `write_file`, so a Reviewer that tries to write is denied by capability, not by its prompt — and `terfyn plan` surfaces granting it write as an **`AUTONOMOUS authority WIDENED`** risk before deployment.
+
 Other walkthroughs: policy-blocked PR review in [`examples/pr-review-demo`](examples/pr-review-demo/README.md) (no API keys); live GitHub read/write with a **mock** reviewer in [`examples/pr-review-github`](examples/pr-review-github/README.md); the same flow with OpenAI `gpt-4o-mini` plus GitHub Actions in [`examples/pr-review-github-actions`](examples/pr-review-github-actions/README.md) ([PR workflow](.github/workflows/terfyn-pr-review.yml); optional manual [`owner`/`repo`/`number`](.github/workflows/terfyn-pr-review-publish.yml)).
 
 ---

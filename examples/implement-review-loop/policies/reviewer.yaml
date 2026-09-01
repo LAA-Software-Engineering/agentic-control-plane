@@ -1,0 +1,13 @@
+apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: reviewer
+spec:
+  execution:
+    maxWallClockSeconds: 300
+    maxTotalCostUsd: 5
+  # The Reviewer may read and run tests, but NOT write — workspace.write is absent.
+  effects:
+    permit:
+      - workspace.read
+      - process.exec
