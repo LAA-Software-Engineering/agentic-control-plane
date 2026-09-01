@@ -1,0 +1,91 @@
+// Flagship: deterministic bounded control around nondeterministic agents.
+//
+// An Implementer and an independent Reviewer pass a structured CodingState back
+// and forth inside a bounded `while` — at most three implement/review rounds. The
+// agents behave nondeterministically (which files they read, which permitted tools
+// they call, what code or feedback they produce); Terfyn statically bounds the
+// authority each may exercise, the number of iterations, and the reachable effects.
+//
+//   terfyn validate
+//   terfyn plan
+//   terfyn apply --auto-approve
+//   terfyn run workflow/ImplementAndReview --input-file fixtures/task.json
+//
+// See README.md for the capability boundary and the plan authority-widening walkthrough.
+
+agent Implementer {
+    model mock/gpt-4
+    policy coding-agent
+
+    instructions """
+    You are the implementation agent.
+
+    You receive a CodingState describing a software engineering task and, on later
+    attempts, review feedback from a previous implementation.
+
+    Implement the requested change in the provided workspace. You may inspect files,
+    modify files, and run tests using the capabilities granted to you.
+
+    If review feedback is present, address it before making unrelated changes.
+
+    When finished, return the complete CodingState: preserve the original task,
+    record a concise summary of what you changed, and do not claim tests passed
+    unless you actually ran them successfully.
+    """
+
+    grants {
+        tool.workspace.read_file
+        tool.workspace.write_file
+        tool.workspace.run_tests
+    }
+
+    input CodingState
+    output CodingState
+}
+
+agent Reviewer {
+    model mock/gpt-4
+    policy reviewer
+
+    instructions """
+    You are the independent code reviewer.
+
+    Inspect the implementation produced by the Implementer and determine whether it
+    correctly satisfies the original task. You may inspect files and run tests. You
+    must not modify the workspace.
+
+    Review correctness, regressions, missing tests, unsafe behavior, and whether the
+    implementation actually satisfies the requested change.
+
+    Set approved to true only if the implementation is acceptable. If approved is
+    false, populate feedback with concrete findings the Implementer can act on during
+    the next attempt.
+
+    Return the complete CodingState and preserve the original task.
+    """
+
+    grants {
+        tool.workspace.read_file
+        tool.workspace.run_tests
+    }
+
+    input CodingState
+    output CodingState
+}
+
+workflow ImplementAndReview(input: CodingState) -> CodingState
+    effects {
+        workspace.read,
+        workspace.write,
+        process.exec
+    }
+{
+    state = input
+
+    while !state.approved limit 3 {
+        implementation = Implementer(state)
+        state = Reviewer(implementation)
+    }
+
+    return state
+}
