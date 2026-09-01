@@ -10,6 +10,9 @@ type tokenRates struct {
 const (
 	costProviderOpenAI    = "openai"
 	costProviderAnthropic = "anthropic"
+	costProviderGrok      = "grok"
+	costProviderGemini    = "gemini"
+	costProviderKimi      = "kimi"
 )
 
 // tokenUSDPerMillion is approximate standard-tier input/output pricing keyed by provider then
@@ -19,16 +22,59 @@ const (
 // after the table key is `-` plus a year or YYYYMMDD (so `claude-sonnet-4-5-…` does not
 // inherit `claude-sonnet-4` rates).
 //
+// Providers with prompt-size tiers (Grok, Gemini Pro, GPT-5-class long context)
+// are priced at their standard ≤200K-token rate here; long-context surcharges are
+// not modeled. Promotional/introductory rates are avoided in favor of standard ones.
+//
 // OpenAI: https://openai.com/api/pricing/
 // Anthropic: https://platform.claude.com/docs/en/about-claude/pricing
+// xAI (Grok): https://docs.x.ai/docs/models
+// Google (Gemini): https://ai.google.dev/gemini-api/docs/pricing
+// Moonshot (Kimi): https://platform.moonshot.ai/docs/pricing
 var tokenUSDPerMillion = map[string]map[string]tokenRates{
 	costProviderOpenAI: {
-		"gpt-4o-mini": {0.15, 0.60},
-		"gpt-4o":      {2.50, 10.00},
+		"gpt-5":        {1.25, 10.00},
+		"gpt-5-mini":   {0.25, 2.00},
+		"gpt-5-nano":   {0.05, 0.40},
+		"gpt-4.1":      {2.00, 8.00},
+		"gpt-4.1-mini": {0.40, 1.60},
+		"gpt-4.1-nano": {0.10, 0.40},
+		"gpt-4o":       {2.50, 10.00},
+		"gpt-4o-mini":  {0.15, 0.60},
+		"o3":           {2.00, 8.00},
+		"o4-mini":      {1.10, 4.40},
 	},
 	costProviderAnthropic: {
-		"claude-sonnet-4":  {3.00, 15.00},
-		"claude-haiku-4-5": {1.00, 5.00},
+		"claude-fable-5":    {10.00, 50.00},
+		"claude-opus-5":     {5.00, 25.00},
+		"claude-opus-4-8":   {5.00, 25.00},
+		"claude-opus-4-7":   {5.00, 25.00},
+		"claude-opus-4-6":   {5.00, 25.00},
+		"claude-sonnet-5":   {2.00, 10.00},
+		"claude-sonnet-4-6": {3.00, 15.00},
+		"claude-sonnet-4":   {3.00, 15.00},
+		"claude-haiku-4-5":  {1.00, 5.00},
+	},
+	costProviderGrok: {
+		"grok-4.6":    {2.00, 6.00},
+		"grok-4.5":    {2.00, 6.00},
+		"grok-4.3":    {1.25, 2.50},
+		"grok-4":      {3.00, 15.00},
+		"grok-4-fast": {0.20, 0.50},
+	},
+	costProviderGemini: {
+		"gemini-3.1-pro-preview": {2.00, 12.00},
+		"gemini-3.5-flash":       {1.50, 9.00},
+		"gemini-3.5-flash-lite":  {0.30, 2.50},
+		"gemini-2.5-pro":         {1.25, 10.00},
+		"gemini-2.5-flash":       {0.30, 2.50},
+		"gemini-2.5-flash-lite":  {0.10, 0.40},
+	},
+	costProviderKimi: {
+		"kimi-k3":        {3.00, 15.00},
+		"kimi-k2.7-code": {0.95, 4.00},
+		"kimi-k2.6":      {0.95, 4.00},
+		"kimi-k2":        {0.60, 2.50},
 	},
 }
 

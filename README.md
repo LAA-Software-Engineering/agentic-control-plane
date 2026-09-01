@@ -228,6 +228,16 @@ spec:
       # anthropic:
       #   type: anthropic
       #   apiKeyFrom: env:ANTHROPIC_API_KEY
+      # Optional OpenAI-compatible providers (models e.g. grok/grok-4.6, gemini/gemini-3.1-pro-preview, kimi/kimi-k3):
+      # grok:
+      #   type: grok            # xAI, https://api.x.ai/v1
+      #   apiKeyFrom: env:XAI_API_KEY
+      # gemini:
+      #   type: gemini          # Google, https://generativelanguage.googleapis.com/v1beta/openai
+      #   apiKeyFrom: env:GEMINI_API_KEY
+      # kimi:
+      #   type: kimi            # Moonshot, https://api.moonshot.ai/v1
+      #   apiKeyFrom: env:MOONSHOT_API_KEY
 ```
 
 To see the compiled resource graph as YAML — for inspection or handoff to another tool — run `terfyn export --format yaml` (it prints to stdout; nothing is written to disk unless you pass `--output DIR`). YAML remains valid ingress, so you can still author or generate resources directly in it.

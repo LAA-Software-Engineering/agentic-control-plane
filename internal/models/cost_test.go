@@ -72,6 +72,62 @@ func TestEstimateTokenCostUSD_priceTable(t *testing.T) {
 			want:       0.15,
 		},
 		{
+			name:       "openai gpt-5 flagship",
+			provider:   costProviderOpenAI,
+			model:      "gpt-5",
+			prompt:     1_000_000,
+			completion: 1_000_000,
+			want:       11.25, // 1.25 + 10.00
+		},
+		{
+			name:       "anthropic claude-opus-5",
+			provider:   costProviderAnthropic,
+			model:      "claude-opus-5",
+			prompt:     1_000_000,
+			completion: 1_000_000,
+			want:       30.00, // 5.00 + 25.00
+		},
+		{
+			name:       "grok 4.6 flagship dotted id",
+			provider:   costProviderGrok,
+			model:      "grok-4.6",
+			prompt:     1_000_000,
+			completion: 1_000_000,
+			want:       8.00, // 2.00 + 6.00
+		},
+		{
+			name:       "grok-4-fast is not a dated snapshot of grok-4",
+			provider:   costProviderGrok,
+			model:      "grok-4-fast",
+			prompt:     1_000_000,
+			completion: 0,
+			want:       0.20,
+		},
+		{
+			name:       "gemini 3.5 flash",
+			provider:   costProviderGemini,
+			model:      "gemini-3.5-flash",
+			prompt:     1_000_000,
+			completion: 1_000_000,
+			want:       10.50, // 1.50 + 9.00
+		},
+		{
+			name:       "kimi k3 flagship",
+			provider:   costProviderKimi,
+			model:      "kimi-k3",
+			prompt:     1_000_000,
+			completion: 1_000_000,
+			want:       18.00, // 3.00 + 15.00
+		},
+		{
+			name:       "kimi k2.7-code dotted id does not inherit kimi-k2",
+			provider:   costProviderKimi,
+			model:      "kimi-k2.7-code",
+			prompt:     1_000_000,
+			completion: 0,
+			want:       0.95,
+		},
+		{
 			name:       "unknown model is zero",
 			provider:   costProviderOpenAI,
 			model:      "unknown-model-xyz",
