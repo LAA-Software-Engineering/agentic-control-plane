@@ -9,8 +9,6 @@ spec:
     - ./tools/logs.yaml
     - ./tools/tracker.yaml
     - ./tools/restart.yaml
-    - ./agents/responder.yaml
-    - ./workflows/incident-triage.yaml
   defaults:
     policy: gated-remediation
     model: mock/gpt-4
