@@ -1,0 +1,52 @@
+// Authored in .agent: the reviewer agent and the pr-review-github workflow. Tools,
+// policies, project config, and JSON Schemas stay YAML. The review's structured
+// output is interpolated into the comment body via a ${...} argument template.
+
+agent reviewer {
+    model mock/gpt-4
+    policy guarded-writes
+    constraints {
+        timeoutSeconds 120
+    }
+    instructions """
+    You review pull requests for risky changes. The user message is JSON. It includes:
+    - "pull_request": either a GitHub pull object (from the REST API) or a JSON-encoded string of that object.
+    - "diff": optional unified diff text (may be truncated for very large PRs).
+
+    Respond with one JSON object only (no markdown, no code fences). Use exactly this shape:
+    {
+      "summary": "<one line overview>",
+      "findings": [
+        {
+          "severity": "high" | "medium" | "low" | "info",
+          "file": "<path or label>",
+          "title": "<short issue title>",
+          "evidence": "<what in the PR suggests this>"
+        }
+      ]
+    }
+    """
+    output ReviewOutput
+}
+
+workflow pr-review-github(input: GitHubPRInput)
+    description """
+    Live GitHub path: fetch PR JSON and unified diff via the GitHub REST API, run a structured review,
+    then post or update one issue comment (comment_strategy replace: PATCH <!-- agentic-review --> or POST once).
+    Policy-gated unless you pass --approve for tool.github.pull_request.post_comment.
+    Requires GITHUB_TOKEN and network access to GITHUB_API_URL (default https://api.github.com).
+    """
+    policy guarded-writes
+{
+    fetch_pr = github.pull_request.get(owner: input.owner, repo: input.repo, number: input.number)
+    fetch_diff = github.pull_request.diff(owner: input.owner, repo: input.repo, number: input.number)
+    review_diff = reviewer(pull_request: fetch_pr.pull_request, diff: fetch_diff.diff)
+    post_comment = github.pull_request.post_comment(owner: input.owner, repo: input.repo, number: input.number, comment_strategy: "replace", body: """
+    ## Automated review
+
+    ${review_diff.summary}
+
+    ${review_diff.findings}
+    """)
+    return review_diff
+}

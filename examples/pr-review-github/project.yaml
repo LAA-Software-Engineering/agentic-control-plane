@@ -6,8 +6,6 @@ spec:
   imports:
     - ./policies/guarded-writes.yaml
     - ./tools/github.yaml
-    - ./agents/reviewer.yaml
-    - ./workflows/pr-review-github.yaml
   defaults:
     policy: guarded-writes
     model: mock/gpt-4

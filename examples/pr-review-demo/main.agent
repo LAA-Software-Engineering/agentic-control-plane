@@ -1,0 +1,49 @@
+// Authored in .agent: the reviewer agent and the pr-review workflow. Tools,
+// policies, project config, and JSON Schemas stay YAML. The review's structured
+// output is interpolated into the comment body via a ${...} argument template.
+
+agent reviewer {
+    model mock/gpt-4
+    policy guarded-writes
+    constraints {
+        timeoutSeconds 120
+    }
+    instructions """
+    You review pull requests for risky changes. The user message is JSON with a "pull_request"
+    object (title, body, files_changed, etc.).
+
+    Respond with one JSON object only (no markdown, no code fences). Use exactly this shape:
+    {
+      "summary": "<one line overview>",
+      "findings": [
+        {
+          "severity": "high" | "medium" | "low" | "info",
+          "file": "<path or label>",
+          "title": "<short issue title>",
+          "evidence": "<what in the PR suggests this>"
+        }
+      ]
+    }
+    """
+    output ReviewOutput
+}
+
+workflow pr-review(input: PRReviewInput)
+    description """
+    Offline demo: load PR-shaped JSON, run a structured review, then attempt to post a comment.
+    The comment body is templated from the review's structured output. The comment step is gated
+    by policy unless you pass --approve for the exact uses string.
+    """
+    policy guarded-writes
+{
+    fetch_pr = github.pull_request.fetch(pr: input.pr)
+    review_diff = reviewer(pull_request: fetch_pr.pull_request)
+    post_comment = github.pull_request.post_comment(body: """
+    ## Automated review
+
+    ${review_diff.summary}
+
+    ${review_diff.findings}
+    """)
+    return review_diff
+}
