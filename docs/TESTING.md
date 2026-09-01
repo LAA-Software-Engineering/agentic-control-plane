@@ -64,6 +64,7 @@ assert:
 - **`expectAutonomous`** fails if the effect is unreachable **or** only reachable via a static `uses:` step (not an autonomous grant).
 - **`expectGated`** fails if the op is unreachable, or if any reaching root's policy does not require approval for it (fail-closed tool `safety` counts as gated; a `trusted` tool does not).
 - Each assertion is an individual pass/fail row; any violation fails `terfyn test` (exit **1**). A workflow filter (`terfyn test workflow/x`) skips assertion suites — they are project-wide, not workflow-scoped.
+- Effect idents are checked against the project's declared effect vocabulary: a `forbidEffect` / `expectAutonomous` naming a **malformed or nonexistent** effect is a **violation** (fail-loud), never a vacuous pass — so a typo can't quietly make a negative guarantee hold. Idents match **hierarchically** (`EffectCovers`, like permit resolution): a forbid on a namespace parent (`workspace`) catches a reachable child (`workspace.write`) and vice versa.
 
 ## Execution model
 

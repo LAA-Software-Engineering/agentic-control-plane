@@ -46,6 +46,10 @@ func TestParseAssertSuiteBytes_Invalid(t *testing.T) {
 	if _, err := ParseAssertSuiteBytes([]byte("assert:\n  forbidEffect:\n    - {effect: x}\n")); err == nil {
 		t.Fatal("forbidEffect missing a root should error")
 	}
+	// A malformed effect ident (a uses string used where an effect belongs) is rejected at parse time.
+	if _, err := ParseAssertSuiteBytes([]byte("assert:\n  forbidEffect:\n    - {agent: R, effect: tool.ws.write_file}\n")); err == nil {
+		t.Fatal("a tool. prefixed (malformed) effect ident should error at parse time")
+	}
 }
 
 func TestRootEffectAliases(t *testing.T) {

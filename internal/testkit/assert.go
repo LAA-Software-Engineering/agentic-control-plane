@@ -6,6 +6,7 @@ import (
 
 	"github.com/Terfyn/terfyn/internal/config"
 	"github.com/Terfyn/terfyn/internal/effects"
+	"github.com/Terfyn/terfyn/internal/spec"
 	"gopkg.in/yaml.v3"
 )
 
@@ -71,10 +72,16 @@ func ParseAssertSuiteBytes(data []byte) (*AssertSuite, error) {
 		if re.rootName() == "" || strings.TrimSpace(re.Effect) == "" {
 			return nil, fmt.Errorf("testkit: forbidEffect[%d] needs a root (root/agent/workflow) and effect", i)
 		}
+		if err := spec.ValidateEffectIdent(strings.TrimSpace(re.Effect)); err != nil {
+			return nil, fmt.Errorf("testkit: forbidEffect[%d] effect %q: %w", i, re.Effect, err)
+		}
 	}
 	for i, re := range s.Assert.ExpectAutonomous {
 		if re.rootName() == "" || strings.TrimSpace(re.Effect) == "" {
 			return nil, fmt.Errorf("testkit: expectAutonomous[%d] needs a root (root/agent/workflow) and effect", i)
+		}
+		if err := spec.ValidateEffectIdent(strings.TrimSpace(re.Effect)); err != nil {
+			return nil, fmt.Errorf("testkit: expectAutonomous[%d] effect %q: %w", i, re.Effect, err)
 		}
 	}
 	for i, u := range s.Assert.ExpectGated {

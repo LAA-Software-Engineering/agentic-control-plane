@@ -45,9 +45,28 @@ type AssertViolation struct {
 // invariants hold).
 func (a CapabilityAssertions) Evaluate(g *spec.ProjectGraph) []AssertViolation {
 	bounds := Compute(g)
+	vocab := declaredEffectIdents(g)
 	var vs []AssertViolation
 
+	// An effect ident that is malformed or not part of the project's declared vocabulary is a
+	// violation, never a silent pass: forbidEffect is a negative guarantee, so a typo'd
+	// ("workspace.wirte") or nonexistent effect must fail loudly rather than hold vacuously.
+	identViolation := func(kind, ident string) (AssertViolation, bool) {
+		ident = strings.TrimSpace(ident)
+		if err := spec.ValidateEffectIdent(ident); err != nil {
+			return AssertViolation{kind, fmt.Sprintf("malformed effect ident %q: %v", ident, err)}, true
+		}
+		if !effectIdentRecognized(ident, vocab) {
+			return AssertViolation{kind, fmt.Sprintf("effect %q is not declared by any tool operation in the project (typo? an assertion that names a nonexistent effect cannot be trusted)", ident)}, true
+		}
+		return AssertViolation{}, false
+	}
+
 	for _, re := range a.ForbidEffect {
+		if v, bad := identViolation("forbidEffect", re.Effect); bad {
+			vs = append(vs, v)
+			continue
+		}
 		b, ok := boundForRoot(bounds, re.Root)
 		if !ok {
 			vs = append(vs, AssertViolation{"forbidEffect", fmt.Sprintf("root %q not found (no agent or workflow by that name)", re.Root)})
@@ -59,6 +78,10 @@ func (a CapabilityAssertions) Evaluate(g *spec.ProjectGraph) []AssertViolation {
 	}
 
 	for _, re := range a.ExpectAutonomous {
+		if v, bad := identViolation("expectAutonomous", re.Effect); bad {
+			vs = append(vs, v)
+			continue
+		}
 		b, ok := boundForRoot(bounds, re.Root)
 		if !ok {
 			vs = append(vs, AssertViolation{"expectAutonomous", fmt.Sprintf("root %q not found (no agent or workflow by that name)", re.Root)})
@@ -99,14 +122,58 @@ func boundForRoot(gb GraphBounds, name string) (Bound, bool) {
 	return Bound{}, false
 }
 
+// effectByIdent finds a reachable effect that matches ident hierarchically, the same way permit
+// resolution treats a namespace parent as covering its children (spec.EffectCovers). So a forbid on
+// a parent ("workspace") matches a reachable child ("workspace.write"), and a forbid on a leaf
+// matches a reachable broad parent — the guarantee cannot be dodged by naming a different level.
 func effectByIdent(b Bound, ident string) (Effect, bool) {
 	ident = strings.TrimSpace(ident)
 	for _, e := range b.Effects {
-		if !e.Unknown && e.Ident == ident {
+		if e.Unknown {
+			continue
+		}
+		if e.Ident == ident || spec.EffectCovers(ident, e.Ident) || spec.EffectCovers(e.Ident, ident) {
 			return e, true
 		}
 	}
 	return Effect{}, false
+}
+
+// declaredEffectIdents is the project's effect vocabulary: every effect ident declared on any tool
+// operation. An assertion effect that neither equals nor is hierarchically related to one of these
+// is unrecognized (a typo, or an effect no operation produces).
+func declaredEffectIdents(g *spec.ProjectGraph) []string {
+	seen := map[string]bool{}
+	var out []string
+	if g == nil {
+		return out
+	}
+	for name, tr := range g.Tools {
+		if tr == nil {
+			continue
+		}
+		for _, effs := range spec.ResolveToolEffects(name, &tr.Spec).ByOperation {
+			for _, e := range effs {
+				if e = strings.TrimSpace(e); e != "" && !seen[e] {
+					seen[e] = true
+					out = append(out, e)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// effectIdentRecognized reports whether ident equals, covers, or is covered by a declared effect —
+// so a leaf named against a broad-grant parent (and vice versa) is recognized, but a typo is not.
+func effectIdentRecognized(ident string, vocab []string) bool {
+	ident = strings.TrimSpace(ident)
+	for _, d := range vocab {
+		if d == ident || spec.EffectCovers(d, ident) || spec.EffectCovers(ident, d) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasAutonomousWitness(e Effect) bool {

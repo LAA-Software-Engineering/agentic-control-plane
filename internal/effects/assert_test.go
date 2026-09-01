@@ -59,6 +59,45 @@ func TestCapabilityAssertions_StaticIsNotAutonomous(t *testing.T) {
 	}
 }
 
+// TestCapabilityAssertions_UnknownEffectFailsLoud: a typo'd or nonexistent effect ident is a
+// violation, never a vacuous pass — the review fix that keeps forbidEffect from failing open.
+func TestCapabilityAssertions_UnknownEffectFailsLoud(t *testing.T) {
+	agents := map[string]*spec.AgentResource{
+		"Reader": {Metadata: spec.Metadata{Name: "Reader"}, Spec: spec.AgentSpec{Tools: []string{"tool.ws.read_file"}}},
+	}
+	g := graph(wsTools(), agents, nil)
+	if vs := (CapabilityAssertions{ForbidEffect: []RootEffect{{"Reader", "workspace.wirte"}}}).Evaluate(g); len(vs) != 1 {
+		t.Fatalf("a typo'd forbidEffect must fail loud, got %+v", vs)
+	}
+	if vs := (CapabilityAssertions{ExpectAutonomous: []RootEffect{{"Reader", "workspace.nope"}}}).Evaluate(g); len(vs) != 1 {
+		t.Fatalf("a typo'd expectAutonomous must fail loud, got %+v", vs)
+	}
+}
+
+// TestCapabilityAssertions_Hierarchical: a forbid on a namespace parent catches a reachable child,
+// and a forbid on a leaf catches a reachable broad-grant parent (EffectCovers, like permit).
+func TestCapabilityAssertions_Hierarchical(t *testing.T) {
+	writer := map[string]*spec.AgentResource{
+		"Writer": {Metadata: spec.Metadata{Name: "Writer"}, Spec: spec.AgentSpec{Tools: []string{"tool.ws.write_file"}}},
+	}
+	if vs := (CapabilityAssertions{ForbidEffect: []RootEffect{{"Writer", "workspace"}}}).Evaluate(graph(wsTools(), writer, nil)); len(vs) != 1 {
+		t.Fatalf("forbid on parent %q must match reachable child, got %+v", "workspace", vs)
+	}
+
+	// A tool op declaring the parent effect; forbid on the documented leaf must still catch it.
+	broad := map[string]*spec.ToolResource{
+		"ws": {Metadata: spec.Metadata{Name: "ws"}, Spec: spec.ToolSpec{Type: "native", Operations: map[string]spec.ToolOperation{
+			"do": {Effects: []string{"workspace"}},
+		}}},
+	}
+	writerBroad := map[string]*spec.AgentResource{
+		"Writer": {Metadata: spec.Metadata{Name: "Writer"}, Spec: spec.AgentSpec{Tools: []string{"tool.ws.do"}}},
+	}
+	if vs := (CapabilityAssertions{ForbidEffect: []RootEffect{{"Writer", "workspace.write"}}}).Evaluate(graph(broad, writerBroad, nil)); len(vs) != 1 {
+		t.Fatalf("forbid on leaf must match a reachable broad-grant parent, got %+v", vs)
+	}
+}
+
 func TestCapabilityAssertions_Gated(t *testing.T) {
 	tools := map[string]*spec.ToolResource{
 		"gh": {
