@@ -27,12 +27,16 @@ var operationCatalog = map[string][]string{
 	"pull_request.post_comment": {
 		"body", "owner", "repo", "number", "comment_id", "comment_strategy",
 	},
-	"pull_request.get":  {"owner", "repo", "number"},
-	"pull_request.diff": {"owner", "repo", "number"},
-	"check_runs.list":   {"owner", "repo", "ref"},
-	"read_file":         {"path"},
-	"write_file":        {"path", "content"},
-	"run_tests":         {}, // command comes from TERFYN_WORKSPACE_TEST_COMMAND, not tool args
+	"pull_request.get":           {"owner", "repo", "number"},
+	"pull_request.diff":          {"owner", "repo", "number"},
+	"pull_request.create_review": {"owner", "repo", "number", "event", "body"},
+	"check_runs.list":            {"owner", "repo", "ref"},
+	"issues.create":              {"owner", "repo", "title", "body"},
+	"issues.comment":             {"owner", "repo", "number", "body"},
+	"commit_status.create":       {"owner", "repo", "sha", "state", "context", "description", "target_url"},
+	"read_file":                  {"path"},
+	"write_file":                 {"path", "content"},
+	"run_tests":                  {}, // command comes from TERFYN_WORKSPACE_TEST_COMMAND, not tool args
 }
 
 // OperationKnown reports whether operation is implemented by [Registry.Dispatch].

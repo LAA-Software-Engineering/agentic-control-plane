@@ -14,16 +14,33 @@ type dispatchHandler func(ctx context.Context, with map[string]any, start time.T
 // dispatchHandlers is the single source of truth for non-shell operations handled by [Registry.Dispatch].
 // When adding an operation, register it here and in operationCatalog (see operations.go).
 var dispatchHandlers = map[string]dispatchHandler{
-	"check_runs.list":           dispatchCheckRunsList,
-	"echo":                      dispatchEcho,
-	"identity":                  dispatchIdentity,
-	"pull_request.diff":         dispatchPullRequestDiff,
-	"pull_request.fetch":        dispatchPullRequestFetch,
-	"pull_request.get":          dispatchPullRequestGet,
-	"pull_request.post_comment": dispatchPullRequestPostComment,
-	"read_file":                 dispatchWorkspaceReadFile,
-	"write_file":                dispatchWorkspaceWriteFile,
-	"run_tests":                 dispatchWorkspaceRunTests,
+	"check_runs.list":            dispatchCheckRunsList,
+	"commit_status.create":       dispatchGitHubJSON(githubCommitStatusCreate),
+	"echo":                       dispatchEcho,
+	"identity":                   dispatchIdentity,
+	"issues.comment":             dispatchGitHubJSON(githubIssuesComment),
+	"issues.create":              dispatchGitHubJSON(githubIssuesCreate),
+	"pull_request.create_review": dispatchGitHubJSON(githubPullRequestCreateReview),
+	"pull_request.diff":          dispatchPullRequestDiff,
+	"pull_request.fetch":         dispatchPullRequestFetch,
+	"pull_request.get":           dispatchPullRequestGet,
+	"pull_request.post_comment":  dispatchPullRequestPostComment,
+	"read_file":                  dispatchWorkspaceReadFile,
+	"write_file":                 dispatchWorkspaceWriteFile,
+	"run_tests":                  dispatchWorkspaceRunTests,
+}
+
+// dispatchGitHubJSON adapts a (ctx, with) GitHub write op to the dispatchHandler shape, attaching
+// timing metadata. The read ops keep bespoke wrappers; these share one.
+func dispatchGitHubJSON(fn func(context.Context, map[string]any) (map[string]any, error)) dispatchHandler {
+	return func(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
+		out, err := fn(ctx, with)
+		meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
+		if err != nil {
+			return nil, meta, err
+		}
+		return out, meta, nil
+	}
 }
 
 func dispatchEcho(_ context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
