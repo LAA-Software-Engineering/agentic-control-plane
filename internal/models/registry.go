@@ -65,6 +65,24 @@ func (r *Registry) ClientFor(modelRef string) (client ModelClient, modelID strin
 			return nil, "", err
 		}
 		return cl, id, nil
+	case "grok":
+		cl, err := NewGrokClientFromConfig(cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		return cl, id, nil
+	case "gemini":
+		cl, err := NewGeminiClientFromConfig(cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		return cl, id, nil
+	case "kimi":
+		cl, err := NewKimiClientFromConfig(cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		return cl, id, nil
 	default:
 		return nil, "", fmt.Errorf("models: unsupported provider type %q for namespace %q", cfg.Type, ns)
 	}

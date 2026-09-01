@@ -34,6 +34,13 @@
 // (issue #157). It clears [GenerateResponse.ToolCalls] unless [GenerateResponse.StopReason] is
 // [StopReasonToolUse] (for example `length` or `content_filter`).
 //
+// xAI Grok, Google Gemini, and Moonshot Kimi expose OpenAI-compatible Chat
+// Completions endpoints, so they reuse [OpenAIClient] with only the base URL and
+// pricing table changed — see [NewGrokClientFromConfig] (provider type "grok"),
+// [NewGeminiClientFromConfig] ("gemini"), and [NewKimiClientFromConfig] ("kimi").
+// [OpenAIClient.CostProvider] selects the pricing table so CostUSD is estimated
+// from that provider's rows in tokenUSDPerMillion; unknown model ids stay at 0.
+//
 // The Anthropic adapter maps the same contract to Messages API `tools` / `tool_use` / `tool_result`
 // (issue #158). `ToolChoiceRequired` becomes `tool_choice.type=any`. Follow-up `ToolResults` are
 // user `tool_result` blocks (Anthropic has no `role: "tool"` and requires user/assistant

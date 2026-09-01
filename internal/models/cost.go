@@ -10,6 +10,9 @@ type tokenRates struct {
 const (
 	costProviderOpenAI    = "openai"
 	costProviderAnthropic = "anthropic"
+	costProviderGrok      = "grok"
+	costProviderGemini    = "gemini"
+	costProviderKimi      = "kimi"
 )
 
 // tokenUSDPerMillion is approximate standard-tier input/output pricing keyed by provider then
@@ -21,6 +24,9 @@ const (
 //
 // OpenAI: https://openai.com/api/pricing/
 // Anthropic: https://platform.claude.com/docs/en/about-claude/pricing
+// xAI (Grok): https://docs.x.ai/docs/models
+// Google (Gemini): https://ai.google.dev/gemini-api/docs/pricing
+// Moonshot (Kimi): https://platform.moonshot.ai/docs/pricing
 var tokenUSDPerMillion = map[string]map[string]tokenRates{
 	costProviderOpenAI: {
 		"gpt-4o-mini": {0.15, 0.60},
@@ -29,6 +35,18 @@ var tokenUSDPerMillion = map[string]map[string]tokenRates{
 	costProviderAnthropic: {
 		"claude-sonnet-4":  {3.00, 15.00},
 		"claude-haiku-4-5": {1.00, 5.00},
+	},
+	costProviderGrok: {
+		"grok-4":      {3.00, 15.00},
+		"grok-4-fast": {0.20, 0.50},
+	},
+	costProviderGemini: {
+		// Gemini 2.5 Pro is tiered by prompt size; these are the ≤200K-token rates.
+		"gemini-2.5-pro":   {1.25, 10.00},
+		"gemini-2.5-flash": {0.30, 2.50},
+	},
+	costProviderKimi: {
+		"kimi-k2": {0.60, 2.50},
 	},
 }
 

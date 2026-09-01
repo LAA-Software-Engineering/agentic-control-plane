@@ -16,10 +16,19 @@ const defaultOpenAIBase = "https://api.openai.com/v1"
 
 // OpenAIClient is an OpenAI-compatible Chat Completions client (design doc §12.2 F).
 // It maps the provider-neutral tool contract to `tools` / `tool_calls` / `role: "tool"` (issue #157).
+//
+// The same client backs other providers that expose an OpenAI-compatible
+// `/chat/completions` surface — xAI Grok, Google Gemini, and Moonshot Kimi —
+// by pointing BaseURL at their endpoint and setting CostProvider so cost
+// estimation uses that provider's price table (see [NewGrokClientFromConfig],
+// [NewGeminiClientFromConfig], [NewKimiClientFromConfig]).
 type OpenAIClient struct {
 	APIKey     string
 	BaseURL    string
 	HTTPClient *http.Client
+	// CostProvider selects the pricing table used to estimate CostUSD.
+	// Empty means the OpenAI table (costProviderOpenAI).
+	CostProvider string
 }
 
 // NewOpenAIClientFromConfig builds a client using apiKeyFrom (e.g. env:OPENAI_API_KEY) from project YAML.
@@ -43,6 +52,16 @@ func (c *OpenAIClient) http() *http.Client {
 		return c.HTTPClient
 	}
 	return http.DefaultClient
+}
+
+// costProvider returns the pricing table key for cost estimation.
+func (c *OpenAIClient) costProvider() string {
+	if c != nil {
+		if p := strings.TrimSpace(c.CostProvider); p != "" {
+			return p
+		}
+	}
+	return costProviderOpenAI
 }
 
 // Generate calls POST /v1/chat/completions on the configured base URL.
@@ -78,7 +97,7 @@ func (c *OpenAIClient) Generate(ctx context.Context, req GenerateRequest) (Gener
 	if err != nil {
 		return GenerateResponse{}, err
 	}
-	cost := estimateOpenAIChatCostUSD(req.Model, pt, ct)
+	cost := estimateTokenCostUSD(c.costProvider(), req.Model, pt, ct)
 	return GenerateResponse{
 		Content:    content,
 		ToolCalls:  calls,
