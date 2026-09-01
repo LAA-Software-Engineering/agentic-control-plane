@@ -6,9 +6,73 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-yellow.svg)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/terfyn.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/terfyn)
 
-**A statically analyzable, capability-oriented execution platform for nondeterministic programs.** Review the **authority granted** to agents as a plan diff — before they run.
+**Terfyn runs LLM agents behind a capability boundary you can review as a diff — before they run.**
 
-Terfyn bounds and diffs that grant. It does **not** verify what remote systems do with it.
+You declare each agent, its tools, its budget, and its approval gates as versioned resources.
+`terfyn plan` shows exactly what an agent would be *allowed to do* — like `terraform plan`, but for
+the authority of an autonomous agent. Then `terfyn apply` deploys it, `terfyn run` executes the
+workflow locally (pausing for human approval where policy requires), and every run leaves a
+tamper-evident trace.
+
+The model may behave nondeterministically — but *what it can do* is statically bounded, reviewable
+before deployment, and enforced at run time. **The capability grant is the boundary, not the prompt.**
+
+## Quickstart
+
+No API keys needed — `init` scaffolds a mock model and a local `echo` tool, so this runs fully offline.
+
+```bash
+# build from source (Go 1.22+), or download a release binary (see Install and project setup below)
+git clone https://github.com/LAA-Software-Engineering/terfyn.git && cd terfyn && make build
+export PATH="$PWD/bin:$PATH"
+
+terfyn init my-agent-system                       # scaffold main.agent + project.yaml
+terfyn validate --project my-agent-system         # types, schemas, references, policy lint
+terfyn plan     --project my-agent-system         # what changes + what authority agents gain
+terfyn apply    --project my-agent-system --auto-approve
+terfyn run      workflow/hello --project my-agent-system
+terfyn logs     --project my-agent-system --workflow hello   # the trace it recorded
+```
+
+## A one-minute example
+
+An agent is a prompt **plus a capability grant**. This reviewer may read files and run tests — but
+it holds no write grant, so it **cannot** write, no matter what its prompt says:
+
+```agent
+agent reviewer {
+    model openai/gpt-5
+    instructions "Review the pull request. You may read files and run tests."
+    grants {
+        tool.workspace.read_file
+        tool.workspace.run_tests
+    }
+}
+```
+
+Now suppose someone adds `tool.workspace.write_file` to that block. `terfyn plan` doesn't just show a
+changed line — it flags that the agent's **autonomous authority widened**, as a high-severity item a
+human reviews *before* `apply`:
+
+```text
+Capability delta:
+Agent/reviewer
++ tool.workspace.write_file
+
+Authority:
+  autonomous  -> WIDENED
+
+Risk delta:
+high:
+- [high] authority_widening: AUTONOMOUS authority WIDENED.
+```
+
+At run time the boundary is enforced, not advisory: a `reviewer` that tries to call `write_file`
+anyway is **denied by capability** — the prompt was never the control.
+
+▶ **Run this end to end:** [`examples/implement-review-loop`](examples/implement-review-loop/README.md)
+— an Implementer and an independent Reviewer loop over a coding task (bounded to 3 rounds), with the
+exact write-boundary and plan authority-diff above, fully offline with the mock model.
 
 ## Architecture
 
@@ -73,11 +137,14 @@ Authority:
 
 Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Workflows run end-to-end, **including conditionals, loops, and dynamic fan-out** ([#199](https://github.com/LAA-Software-Engineering/terfyn/issues/199)/[#259](https://github.com/LAA-Software-Engineering/terfyn/issues/259)): a control-flow workflow lowers to the execution IR, is pinned into the deployment snapshot, and runs on the `execir` interpreter (see `examples/agent-control-flow`). YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the existing fixtures work), and `terfyn export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
 
-## Flagship: incident triage
+## Examples
 
-**Start here:** [`examples/incident-triage`](examples/incident-triage) — an offline agent that can page, read logs, and file a ticket, but **cannot restart a service** unless policy `approvals.requiredFor` includes `tool.restart.restart` and that uses string is **pre-approved** with `--approve tool.restart.restart`. Inner agent-loop tools do not HITL; unapproved `terfyn run` fail-closes with **exit 5** (`approval_required`). With `--approve` it completes and `audit verify` passes.
+All run offline with the mock model (no API keys) unless noted.
 
-**Bounded multi-agent control:** [`examples/implement-review-loop`](examples/implement-review-loop/README.md) — an Implementer and an independent Reviewer pass a structured `CodingState` through a bounded `while … limit 3`. Authored in [`.agent`](docs/LANGUAGE.md) (prompts, typed I/O, and capability grants), it shows *deterministic bounded control around nondeterministic agents*: the Reviewer holds `read_file` + `run_tests` but **not** `write_file`, so a Reviewer that tries to write is denied by capability, not by its prompt — and `terfyn plan` surfaces granting it write as an **`AUTONOMOUS authority WIDENED`** risk before deployment.
+- **[`examples/implement-review-loop`](examples/implement-review-loop/README.md)** — *deterministic bounded control around nondeterministic agents.* An Implementer and an independent Reviewer pass a structured `CodingState` through a bounded `while … limit 3`; the Reviewer holds `read_file` + `run_tests` but **not** `write_file`, so a write attempt is denied by capability, and `terfyn plan` flags granting it write as `AUTONOMOUS authority WIDENED` (the one-minute example above, made runnable).
+- **[`examples/incident-triage`](examples/incident-triage)** — an agent that can page, read logs, and file a ticket, but **cannot restart a service** unless policy `approvals.requiredFor` includes `tool.restart.restart` and it is **pre-approved** with `--approve tool.restart.restart`. Unapproved, `terfyn run` fail-closes with **exit 5**; with `--approve` it completes and `audit verify` passes.
+- **[`examples/hitl-resume`](examples/hitl-resume/README.md)** — a run that **pauses** at a gated tool (status `interrupted`, exit 0) and resumes with `--resume <id> --decision approve`.
+- **[`examples/audit-tamper`](examples/audit-tamper/README.md)** — a tamper-evident trace: `audit verify` passes on a clean run, then **fails (exit 1)** after a planted row edit.
 
 Other walkthroughs: policy-blocked PR review in [`examples/pr-review-demo`](examples/pr-review-demo/README.md) (no API keys); live GitHub read/write with a **mock** reviewer in [`examples/pr-review-github`](examples/pr-review-github/README.md); the same flow with OpenAI `gpt-4o-mini` plus GitHub Actions in [`examples/pr-review-github-actions`](examples/pr-review-github-actions/README.md) ([PR workflow](.github/workflows/terfyn-pr-review.yml); optional manual [`owner`/`repo`/`number`](.github/workflows/terfyn-pr-review-publish.yml)).
 
@@ -144,7 +211,10 @@ See **section 18 (MVP)** and **section 19 (End Goal)** in [`docs/DESIGN_DOC.md`]
 
 ---
 
-## Quick start
+## Install and project setup
+
+The [Quickstart](#quickstart) above is the fast path; this section covers install options and how a
+project is authored.
 
 ### Prerequisites
 
