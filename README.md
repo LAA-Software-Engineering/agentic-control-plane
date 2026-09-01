@@ -22,9 +22,9 @@ before deployment, and enforced at run time. **The capability grant is the bound
 No API keys needed — `init` scaffolds a mock model and a local `echo` tool, so this runs fully offline.
 
 ```bash
-# build from source (Go 1.22+), or download a release binary (see Install and project setup below)
-git clone https://github.com/LAA-Software-Engineering/terfyn.git && cd terfyn && make build
-export PATH="$PWD/bin:$PATH"
+# install the CLI (Go 1.22+) — puts `terfyn` on your PATH via $GOBIN / $GOPATH/bin
+go install github.com/LAA-Software-Engineering/terfyn/cmd/terfyn@latest
+# (no Go toolchain? grab a release binary instead — see Install and project setup below)
 
 terfyn init my-agent-system                       # scaffold main.agent + project.yaml
 terfyn validate --project my-agent-system         # types, schemas, references, policy lint
@@ -216,20 +216,23 @@ See **section 18 (MVP)** and **section 19 (End Goal)** in [`docs/DESIGN_DOC.md`]
 The [Quickstart](#quickstart) above is the fast path; this section covers install options and how a
 project is authored.
 
-### Prerequisites
+### Install
 
-- **From source:** [Go 1.22+](https://go.dev/dl/)
-- **From a [release binary](#prebuilt-binaries):** no Go toolchain; put `terfyn` (or `terfyn.exe`) on your `PATH` after extracting the archive
+**Recommended — `go install`** ([Go 1.22+](https://go.dev/dl/)) puts `terfyn` on your `PATH` (in `$GOBIN`, or `$GOPATH/bin` — ensure that directory is on `PATH`):
 
-### Build
+```bash
+go install github.com/LAA-Software-Engineering/terfyn/cmd/terfyn@latest
+```
+
+**No Go toolchain?** Download a [release binary](#prebuilt-binaries) and put `terfyn` (or `terfyn.exe`) on your `PATH`.
+
+**From a clone** (for development): `make build` writes `bin/terfyn`; `make install` runs `go install ./cmd/terfyn` (`-trimpath`).
 
 ```bash
 git clone https://github.com/LAA-Software-Engineering/terfyn.git
 cd terfyn
 make build   # writes bin/terfyn
 ```
-
-Or: `make install` / `go install ./cmd/terfyn` (honours `GOBIN` / `GOPATH/bin`; ensure that directory is on `PATH`).
 
 ### Prebuilt binaries
 
