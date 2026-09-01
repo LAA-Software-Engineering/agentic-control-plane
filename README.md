@@ -186,7 +186,7 @@ Terfyn is the **declarative governance/config layer** for agent systems — not 
 | Desired-state plan / apply | Yes (`terfyn plan` / `apply` vs SQLite) | No | No | No | Yes |
 | Plan-time effect bound | **Shipped** ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189) / [#190](https://github.com/LAA-Software-Engineering/terfyn/issues/190) / [#191](https://github.com/LAA-Software-Engineering/terfyn/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `terfyn plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
 
-The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204)) is **enforced** at dispatch: an operation outside a tool's deployed capability manifest is denied on the policy path, so a live MCP `tools/list` can no longer expand the callable world (discovery merges only `spec.safety`, never the operation set). The remaining scoped item is the *run-pinned* manifest at resume — a resumed run enforcing the manifest it started with. `terfyn plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
+The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204)) is **enforced** at dispatch: an operation outside a tool's deployed capability manifest is denied on the policy path, so a live MCP `tools/list` can no longer expand the callable world (discovery merges only `spec.safety`, never the operation set). A resumed run enforces the manifest it started with — hydrated from its deployment snapshot ([#207](https://github.com/LAA-Software-Engineering/terfyn/issues/207)) — so a widening apply between suspend and resume does not widen the resumed run's authority. `terfyn plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
 
 ---
 
@@ -421,13 +421,12 @@ GO_UPDATE_GOLDEN=1 go test ./internal/cli/... -run TestGolden_
 - **Parallel branches, subworkflows, and workflow-level approval steps** ([#192](https://github.com/LAA-Software-Engineering/terfyn/issues/192) / [#194](https://github.com/LAA-Software-Engineering/terfyn/issues/194) / [#195](https://github.com/LAA-Software-Engineering/terfyn/issues/195)), durable across checkpoint/resume including concurrent per-branch HITL suspend ([#258](https://github.com/LAA-Software-Engineering/terfyn/issues/258) / [#270](https://github.com/LAA-Software-Engineering/terfyn/issues/270)).
 - **`terfyn test`** fixture runner ([#176](https://github.com/LAA-Software-Engineering/terfyn/issues/176); see [`docs/TESTING.md`](docs/TESTING.md) and [`examples/regression-test`](examples/regression-test)).
 - **Author real agents in `.agent`** — first-class `instructions` / `description` / `constraints`, bounded state-carrying `while`, argument `${...}` templates, and a flagship implement/review loop ([#285](https://github.com/LAA-Software-Engineering/terfyn/issues/285), epic complete).
-- **Manifest pin enforcement** so the effect bound has a closed world ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) / [#207](https://github.com/LAA-Software-Engineering/terfyn/issues/207)): an operation outside a tool's deployed capability manifest is denied at dispatch, so a live MCP `tools/list` can no longer expand the callable set.
+- **Manifest pin enforcement** so the effect bound has a closed world ([#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) / [#207](https://github.com/LAA-Software-Engineering/terfyn/issues/207)): an operation outside a tool's deployed capability manifest is denied at dispatch, so a live MCP `tools/list` can no longer expand the callable set — and a resumed run enforces the manifest it started with, hydrated from its deployment snapshot, rather than whatever is deployed at resume time.
 
 ### Near term
 
 - More **`diff` / drift** UX where the design doc calls for it (beyond today’s resource-level diff)  
 - Richer **`logs`** filtering (see sections **10.2** and **17.3** in `docs/DESIGN_DOC.md`); **`inspect --web`** covers read-only run/state browsing ([#109](https://github.com/LAA-Software-Engineering/terfyn/issues/109))  
-- **Run-pinned capability manifest at resume** — a resumed run enforcing the manifest it started with, rather than whatever is deployed at resume time (the remaining scoped item under the [#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) closed world)  
 
 ### Post-MVP (from design doc section 19)
 
