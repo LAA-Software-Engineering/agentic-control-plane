@@ -62,7 +62,44 @@ graph. Nothing existing breaks; this is purely a new front-end path onto the **s
 agent/workflow surface. Diagnostics point at `main.agent:12:5` via the `spec.Pos` fields ADR 003 §3
 already threaded through the IR.
 
-### 3. Grammar covers the common surface; uncommon config stays in YAML
+**"Identical" means every presence-sensitive bit, not just the populated fields.** Some IR semantics
+are carried by the *presence* of a source key, not its value, and lowering MUST preserve them — this
+is a soundness requirement, not a nicety. The load-bearing case is the closed-world capability
+manifest (#204): `ToolSpec.OperationsDeclared` is set from the presence of the YAML `operations` key,
+**including an empty `operations: {}`**, and it distinguishes a *closed* manifest (deny every
+operation) from an *omitted* one (open, backward-compatible). It participates in resource identity,
+survives export/reload, and gates runtime enforcement (the custom YAML marshal exists precisely so
+this bit is never lost). Therefore:
+
+```agent
+tool foo {
+    type native
+    operations {}       // MUST lower with OperationsDeclared = true — a closed, deny-all manifest
+}
+```
+
+An `.agent` tool with an explicit (even empty) `operations {}` block lowers with
+`OperationsDeclared = true`, exactly as the YAML `operations:` key does; a tool that omits the block
+leaves it false (open). This equivalence is a **required golden/equivalence test**: for each such
+presence-sensitive field, a `.agent` declaration and its YAML twin must produce byte-identical
+`NormalizedSpecJSON`, so the two front ends can never diverge on a security boundary.
+
+### 3. Duplicate names are an error across every ingress — no precedence
+
+Mixing inline and imported resources (§1) raises the question the ADR must answer normatively: what
+happens when a `.agent` `tool github { … }` and an imported `tools/github.yaml` both declare
+`Tool/github`, or two `policy default { … }` collide? The answer is the one the language already
+enforces for agents and workflows: a duplicate `(kind, metadata.name)` across **any** ingress path —
+YAML↔YAML, `.agent`↔`.agent`, or YAML↔`.agent` — is a **load error**. Neither ingress has precedence;
+there is no "inline wins" and no "last import wins". Silent shadowing of a `Policy` would be a
+disastrous property — a hidden override of the safety surface — so it is forbidden outright.
+
+Concretely, `project.MergeLowered`'s atomic collision check (today over Agents/Workflows via the
+`DuplicateResource` error) extends to Tools and Policies, and the cross-ingress duplicate detection
+in `project` covers a lowered inline resource colliding with an imported YAML one. The collision is
+reported with both source positions so the operator sees exactly which two declarations clash.
+
+### 4. Grammar covers the common surface; uncommon config stays in YAML
 
 To avoid mirroring the entire `ToolSpec` / `PolicySpec` schema into grammar (the real risk), the
 blocks express the fields a hand-authored project actually uses:
@@ -70,17 +107,23 @@ blocks express the fields a hand-authored project actually uses:
 - **`tool`**: `type` (`native` | `mock` | `mcp` | `http`), `safety { trusted / sideEffects /
   requiresApproval }`, and the closed-world `operations { <op> { effects { … } [schema …] } }`
   manifest (#204). Transport config for `mcp` / `http` (command, url, headers) is included since a
-  real project needs it.
+  real project needs it. The native `workspace { root / testCommand }` config (issue #329) is also
+  in the common surface — the motivating `implement-review-loop` / `terfyn-maintainer` examples use
+  the workspace tool, so leaving it out would immediately push their central tool back to YAML.
 - **`policy`**: `preset`, `execution { maxTotalCostUsd / maxWallClockSeconds / … }`,
-  `approvals { requiredFor / requireAllTools / permissive }`, `effects { permit { … } }`, and
-  `hitl { … }`.
+  `approvals { requiredFor / requireAllTools / permissive }`, `hitl { … }`, and the **full** effect
+  permit model — both `permit { … }` and `permitWithApproval { … }`. The latter is not an exotic
+  knob: "this effect is allowed autonomously" versus "allowed only behind approval" is one of the
+  fundamental distinctions of a bounded-execution policy (it is already first-class in the IR,
+  normalization, and diagnostics), so an ordinary guarded policy must be expressible inline rather
+  than falling back to YAML.
 
 Anything outside this set — a bespoke `retry`, `security`, provider-specific knobs — is a signal to
 author that resource in YAML and import it. The escape hatch (§1) means the grammar never has to be
 exhaustive to be useful, and the surface can grow field-by-field as demand appears, each addition
 lowering to a field that already exists in the IR.
 
-### 4. Schemas stay files; inline schema literals are explicitly out of scope
+### 5. Schemas stay files; inline schema literals are explicitly out of scope
 
 Schemas are the one config artifact with **no envelope overhead** — a `schemas/State.json` is a bare
 JSON Schema, not an `apiVersion`/`kind`/`metadata` document. Inlining a full JSON Schema grammar into
@@ -99,17 +142,20 @@ Declaration   = AgentDecl | WorkflowDecl | ToolDecl | PolicyDecl ;
 ToolDecl      = "tool" Ident "{" { ToolField } "}" ;
 ToolField     = "type" Ident
               | "safety"     "{" { SafetyField } "}"
-              | "operations" "{" { OperationDecl } "}"
-              | "mcp"        "{" { McpField } "}"        (* when type mcp *)
-              | "http"       "{" { HttpField } "}" ;     (* when type http *)
+              | "operations" "{" { OperationDecl } "}"    (* an explicit (even empty) block ⇒ closed world *)
+              | "workspace"  "{" { WorkspaceField } "}"   (* native: root / testCommand, #329 *)
+              | "mcp"        "{" { McpField } "}"          (* when type mcp *)
+              | "http"       "{" { HttpField } "}" ;       (* when type http *)
 OperationDecl = Ident "{" [ "effects" "{" [ Effects ] "}" ] [ "schema" StringLiteral ] "}" ;
 SafetyField   = "trusted" Bool | "sideEffects" Bool | "requiresApproval" Bool ;
+WorkspaceField= "root" StringLiteral | "testCommand" StringLiteral ;
 
 PolicyDecl    = "policy" Ident "{" { PolicyField } "}" ;
 PolicyField   = "preset"    Ident
               | "execution" "{" { ExecField } "}"
               | "approvals" "{" { ApprovalField } "}"
-              | "effects"   "{" "permit" "{" [ Effects ] "}" "}"
+              | "effects"   "{" [ "permit"             "{" [ Effects ] "}" ]
+                                [ "permitWithApproval" "{" [ Effects ] "}" ] "}"
               | "hitl"      "{" { HitlField } "}" ;
 ```
 
@@ -140,7 +186,10 @@ tool workspace {
 
 policy coding-agent {
     execution { maxTotalCostUsd 5; maxWallClockSeconds 300 }
-    approvals { requiredFor { tool.workspace.run_tests } }
+    effects {
+        permit             { workspace.read }
+        permitWithApproval { workspace.write; process.exec }
+    }
 }
 
 agent Implementer {
@@ -161,9 +210,12 @@ workflow build(input: State) -> State { … }
   collapses toward `main.agent` + `project.yaml`. No new IR, no second validator, no drift check.
 - **Cost.** A new AST + lowering + printer + checker path for two declaration kinds (lexer needs two
   contextual keywords). Bounded because they lower to existing resources and the grammar is scoped
-  (§3). Golden/`fmt` round-trips grow by the new blocks.
+  (§4). Golden/`fmt` round-trips grow by the new blocks. Two invariants are required implementation
+  work, not optional: the presence-preservation equivalence test (§2, `OperationsDeclared` and any
+  other source-presence bit) and extending `MergeLowered`'s atomic collision check to Tools/Policies
+  (§3).
 - **Risk — grammar creep.** Every `ToolSpec`/`PolicySpec` field is a candidate for grammar. Mitigation:
-  §3's "common surface + YAML escape hatch" rule and §4's schema exclusion; add fields only on
+  §4's "common surface + YAML escape hatch" rule and §5's schema exclusion; add fields only on
   demonstrated demand.
 - **Neutral.** `project.yaml` (providers, defaults, imports) is unchanged; inlining *it* into
   `.agent` is a separate future question, not part of this ADR.
