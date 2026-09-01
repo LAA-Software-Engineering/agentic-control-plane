@@ -39,6 +39,32 @@ cases:
 - **`expect.output`**: for successful runs, each string in **`outputContains`** must appear as a substring in the **JSON-serialized workflow output** (`run.output` in SQLite).
 - **`expectError: true`**: the run must **not** succeed (any failure: validation, policy, step error, etc.).
 
+## Capability-assertion suites (issue #332)
+
+A `tests/` file with a top-level **`assert:`** block (instead of `workflow:`) is a **capability-assertion suite**: declarative, model-free invariants over the **effect bound** — the same bound `terfyn plan` prints. They are checked **statically** (no model, no run), so a project's core security guarantees ("the Reviewer can never reach `workspace.write`", "these publish ops are always gated") live next to the agents they constrain and fail `terfyn test` in CI when they drift. This is the guarantee `expect.outputContains` cannot make: driving an agent tool-loop needs a real model, so the "Reviewer can't write" property must be asserted over the plan, not at runtime.
+
+```yaml
+name: capability-invariants        # optional; defaults to "capability-assertions"
+
+assert:
+  forbidEffect:
+    # <root> (an agent or workflow metadata name) must NOT be able to reach <effect>.
+    - {agent: Reviewer, effect: workspace.write}
+  expectAutonomous:
+    # <root> must reach <effect> via an autonomous (agent tool-selection) path.
+    - {agent: Implementer, effect: workspace.write}
+  expectGated:
+    # each tool.<name>.<op> must require approval from every root that can reach it.
+    - tool.git.push_branch
+    - tool.github.pull_request.post_comment
+```
+
+- The root may be written as **`root:`**, **`agent:`**, or **`workflow:`** (aliases).
+- **`forbidEffect`** fails if the effect is reachable at all; it names the witnessing `uses`.
+- **`expectAutonomous`** fails if the effect is unreachable **or** only reachable via a static `uses:` step (not an autonomous grant).
+- **`expectGated`** fails if the op is unreachable, or if any reaching root's policy does not require approval for it (fail-closed tool `safety` counts as gated; a `trusted` tool does not).
+- Each assertion is an individual pass/fail row; any violation fails `terfyn test` (exit **1**). A workflow filter (`terfyn test workflow/x`) skips assertion suites — they are project-wide, not workflow-scoped.
+
 ## Execution model
 
 - Same pipeline as **`terfyn run`**: load project, **defaults**, **`-e` / `--env`** overlays, validate graph, then execute each case.

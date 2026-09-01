@@ -158,9 +158,28 @@ func LoadAndRunAll(ctx context.Context, projectRoot string, opts RunOptions, wor
 	wfFilter := strings.TrimSpace(workflowFilter)
 	executed := 0
 	for _, p := range paths {
-		suite, err := ParseSuiteFile(p)
+		data, err := os.ReadFile(p)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		// A capability-assertion suite is evaluated statically over the effect bound (issue #332):
+		// it is project-wide, not workflow-scoped, so a workflow filter skips it.
+		if isAssertSuiteBytes(data) {
+			if wfFilter != "" {
+				continue
+			}
+			as, perr := ParseAssertSuiteBytes(data)
+			if perr != nil {
+				return nil, fmt.Errorf("%s: %w", p, perr)
+			}
+			res := RunAssertSuite(root, opts, p, as)
+			executed += len(res)
+			outcomes = append(outcomes, res...)
+			continue
+		}
+		suite, perr := ParseSuiteBytes(data)
+		if perr != nil {
+			return nil, fmt.Errorf("%s: %w", p, perr)
 		}
 		if wfFilter != "" && suite.Workflow != wfFilter {
 			continue
