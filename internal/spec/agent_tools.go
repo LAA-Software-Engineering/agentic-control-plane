@@ -16,9 +16,20 @@ type AdvertisedAgentTool struct {
 	Uses string
 }
 
-// ResolveAgentAdvertisedTools maps agent.spec.tools onto one uses string per Tool name.
-// Entries may be a Tool metadata name or a pinned uses string tool.<name>.<operation>.
-// Native names advertise echo; mock/mcp advertise default; HTTP requires a method.path pin.
+// ResolveAgentAdvertisedTools maps agent.spec.tools onto the operations advertised
+// to an agent loop. Entries may be a Tool metadata name or a pinned uses string
+// tool.<name>.<operation>. Native names advertise echo; mock/mcp advertise default;
+// HTTP requires a method.path pin.
+//
+// A single autonomous Tool grant may expose MULTIPLE operations (issue #291): an
+// agent may list tool.workspace.read_file, tool.workspace.write_file, and
+// tool.workspace.run_tests on the one `workspace` tool. Each distinct operation
+// becomes its own advertised tool-def with its own uses, so the model can address
+// them separately and each is gated independently — the capability boundary is per
+// operation, not per tool. To stay backward compatible, a tool with a SINGLE
+// granted operation keeps the bare tool name as its tool-def name (`workspace`); a
+// tool with SEVERAL is disambiguated as `<name>.<operation>`
+// (`workspace.read_file`). An exact-duplicate operation listed twice is idempotent.
 func ResolveAgentAdvertisedTools(agent *AgentResource, tools map[string]*ToolResource) ([]AdvertisedAgentTool, error) {
 	if agent == nil || len(agent.Spec.Tools) == 0 {
 		return nil, nil
@@ -27,8 +38,13 @@ func ResolveAgentAdvertisedTools(agent *AgentResource, tools map[string]*ToolRes
 	if tools == nil {
 		return nil, agent.Pos.Errorf("Agent/%s: declares tools but the project graph has none", agentName)
 	}
-	var out []AdvertisedAgentTool
-	usesByName := make(map[string]string, len(agent.Spec.Tools))
+	type resolvedEntry struct {
+		toolName string
+		uses     string
+	}
+	var entries []resolvedEntry
+	seenUses := make(map[string]struct{}, len(agent.Spec.Tools))
+	opsPerTool := make(map[string]int)
 	for i, raw := range agent.Spec.Tools {
 		entry := strings.TrimSpace(raw)
 		if entry == "" {
@@ -55,14 +71,20 @@ func ResolveAgentAdvertisedTools(agent *AgentResource, tools map[string]*ToolRes
 		} else if err := validatePinnedAgentUses(name, uses, tr); err != nil {
 			return nil, pos.Errorf("Agent/%s: %w", agentName, err)
 		}
-		if prev, dup := usesByName[name]; dup {
-			if prev == uses {
-				continue
-			}
-			return nil, pos.Errorf("Agent/%s: declares tool %q twice with different operations (%s vs %s)", agentName, name, prev, uses)
+		if _, dup := seenUses[uses]; dup {
+			continue // the same operation listed twice is idempotent
 		}
-		usesByName[name] = uses
-		out = append(out, AdvertisedAgentTool{Name: name, Uses: uses})
+		seenUses[uses] = struct{}{}
+		entries = append(entries, resolvedEntry{toolName: name, uses: uses})
+		opsPerTool[name]++
+	}
+	out := make([]AdvertisedAgentTool, 0, len(entries))
+	for _, e := range entries {
+		defName := e.toolName
+		if opsPerTool[e.toolName] > 1 {
+			defName = e.toolName + "." + operationFromUses(e.toolName, e.uses)
+		}
+		out = append(out, AdvertisedAgentTool{Name: defName, Uses: e.uses})
 	}
 	return out, nil
 }

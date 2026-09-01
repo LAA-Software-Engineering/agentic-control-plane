@@ -191,14 +191,10 @@ func (l *lowerer) agent(d *lang.AgentDecl) *spec.AgentResource {
 	}
 	// grants -> AgentSpec.Tools: an autonomous capability bound, not a call list
 	// (ADR 002). Each grant reconstructs the tool.<name>.<operation> uses string.
-	//
-	// NOTE (Epic F gap): grants may bind several operations on ONE tool
-	// (tool.github.read_pr + tool.github.read_comments). AgentSpec.Tools as
-	// consumed by the #160 agent loop (ResolveAgentAdvertisedTools) currently
-	// permits only one operation per tool, so the ADR 002 fixture does not yet
-	// pass full agent-spec validation. Lowering preserves every grant faithfully;
-	// lifting the one-operation-per-tool limit is #188/#204, not #197. See
-	// TestLower_MultiOperationGrantIsKnownGap.
+	// A grant may bind several operations on ONE tool (tool.github.read_pr +
+	// tool.github.read_comments, or the implement-review workspace read_file +
+	// write_file + run_tests); ResolveAgentAdvertisedTools advertises each operation
+	// as its own tool-def, gated independently (#291).
 	for _, g := range d.Grants {
 		uses := grantUses(g)
 		if uses == "" {

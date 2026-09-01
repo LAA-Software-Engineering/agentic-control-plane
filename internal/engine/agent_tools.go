@@ -28,7 +28,14 @@ func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []model
 	for _, item := range advertised {
 		usesByName[item.Name] = item.Uses
 		desc := "Project tool " + item.Name
-		if tr := e.Graph.Tools[item.Name]; tr != nil {
+		// The tool-def name may be a per-operation handle (`workspace.read_file`,
+		// #291), so resolve the backing Tool by the name parsed from the uses string
+		// rather than by the tool-def name, to keep the type in the description.
+		toolName := item.Name
+		if tn, _, err := tools.ParseUses(item.Uses); err == nil {
+			toolName = tn
+		}
+		if tr := e.Graph.Tools[toolName]; tr != nil {
 			if typ := strings.TrimSpace(tr.Spec.Type); typ != "" {
 				desc = "Project tool " + item.Name + " (" + typ + ")"
 			}
