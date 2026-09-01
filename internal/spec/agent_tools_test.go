@@ -93,6 +93,30 @@ func TestResolveAgentAdvertisedTools(t *testing.T) {
 	}
 }
 
+// TestResolveAgentAdvertisedTools_HandleCollisionIsLoud proves the per-operation
+// handle namespace fails closed (#291 review): when a multi-op grant's
+// `<tool>.<operation>` handle would collide with a bare grant of a dotted tool
+// name, resolution errors loudly instead of silently dropping a granted capability
+// via the engine's last-write-wins usesByName map.
+func TestResolveAgentAdvertisedTools_HandleCollisionIsLoud(t *testing.T) {
+	t.Parallel()
+	tools := map[string]*ToolResource{
+		"workspace":           {Metadata: Metadata{Name: "workspace"}, Spec: ToolSpec{Type: "mock"}},
+		"workspace.read_file": {Metadata: Metadata{Name: "workspace.read_file"}, Spec: ToolSpec{Type: "mock"}},
+	}
+	// Multi-op grant on `workspace` mints handle "workspace.read_file"; the bare
+	// grant of the dotted tool `workspace.read_file` mints the same handle.
+	_, err := ResolveAgentAdvertisedTools(&AgentResource{
+		Metadata: Metadata{Name: "impl"},
+		Spec: AgentSpec{Tools: []string{
+			"tool.workspace.read_file", "tool.workspace.write_file", "workspace.read_file",
+		}},
+	}, tools)
+	if err == nil || !strings.Contains(err.Error(), "same tool handle") {
+		t.Fatalf("expected a loud handle-collision error, got %v", err)
+	}
+}
+
 func TestHTTPOperationIsMethodPath(t *testing.T) {
 	t.Parallel()
 	if httpOperationIsMethodPath("default") || httpOperationIsMethodPath("users") || httpOperationIsMethodPath("") {

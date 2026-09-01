@@ -79,11 +79,24 @@ func ResolveAgentAdvertisedTools(agent *AgentResource, tools map[string]*ToolRes
 		opsPerTool[name]++
 	}
 	out := make([]AdvertisedAgentTool, 0, len(entries))
+	// The `<name>.<operation>` disambiguation shares a namespace with a bare tool-def
+	// name, and a tool name may itself contain a dot, so two distinct granted
+	// operations can in principle mint the same handle (a multi-op grant on
+	// `workspace` vs a bare grant of a tool literally named `workspace.read_file`).
+	// That would let the engine's usesByName map silently drop one GRANTED capability
+	// (not an escalation — both are granted — but a granted op becoming unreachable
+	// through an ambiguous handle). Reject it loudly, the same way the old
+	// one-operation-per-tool guard rejected a conflicting reuse (#291 review).
+	seenName := make(map[string]string, len(entries))
 	for _, e := range entries {
 		defName := e.toolName
 		if opsPerTool[e.toolName] > 1 {
 			defName = e.toolName + "." + operationFromUses(e.toolName, e.uses)
 		}
+		if prev, dup := seenName[defName]; dup {
+			return nil, agent.Pos.Errorf("Agent/%s: two granted operations map to the same tool handle %q (%s vs %s) — a dotted tool name collides with a <tool>.<operation> handle; rename the tool to disambiguate", agentName, defName, prev, e.uses)
+		}
+		seenName[defName] = e.uses
 		out = append(out, AdvertisedAgentTool{Name: defName, Uses: e.uses})
 	}
 	return out, nil
