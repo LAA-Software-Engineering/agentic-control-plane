@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/models"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/models"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // ExecMeta is timing/cost metadata for an HTTP tool call (§13.2 placeholders).

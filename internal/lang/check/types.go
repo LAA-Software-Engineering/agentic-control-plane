@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang/lower"
-	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/lang/lower"
+	"github.com/Terfyn/terfyn/internal/schema"
 )
 
 // agentTypeInfo is the resolved input/output schema for one agent declared in

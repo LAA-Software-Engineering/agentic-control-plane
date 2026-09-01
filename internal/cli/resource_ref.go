@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // ParseResourceRef parses a CLI resource argument as Kind/name (e.g. Policy/default, workflow/hello).

@@ -3,9 +3,9 @@ package check
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/effects"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/effects"
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // checkEffectsClauses checks every WorkflowDecl declaring an `effects { }`

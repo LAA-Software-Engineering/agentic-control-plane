@@ -1,8 +1,8 @@
 package policy
 
 import (
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/tools"
 )
 
 // shellSafeRequiresApproval reports whether a tool call should be gated under shell_safe.

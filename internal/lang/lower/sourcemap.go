@@ -3,7 +3,7 @@ package lower
 import (
 	"sort"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // SourceMap indexes lowered IR identities to their .agent authoring position.

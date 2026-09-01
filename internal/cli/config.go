@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/Terfyn/terfyn/internal/render"
 	"github.com/spf13/cobra"
 )
 

@@ -42,7 +42,7 @@
 // unit-testable in isolation (issue #199, library-level scope).
 package execir
 
-import "github.com/LAA-Software-Engineering/terfyn/internal/spec"
+import "github.com/Terfyn/terfyn/internal/spec"
 
 // Pos aliases spec.Pos so an execution-IR node can carry the same position a
 // lang AST node did, with no conversion (mirrors lang.Pos).

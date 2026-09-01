@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
-	"github.com/LAA-Software-Engineering/terfyn/internal/project"
-	"github.com/LAA-Software-Engineering/terfyn/internal/render"
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/project"
+	"github.com/Terfyn/terfyn/internal/render"
 	"github.com/spf13/cobra"
 )
 

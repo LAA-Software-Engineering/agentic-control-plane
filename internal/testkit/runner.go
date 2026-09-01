@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/config"
-	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
-	_ "github.com/LAA-Software-Engineering/terfyn/internal/runtime/local"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/config"
+	"github.com/Terfyn/terfyn/internal/runtime"
+	_ "github.com/Terfyn/terfyn/internal/runtime/local"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 )
 
 // RunOptions configures environment labels for [RunCase].

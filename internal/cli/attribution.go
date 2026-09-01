@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/runtime"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 // EnvRequireAttribution, when set to a truthy value, requires explicit tenant/thread/actor ids on run.

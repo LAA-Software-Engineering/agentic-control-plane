@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/config"
-	"github.com/LAA-Software-Engineering/terfyn/internal/engine"
-	"github.com/LAA-Software-Engineering/terfyn/internal/models"
-	"github.com/LAA-Software-Engineering/terfyn/internal/plan"
-	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
-	"github.com/LAA-Software-Engineering/terfyn/internal/util"
+	"github.com/Terfyn/terfyn/internal/config"
+	"github.com/Terfyn/terfyn/internal/engine"
+	"github.com/Terfyn/terfyn/internal/models"
+	"github.com/Terfyn/terfyn/internal/plan"
+	"github.com/Terfyn/terfyn/internal/runtime"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/telemetry"
+	"github.com/Terfyn/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/trace"
+	"github.com/Terfyn/terfyn/internal/util"
 )
 
 // Invoke validates input, persists the run row, and executes the workflow engine.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // StricterOf returns an evaluator that fails closed if either a or b denies

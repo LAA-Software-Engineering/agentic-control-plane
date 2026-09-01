@@ -1,8 +1,8 @@
 package project
 
 import (
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang/lower"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/lang/lower"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // RefIndex summarizes symbolic references between resources (see [spec.RefIndex]).

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/audit"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/audit"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 func startTestRun(t *testing.T, ctx context.Context, st *Store, runID string, start time.Time) {

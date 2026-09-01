@@ -11,11 +11,11 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/effects"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang/check"
-	"github.com/LAA-Software-Engineering/terfyn/internal/project"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/effects"
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/lang/check"
+	"github.com/Terfyn/terfyn/internal/project"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // diffProjectWith builds a minimal project graph holding the given tools (a

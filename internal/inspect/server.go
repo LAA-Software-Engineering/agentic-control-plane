@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/deploy"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
-	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
+	"github.com/Terfyn/terfyn/internal/deploy"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/statejson"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 // DefaultPort is the default TCP port for the read-only inspector (issue #109).

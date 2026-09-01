@@ -3,8 +3,8 @@ package check
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/lang"
 )
 
 // TestCheckControlFlow_EffectSoundnessUnionOverBranches proves the ADR 002 §5

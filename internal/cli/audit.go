@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/audit"
-	"github.com/LAA-Software-Engineering/terfyn/internal/render"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/audit"
+	"github.com/Terfyn/terfyn/internal/render"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 	"github.com/spf13/cobra"
 )
 

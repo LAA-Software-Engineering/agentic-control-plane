@@ -3,7 +3,7 @@ package plan
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func TestResolvedGraphDigest_stable(t *testing.T) {

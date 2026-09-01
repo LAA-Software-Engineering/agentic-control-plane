@@ -3,8 +3,8 @@ package plan
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/execir"
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func sampleWorkflow() *spec.WorkflowResource {

@@ -2,7 +2,7 @@
 
 When an Agent declares `spec.tools`, `terfyn run` does **not** fire a single completion. The engine runs a bounded **reason → act → observe** loop: the model may call advertised tools, observe results, and continue until `end_turn` or `constraints.maxIterations`.
 
-This is ADR 002 **Path 1**: agents genuinely select tools. Epic A **shipped** that form ([#160](https://github.com/LAA-Software-Engineering/terfyn/issues/160) / [#161](https://github.com/LAA-Software-Engineering/terfyn/issues/161)). If it had shipped reduced (workflow-only `uses:` steps), the grant semantics below would not apply; they do apply.
+This is ADR 002 **Path 1**: agents genuinely select tools. Epic A **shipped** that form ([#160](https://github.com/Terfyn/terfyn/issues/160) / [#161](https://github.com/Terfyn/terfyn/issues/161)). If it had shipped reduced (workflow-only `uses:` steps), the grant semantics below would not apply; they do apply.
 
 Implementation: [`internal/engine`](../internal/engine) (`runAgentToolLoop`, `advertisedAgentTools`). Design: [`DESIGN_DOC.md`](DESIGN_DOC.md) §12.2 F / G.
 
@@ -18,7 +18,7 @@ Stop when `StopReason` is `end_turn` (or empty with no tool calls). Other stop r
 
 ## Grants (ADR 002)
 
-Because the agent selects its own tools, `agent.spec.tools` is an **autonomous capability grant**, not a call list. Every granted tool contributes to the agent's effect bound ([#189](https://github.com/LAA-Software-Engineering/terfyn/issues/189)) whether or not any authored workflow step names it.
+Because the agent selects its own tools, `agent.spec.tools` is an **autonomous capability grant**, not a call list. Every granted tool contributes to the agent's effect bound ([#189](https://github.com/Terfyn/terfyn/issues/189)) whether or not any authored workflow step names it.
 
 A grant is a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. `agent.spec.tools` entries are grants in this sense (Tool metadata name or a pinned uses string).
 
@@ -28,7 +28,7 @@ Issue #189 computes the effect bound in [`internal/effects`](../internal/effects
 
 ### Closed world (#204)
 
-For MCP tools the grant is only meaningful against a **pinned operation manifest**. [#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) ships the dispatch-time closed world: an operation absent from the tool's deployed capability manifest (derived from declared `spec.operations`, never from a live `tools/list`) is denied on the policy path (`ReasonOperationNotInManifest`, exit **5**, trace event), so a remote `tools/list` advertising an extra operation **cannot** expand the callable set. Closed-world enforcement is **opt-in per tool**: a tool that declares no `operations` key keeps an open callable set (see [`docs/SOUNDNESS.md`](SOUNDNESS.md) S2). A resumed run enforces the manifest it **started** with: [#207](https://github.com/LAA-Software-Engineering/terfyn/issues/207) hydrates the run's graph and authority from its pinned deployment snapshot (`runs.deployment_snapshot_digest`), so a widening apply between suspend and resume does not widen the resumed run's callable set. (Runs created before #207 — an empty digest — or backends without artifact retention fall back to current config.)
+For MCP tools the grant is only meaningful against a **pinned operation manifest**. [#204](https://github.com/Terfyn/terfyn/issues/204) ships the dispatch-time closed world: an operation absent from the tool's deployed capability manifest (derived from declared `spec.operations`, never from a live `tools/list`) is denied on the policy path (`ReasonOperationNotInManifest`, exit **5**, trace event), so a remote `tools/list` advertising an extra operation **cannot** expand the callable set. Closed-world enforcement is **opt-in per tool**: a tool that declares no `operations` key keeps an open callable set (see [`docs/SOUNDNESS.md`](SOUNDNESS.md) S2). A resumed run enforces the manifest it **started** with: [#207](https://github.com/Terfyn/terfyn/issues/207) hydrates the run's graph and authority from its pinned deployment snapshot (`runs.deployment_snapshot_digest`), so a widening apply between suspend and resume does not widen the resumed run's callable set. (Runs created before #207 — an empty digest — or backends without artifact retention fall back to current config.)
 
 ## How tools are advertised
 

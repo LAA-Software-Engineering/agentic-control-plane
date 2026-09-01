@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 // DeploymentStateFingerprint returns a stable SHA-256 hex digest of deployment rows for env.

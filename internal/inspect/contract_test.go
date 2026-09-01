@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/statejson"
 )
 
 // TestContract_runEvents_matchesLogsJSON ensures inspector /api/runs/{id} events match terfyn logs -o json.

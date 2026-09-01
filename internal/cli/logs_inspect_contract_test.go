@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/inspect"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state/sqlite"
-	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
+	"github.com/Terfyn/terfyn/internal/inspect"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/statejson"
 )
 
 // TestLogsInspectContract_eventsJSON verifies terfyn logs -o json events match inspector /api/runs/{id}.

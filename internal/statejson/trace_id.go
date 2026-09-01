@@ -3,7 +3,7 @@ package statejson
 import (
 	"encoding/json"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 type traceIDPayload struct {

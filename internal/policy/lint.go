@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // LintSeverity classifies policy lint findings for validate/plan output (issue #107).

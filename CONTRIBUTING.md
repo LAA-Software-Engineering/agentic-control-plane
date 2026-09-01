@@ -12,7 +12,7 @@ All participants are expected to follow the **[Code of Conduct](CODE_OF_CONDUCT.
 ## Getting started
 
 ```bash
-git clone https://github.com/LAA-Software-Engineering/terfyn.git
+git clone https://github.com/Terfyn/terfyn.git
 cd terfyn
 go mod download
 make build    # or: go build -o bin/terfyn ./cmd/terfyn

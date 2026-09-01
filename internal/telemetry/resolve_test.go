@@ -3,7 +3,7 @@ package telemetry_test
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
+	"github.com/Terfyn/terfyn/internal/telemetry"
 )
 
 func TestResolveEndpoint_env(t *testing.T) {

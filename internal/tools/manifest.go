@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // CapabilityManifest is the closed set of operations a Tool may expose (issue #204, ADR 002).

@@ -129,7 +129,7 @@ cases rather than silently continuing.
   default in this monorepo and works on any architecture the toolchain supports.
 - **Custom install step** — replace or extend the release install step to download the asset that
   matches your runner (for example **`terfyn-<tag>-linux-arm64.tar.gz`** when published on
-  [Releases](https://github.com/LAA-Software-Engineering/terfyn/releases)), or an
+  [Releases](https://github.com/Terfyn/terfyn/releases)), or an
   internal artifact URL you maintain.
 
 Native GitHub REST tools (**`pull_request.get`**, **`pull_request.diff`**, etc.) require an

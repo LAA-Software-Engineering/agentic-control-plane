@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 func TestListTraceEventsByRunID_normalizesLegacyTypeOnRead(t *testing.T) {

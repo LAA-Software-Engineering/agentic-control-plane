@@ -3,7 +3,7 @@ package plan
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // WorkflowSpecHash returns the deployment spec_hash for a normalized workflow

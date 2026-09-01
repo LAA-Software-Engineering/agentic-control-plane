@@ -1,9 +1,9 @@
 package app
 
 import (
-	_ "github.com/LAA-Software-Engineering/terfyn/internal/runtime/local"
+	_ "github.com/Terfyn/terfyn/internal/runtime/local"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/cli"
+	"github.com/Terfyn/terfyn/internal/cli"
 )
 
 func runCLI() int {

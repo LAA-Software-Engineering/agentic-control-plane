@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 // Runner drives workflow execution against persistent run and trace state (design doc §5.2).

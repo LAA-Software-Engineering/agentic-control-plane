@@ -3,8 +3,8 @@ package deploy
 import (
 	"context"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/statejson"
 )
 
 // MarkSupersededRuns flags run records that are executing a deployment snapshot no longer current

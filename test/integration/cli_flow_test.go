@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/cli"
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
+	"github.com/Terfyn/terfyn/internal/cli"
+	"github.com/Terfyn/terfyn/internal/trace"
 	_ "modernc.org/sqlite"
 )
 

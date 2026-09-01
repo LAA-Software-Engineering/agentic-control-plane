@@ -1,7 +1,7 @@
 package local
 
 import (
-	"github.com/LAA-Software-Engineering/terfyn/internal/runtime"
+	"github.com/Terfyn/terfyn/internal/runtime"
 )
 
 func init() {

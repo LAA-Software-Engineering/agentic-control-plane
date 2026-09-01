@@ -12,7 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/models"
+	"github.com/Terfyn/terfyn/internal/models"
 )
 
 // Streamable HTTP transport (MCP spec): one POST per JSON-RPC message to a single MCP endpoint.

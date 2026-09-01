@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state"
 )
 
 func putArtifact(ctx context.Context, q querier, a state.DeploymentArtifact) error {

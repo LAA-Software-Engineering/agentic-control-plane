@@ -3,7 +3,7 @@ package inspect
 import (
 	"encoding/json"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/statejson"
+	"github.com/Terfyn/terfyn/internal/statejson"
 )
 
 // ListRunsResponse is GET /api/runs JSON.

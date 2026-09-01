@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 func extractRunID(out string) string {

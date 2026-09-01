@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/tools"
 )
 
 // DefaultHitlActor is recorded on approval trace events when no actor is supplied.

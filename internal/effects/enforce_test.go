@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func TestCheck_skipsWhenNoDeclaredOperations(t *testing.T) {

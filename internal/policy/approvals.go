@@ -3,7 +3,7 @@ package policy
 import (
 	"strings"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 func approvalRequired(uses string, approvals *spec.PolicyApprovals) bool {

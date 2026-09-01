@@ -3,8 +3,8 @@ package policy
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/tools"
 )
 
 // checkOperationInManifest enforces the closed-world capability manifest (issue #204, ADR 002).

@@ -1,6 +1,6 @@
 package lang
 
-import "github.com/LAA-Software-Engineering/terfyn/internal/spec"
+import "github.com/Terfyn/terfyn/internal/spec"
 
 // Pos is the source position carried by every token and AST node. It is a type
 // alias for spec.Pos so .agent positions are the *same* type as the IR

@@ -133,7 +133,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          MODULE=github.com/LAA-Software-Engineering/terfyn/internal/cli
+          MODULE=github.com/Terfyn/terfyn/internal/cli
           LDFLAGS="-s -w -X ${MODULE}.Version=${VERSION}"
           mkdir -p dist work/linux-amd64 work/linux-arm64 work/darwin-amd64 work/darwin-arm64 work/windows-amd64
 
