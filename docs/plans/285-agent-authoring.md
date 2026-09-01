@@ -208,6 +208,14 @@ Populate `AgentSpec.Input`/`Output.Schema` from the `input`/`output` type refs u
 `schemas/<Name>.json` convention the checker already applies, so validate resolves the schema and the
 runtime enforces structured agent I/O for `.agent`-authored agents.
 
+### J10 — Migrate example projects to lead on `.agent` (#297, follow-up, depends on J2)
+11 of 13 example projects still author agents and workflows in YAML (they validate cleanly — this is
+surface staleness, not breakage). A faithful migration is **blocked on J2**: every example agent
+carries a real `instructions:` prompt, which `.agent` cannot express until #287 ships. After #287,
+migrate them to lead on `.agent` (agents + workflows in `.agent`; tools/policies/schemas/`project.yaml`
+stay YAML), mirroring the #292 flagship, while keeping `example1` as the canonical YAML-interchange
+reference. Not started before #287.
+
 ## Top risks & open questions
 
 1. **Multiline escape policy (J1).** Decide raw vs escape-processed inside `"""…"""` and document it
@@ -228,7 +236,8 @@ runtime enforces structured agent I/O for `.agent`-authored agents.
 ## Suggested order
 
 J1 → J2 (authoring surface) · J3 → J4 → J5 (bounded, durable `while`) · J6 and J9 (capability +
-typed I/O, independent) · then J7 (flagship, consumes J2/J5/J6/J9) · J8 last as a follow-up.
+typed I/O, independent) · then J7 (flagship, consumes J2/J5/J6/J9) · J8 and J10 last as follow-ups
+(J10 migrates the existing examples to `.agent`, unblocked once J2 ships).
 `docs/LANGUAGE.md` and `docs/EXAMPLES.md` are updated by the issues as each lands.
 
 The one normative decision this epic introduces — *no unbounded effectful loop; the `while` bound is
