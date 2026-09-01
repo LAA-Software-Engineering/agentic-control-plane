@@ -1,0 +1,132 @@
+package native
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+)
+
+// Native git adapter (issue #331): exactly two operations — create a local branch and push a
+// branch to a remote — so "propose a fix on a branch, human approves the push" is expressible with
+// no custom tool. Deliberately narrow: no push to the default branch, no --force, no branch delete,
+// no arbitrary git. push_branch is meant to sit in approvals.requiredFor, like
+// pull_request.post_comment, so the run suspends for approval before anything leaves the machine.
+//
+// Both ops run in the workspace sandbox (TERFYN_WORKSPACE_ROOT, the same root the workspace adapter
+// uses); push uses the ambient git credentials / GITHUB_TOKEN, like the github adapter's live path.
+// The remote is TERFYN_GIT_REMOTE (default origin).
+const envGitRemote = "TERFYN_GIT_REMOTE"
+
+func gitRemote() string {
+	r := strings.TrimSpace(os.Getenv(envGitRemote))
+	if r == "" {
+		return "origin"
+	}
+	return r
+}
+
+// validateBranchName rejects names that are unsafe as a git argument or refspec: a leading '-'
+// (would be read as a flag), a ':' (a push refspec that could delete a ref), and characters git
+// forbids in a ref. It is intentionally strict — a branch a fixer proposes is a simple name.
+func validateBranchName(field, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("field %q is required", field)
+	}
+	if strings.HasPrefix(name, "-") {
+		return "", fmt.Errorf("branch name %q may not start with '-'", name)
+	}
+	if strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") || strings.HasSuffix(name, ".lock") {
+		return "", fmt.Errorf("invalid branch name %q", name)
+	}
+	if strings.Contains(name, "..") || strings.Contains(name, "@{") {
+		return "", fmt.Errorf("invalid branch name %q", name)
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("branch name %q contains a control character", name)
+		}
+		switch r {
+		case ' ', '\t', ':', '~', '^', '?', '*', '[', '\\':
+			return "", fmt.Errorf("branch name %q contains an invalid character %q", name, r)
+		}
+	}
+	return name, nil
+}
+
+// runGit runs git in the workspace root and returns combined output; a non-zero exit is an error
+// carrying a truncated tail of the output. git args are passed as a slice (no shell), so a validated
+// branch name cannot inject a flag or a second command.
+func runGit(ctx context.Context, root string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = root
+	b, err := cmd.CombinedOutput()
+	out := string(b)
+	if err != nil {
+		return out, fmt.Errorf("native: git %s: %w: %s", strings.Join(args, " "), err, truncateRunes(strings.TrimSpace(out), 512))
+	}
+	return out, nil
+}
+
+func gitCreateBranch(ctx context.Context, with map[string]any) (map[string]any, error) {
+	root, err := workspaceRoot()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := stringFromWith(with, "name", "branch")
+	if err != nil {
+		return nil, fmt.Errorf("native: create_branch %w", err)
+	}
+	name, err := validateBranchName("name", raw)
+	if err != nil {
+		return nil, fmt.Errorf("native: create_branch: %w", err)
+	}
+	if _, err := runGit(ctx, root, "switch", "-c", name); err != nil {
+		return nil, err
+	}
+	return map[string]any{"branch": name, "created": true}, nil
+}
+
+func gitPushBranch(ctx context.Context, with map[string]any) (map[string]any, error) {
+	root, err := workspaceRoot()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := stringFromWith(with, "branch", "name")
+	if err != nil {
+		return nil, fmt.Errorf("native: push_branch %w", err)
+	}
+	branch, err := validateBranchName("branch", raw)
+	if err != nil {
+		return nil, fmt.Errorf("native: push_branch: %w", err)
+	}
+	remote := gitRemote()
+	// Explicit src:dst refspec (both the validated branch) so the push always creates/updates
+	// refs/heads/<branch> and can never be read as a delete (`:branch`) or a flag.
+	refspec := "refs/heads/" + branch + ":refs/heads/" + branch
+	if _, err := runGit(ctx, root, "push", remote, refspec); err != nil {
+		return nil, err
+	}
+	return map[string]any{"branch": branch, "remote": remote, "pushed": true}, nil
+}
+
+func dispatchGitCreateBranch(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
+	out, err := gitCreateBranch(ctx, with)
+	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
+	if err != nil {
+		return nil, meta, err
+	}
+	return out, meta, nil
+}
+
+func dispatchGitPushBranch(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
+	out, err := gitPushBranch(ctx, with)
+	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
+	if err != nil {
+		return nil, meta, err
+	}
+	return out, meta, nil
+}
