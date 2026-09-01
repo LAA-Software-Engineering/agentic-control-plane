@@ -69,9 +69,9 @@ The reference implementation is [`internal/lang`](../internal/lang):
 - **Strings** come in two forms, both ordinary string values (no distinct AST type):
   - **Single-line** `"..."` with the escapes `\"` `\\` `\n` `\t` `\r`. A newline before the
     closing quote is an error.
-  - **Multiline** `"""..."""` for prose such as agent `instructions`. The body is **raw** —
-    no escape processing and no `${...}` interpolation, so backslashes and braces are literal —
-    and is normalized deterministically: line endings become `\n`; a whitespace-only opening
+  - **Multiline** `"""..."""` for prose such as agent `instructions`. The body is **raw** at
+    the lexer — no escape processing, so backslashes and braces are literal — and is normalized
+    deterministically: line endings become `\n`; a whitespace-only opening
     line (the newline right after `"""`) is discarded; a whitespace-only closing line (the
     indentation before the closing `"""`) is discarded; the common leading indentation of all
     nonblank lines is removed, preserving relative indentation; blank lines are preserved. So
@@ -280,6 +280,24 @@ implement/review flagship does — compiles and runs. The resource projection ca
 fail-close against. (Whole-input **pass-through to a subworkflow** — a callee input-document
 mapping rather than a one-key `with:` map — remains a separate follow-up; the agent-argument
 case the flagship needs is resolved.)
+
+### String templates in arguments
+
+An **argument** string value may embed `${<binding>.<field>…}` tokens (#316), the one place
+`.agent` performs interpolation. It is a lowering-time property of **argument position**, not
+of the string form: both `"…${x}…"` and a `"""…${x}…"""` block interpolate the same way, and
+the token syntax is identical to the resource projection's `${…}` (the exact reference
+`interpTokenRE`). The head identifier is resolved through the workflow's binding environment —
+a binding `review` becomes `${steps.review.output.…}`, a parameter field becomes `${input.…}`
+— and the referenced step is added to the consumer's predecessors, so a templated `body:`
+that names an earlier step's output is a valid, ordered reference. An unknown head is an
+`unresolved reference "…" in interpolation` diagnostic.
+
+A whole-string single token (`"${review.summary}"`) lowers to a bare reference; a string with
+surrounding text or multiple tokens lowers to a template whose parts concatenate at run time.
+This is what lets the pr-review examples author a Markdown comment `body` from an agent's
+structured output. Field lowering is **not** an argument position: an agent's `instructions`
+and `description` are copied verbatim, so a literal `${…}` there stays literal.
 
 ### Multiple operations per tool grant
 

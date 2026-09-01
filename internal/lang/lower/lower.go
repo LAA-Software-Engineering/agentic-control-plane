@@ -585,8 +585,13 @@ func (wl *workflowLowerer) lowerArg(e lang.Expr, parentID string, argIdx int, pr
 	case *lang.RefExpr:
 		return wl.token(v)
 	case *lang.LitExpr:
-		// A literal argument lowers to its Go value directly; the with: map holds
-		// arbitrary values, so no interpolation token is needed (#199).
+		// A string argument that embeds `${<binding>}` tokens is a template (#316):
+		// each token resolves to the resource `${steps.<id>.output.…}` form and the
+		// referenced step becomes a predecessor. A plain literal lowers to its Go
+		// value directly.
+		if s, ok := v.Value.(string); ok && interpTokenRE.MatchString(s) {
+			return wl.interpolateArg(s, v.Pos, tempNeeds)
+		}
 		return v.Value
 	case *lang.CallExpr:
 		id := wl.freshID(parentID + "_arg" + strconv.Itoa(argIdx))
@@ -631,6 +636,51 @@ func (wl *workflowLowerer) lowerValue(e lang.Expr, idBase string, predNeeds []st
 // `state = input; Implementer(state)` compiles and runs.
 func (wl *workflowLowerer) token(r *lang.RefExpr) any {
 	return "${" + wl.prefixOf(r) + "}"
+}
+
+// interpolateArg rewrites a template string argument (#316) into the resource
+// projection's interpolation form: each `${<binding>.<field>…}` token has its head
+// binding resolved through env.roots (the same map prefixOf uses) to a
+// `${steps.<id>.output.…}` (or `${input.…}`) token, and the referenced step is added
+// to the consumer step's needs so the reference is a valid predecessor.
+func (wl *workflowLowerer) interpolateArg(s string, pos spec.Pos, tempNeeds *[]string) string {
+	return interpTokenRE.ReplaceAllStringFunc(s, func(tok string) string {
+		m := interpTokenRE.FindStringSubmatch(tok)
+		if m == nil {
+			return tok
+		}
+		return "${" + wl.resolveTemplatePath(strings.TrimSpace(m[1]), pos, tempNeeds) + "}"
+	})
+}
+
+func (wl *workflowLowerer) resolveTemplatePath(inner string, pos spec.Pos, tempNeeds *[]string) string {
+	parts := strings.Split(inner, ".")
+	head := parts[0]
+	prefix, ok := wl.env.roots[head]
+	if !ok {
+		wl.l.diag(pos, "unresolved reference %q in interpolation", head)
+		prefix = head
+	}
+	if id := stepIDFromPrefix(prefix); id != "" {
+		*tempNeeds = append(*tempNeeds, id)
+	}
+	if len(parts) == 1 {
+		return prefix
+	}
+	return prefix + "." + strings.Join(parts[1:], ".")
+}
+
+// stepIDFromPrefix extracts the step id from a `steps.<id>.output` interpolation
+// prefix, or "" when the prefix is not a step reference (e.g. `input`).
+func stepIDFromPrefix(prefix string) string {
+	rest, ok := strings.CutPrefix(prefix, "steps.")
+	if !ok {
+		return ""
+	}
+	if i := strings.IndexByte(rest, '.'); i >= 0 {
+		return rest[:i]
+	}
+	return rest
 }
 
 // prefixOf resolves a reference to its interpolation path (no ${}). An unresolved
