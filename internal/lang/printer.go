@@ -135,26 +135,29 @@ func printWorkflow(b *strings.Builder, w *WorkflowDecl) {
 	if w.Result != nil {
 		fmt.Fprintf(b, " -> %s", w.Result.Name)
 	}
-	effectsClause := ""
+	var clauses []string
+	if w.Policy != nil {
+		clauses = append(clauses, fmt.Sprintf("policy %s", w.Policy.Name))
+	}
 	if w.Effects != nil {
 		names := make([]string, len(w.Effects))
 		for i, e := range w.Effects {
 			names[i] = e.Name
 		}
-		effectsClause = fmt.Sprintf("effects { %s }", strings.Join(names, ", "))
+		clauses = append(clauses, fmt.Sprintf("effects { %s }", strings.Join(names, ", ")))
 	}
 	if w.Description != nil {
 		// A description (possibly multiline) does not fit the inline header, so the
 		// header clauses go on their own indented lines before the opening brace.
 		b.WriteString("\n")
 		printStringField(b, "    ", "description", w.Description.Value)
-		if effectsClause != "" {
-			fmt.Fprintf(b, "    %s\n", effectsClause)
+		for _, c := range clauses {
+			fmt.Fprintf(b, "    %s\n", c)
 		}
 		b.WriteString("{\n")
 	} else {
-		if effectsClause != "" {
-			fmt.Fprintf(b, " %s", effectsClause)
+		for _, c := range clauses {
+			fmt.Fprintf(b, " %s", c)
 		}
 		b.WriteString(" {\n")
 	}

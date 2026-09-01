@@ -111,7 +111,7 @@ Grant       = "tool" "." Ident "." Operation ;  (* tool.<name>.<operation> *)
 Operation   = Ident { "." Ident } ;             (* name = first Ident, operation = the rest *)
 
 WorkflowDecl = "workflow" Ident "(" [ Params ] ")" [ "->" Ident ]
-               { "description" StringLiteral | "effects" "{" [ Effects ] "}" }
+               { "description" StringLiteral | "policy" Ident | "effects" "{" [ Effects ] "}" }
                "{" { Statement } "}" ;
 Params      = Param { "," Param } ;
 Param       = Ident ":" Ident ;                 (* name : Type *)

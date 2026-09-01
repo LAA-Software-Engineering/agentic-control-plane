@@ -24,6 +24,7 @@ workflow note(input: NoteInput) -> NoteOutput
     succeeds, planting an edit in trace_events.data_json (without updating hash) makes
     terfyn audit verify fail with exit 1.
     """
+    policy cheap-ceiling
 {
     summary = scribe(topic: input.topic)
     return summary
