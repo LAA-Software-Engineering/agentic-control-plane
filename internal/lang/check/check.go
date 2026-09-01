@@ -133,6 +133,7 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 
 	tu, typeDiags := resolveTypes(f, opts)
 	diags = append(diags, typeDiags...)
+	wireAgentSchemas(unit, tu, graph)
 	checkDiags, rebinds := checkTypes(unit, tu)
 	diags = append(diags, checkDiags...)
 	applyRebinds(lowered, rebinds)
@@ -146,6 +147,44 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	diags = append(diags, checkEffectsClauses(unit, prog.Bounds)...)
 
 	return prog, dedupDiags(diags.Sorted())
+}
+
+// wireAgentSchemas records each .agent agent's resolved input/output schema onto
+// the resource projection (#294). The checker is the single component that resolves
+// a type ref (schemas/<Name>.json) and knows whether the file exists, so it — not
+// the pure resource lowering — populates AgentSpec.Input/Output: an UNRESOLVED type
+// stays absent (matching the checker's leniency, so an agent with a typed I/O and no
+// schema file is not forced to fail schema-file validation), and a RESOLVED one
+// carries both the project-root-relative Schema ref (lower.SchemaRef, the same
+// convention resolveTypes uses) and the compiled document, so validate and the
+// runtime enforce structured agent I/O for .agent-authored agents exactly as for
+// YAML-authored ones.
+func wireAgentSchemas(unit []*lang.File, tu *typeUniverse, graph *spec.ProjectGraph) {
+	if graph == nil || tu == nil {
+		return
+	}
+	for _, file := range unit {
+		if file == nil {
+			continue
+		}
+		for _, d := range file.Decls {
+			ad, ok := d.(*lang.AgentDecl)
+			if !ok {
+				continue
+			}
+			ar := graph.Agents[identName(ad.Name)]
+			if ar == nil {
+				continue
+			}
+			info := tu.agents[identName(ad.Name)]
+			if ad.Input != nil && info.Input != nil {
+				ar.Spec.Input = &spec.AgentIO{Schema: lower.SchemaRef(ad.Input.Name), Resolved: info.Input}
+			}
+			if ad.Output != nil && info.Output != nil {
+				ar.Spec.Output = &spec.AgentIO{Schema: lower.SchemaRef(ad.Output.Name), Resolved: info.Output}
+			}
+		}
+	}
 }
 
 // dedupDiags drops adjacent exact-duplicate diagnostics (same position, message,

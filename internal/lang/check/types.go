@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/lang"
+	"github.com/LAA-Software-Engineering/terfyn/internal/lang/lower"
 	"github.com/LAA-Software-Engineering/terfyn/internal/schema"
 )
 
@@ -107,7 +108,9 @@ func (tu *typeUniverse) resolve(t *lang.TypeRef) (*schema.Document, lang.Diagnos
 	if t == nil || t.Name == "" {
 		return nil, nil
 	}
-	path := filepath.Join(tu.dir, "schemas", t.Name+".json")
+	// The same schemas/<Name>.json convention the resource projection stores as an
+	// AgentIO.Schema ref (#294), so the checker and the projection never diverge.
+	path := filepath.Join(tu.dir, filepath.FromSlash(lower.SchemaRef(t.Name)))
 	doc, err := schema.LoadDocument(path)
 	if err == nil {
 		return doc, nil

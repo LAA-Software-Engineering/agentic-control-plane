@@ -370,6 +370,15 @@ compile** is a different, louder case: `schema.LoadDocument` distinguishes a mis
 present-but-invalid schema is reported as an error, since the author named a real file and
 it did not parse.
 
+**A resolved agent `input`/`output` type lowers onto the resource projection** (#294): the
+checker records it as `AgentSpec.Input`/`Output` with the `schemas/<Name>.json` ref and the
+compiled document, so `validate`, `plan`, and the runtime enforce structured agent I/O for
+`.agent`-authored agents exactly as for YAML-authored ones (`terfyn export` materializes the
+`input.schema`/`output.schema` keys). An **unresolved** type stays absent from the projection,
+preserving the gradual-typing leniency above — a typed agent with no schema file is not forced
+to fail schema-file validation. The **checker**, not the pure resource lowering, populates
+this, because it is the single place that resolves the type and knows whether the file exists.
+
 What is checked:
 
 - An agent invocation's **single positional argument** against the callee's declared
