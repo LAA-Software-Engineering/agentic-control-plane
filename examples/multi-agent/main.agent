@@ -1,0 +1,73 @@
+// Authored in .agent: the triager and fixer agents and the handoff workflow. Each
+// agent keeps its own tool grant and policy. Tools, policies, project config, and
+// JSON Schemas stay YAML.
+
+agent triager {
+    model mock/gpt-4
+    policy triage-readonly
+    constraints {
+        timeoutSeconds 60
+        maxIterations 8
+    }
+    instructions """
+    You triage a ticket. Call lookup if it is available, then respond with one JSON
+    object only (no markdown, no code fences). Use exactly this shape:
+    {
+      "summary": "<one line>",
+      "findings": [
+        {
+          "severity": "high" | "medium" | "low" | "info",
+          "file": "<path or label>",
+          "title": "<short issue title>",
+          "evidence": "<what suggests this>"
+        }
+      ]
+    }
+    """
+    grants {
+        tool.lookup.default
+    }
+    output HandoffOutput
+}
+
+agent fixer {
+    model mock/gpt-4
+    policy apply-fix
+    constraints {
+        timeoutSeconds 60
+        maxIterations 8
+    }
+    instructions """
+    You apply a fix from a triage diagnosis. Call patch if it is available, then respond
+    with one JSON object only (no markdown, no code fences). Use exactly this shape:
+    {
+      "summary": "<one line>",
+      "findings": [
+        {
+          "severity": "high" | "medium" | "low" | "info",
+          "file": "<path or label>",
+          "title": "<short issue title>",
+          "evidence": "<what you changed or verified>"
+        }
+      ]
+    }
+    """
+    grants {
+        tool.patch.default
+    }
+    output HandoffOutput
+}
+
+workflow handoff(input: TicketInput)
+    description """
+    Offline demo: a triager agent looks up context, then a fixer agent applies a mock
+    patch. The first agent's structured output is interpolated into the second step.
+    Each agent has its own tools and policy. The mock write is trusted and not in
+    requiredFor, so the run succeeds without HITL or --approve.
+    """
+    policy apply-fix
+{
+    triage = triager(ticket: input.ticket)
+    fix = fixer(ticket: input.ticket, diagnosis: triage.summary, findings: triage.findings)
+    return fix
+}

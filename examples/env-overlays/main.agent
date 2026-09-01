@@ -1,0 +1,41 @@
+// Authored in .agent: the reviewer agent and the review workflow. Tools, policies,
+// the Environment overlays, project config, and JSON Schemas stay YAML.
+
+agent reviewer {
+    model mock/gpt-4
+    policy default
+    constraints {
+        timeoutSeconds 60
+        maxIterations 8
+    }
+    instructions """
+    You review a ticket. Call notify if it is available, then respond with one JSON
+    object only (no markdown, no code fences). Use exactly this shape:
+    {
+      "summary": "<one line>",
+      "findings": [
+        {
+          "severity": "high" | "medium" | "low" | "info",
+          "file": "<path or label>",
+          "title": "<short issue title>",
+          "evidence": "<what suggests this>"
+        }
+      ]
+    }
+    """
+    grants {
+        tool.notify.default
+    }
+    output ReviewOutput
+}
+
+workflow review(input: TicketInput)
+    description """
+    Offline demo: one agent reviews a ticket. Environment overlays change the model,
+    execution ceilings, and prod approval gates. Run only with -e dev (mock).
+    """
+    policy default
+{
+    review = reviewer(ticket: input.ticket)
+    return review
+}

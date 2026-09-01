@@ -18,10 +18,9 @@ This example is the distinctive **promotion** demo: one project, three Environme
 | `environments/dev.yaml` | Mock model. |
 | `environments/staging.yaml` | `openai/gpt-4o-mini`. |
 | `environments/prod.yaml` | `openai/gpt-4o`, tighter execution, notify approval. |
-| `agents/reviewer.yaml` | Default mock; `notify` tool. |
+| `main.agent` | The `reviewer` agent (grants `tool.notify.default`) and the `review` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
 | `tools/notify.yaml` | Trusted mock write (`sideEffects: true`). |
 | `policies/default.yaml` | Ceiling **$5** / 300s; no `requiredFor`. |
-| `workflows/review.yaml` | One agent step. |
 | `schemas/*.json` | Ticket input and pr-review-shaped output. |
 | `fixtures/sample-ticket.json` | Offline payload. |
 

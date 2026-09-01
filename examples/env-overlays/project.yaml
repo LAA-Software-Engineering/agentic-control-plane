@@ -6,8 +6,6 @@ spec:
   imports:
     - ./policies/default.yaml
     - ./tools/notify.yaml
-    - ./agents/reviewer.yaml
-    - ./workflows/review.yaml
     - ./environments/dev.yaml
     - ./environments/staging.yaml
     - ./environments/prod.yaml

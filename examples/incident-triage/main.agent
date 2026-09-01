@@ -1,0 +1,46 @@
+// Authored in .agent: the responder agent and the incident-triage workflow. Tools,
+// policies, project config, and JSON Schemas stay YAML.
+
+agent responder {
+    model mock/gpt-4
+    policy gated-remediation
+    constraints {
+        timeoutSeconds 120
+        maxIterations 8
+    }
+    instructions """
+    You triage production incidents. The user message is JSON with an "alert" object
+    (id, service, severity, title, message).
+
+    Investigate with pager, logs, and tracker if needed. Restart the service only if
+    the alert looks like a process that will not recover on its own.
+
+    After tools return, respond with one JSON object only (no markdown, no code fences).
+    Use exactly this shape:
+    {
+      "summary": "<one line overview>",
+      "severity": "high" | "medium" | "low" | "info",
+      "action": "<what you did or recommend>"
+    }
+    """
+    grants {
+        tool.pager.default
+        tool.logs.default
+        tool.tracker.default
+        tool.restart.restart
+    }
+    output StatusOutput
+}
+
+workflow incident-triage(input: AlertInput)
+    description """
+    Offline flagship: an agent reads a fixture alert, may query mock logs / open a mock
+    issue, then attempts a service restart. Restart is gated by policy unless you pass
+    --approve for the exact uses string tool.restart.restart. Inner agent tools do not
+    HITL; an unapproved restart fails closed (exit 5).
+    """
+    policy gated-remediation
+{
+    triage = responder(alert: input.alert)
+    return triage
+}

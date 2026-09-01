@@ -4,7 +4,7 @@ This example is the distinctive **two-agent** demo. A **triager** looks up conte
 
 ## What it demonstrates
 
-- **Handoff** — `workflows/handoff.yaml` has two agent steps. `fixer` receives `${steps.triager.output.summary}` and `${steps.triager.output.findings}`.
+- **Handoff** — `main.agent`'s `handoff` workflow calls the `triager` agent then the `fixer` agent, passing the triager's `summary` and `findings` as named arguments (`fixer(diagnosis: triage.summary, findings: triage.findings)`).
 - **Per-agent tools (Epic A)** — triager advertises read-only `lookup`; fixer advertises trusted mock `patch`. Neither name contains `restart`, so the empty-Script mock `tool_use`s that first tool, then returns Registry JSON (`summary` / `findings`).
 - **Distinct policies** — `triage-readonly` gates `tool.patch.default`; `apply-fix` does **not** (trusted write, not `requiredFor`). Both ceilings are **$5**, so four mock Generates at **$0.02** each stay under budget.
 - **Trace** — `terfyn logs` shows both step ids (`triager`, `fixer`) and at least two `llm_completion` events (one per Generate; each agent loops twice).
@@ -14,9 +14,7 @@ This example is the distinctive **two-agent** demo. A **triager** looks up conte
 | Path | Role |
 |------|------|
 | `project.yaml` | Imports resources; `mock` model (no API keys). |
-| `workflows/handoff.yaml` | `agent: triager` then `agent: fixer`. |
-| `agents/triager.yaml` | `lookup` + `triage-readonly`. |
-| `agents/fixer.yaml` | `patch` + `apply-fix`. |
+| `main.agent` | The `triager` (`lookup` + `triage-readonly`) and `fixer` (`patch` + `apply-fix`) agents and the `handoff` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
 | `tools/lookup.yaml` | Read-only mock (`sideEffects: false`). |
 | `tools/patch.yaml` | Trusted mock write (`sideEffects: true`, not approval-gated). |
 | `policies/triage-readonly.yaml` | `requiredFor: tool.patch.default`; ceiling **$5**. |
