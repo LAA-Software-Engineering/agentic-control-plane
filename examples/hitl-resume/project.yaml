@@ -6,8 +6,6 @@ spec:
   imports:
     - ./policies/gated-publish.yaml
     - ./tools/publish.yaml
-    - ./agents/drafter.yaml
-    - ./workflows/publish.yaml
   defaults:
     policy: gated-publish
     model: mock/gpt-4
