@@ -148,3 +148,40 @@ func TestInstructionsFormatterRoundTrip(t *testing.T) {
 		t.Fatalf("round-trip changed the value:\n got %q\nwant %q", v2, v1)
 	}
 }
+
+// TestInstructionsEmbeddedTripleQuoteRoundTrip guards the delimiter the block form
+// is built around: a value containing both a newline and a literal `"""` must not
+// be printed as a raw `"""` block (the embedded delimiter would read as a premature
+// close and corrupt the file). The formatter falls back to the escaped single-line
+// form, so `terfyn fmt` output always re-parses to the same value and is idempotent.
+func TestInstructionsEmbeddedTripleQuoteRoundTrip(t *testing.T) {
+	// A single-line literal is the only way to author a value that has BOTH a
+	// newline (via \n) and a literal """: the multiline body cannot express one.
+	src := "agent A {\n    instructions \"line1\\nx\\\"\\\"\\\"y\"\n}\n"
+	orig, diags := Parse("a.agent", src)
+	if len(diags) != 0 {
+		t.Fatalf("parse diags: %s", diags.Error())
+	}
+	want := orig.Decls[0].(*AgentDecl).Instructions.Value
+	if want != "line1\nx\"\"\"y" {
+		t.Fatalf("precondition: value is %q", want)
+	}
+
+	once, d1 := Format("a.agent", src)
+	if len(d1) != 0 {
+		t.Fatalf("format diags: %s", d1.Error())
+	}
+	// The formatted output must re-parse cleanly (the bug produced a broken file).
+	reparsed, d2 := Parse("a.agent", once)
+	if len(d2) != 0 {
+		t.Fatalf("formatter emitted un-reparseable source:\n%s\ndiags: %s", once, d2.Error())
+	}
+	if got := reparsed.Decls[0].(*AgentDecl).Instructions.Value; got != want {
+		t.Fatalf("round-trip corrupted the value:\n got %q\nwant %q", got, want)
+	}
+	// Idempotent.
+	twice, _ := Format("a.agent", once)
+	if once != twice {
+		t.Fatalf("format not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", once, twice)
+	}
+}

@@ -68,13 +68,16 @@ func printAgent(b *strings.Builder, a *AgentDecl) {
 	b.WriteString("}\n")
 }
 
-// printInstructions renders the agent prompt. A value with no newline prints as a
-// single-quoted literal; a multiline value prints as a canonical `"""…"""` block
-// whose body lines carry the field's 4-space indent and whose closing delimiter is
-// on its own indented line — the exact shape normalizeMultiline strips back to the
-// original value, so parse -> print -> parse is stable.
+// printInstructions renders the agent prompt. A multiline value prints as a
+// canonical `"""…"""` block whose body lines carry the field's 4-space indent and
+// whose closing delimiter is on its own indented line — the exact shape
+// normalizeMultiline strips back to the original value, so parse -> print -> parse
+// is stable. A value with no newline — OR one containing a literal `"""`, which
+// the raw multiline body cannot represent (it would read as a premature close and
+// corrupt the file) — falls back to the escaped single-quoted form, which escapes
+// newlines and quotes and always re-parses.
 func printInstructions(b *strings.Builder, v string) {
-	if !strings.Contains(v, "\n") {
+	if !strings.Contains(v, "\n") || strings.Contains(v, `"""`) {
 		fmt.Fprintf(b, "    instructions %s\n", strconv.Quote(v))
 		return
 	}
