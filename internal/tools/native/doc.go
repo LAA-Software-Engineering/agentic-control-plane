@@ -22,9 +22,11 @@
 // (chat.update — channel, ts, text). Slack replies HTTP 200 even on logical failures, so the client
 // checks the response ok field.
 //
-// Workspace (sandboxed filesystem + test runner; TERFYN_WORKSPACE_ROOT bounds every path via
-// os.Root, TERFYN_WORKSPACE_TEST_COMMAND is the run_tests command): read_file, write_file,
-// run_tests.
+// Workspace (sandboxed filesystem + test runner): read_file, write_file, run_tests. The sandbox
+// root bounds every path via os.Root (symlink/`..` escapes refused); the run_tests command comes
+// from config, never from tool-call arguments. Config is either declared on the Tool resource
+// (spec.workspace.root / testCommand — a relative root resolves against the project root) or, when
+// absent, taken from TERFYN_WORKSPACE_ROOT / TERFYN_WORKSPACE_TEST_COMMAND. Declared config wins.
 //
 // Every operation here is a concrete capability; the effect classes it may produce are declared on
 // the Tool resource's operations manifest (issue #188 / #204), not in this package.

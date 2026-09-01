@@ -134,9 +134,13 @@ terfyn run workflow/ImplementAndReview \
   --input-file examples/implement-review-loop/fixtures/task.json
 ```
 
-The sandbox root confines every `read_file` / `write_file` — a `..` path that would escape
-is rejected — and `run_tests` runs only `TERFYN_WORKSPACE_TEST_COMMAND`, never a command the
-agent chooses, so the capability boundary holds at the filesystem too.
+The sandbox root confines every `read_file` / `write_file` — a `..` path or symlink that would
+escape is rejected — and `run_tests` runs only the configured command, never a command the agent
+chooses, so the capability boundary holds at the filesystem too.
+
+Instead of the env vars, the sandbox root and test command can be declared on the tool
+(`spec.workspace.root` / `testCommand` in [`tools/workspace.yaml`](tools/workspace.yaml)); a
+relative root resolves against the project root, and declared config takes precedence over the env.
 
 > The deterministic `mock/gpt-4` model drives `validate` / `plan` / `apply`, but it cannot
 > execute the tool loop — it emits empty-argument tool calls — so `run` needs a real model.

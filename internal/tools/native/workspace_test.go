@@ -135,6 +135,41 @@ func TestWorkspace_ReadFileTruncatesLargeFile(t *testing.T) {
 	}
 }
 
+// TestWorkspace_ConfigRootBeatsEnv: a declared root on the context takes precedence over the env.
+func TestWorkspace_ConfigRootBeatsEnv(t *testing.T) {
+	envRoot := t.TempDir()
+	cfgRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cfgRoot, "only.txt"), []byte("from-config"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspaceRoot, envRoot)
+	ctx := WithWorkspaceConfig(context.Background(), WorkspaceConfig{Root: cfgRoot})
+	out, _, err := NewRegistry().Dispatch(ctx, "read_file", map[string]any{"path": "only.txt"})
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if out["content"] != "from-config" {
+		t.Fatalf("declared root should win over env, got %#v", out)
+	}
+}
+
+// TestWorkspace_ConfigTestCommandBeatsEnv: a declared testCommand wins over the env var.
+func TestWorkspace_ConfigTestCommandBeatsEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("run_tests uses sh -c")
+	}
+	root := t.TempDir()
+	t.Setenv(envWorkspaceTestCommand, "exit 7")
+	ctx := WithWorkspaceConfig(context.Background(), WorkspaceConfig{Root: root, TestCommand: "exit 0"})
+	out, _, err := NewRegistry().Dispatch(ctx, "run_tests", map[string]any{})
+	if err != nil {
+		t.Fatalf("run_tests: %v", err)
+	}
+	if out["exitCode"].(int) != 0 {
+		t.Fatalf("declared testCommand should win over env, got %#v", out)
+	}
+}
+
 func TestWorkspace_RootRequired(t *testing.T) {
 	t.Setenv(envWorkspaceRoot, "")
 	if _, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "x"}); err == nil {
