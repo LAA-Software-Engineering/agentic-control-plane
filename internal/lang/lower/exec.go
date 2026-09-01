@@ -76,6 +76,8 @@ func (el *execLowerer) reserve(stmts []lang.Stmt) {
 		case *lang.ForStmt:
 			el.reserveName(s.Var)
 			el.reserve(s.Body)
+		case *lang.WhileStmt:
+			el.reserve(s.Body)
 		}
 	}
 }
@@ -139,6 +141,17 @@ func (el *execLowerer) lowerStmt(st lang.Stmt) []execir.Node {
 			el.parallelDepth--
 		}
 		return append(pre, loop)
+	case *lang.WhileStmt:
+		// A bounded while lowers to execir.While: a condition (pure over already-
+		// bound values, same rule as a Branch), the explicit source Limit, and the
+		// body. The interpreter enforces the bound (ADR 002 §6); the resource
+		// projection flattens the body separately for effect analysis.
+		return []execir.Node{&execir.While{
+			Pos:   s.Pos,
+			Cond:  el.lowerCond(s.Cond),
+			Limit: s.Limit,
+			Body:  el.lowerStmts(s.Body),
+		}}
 	case *lang.ReturnStmt:
 		if el.parallelDepth > 0 {
 			el.diag(s.Pos, "return is not allowed inside a parallel loop body; a parallel iteration has no join target for a return value")

@@ -78,6 +78,7 @@ type nodeWire struct {
 	Var        string             `json:"var,omitempty"`
 	Parallel   bool               `json:"parallel,omitempty"`
 	Collection *valWire           `json:"collection,omitempty"`
+	Limit      int                `json:"limit,omitempty"`
 	Body       []nodeWire         `json:"body,omitempty"`
 	Nodes      []graphNodeWire    `json:"nodes,omitempty"`
 	Desc       string             `json:"desc,omitempty"`
@@ -154,6 +155,9 @@ func wireNode(n Node) nodeWire {
 	case *Loop:
 		cw := wireVal(v.Collection)
 		return nodeWire{Kind: "loop", Var: v.Var, Parallel: v.Parallel, Collection: &cw, Body: wireNodes(v.Body)}
+	case *While:
+		ew := wireExpr(v.Cond)
+		return nodeWire{Kind: "while", Cond: &ew, Limit: v.Limit, Body: wireNodes(v.Body)}
 	case *Return:
 		vw := wireVal(v.Value)
 		return nodeWire{Kind: "return", Value: &vw}
@@ -288,6 +292,8 @@ func decodeNode(n nodeWire) Node {
 		return &Fork{Branches: brs}
 	case "loop":
 		return &Loop{Var: n.Var, Parallel: n.Parallel, Collection: decodeValPtr(n.Collection), Body: decodeNodes(n.Body)}
+	case "while":
+		return &While{Cond: decodeExprPtr(n.Cond), Limit: n.Limit, Body: decodeNodes(n.Body)}
 	case "return":
 		return &Return{Value: decodeValPtr(n.Value)}
 	case "graph":

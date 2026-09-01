@@ -360,6 +360,8 @@ func (r *runner) exec(scope map[string]any, n Node, path, loop []int) error {
 		return r.execFork(scope, v, path, loop)
 	case *Loop:
 		return r.execLoop(scope, v, path, loop)
+	case *While:
+		return r.execWhile(scope, v, path, loop)
 	case *Graph:
 		return r.execGraph(scope, v, path, loop)
 	case *Return:
@@ -517,6 +519,53 @@ func (r *runner) execLoop(scope map[string]any, l *Loop, path, loop []int) error
 		}
 		if r.done {
 			break
+		}
+	}
+	return nil
+}
+
+// execWhile runs a bounded condition-driven loop (#288, ADR 002 §6). It is the
+// durable, adversary-resistant counterpart to the surface `while … limit N`:
+//
+//   - The iteration ceiling is effectiveMax = min(Limit, MaxLoopIterations). The
+//     body runs AT MOST that many times even if Cond never becomes false, so a
+//     `limit 3` never runs a fourth body on malformed carried state. The per-loop
+//     Limit is primary; the global cap is only an additional backstop.
+//   - Cond is evaluated before each iteration over the enclosing scope (pure, like
+//     a Branch). Each iteration's decision is recorded per (path, iteration) so a
+//     durable resume replays the SAME iteration history and a divergent condition
+//     is a loud error rather than a silently different run.
+//   - Iteration i folds into the loop-index vector (extend(loop, i)), so an
+//     effectful leaf in iteration i memoizes under a stable, iteration-specific
+//     CallSite and is never reissued across a resume.
+//   - The body shares the enclosing scope (loop-carried state; last write wins),
+//     and a Return in the body halts the workflow and the loop.
+func (r *runner) execWhile(scope map[string]any, w *While, path, loop []int) error {
+	max := r.in.maxIters()
+	if w.Limit > 0 && w.Limit < max {
+		max = w.Limit
+	}
+	for i := 0; i < max; i++ {
+		iter := extend(loop, i)
+		cond, err := evalExpr(scope, w.Cond)
+		if err != nil {
+			return err
+		}
+		taken := 0
+		if cond {
+			taken = 1
+		}
+		if err := r.sess.checkControl(controlKey("while:", path, iter), taken); err != nil {
+			return err
+		}
+		if !cond {
+			return nil
+		}
+		if err := r.execAll(scope, w.Body, path, iter); err != nil {
+			return err
+		}
+		if r.done {
+			return nil
 		}
 	}
 	return nil

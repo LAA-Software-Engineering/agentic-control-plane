@@ -231,6 +231,25 @@ type ForStmt struct {
 func (s *ForStmt) Position() Pos { return s.Pos }
 func (s *ForStmt) stmtNode()     {}
 
+// WhileStmt is `while <Cond> limit <N> { <Body> }` (#288): a bounded loop that
+// runs its body while Cond is truthy, at most Limit times. The bound is part of
+// the safety model — Terfyn admits no unbounded effectful loop (ADR 002 §6) — so
+// Limit is always a positive integer literal fixed in the source (a missing,
+// zero, fractional, or dynamic bound is a diagnostic; the parser records 0 in
+// that case). Scoping is the sequential-loop rule (loop-carried state): a name
+// bound before the loop may be rebound and carries forward across iterations and
+// out of the loop; a name first bound inside is loop-local. It lowers to the
+// execution IR's While (never a WorkflowStep field, ADR 002 §4).
+type WhileStmt struct {
+	Pos   Pos
+	Cond  Expr
+	Limit int
+	Body  []Stmt
+}
+
+func (s *WhileStmt) Position() Pos { return s.Pos }
+func (s *WhileStmt) stmtNode()     {}
+
 // --- Expressions ------------------------------------------------------------
 
 // Expr is a workflow expression: a CallExpr, a RefExpr, or — in a condition or

@@ -385,6 +385,8 @@ func (p *parser) parseStmt() Stmt {
 		return p.parseIf()
 	case KindFor:
 		return p.parseFor(false, p.cur.Pos)
+	case KindWhile:
+		return p.parseWhile()
 	case KindParallel:
 		// `parallel for x in coll { }` is dynamic fan-out (a loop, #199);
 		// `parallel { a = ...; b = ... }` is static fan-out (#192).
@@ -467,6 +469,47 @@ func (p *parser) parseFor(parallel bool, pos Pos) *ForStmt {
 	stmt.In = p.parseExpr()
 	stmt.Body = p.parseBlock("to open loop body")
 	return stmt
+}
+
+// parseWhile parses `while <cond> limit <N> { body }` (#288). `limit` is a
+// contextual keyword matched here (an ordinary identifier), so a parameter may
+// still be named `limit`. The bound N must be a positive integer literal — the
+// language admits no unbounded effectful loop (ADR 002 §6) — so a missing, zero,
+// fractional, or dynamic bound is a diagnostic.
+func (p *parser) parseWhile() *WhileStmt {
+	stmt := &WhileStmt{Pos: p.cur.Pos}
+	p.advance() // consume 'while'
+	stmt.Cond = p.parseExpr()
+	if p.cur.Kind == KindIdent && p.cur.Lit == "limit" {
+		p.advance()
+		stmt.Limit = p.parseLimit()
+	} else {
+		p.errorf(p.cur.Pos, "expected 'limit' <positive integer> after the while condition (an unbounded while is not allowed), got %s", p.cur)
+	}
+	stmt.Body = p.parseBlock("to open while body")
+	return stmt
+}
+
+// parseLimit consumes the mandatory positive-integer bound after `limit`. A
+// non-number (e.g. a dynamic `limit input.max`), a fractional, or a non-positive
+// value is a diagnostic; Limit is left 0 so the program is not treated as valid.
+func (p *parser) parseLimit() int {
+	tok := p.cur
+	if tok.Kind != KindNumber {
+		p.errorf(tok.Pos, "while limit must be a positive integer literal, got %s (a dynamic or non-integer bound is not allowed)", tok)
+		return 0
+	}
+	p.advance()
+	if strings.Contains(tok.Lit, ".") {
+		p.errorf(tok.Pos, "while limit must be a whole number, got %q", tok.Lit)
+		return 0
+	}
+	n, err := strconv.ParseInt(tok.Lit, 10, 64)
+	if err != nil || n <= 0 {
+		p.errorf(tok.Pos, "while limit must be a positive integer, got %q", tok.Lit)
+		return 0
+	}
+	return int(n)
 }
 
 // --- Expressions ------------------------------------------------------------

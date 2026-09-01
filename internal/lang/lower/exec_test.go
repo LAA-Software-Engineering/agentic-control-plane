@@ -131,6 +131,44 @@ workflow W(input: PR) {
 	}
 }
 
+func TestLowerExec_WhileLowersToWhile(t *testing.T) {
+	t.Parallel()
+	prog, diags := lowerExecOrFatal(t, `
+workflow W(input: State) -> State {
+    state = input
+    while !state.approved limit 3 {
+        state = Reviewer(state)
+    }
+    return state
+}
+`, nil)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	// Body: Let(state=input), While, Return.
+	var w *execir.While
+	for _, n := range prog.Body {
+		if ws, ok := n.(*execir.While); ok {
+			w = ws
+		}
+	}
+	if w == nil {
+		t.Fatalf("expected a While node in %#v", prog.Body)
+	}
+	if w.Limit != 3 {
+		t.Fatalf("limit: got %d, want 3", w.Limit)
+	}
+	if _, ok := w.Cond.(execir.Not); !ok {
+		t.Fatalf("expected a Not condition (!state.approved), got %T", w.Cond)
+	}
+	if len(w.Body) != 1 {
+		t.Fatalf("body: got %d nodes, want 1", len(w.Body))
+	}
+	if ia, ok := w.Body[0].(*execir.InvokeAgent); !ok || ia.Agent != "Reviewer" || ia.Bind != "state" {
+		t.Fatalf("body should rebind state = Reviewer(state), got %#v", w.Body[0])
+	}
+}
+
 func TestLowerExec_ForAndParallelFor(t *testing.T) {
 	t.Parallel()
 	prog, diags := lowerExecOrFatal(t, `
