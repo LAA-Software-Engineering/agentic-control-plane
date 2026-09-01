@@ -1051,8 +1051,9 @@ Once any Tool declares `spec.operations` effects, a Policy with no `effects.perm
 Projects with no declared tool effects skip this check so existing examples still validate.
 Enforcement is `internal/effects.Check` at validate/plan command paths (exit **2**), not
 shared `config.Resolve`. Runtime `CheckToolCall` separately enforces the #204 closed-world
-capability manifest (an operation outside declared `spec.operations` is denied, exit **5**); the
-run-pinned deployed manifest ships in #207 (the run resumes from its `deployment_snapshot_digest`).
+capability manifest (an operation outside declared `spec.operations` is denied, exit **5**); a
+resumed run enforces the manifest it started with, hydrated from its `deployment_snapshot_digest`
+(#207), not whatever is deployed at resume time.
 
 ### End goal
 
@@ -1780,7 +1781,7 @@ Responsibilities:
 
 The engine implements the bounded tool-calling loop (issue #160). Each agent-declared Tool resource is advertised as one `ToolDef` (name = Tool metadata.name, permissive object schema). `agent.spec.tools` entries may be the Tool metadata name or a pinned uses string `tool.<name>.<operation>`. `ToolChoice` is `auto`. Type defaults when only the name is listed: native → `tool.<name>.echo`; mock/mcp → `tool.<name>.default`. HTTP has no default (`parseOperation` would treat `default` as `GET /default`); list `tool.<name>.<method.path>` — pinned `tool.<name>.default` is rejected the same way as a bare HTTP name. `terfyn validate` / `plan` apply these advertised-uses rules (unknown tools, HTTP method.path, conflicting ops on one Tool name). Only the ToolDef name is accepted as a `ToolCall.Name` (ADR 002: no operation is agent-callable unless it was advertised). Aliases such as `helper.echo`, `tool.helper.echo`, `helper.command.run`, or HTTP `delete.users` fail before `CheckToolCall` / `Tools.Call`. On `StopReason: tool_use`, each accepted call is checked with `CheckToolCall`, then executed via `Tools.Call` on the agent `constraints.timeoutSeconds` context. Results are appended as `ChatMessage.ToolResults` (with the assistant `ToolCalls` replayed) and the loop continues. Agents that declare no tools stay a single `Generate` with no `Tools` field. Loop cost (model + tool) accumulates into the step `GenerateMeta`; `policy.CheckRun` runs after each Generate and tool turn so `execution.maxTotalCostUsd` / wall-clock apply inside a single agent step. `constraints.maxIterations` (default 8, hard cap 32) counts **Generate turns**; `tool_use` on the last turn fails without executing those calls (`maxIterations: 1` is one completion, tools never run). A cutoff emits `limit_hit` (`kind: max_iterations`) and fails the step. HITL interrupt is **not** consulted inside the loop: inner uses must already be pre-approved (`terfyn run --approve` / `ApprovedActions`) or `CheckToolCall` fails closed. Policy denial uses the existing `DeniedError` path (CLI exit **5**).
 
-`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `terfyn plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is sound against the pinned operation manifest (#204): runtime `CheckToolCall` denies any operation outside the tool's declared `spec.operations`, so a live `tools/list` can no longer expand the callable world (see §7.3, *Capability manifest*). The run-**pinned** deployed manifest — enforcing what a resumed run started with, via `runs.deployment_snapshot_digest` (§14) — ships in #207. Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
+`agent.spec.tools` is an **autonomous capability grant**, not a static call list (ADR 002 Path 1). Epic A shipped genuine tool selection (#160 / #161); grant semantics therefore apply. Each entry is a grant of a **concrete operation** (`tool.<name>.<operation>`), not a Tool resource and not an effect class. Every granted operation contributes to the agent's action space whether or not a workflow `uses:` step names it. Widening the list expands a nondeterministic component's action space — `terfyn plan` reports a new **autonomous** effect at higher severity than a new **static** one, and prints `AUTONOMOUS` `WIDENED` when a grant is added even if the named effect set is unchanged. Issue #189 computes the bound in [`internal/effects`](../internal/effects) over the **desired** graph; issue #191 prints `bound(desired)` vs `bound(deployed)` (reconstructed from applied `NormalizedSpecJSON`; empty store is an empty baseline). For MCP tools the grant is sound against the pinned operation manifest (#204): runtime `CheckToolCall` denies any operation outside the tool's declared `spec.operations`, so a live `tools/list` can no longer expand the callable world (see §7.3, *Capability manifest*). The run-**pinned** deployed manifest — enforcing what a resumed run started with, via `runs.deployment_snapshot_digest` (§14) — ships in #207: on a pinned resume the graph and authority are hydrated from the snapshot, so a widening apply does not widen the resumed run's callable set. Loop, traces, and HITL vs exit **5**: [`docs/AGENT_LOOP.md`](AGENT_LOOP.md).
 
 Abstraction:
 
@@ -1957,12 +1958,14 @@ an empty effect delta and still marks autonomous authority `WIDENED`.
 bound — fail-closed, not empty/allow, not omitted. Effects **declared** on a tool operation
 that is not reachable from that root are listed as **unreachable**, not dropped.
 
-**#204 closed world (partially shipped).** This package computes desired-graph bounds over
+**#204 closed world (shipped).** This package computes desired-graph bounds over
 declared `spec.operations` and advertised uses; `validate`/`plan` bound desired. The runtime
-closed-world enforcement — `run` denying any operation outside the deployed manifest — now ships
+closed-world enforcement — `run` denying any operation outside the deployed manifest — ships
 on the `CheckToolCall` policy path (§7.3), so a remote `tools/list` expansion is denied, not
 absorbed. The **run-pinned** deployed manifest (a resumed run enforcing what it started with)
-still depends on #207.
+ships in #207: `prepareForResume` hydrates the run's graph and authority from its pinned
+deployment snapshot, so a widening apply between suspend and resume does not widen the resumed
+run's callable set (covered by `TestCompiledWorkflowEvaluator_pinnedIgnoresWidenedDiskSnapshot`).
 
 Walks use a visiting set (least fixed point) so cyclic graphs terminate. Production `workflow:`
 steps are walked (issue #194); diamond reuse of one agent does not duplicate infinitely.
