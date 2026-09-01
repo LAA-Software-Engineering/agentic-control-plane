@@ -1,5 +1,7 @@
 package execir
 
+import "math"
+
 // RequiresInterpreter reports whether a program must run on the execir
 // interpreter rather than the resource-projection DAG (issue #259). It is true
 // when the program contains a Branch or a Loop anywhere: those are the constructs
@@ -93,14 +95,14 @@ func boundsOf(nodes []Node, factor int, dataBounded bool, cap int) map[calleeKey
 		}
 		k := calleeKey{kind, callee}
 		cur := acc[k]
-		cur.max += factor
+		cur.max = satAdd(cur.max, factor)
 		cur.dataBounded = cur.dataBounded || dataBounded
 		acc[k] = cur
 	}
 	mergeSum := func(other map[calleeKey]invAcc) {
 		for k, v := range other {
 			cur := acc[k]
-			cur.max += v.max
+			cur.max = satAdd(cur.max, v.max)
 			cur.dataBounded = cur.dataBounded || v.dataBounded
 			acc[k] = cur
 		}
@@ -114,15 +116,19 @@ func boundsOf(nodes []Node, factor int, dataBounded bool, cap int) map[calleeKey
 		case *InvokeWorkflow:
 			add("workflow", v.Workflow)
 		case *While:
-			f := factor * v.Limit
-			if v.Limit <= 0 {
-				f = factor
+			// The runtime caps a `while` at min(Limit, MaxLoopIterations) (#299), so
+			// multiplying that tight factor — not the raw source Limit — keeps the
+			// bound honest (matching what can actually run) AND overflow-resistant
+			// (each factor is ≤ cap). satMul saturates as a backstop for deep nesting.
+			lim := v.Limit
+			if lim <= 0 || lim > cap {
+				lim = cap
 			}
-			mergeSum(boundsOf(v.Body, f, dataBounded, cap))
+			mergeSum(boundsOf(v.Body, satMul(factor, lim), dataBounded, cap))
 		case *Loop:
 			// A for/parallel-for over a runtime collection is not statically bounded;
 			// the global loop cap is the conservative ceiling.
-			mergeSum(boundsOf(v.Body, factor*cap, true, cap))
+			mergeSum(boundsOf(v.Body, satMul(factor, cap), true, cap))
 		case *Branch:
 			// Only one arm runs: the bound is the MAX over arms, per callee.
 			mergeMaxInto(acc, boundsOf(v.Then, factor, dataBounded, cap), boundsOf(v.Else, factor, dataBounded, cap))
@@ -159,7 +165,7 @@ func mergeMaxInto(dst map[calleeKey]invAcc, then, els map[calleeKey]invAcc) {
 	}
 	for k, v := range maxed {
 		cur := dst[k]
-		cur.max += v.max
+		cur.max = satAdd(cur.max, v.max)
 		cur.dataBounded = cur.dataBounded || v.dataBounded
 		dst[k] = cur
 	}
@@ -170,6 +176,29 @@ func maxIntBound(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// satMul and satAdd are saturating (never-wrapping) arithmetic over the non-negative
+// invocation counts: on overflow they clamp to math.MaxInt rather than wrapping to a
+// negative bound, so the computed upper bound is never an undercount (#293 review).
+// Overflow is already unreachable for realistic workflows — each loop factor is
+// min(Limit, cap) ≤ cap, so it takes deep nesting to approach the limit — this is the
+// backstop.
+func satMul(a, b int) int {
+	if a <= 0 || b <= 0 {
+		return 0
+	}
+	if a > math.MaxInt/b {
+		return math.MaxInt
+	}
+	return a * b
+}
+
+func satAdd(a, b int) int {
+	if b > 0 && a > math.MaxInt-b {
+		return math.MaxInt
+	}
+	return a + b
 }
 
 func sortInvocationBounds(b []InvocationBound) {

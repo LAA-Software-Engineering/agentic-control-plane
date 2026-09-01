@@ -1,6 +1,9 @@
 package execir
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func boundMap(bs []InvocationBound) map[string]InvocationBound {
 	m := map[string]InvocationBound{}
@@ -74,5 +77,38 @@ func TestInvocationBounds_BranchTakesMax(t *testing.T) {
 	}
 	if b := m["agent:B"]; b.Max != 1 {
 		t.Fatalf("B: got %+v, want max 1", b)
+	}
+}
+
+// TestInvocationBounds_LargeLimitsAreTightNotOverflowing: the runtime caps a while at
+// min(Limit, cap), so the bound multiplies min(Limit, cap) — a huge source limit
+// yields a tight, positive bound, not an overflowed negative one (#293 review).
+func TestInvocationBounds_LargeLimitsAreTightNotOverflowing(t *testing.T) {
+	prog := &Program{Workflow: "W", Body: []Node{
+		&While{Cond: Leaf{V: Lit{V: true}}, Limit: 4000000000, Body: []Node{
+			&While{Cond: Leaf{V: Lit{V: true}}, Limit: 4000000000, Body: []Node{
+				&InvokeAgent{Agent: "A"},
+			}},
+		}},
+	}}
+	b := boundMap(InvocationBounds(prog, 1000))["agent:A"]
+	if b.Max != 1000*1000 {
+		t.Fatalf("each factor should be min(limit, cap)=1000, so 1e6: got %+v", b)
+	}
+	if b.Max < 0 {
+		t.Fatalf("bound must never be negative, got %d", b.Max)
+	}
+}
+
+// TestInvocationBounds_DeepNestingSaturates: when even min(Limit, cap) factors
+// compound past int range, the bound saturates to MaxInt (positive), never wraps.
+func TestInvocationBounds_DeepNestingSaturates(t *testing.T) {
+	body := []Node{&InvokeAgent{Agent: "A"}}
+	for i := 0; i < 4; i++ {
+		body = []Node{&While{Cond: Leaf{V: Lit{V: true}}, Limit: 1000000000, Body: body}}
+	}
+	b := boundMap(InvocationBounds(&Program{Workflow: "W", Body: body}, 1000000000))["agent:A"]
+	if b.Max != math.MaxInt {
+		t.Fatalf("deep nesting should saturate to MaxInt, got %d", b.Max)
 	}
 }
