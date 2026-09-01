@@ -74,6 +74,9 @@ func (l *Lexer) Next() Token {
 	case isDigit(r):
 		return l.scanNumber(start)
 	case r == '"':
+		if strings.HasPrefix(l.src[l.offset:], `"""`) {
+			return l.scanMultilineString(start)
+		}
 		return l.scanString(start)
 	case r == '{':
 		l.advance()
@@ -255,6 +258,75 @@ func (l *Lexer) scanString(start Pos) Token {
 		b.WriteRune(r)
 		l.advance()
 	}
+}
+
+// scanMultilineString reads a triple-quoted string literal `"""…"""`. The body
+// is RAW — no escape processing and no `${…}` interpolation — so real prompts can
+// contain backslashes and braces literally. Token.Lit holds the value after
+// deterministic indentation normalization (see normalizeMultiline). An
+// unterminated literal is a diagnostic; the best-effort decoded prefix is still
+// returned so the parser can continue.
+func (l *Lexer) scanMultilineString(start Pos) Token {
+	l.advance() // "
+	l.advance() // "
+	l.advance() // "  (opening delimiter consumed)
+	begin := l.offset
+	for {
+		if l.offset >= len(l.src) {
+			l.errorf(start, "unterminated multiline string literal")
+			return Token{Kind: KindString, Lit: normalizeMultiline(l.src[begin:l.offset]), Pos: start}
+		}
+		if strings.HasPrefix(l.src[l.offset:], `"""`) {
+			body := l.src[begin:l.offset]
+			l.advance()
+			l.advance()
+			l.advance() // closing delimiter consumed
+			return Token{Kind: KindString, Lit: normalizeMultiline(body), Pos: start}
+		}
+		l.advance()
+	}
+}
+
+// normalizeMultiline applies the deterministic indentation rules for a
+// triple-quoted literal (docs/LANGUAGE.md): line endings are normalized to \n; a
+// whitespace-only opening line (the newline right after `"""`) is discarded; a
+// whitespace-only closing line (the indentation before the closing `"""`) is
+// discarded; the common leading indentation of all nonblank lines is removed,
+// preserving relative indentation; and blank lines are preserved as empty lines.
+func normalizeMultiline(raw string) string {
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	// Discard a leading opening line that is only whitespace up to its newline
+	// (`"""` immediately — or after trailing spaces — followed by a newline).
+	if i := strings.IndexByte(raw, '\n'); i >= 0 && strings.TrimSpace(raw[:i]) == "" {
+		raw = raw[i+1:]
+	}
+	lines := strings.Split(raw, "\n")
+	// A trailing whitespace-only line is the closing delimiter's own indented
+	// line: drop it together with the newline that preceded it.
+	if n := len(lines); n > 0 && strings.TrimRight(lines[n-1], " \t") == "" {
+		lines = lines[:n-1]
+	}
+	// Common leading indentation over nonblank lines only.
+	minIndent := -1
+	for _, ln := range lines {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		n := len(ln) - len(strings.TrimLeft(ln, " \t"))
+		if minIndent < 0 || n < minIndent {
+			minIndent = n
+		}
+	}
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == "" {
+			lines[i] = "" // preserve the blank line, drop incidental whitespace
+			continue
+		}
+		if minIndent > 0 && len(ln) >= minIndent {
+			lines[i] = ln[minIndent:]
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // skipTrivia consumes whitespace (including newlines) and // line comments.

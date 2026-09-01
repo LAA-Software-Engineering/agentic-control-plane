@@ -66,6 +66,26 @@ The reference implementation is [`internal/lang`](../internal/lang):
   `model`, `policy`, `grants`, `input`, `output`, and the clause word `effects` are
   **contextual**: they are ordinary identifiers the parser recognizes by position, so
   they may also be used as parameter or binding names.
+- **Strings** come in two forms, both ordinary string values (no distinct AST type):
+  - **Single-line** `"..."` with the escapes `\"` `\\` `\n` `\t` `\r`. A newline before the
+    closing quote is an error.
+  - **Multiline** `"""..."""` for prose such as agent `instructions`. The body is **raw** —
+    no escape processing and no `${...}` interpolation, so backslashes and braces are literal —
+    and is normalized deterministically: line endings become `\n`; a whitespace-only opening
+    line (the newline right after `"""`) is discarded; a whitespace-only closing line (the
+    indentation before the closing `"""`) is discarded; the common leading indentation of all
+    nonblank lines is removed, preserving relative indentation; blank lines are preserved. So
+
+    ```agent
+    """
+        line one
+
+        line two
+    """
+    ```
+
+    is exactly the value `line one\n\nline two`. `terfyn fmt` round-trips a multiline value
+    back to a canonical `"""..."""` block.
 - **Punctuation**: `{` `}` `(` `)` `.` `/` `,` `:` `=` `->`.
 
 ## Grammar (EBNF)
@@ -77,9 +97,11 @@ Declaration = AgentDecl | WorkflowDecl ;
 AgentDecl   = "agent" Ident "{" { AgentField } "}" ;
 AgentField  = "model"  ModelRef
             | "policy" Ident
+            | "instructions" StringLiteral
             | "grants" "{" { Grant } "}"
             | "input"  Ident
             | "output" Ident ;
+StringLiteral = String | MultilineString ;      (* both decode to one string value *)
 ModelRef    = Ident "/" Ident ;                 (* e.g. openai/gpt-5 *)
 Grant       = "tool" "." Ident "." Operation ;  (* tool.<name>.<operation> *)
 Operation   = Ident { "." Ident } ;             (* name = first Ident, operation = the rest *)
@@ -136,9 +158,12 @@ Notes:
   operand. Bind a call's result to a name and test the name. This keeps conditions
   effect-free and the effect bound trivially the union over both arms.
 - Comparisons do not chain: `a < b < c` is a syntax error (parenthesize or use `&&`).
-- Each agent field (`model`, `policy`, `grants`, `input`, `output`) may appear at most
-  once; a repeated field keeps the first occurrence and yields a duplicate-field
-  diagnostic rather than silently overwriting.
+- Each agent field (`model`, `policy`, `instructions`, `grants`, `input`, `output`) may
+  appear at most once; a repeated field keeps the first occurrence and yields a
+  duplicate-field diagnostic rather than silently overwriting.
+- `instructions` is the agent prompt. It lowers verbatim into `AgentSpec.Instructions`
+  (the existing runtime field) — no new prompt abstraction and no new runtime semantics —
+  and is the reason for the multiline string form above.
 - Requiredness of agent fields, argument style (all-positional vs. all-named), reference
   resolution, and effect soundness are **not** enforced by the parser — they are
   checking concerns (#198). A field the author omitted is a nil node, not a parse error.

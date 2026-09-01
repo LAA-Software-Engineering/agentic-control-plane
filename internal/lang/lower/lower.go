@@ -182,6 +182,13 @@ func (l *lowerer) agent(d *lang.AgentDecl) *spec.AgentResource {
 	if d.Policy != nil {
 		ar.Spec.Policy = d.Policy.Name
 	}
+	// instructions -> AgentSpec.Instructions: the agent prompt, copied verbatim
+	// (the lexer already normalized a multiline body). No new prompt abstraction
+	// and no new runtime semantics — the existing agent runtime consumes it.
+	if d.Instructions != nil {
+		ar.Spec.Instructions = d.Instructions.Value
+		l.sm.set(KeyAgentInstructions(name), d.Instructions.Pos)
+	}
 	// grants -> AgentSpec.Tools: an autonomous capability bound, not a call list
 	// (ADR 002). Each grant reconstructs the tool.<name>.<operation> uses string.
 	//
