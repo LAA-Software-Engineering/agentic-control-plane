@@ -19,19 +19,17 @@ import (
 )
 
 // engineInvoker is the engine-backed [execir.Invoker] (issue #257): it runs each
-// execir leaf through the SAME per-step executors the DAG runtime uses
-// (runToolStep/runAgentStep), so policy (CheckRun admit + CheckToolCall), tool
-// input/output enforcement (schema #204, byte limits/truncation #117), cost, and
-// trace are reproduced without duplication — that reuse is what makes the two
-// paths observably identical on a completing graph.
+// execir leaf through the shared per-step executors (runToolStep/runAgentStep),
+// so policy (CheckRun admit + CheckToolCall), tool input/output enforcement
+// (schema #204, byte limits/truncation #117), cost, and trace are applied in one
+// place — this is the sole run path since #278 retired the WorkflowStep DAG.
 //
-// It mirrors executeOneStep + commitDAGStepSuccess, reusing the DAG's HITL
-// machinery (BuildHitlGateWithEvaluator / resolvePendingHitl / approvalHitlGate)
-// so suspend/resume (#258) behaves identically. There is no interpolation (execir
-// evaluates argument Values itself — the ADR 002 §5 point) and no per-node
-// checkpoint: the durable state is the interpreter's completed-leaf memo, written
-// once at the suspend point. Concurrent per-branch suspend and subworkflow
-// re-entry stay out (#270 Tier B).
+// It reuses the shared HITL machinery (BuildHitlGateWithEvaluator /
+// resolvePendingHitl / approvalHitlGate) for suspend/resume (#258). There is no
+// interpolation (execir evaluates argument Values itself — the ADR 002 §5 point)
+// and no per-node checkpoint: the durable state is the interpreter's completed-leaf
+// memo, written once at the suspend point. Concurrent per-branch suspend and
+// nested subworkflow re-entry are handled (#270).
 //
 // Concurrency: a Graph or Fork invokes from several goroutines. The shared
 // [liveCost] is already mutex-guarded; ictx (accumulated step results, read only
@@ -285,13 +283,16 @@ func (a *engineInvoker) InvokeTool(ctx context.Context, site execir.CallSite, us
 	// maybeInterruptForHitl's error when it does not interrupt.
 	if gate, gerr := a.buildToolGate(step, uses, args); gerr == nil && gate != nil {
 		if a.in.Hitl.AutoApprove {
+			// Auto-approve records the decision and proceeds, passing the gated uses
+			// as an approved action so the dispatch's CheckToolCall admits it (mirrors
+			// the DAG's executeOneStep, which appended uses to pctx.ApprovedActions).
 			a.e.recordAutoApproveHitl(ctx, a.in.RunID, step, 0, *gate, a.in.Hitl.Actor)
-		} else {
-			if a.setPendingIfFirst(&PendingHitlState{StepID: step.ID, Uses: gate.Uses, With: gate.With, Review: gate.Review, ExecKey: key}) {
-				a.emitHitlRequest(ctx, step, gate)
-			}
-			return nil, execir.ErrSuspend
+			return a.dispatchTool(ctx, site, uses, args, uses)
 		}
+		if a.setPendingIfFirst(&PendingHitlState{StepID: step.ID, Uses: gate.Uses, With: gate.With, Review: gate.Review, ExecKey: key}) {
+			a.emitHitlRequest(ctx, step, gate)
+		}
+		return nil, execir.ErrSuspend
 	}
 	return a.dispatchTool(ctx, site, uses, args, "")
 }
@@ -434,6 +435,14 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 		return nil, fmt.Errorf("engine: step %q subworkflow %q input: %w", site.Bind, workflow, err)
 	}
 
+	// Record a run-step row for the workflow: step itself (running now, succeeded
+	// on completion below), matching the DAG's per-step envelope so a subworkflow
+	// call is addressable in run_steps like any other step.
+	wfQID := a.e.qualID(site.Bind)
+	wfInJSON, _ := json.Marshal(args)
+	wfStarted := a.e.now()
+	_ = a.e.Store.UpsertRunStep(ctx, state.RunStep{RunID: a.in.RunID, StepID: wfQID, Status: "running", StartedAt: &wfStarted, InputJSON: string(wfInJSON)})
+
 	calleePol, err := compiledWorkflowEvaluator(a.e.ProjectRoot, a.e.Graph, strings.TrimSpace(callee.Spec.Policy), a.e.PinnedGraph)
 	if err != nil {
 		return nil, err
@@ -526,6 +535,12 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 			"workflow": workflow, "depth": depth, "stepId": site.Bind,
 		})
 	}
+	wfFinished := a.e.now()
+	wfOutJSON, _ := json.Marshal(out)
+	_ = a.e.Store.UpsertRunStep(ctx, state.RunStep{
+		RunID: a.in.RunID, StepID: wfQID, Status: "succeeded",
+		StartedAt: &wfStarted, FinishedAt: &wfFinished, InputJSON: string(wfInJSON), OutputJSON: string(wfOutJSON),
+	})
 	a.mu.Lock()
 	a.ictx.Steps[site.Bind] = StepResult{Output: out, Meta: map[string]any{}}
 	a.mu.Unlock()
@@ -537,6 +552,14 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 // emit the same rows, trace, and cost. dispatch performs the actual leaf call and
 // returns its output and cost.
 func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args map[string]any, extraApproved string, dispatch func(policy.RunContext) (map[string]any, float64, error)) (any, error) {
+	// A bound step id must be a valid, unqualified id (mirrors the DAG's
+	// executeOneStep): reject a '/' before it is silently accepted as a step id.
+	// An effect-only leaf has an empty bind and is exempt.
+	if step.ID != "" {
+		if _, err := qualifyStepID(a.e.stepPrefix, step.ID); err != nil {
+			return nil, err
+		}
+	}
 	qid := a.e.qualID(step.ID)
 	inJSON, _ := json.Marshal(args)
 
@@ -746,20 +769,6 @@ func (e *Executor) loadExecResumeState(ctx context.Context, in RunInput, wf *spe
 		return Context{}, 0, nil, nil, fmt.Errorf("engine: resume routed to execir but checkpoint is not an execir checkpoint")
 	}
 	return ictx, totalCost, &execir.RunState{Memo: payload.ExecMemo, Control: payload.ExecControl}, payload.Nested, nil
-}
-
-// resumeIsExecIR reports whether the run's latest checkpoint was written by the
-// execir path, so Run can route a resume back to it.
-func (e *Executor) resumeIsExecIR(ctx context.Context, runID string) (bool, error) {
-	cp, err := e.Store.GetLatestCheckpoint(ctx, runID)
-	if err != nil {
-		return false, fmt.Errorf("engine: load checkpoint: %w", err)
-	}
-	var payload checkpointPayload
-	if err := json.Unmarshal([]byte(cp.ContextJSON), &payload); err != nil {
-		return false, fmt.Errorf("engine: unmarshal checkpoint: %w", err)
-	}
-	return payload.ExecIR, nil
 }
 
 var _ execir.Invoker = (*engineInvoker)(nil)

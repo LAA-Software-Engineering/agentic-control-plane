@@ -975,9 +975,11 @@ loops are bounded by `limits.maxLoopIterations`. The engine executes `execir` at
 DAG (#257), durably resumes it including HITL / concurrent per-branch suspend / nested subworkflows
 (#258/#270), pins the compiled program into the deployment snapshot and executes it (#260 — the
 execution-IR digest fold via `plan.WorkflowSpecHashWithExec` is now live workflow identity), and
-runs `.agent` control flow through the pinned program (#259). The one remaining piece is retiring
-the redundant `WorkflowStep` DAG runtime so every workflow runs on `execir` (#278); until then,
-straight-line / `needs` / `parallel { }` workflows still execute on the DAG.
+runs `.agent` control flow through the pinned program (#259). The `WorkflowStep` DAG runtime has
+been **retired (#278)**: every workflow — straight-line, `needs`, `parallel { }`, control flow, and
+subworkflows — now executes on `execir`, so both ingress paths converge on one interpreter (ADR 002
+§5 complete). This was a hard format cut: a run interrupted before the upgrade has a pre-execir
+(DAG) checkpoint, which is not resumable — resume fails loudly and the run must be started anew.
 
 | Addition | Surface | Status |
 |----------|---------|--------|
@@ -2058,6 +2060,12 @@ MVP step result shape:
 
 ## 13.2.1 Graph execution (issue #192)
 
+> **Single run path (#278).** Every workflow runs on the `execir` interpreter; the `WorkflowStep`
+> DAG runtime was retired. A `needs:` graph lowers to an `execir.Graph` scheduled with the same
+> depends-ready, bounded-concurrency semantics described below; straight-line workflows lower to a
+> flat node list. The behavior in this section is unchanged — only the executor is now the shared
+> interpreter (ADR 002 §5).
+
 `WorkflowStep.needs` is a static list of step IDs. This is graph structure (ADR 002), not computation: no conditionals, loops, or dynamic fan-out.
 
 **Implicit sequential:** when every step omits `needs:`, execution order is YAML order (step *i* waits for *i-1*). Existing examples keep this behavior.
@@ -2066,11 +2074,11 @@ MVP step result shape:
 
 Checkpoints persist `completed` (sorted step IDs) plus step outputs. Resume skips completed IDs, so a parallel group can continue after one branch finished. `StepIndex` remains the YAML index of the step that wrote the checkpoint (HITL / interrupt identity), not a linear cursor through remaining work.
 
-Trace `seq` follows SQLite insert (wall-clock, nondeterministic under concurrency). `data_json.logicalOrder` is the YAML step index for deterministic replay. `audit verify` hashes stored rows, including `logicalOrder` inside `data_json`.
+Trace `seq` follows SQLite insert (wall-clock, nondeterministic under concurrency); `audit verify` hashes stored rows in their persisted order. (The DAG-era `data_json.logicalOrder` stamp was removed with the DAG runtime in #278; deterministic replay comes from the interpreter's `CallSite`-keyed memo, not a trace-order stamp.)
 
 ## 13.2.2 Subworkflow execution (issue #194)
 
-A `workflow:` step is a nested DAG run of the named callee on the same run id. Interpolation inside the callee uses the callee's input (`with:`) and the callee's local step ids. The engine qualifies persisted step ids as `callerStep/calleeStep` so a parent and child may reuse ids. Checkpoints wrap in-flight callee state in `nested` (stackable) while the outer `completed` set still skips finished caller steps. Resume restores the inner DAG and continues; a later outer join sees the callee's `output.value` as `${steps.<id>.output}`.
+A `workflow:` step is a nested `execir` run of the named callee on the same run id. Interpolation inside the callee uses the callee's input (`with:`) and the callee's local step ids. The engine qualifies persisted step ids as `callerStep/calleeStep` so a parent and child may reuse ids. Checkpoints wrap in-flight callee state in `nested` (stackable) while the outer `completed` set still skips finished caller steps. Resume restores the inner DAG and continues; a later outer join sees the callee's `output.value` as `${steps.<id>.output}`.
 
 Trace taxonomy 3 adds `workflow_call_started` and `workflow_call_finished`. Nested events include `callStack` (callee names from the root) and `workflow` (innermost).
 

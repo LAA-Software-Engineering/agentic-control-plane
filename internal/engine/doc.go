@@ -3,16 +3,20 @@
 // [InterpolateString] and [InterpolateWalk] implement ${input.*} and ${steps.*} dot paths only (design doc section 13.1 MVP).
 // Whole-field tokens keep native types; tokens embedded in surrounding text stringify (issue #193).
 //
-// [Executor.Run] executes workflow DAGs: interpolated step inputs, policy checks from the
-// workflow's Policy resource, tool and agent steps, optional JSON Schema validation for agent output,
-// persisted run_steps rows, and trace events (design doc sections 12.2 E, 13.3, 13.4, 14.2).
-// Workflows with no `needs:` keep implicit sequential YAML order. Independent `needs:` roots
-// run concurrently with [DefaultMaxConcurrentSteps]; join steps see all upstream `${steps.*}`
-// outputs. Checkpoints store a completion set so resume can continue a partially finished
-// parallel group (issue #192). A `workflow:` step invokes another Workflow in the project graph
-// (issue #194); callee `output.value` becomes the step output. Nested progress is stored on the
-// checkpoint so resume can continue mid-subworkflow. Trace events stamp `logicalOrder` (YAML index)
-// and nested `callStack` for deterministic replay; the audit chain still verifies insert order.
+// [Executor.Run] executes every workflow on the execir interpreter: issue #278 retired the
+// WorkflowStep DAG runtime, converging both ingress paths (YAML and `.agent`) on one interpreter
+// (ADR 002 §5). A run interpolates step inputs, applies policy checks from the workflow's Policy
+// resource, runs tool and agent steps, optionally validates agent output against JSON Schema, and
+// persists run_steps rows and trace events (design doc sections 12.2, 13.3, 13.4, 14.2). A
+// straight-line workflow lowers to a flat node list (sequential YAML order); independent `needs:`
+// roots lower to a Graph scheduled with bounded concurrency ([RunInput].MaxConcurrentSteps); join
+// steps see all upstream `${steps.*}` outputs; `.agent` control flow lowers to Branch/Loop/Fork
+// (issue #259). The interpreter memoizes each completed leaf by its CallSite, so a HITL/approval
+// suspend checkpoints and resumes without re-issuing a side effect (issue #258). A `workflow:` step
+// runs the callee as a nested execir run (issue #194/#270); its `output.value` becomes the step
+// output, with nested progress carried on the checkpoint so resume continues mid-subworkflow. Trace
+// events stamp nested `callStack` for subworkflow events; the audit chain verifies insert order. A
+// resume requires an execir checkpoint — a pre-execir (DAG) checkpoint is not resumable (#278).
 //
 // Agent steps with declared tools run a bounded Generate loop (issue #160): the engine attaches
 // one [models.ToolDef] per listed Tool (`ToolChoice: auto`). `spec.tools` may name a Tool or pin

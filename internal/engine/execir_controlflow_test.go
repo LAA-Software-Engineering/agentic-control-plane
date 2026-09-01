@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,6 +11,13 @@ import (
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
 	"github.com/LAA-Software-Engineering/terfyn/internal/state"
 )
+
+func nativeTool(name string) *spec.ToolResource {
+	return &spec.ToolResource{
+		APIVersion: spec.APIVersionV0, Kind: spec.KindTool, Metadata: spec.Metadata{Name: name},
+		Spec: spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: spec.BoolPtr(false)}},
+	}
+}
 
 // cfGraph is a workflow whose FLATTENED resource projection contains both arms'
 // steps (thn + els). If a control-flow run wrongly went through the DAG it would
@@ -172,7 +180,7 @@ func TestControlFlow_ResumeMidLoop(t *testing.T) {
 	input := map[string]any{"items": []any{"a", "gate", "c"}}
 
 	// Fresh: each runs for a and gate, publish suspends at the gate iteration.
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "cf", Env: "dev", StartedAt: started, Input: input}); !errorsIsInterrupted(err) {
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "cf", Env: "dev", StartedAt: started, Input: input}); !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt mid-loop, got %v", err)
 	}
 	if ct.count("tool.each.echo") != 2 || ct.count("tool.publisher.echo") != 0 {
@@ -292,7 +300,7 @@ func TestControlFlow_ChildBehindParentResume(t *testing.T) {
 	ex.Executables = map[string]*execir.Program{"parent": parentProg, "child": childProg}
 	ctx := context.Background()
 
-	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{"urgent": true}}); !errorsIsInterrupted(err) {
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "parent", Env: "dev", StartedAt: started, Input: map[string]any{"urgent": true}}); !errors.Is(err, ErrInterrupted) {
 		t.Fatalf("fresh run should interrupt at the child gate, got %v", err)
 	}
 	err := ex.Run(ctx, RunInput{

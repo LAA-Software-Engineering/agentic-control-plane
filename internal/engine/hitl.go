@@ -7,8 +7,6 @@ import (
 
 	"github.com/LAA-Software-Engineering/terfyn/internal/policy"
 	"github.com/LAA-Software-Engineering/terfyn/internal/spec"
-	"github.com/LAA-Software-Engineering/terfyn/internal/state"
-	"github.com/LAA-Software-Engineering/terfyn/internal/telemetry"
 	"github.com/LAA-Software-Engineering/terfyn/internal/trace"
 )
 
@@ -25,7 +23,7 @@ type PendingHitlState struct {
 	Review policy.ResolvedHitlReview `json:"review"`
 	Kind   string                    `json:"kind,omitempty"`
 	// ExecKey anchors the pending gate to the suspended execir leaf's CallSite key
-	// on the execir run path (issue #258); empty on the DAG path (StepID anchors).
+	// (issue #258). Always set on the execir run path — the only run path (#278).
 	ExecKey string `json:"execKey,omitempty"`
 }
 
@@ -34,94 +32,6 @@ type HitlRunOptions struct {
 	AutoApprove bool
 	Actor       string
 	Decision    *policy.HitlDecisionInput
-}
-
-func (e *Executor) maybeInterruptForHitl(
-	ctx context.Context,
-	in RunInput,
-	wf *spec.WorkflowResource,
-	stepIndex int,
-	step spec.WorkflowStep,
-	with map[string]any,
-	pol policy.PolicyEvaluator,
-	pctx policy.RunContext,
-	ictx *Context,
-	totalCost float64,
-	runHandle *telemetry.RunHandle,
-) (bool, error) {
-	if in.Hitl.AutoApprove {
-		return false, nil
-	}
-	polSpec := policySpecFromEvaluator(pol)
-	gate, err := policy.BuildHitlGateWithEvaluator(e.Graph, pol, polSpec, policy.ToolCallContext{
-		Run: pctx, StepID: step.ID, Uses: strings.TrimSpace(step.Uses), With: with,
-	})
-	if err != nil {
-		return false, err
-	}
-	if gate == nil {
-		return false, nil
-	}
-	if in.Hitl.Decision != nil && in.Resume {
-		return false, nil
-	}
-	return e.interruptForHitlGate(ctx, in, wf, stepIndex, step, gate, ictx, totalCost, runHandle, "")
-}
-
-func (e *Executor) interruptForHitlGate(
-	ctx context.Context,
-	in RunInput,
-	wf *spec.WorkflowResource,
-	stepIndex int,
-	step spec.WorkflowStep,
-	gate *policy.HitlGate,
-	ictx *Context,
-	totalCost float64,
-	runHandle *telemetry.RunHandle,
-	kind string,
-) (bool, error) {
-	if gate == nil || ictx == nil {
-		return false, nil
-	}
-	ictx.PendingHitl = &PendingHitlState{
-		StepID: step.ID,
-		Uses:   gate.Uses,
-		With:   gate.With,
-		Review: gate.Review,
-		Kind:   kind,
-	}
-	if runHandle != nil {
-		endApproval := runHandle.StartApproval(telemetry.ApprovalAttrs{RunID: in.RunID, Uses: gate.Uses})
-		endApproval()
-		runHandle.MarkInterrupted()
-		ref := runHandle.SpanRef()
-		ictx.OtelInterrupt = &ref
-	}
-	if err := e.saveCheckpoint(ctx, wf, in.RunID, stepIndex, step.ID, *ictx, totalCost, state.CheckpointStatusInterrupted); err != nil {
-		return false, fmt.Errorf("engine: save hitl checkpoint: %w", err)
-	}
-	if err := e.Store.UpdateRunStatus(ctx, in.RunID, state.RunStatusInterrupted); err != nil {
-		return false, fmt.Errorf("engine: mark run interrupted: %w", err)
-	}
-	if e.Trace != nil {
-		redacted := policy.RedactHitlArgs(gate.With, gate.Review.RedactKeys)
-		data := map[string]any{
-			"uses":             gate.Uses,
-			"with":             redacted,
-			"description":      gate.Review.Description,
-			"allowedDecisions": gate.Review.AllowedDecisions,
-			"allowedSwitchTo":  gate.Review.SwitchTargets,
-			"stepIndex":        stepIndex,
-		}
-		if kind != "" {
-			data["kind"] = kind
-		}
-		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventHitlRequestCreated, trace.ActorSystem, data)
-		_, _ = e.Trace.Append(ctx, in.RunID, step.ID, trace.EventRunError, trace.ActorSystem, map[string]any{
-			"stepIndex": stepIndex, "stepId": step.ID, "reason": traceInterruptReasonHITL, "interrupted": true,
-		})
-	}
-	return true, ErrInterrupted
 }
 
 func (e *Executor) resolvePendingHitl(
