@@ -120,8 +120,19 @@ func unmarshalCheckpointPayload(contextJSON string, g *spec.ProjectGraph, wf *sp
 	if len(payload.Steps) > maxCheckpointSteps {
 		return Context{}, 0, fmt.Errorf("engine: checkpoint has too many steps (%d)", len(payload.Steps))
 	}
-	if err := validateCheckpointSteps(payload.Steps, wf, completedStepIndex, payload.Completed); err != nil {
-		return Context{}, 0, err
+	// validateCheckpointSteps enforces the DAG-era invariant that every completed
+	// step id is a known WorkflowStep, ordered by step index. That does not fit the
+	// execir path: under control flow a leaf's binding name legitimately differs
+	// from its flattened resource step id (lowerControlAssign gives a fresh id), and
+	// under a `while` the same binding recurs every iteration (#290). The authoritative
+	// durable state of an execir checkpoint is ExecMemo/ExecControl — replayed and
+	// determinism-checked by the interpreter — so the (output/interpolation-only)
+	// Steps map is not validated against WorkflowStep membership here. The size and
+	// count caps above still apply.
+	if !payload.ExecIR {
+		if err := validateCheckpointSteps(payload.Steps, wf, completedStepIndex, payload.Completed); err != nil {
+			return Context{}, 0, err
+		}
 	}
 	maxNest := spec.DefaultMaxWorkflowNesting
 	if g != nil && wf != nil {

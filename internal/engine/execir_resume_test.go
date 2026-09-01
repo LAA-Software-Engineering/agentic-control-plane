@@ -158,6 +158,75 @@ func TestExecIRResume_HitlReject(t *testing.T) {
 	}
 }
 
+// TestExecIRResume_HitlGateInsideWhileLoop drives a bounded `while` (#290) through
+// the engine with a HITL-gated tool in its body: each iteration runs a safe tool
+// then a gated one that suspends. Across the two suspend/resume cycles it proves
+// (a) the gate inside the loop suspends and resumes at the correct iteration, and
+// (b) the pre-gate tool completed in an earlier iteration is replayed from the memo
+// on resume, never re-issued — so its side effect fires exactly once per iteration.
+func TestExecIRResume_HitlGateInsideWhileLoop(t *testing.T) {
+	t.Parallel()
+	graph := gatedTwoStepGraph()
+	// The pinned execir program binds `pub` — deliberately NOT a WorkflowStep id
+	// (the YAML step is `publish`), reproducing how an `.agent` control-flow leaf's
+	// binding name differs from its flattened resource step id. Point the workflow
+	// output at that bind so the output resolves to the loop's last-iteration result.
+	graph.Workflows["pub"].Spec.Output = &spec.WorkflowOutput{Value: map[string]any{"done": "${steps.pub.output}"}}
+	ex, ct, runID, started := newResumeExecutor(t, graph, "pub")
+	ex.Executables = map[string]*execir.Program{
+		"pub": {Workflow: "pub", Params: []string{"input"}, Body: []execir.Node{
+			&execir.While{Cond: execir.Leaf{V: execir.Lit{V: true}}, Limit: 2, Body: []execir.Node{
+				&execir.InvokeTool{Bind: "prep", Uses: "tool.helper.echo", Args: map[string]execir.Value{"topic": execir.Lit{V: "hi"}}},
+				&execir.InvokeTool{Bind: "pub", Uses: "tool.publisher.echo", Args: map[string]execir.Value{"body": execir.Lit{V: "x"}}},
+			}},
+		}},
+	}
+	ctx := context.Background()
+	base := RunInput{RunID: runID, WorkflowName: "pub", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}}
+	approve := func() RunInput {
+		r := base
+		r.Resume = true
+		r.Hitl = HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"}}
+		return r
+	}
+
+	// Fresh: iteration 0's prep runs, then the gate suspends.
+	if err := ex.Run(ctx, base); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("fresh run should interrupt at the gate, got %v", err)
+	}
+	if got := ct.count("tool.helper.echo"); got != 1 {
+		t.Fatalf("iteration 0 prep should have run once, got %d", got)
+	}
+	if got := ct.count("tool.publisher.echo"); got != 0 {
+		t.Fatalf("gated publish must not run before approval, got %d", got)
+	}
+
+	// Resume 1: iteration 0's gate completes; iteration 1's prep runs; gate suspends again.
+	if err := ex.Run(ctx, approve()); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("resume 1 should suspend at iteration 1's gate, got %v", err)
+	}
+	if got := ct.count("tool.helper.echo"); got != 2 {
+		t.Fatalf("prep fired %d times; want 2 (iteration 0 replayed from memo, iteration 1 ran once)", got)
+	}
+	if got := ct.count("tool.publisher.echo"); got != 1 {
+		t.Fatalf("publisher fired %d times after resume 1; want 1 (iteration 0 only)", got)
+	}
+
+	// Resume 2: iteration 1's gate completes; the loop hits limit 2; the run succeeds.
+	if err := ex.Run(ctx, approve()); err != nil {
+		t.Fatalf("resume 2: %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusSucceeded {
+		t.Fatalf("final status = %q", run.Status)
+	}
+	if got := ct.count("tool.helper.echo"); got != 2 {
+		t.Fatalf("prep re-issued (%d): memo replay across while iterations must be side-effect-free", got)
+	}
+	if got := ct.count("tool.publisher.echo"); got != 2 {
+		t.Fatalf("publisher fired %d times; want exactly 2 (once per iteration, no fourth)", got)
+	}
+}
+
 // approvalGraph is a sequential workflow with an approval node after a tool.
 func approvalGraph() *spec.ProjectGraph {
 	return &spec.ProjectGraph{
