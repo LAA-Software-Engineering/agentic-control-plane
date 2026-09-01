@@ -206,9 +206,11 @@ func (l *lowerer) agent(d *lang.AgentDecl) *spec.AgentResource {
 		ar.Spec.ToolsPos = append(ar.Spec.ToolsPos, g.Pos)
 		l.sm.set(KeyAgentGrant(name, uses), g.Pos)
 	}
-	// Type references are recorded in the source map, not lowered into schema:
-	// fields — those name compiled schema files by path, and a bare .agent type
-	// name would fail schema-file validation. Resolution is #193/#198.
+	// Type references are recorded in the source map here; the CHECKER populates
+	// AgentSpec.Input/Output.Schema from them when the schemas/<Name>.json file
+	// resolves (#294, check.wireAgentSchemas) — it is the single place that resolves
+	// a type ref and knows whether the file exists, so an unresolved type stays
+	// untyped (the checker's leniency) rather than failing schema-file validation.
 	if d.Input != nil {
 		l.sm.set(KeyAgentType(name, "input"), d.Input.Pos)
 	}
@@ -216,6 +218,16 @@ func (l *lowerer) agent(d *lang.AgentDecl) *spec.AgentResource {
 		l.sm.set(KeyAgentType(name, "output"), d.Output.Pos)
 	}
 	return ar
+}
+
+// SchemaRef returns the project-root-relative schema path for a .agent type name,
+// following the schemas/<Name>.json convention shared by the checker (which resolves
+// it against the schema dir) and the resource projection (which stores it as an
+// AgentIO.Schema ref, resolved against the project root at validate). The loader
+// passes the project root as the checker's schema dir, so both use the same base and
+// the two never diverge (#294).
+func SchemaRef(typeName string) string {
+	return "schemas/" + typeName + ".json"
 }
 
 func grantUses(g *lang.Grant) string {
