@@ -276,6 +276,55 @@ Three consequences that must hold or the split is meaningless:
 This does not require separate Go type hierarchies on day one, but the projection relationship is
 normative and the boundary should be visible in package structure.
 
+### 6. Iteration is bounded: no unbounded effectful loop, and the bound is explicit in source.
+
+§4 reserves `while` for the execution IR (it may never be a `WorkflowStep` field). This decision
+fixes *what `while` is* when the surface gains it: a **bounded** loop and nothing else.
+
+The only iterating constructs are `for <var> in <collection>` (§1, dynamic fan-out over a runtime
+collection) and `while <cond> limit <N> { … }`. Both terminate by construction. `for` is bounded by
+the collection length; `while` is bounded by a **mandatory** `limit N`, where `N` is a positive
+integer *literal* — not a reference, not an expression, not zero. There is no bare `while cond { }`
+and no `parallel while`. This is deliberate: a naked effectful `while` would let a
+prompt-injected, hallucinating, or merely mistaken agent drive an unbounded number of tool and model
+invocations, and the whole value proposition is a *statically obvious* ceiling on that.
+
+> **Required invariant:** *every loop in the surface has a bound that is decidable from the source
+> text alone, and the runtime enforces it independently of the compiler.* For `while` the effective
+> ceiling is `min(limit, DefaultMaxLoopIterations)`; the per-loop `limit` is the semantics of the
+> construct, and the global cap is only an additional backstop. The interpreter stops after at most
+> that many body executions **even if the condition never becomes false** — an adversarial or
+> malformed carried state cannot buy a `limit+1`th iteration. Cost policy and wall-clock timeout are
+> not permitted to be the *only* protection against unbounded activity.
+
+**The iteration bound is a separate axis from the effect bound.** They must not be conflated:
+
+- The **effect bound** is the set of effect *classes* reachable from the loop body — the union over
+  the steps each iteration can reach, computed on the resource projection exactly as for straight-line
+  code. It is unchanged by how many times the loop runs.
+- The **iteration bound** is *how many times* those effects may be exercised.
+
+`while ... limit 3` around a body that writes the workspace still has effect class `workspace.write`;
+the `3` bounds executions, not effect classes. This ADR does **not** turn the effect system into a
+quantitative (counting) effect algebra, and no future change may make it one under the banner of
+"bounding a loop." Surfacing a coarse invocation-count in `plan` (e.g. "agent X ≤ K invocations") is
+permitted as *analysis metadata* derived from the structural `limit`, but it is not part of the
+effect lattice.
+
+**Loop-carried state stays within the projection model.** Rebinding a name inside a bounded loop is
+loop-carried state, not a new mutable-global runtime: a name that existed *before* the loop may be
+rebound and carries forward across iterations and out of the loop (last iteration wins); a name first
+bound *inside* the loop is loop-local and does not escape — the same sequential-loop scope rule the
+type checker and interpreter already apply to `for`. Workflow parameters remain immutable. Durable
+replay identity is preserved because a leaf's call identity already folds its enclosing loop-iteration
+vector (`CallSite.Loop`), so iteration *i*'s effects memoize and resume under a stable key without a
+new IR concept.
+
+> **Status: decided, pending implementation (Epic H2, #285).** The surface, checker, and printer are
+> #288; execir lowering and runtime bound enforcement are #289; durable resume across iterations is
+> #290. This subsection is normative now — no unbounded effectful `while` may be added, and the
+> iteration/effect axes may not be merged — even though the construct is not yet shipped.
+
 ## Soundness assumptions and limits
 
 This ADR claims a "sound static upper bound on the blast radius of a nondeterministic agent."

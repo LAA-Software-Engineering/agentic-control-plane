@@ -229,5 +229,10 @@ runtime enforces structured agent I/O for `.agent`-authored agents.
 
 J1 → J2 (authoring surface) · J3 → J4 → J5 (bounded, durable `while`) · J6 and J9 (capability +
 typed I/O, independent) · then J7 (flagship, consumes J2/J5/J6/J9) · J8 last as a follow-up.
-`docs/LANGUAGE.md`, `docs/EXAMPLES.md`, and — only if a normative decision materially changes —
-ADR 002 are updated by the issues as each lands.
+`docs/LANGUAGE.md` and `docs/EXAMPLES.md` are updated by the issues as each lands.
+
+The one normative decision this epic introduces — *no unbounded effectful loop; the `while` bound is
+mandatory, runtime-enforced, and orthogonal to the effect bound* — is recorded up front in
+[ADR 002 §6](../adr/002-language-frontend-and-ir-expressiveness.md) (marked decided/pending, Epic H2).
+The additive pieces (instructions, multiline strings, multi-operation grants, typed I/O) are not
+ADR-level decisions and stay in `LANGUAGE.md`.
