@@ -49,8 +49,14 @@ func printAgent(b *strings.Builder, a *AgentDecl) {
 	if a.Policy != nil {
 		fmt.Fprintf(b, "    policy %s\n", a.Policy.Name)
 	}
+	if a.Description != nil {
+		printStringField(b, "    ", "description", a.Description.Value)
+	}
 	if a.Instructions != nil {
 		printInstructions(b, a.Instructions.Value)
+	}
+	if a.Constraints != nil {
+		printConstraints(b, a.Constraints)
 	}
 	if len(a.Grants) > 0 {
 		b.WriteString("    grants {\n")
@@ -77,19 +83,47 @@ func printAgent(b *strings.Builder, a *AgentDecl) {
 // corrupt the file) — falls back to the escaped single-quoted form, which escapes
 // newlines and quotes and always re-parses.
 func printInstructions(b *strings.Builder, v string) {
+	printStringField(b, "    ", "instructions", v)
+}
+
+// printStringField renders a string-valued field (instructions, description) at the
+// given indent: a single-line value as a quoted literal; a multiline value (or one
+// containing a `"""`, which the raw block cannot hold) as a canonical `"""…"""` block
+// whose body lines carry the field indent — the exact shape normalizeMultiline strips
+// back, so parse -> print -> parse is stable.
+func printStringField(b *strings.Builder, indent, name, v string) {
 	if !strings.Contains(v, "\n") || strings.Contains(v, `"""`) {
-		fmt.Fprintf(b, "    instructions %s\n", strconv.Quote(v))
+		fmt.Fprintf(b, "%s%s %s\n", indent, name, strconv.Quote(v))
 		return
 	}
-	b.WriteString("    instructions \"\"\"\n")
+	fmt.Fprintf(b, "%s%s \"\"\"\n", indent, name)
 	for _, ln := range strings.Split(v, "\n") {
 		if ln == "" {
 			b.WriteString("\n")
 		} else {
-			b.WriteString("    " + ln + "\n")
+			b.WriteString(indent + ln + "\n")
 		}
 	}
-	b.WriteString("    \"\"\"\n")
+	fmt.Fprintf(b, "%s\"\"\"\n", indent)
+}
+
+// printConstraints renders the `constraints { }` block, one field per line in a
+// stable order, omitting fields the author did not set.
+func printConstraints(b *strings.Builder, c *Constraints) {
+	b.WriteString("    constraints {\n")
+	if c.MaxIterations != nil {
+		fmt.Fprintf(b, "        maxIterations %d\n", *c.MaxIterations)
+	}
+	if c.TimeoutSeconds != nil {
+		fmt.Fprintf(b, "        timeoutSeconds %d\n", *c.TimeoutSeconds)
+	}
+	if c.Temperature != nil {
+		fmt.Fprintf(b, "        temperature %s\n", strconv.FormatFloat(*c.Temperature, 'g', -1, 64))
+	}
+	if c.RequireStructuredOutput != nil {
+		fmt.Fprintf(b, "        requireStructuredOutput %s\n", strconv.FormatBool(*c.RequireStructuredOutput))
+	}
+	b.WriteString("    }\n")
 }
 
 func printWorkflow(b *strings.Builder, w *WorkflowDecl) {
@@ -101,14 +135,29 @@ func printWorkflow(b *strings.Builder, w *WorkflowDecl) {
 	if w.Result != nil {
 		fmt.Fprintf(b, " -> %s", w.Result.Name)
 	}
+	effectsClause := ""
 	if w.Effects != nil {
 		names := make([]string, len(w.Effects))
 		for i, e := range w.Effects {
 			names[i] = e.Name
 		}
-		fmt.Fprintf(b, " effects { %s }", strings.Join(names, ", "))
+		effectsClause = fmt.Sprintf("effects { %s }", strings.Join(names, ", "))
 	}
-	b.WriteString(" {\n")
+	if w.Description != nil {
+		// A description (possibly multiline) does not fit the inline header, so the
+		// header clauses go on their own indented lines before the opening brace.
+		b.WriteString("\n")
+		printStringField(b, "    ", "description", w.Description.Value)
+		if effectsClause != "" {
+			fmt.Fprintf(b, "    %s\n", effectsClause)
+		}
+		b.WriteString("{\n")
+	} else {
+		if effectsClause != "" {
+			fmt.Fprintf(b, " %s", effectsClause)
+		}
+		b.WriteString(" {\n")
+	}
 	for _, s := range w.Body {
 		printStmt(b, s, 1)
 	}

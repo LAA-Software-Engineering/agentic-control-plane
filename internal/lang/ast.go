@@ -46,13 +46,28 @@ func (i *Ident) Position() Pos { return i.Pos }
 type AgentDecl struct {
 	Pos          Pos
 	Name         *Ident
-	Model        *ModelRef  // model <provider>/<name>
-	Policy       *Ident     // policy <name> (reference to a Policy resource)
-	Instructions *StringLit // instructions "..." (the agent prompt; lowers to AgentSpec.Instructions)
-	Grants       []*Grant   // grants { tool.<name>.<operation> ... }
-	Input        *TypeRef   // input <Type>
-	Output       *TypeRef   // output <Type>
+	Model        *ModelRef    // model <provider>/<name>
+	Policy       *Ident       // policy <name> (reference to a Policy resource)
+	Description  *StringLit   // description "..." (lowers to AgentSpec.Description)
+	Instructions *StringLit   // instructions "..." (the agent prompt; lowers to AgentSpec.Instructions)
+	Constraints  *Constraints // constraints { maxIterations ... } (lowers to AgentSpec.Constraints)
+	Grants       []*Grant     // grants { tool.<name>.<operation> ... }
+	Input        *TypeRef     // input <Type>
+	Output       *TypeRef     // output <Type>
 }
+
+// Constraints is the `constraints { ... }` block: the fixed set of agent execution
+// bounds (#310) that lowers to spec.AgentConstraints. A field pointer is nil when
+// the author omitted it; each field appears at most once.
+type Constraints struct {
+	Pos                     Pos
+	MaxIterations           *int
+	TimeoutSeconds          *int
+	Temperature             *float64
+	RequireStructuredOutput *bool
+}
+
+func (c *Constraints) Position() Pos { return c.Pos }
 
 func (d *AgentDecl) Position() Pos { return d.Pos }
 func (d *AgentDecl) declNode()     {}
@@ -123,12 +138,13 @@ func (g *Grant) OperationName() string { return dottedName(g.Operation) }
 // statement list that may include conditionals and loops (IfStmt, ForStmt; #199)
 // in addition to assignments, calls, parallel blocks, and a return.
 type WorkflowDecl struct {
-	Pos     Pos
-	Name    *Ident
-	Params  []*Param
-	Result  *TypeRef     // return type after ->; nil if omitted
-	Effects []*EffectRef // effects { github.read, ... }; nil if no clause
-	Body    []Stmt
+	Pos         Pos
+	Name        *Ident
+	Params      []*Param
+	Result      *TypeRef     // return type after ->; nil if omitted
+	Description *StringLit   // description "..."; nil if omitted (lowers to WorkflowSpec.Description)
+	Effects     []*EffectRef // effects { github.read, ... }; nil if no clause
+	Body        []Stmt
 }
 
 func (d *WorkflowDecl) Position() Pos { return d.Pos }

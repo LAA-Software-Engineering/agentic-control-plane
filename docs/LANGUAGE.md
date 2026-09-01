@@ -97,17 +97,21 @@ Declaration = AgentDecl | WorkflowDecl ;
 AgentDecl   = "agent" Ident "{" { AgentField } "}" ;
 AgentField  = "model"  ModelRef
             | "policy" Ident
+            | "description" StringLiteral
             | "instructions" StringLiteral
+            | "constraints" "{" { ConstraintField } "}"
             | "grants" "{" { Grant } "}"
             | "input"  Ident
             | "output" Ident ;
+ConstraintField = "maxIterations" Number | "timeoutSeconds" Number   (* positive ints *)
+            | "temperature" Number | "requireStructuredOutput" ( "true" | "false" ) ;
 StringLiteral = String | MultilineString ;      (* both decode to one string value *)
 ModelRef    = Ident "/" Ident ;                 (* e.g. openai/gpt-5 *)
 Grant       = "tool" "." Ident "." Operation ;  (* tool.<name>.<operation> *)
 Operation   = Ident { "." Ident } ;             (* name = first Ident, operation = the rest *)
 
 WorkflowDecl = "workflow" Ident "(" [ Params ] ")" [ "->" Ident ]
-               [ "effects" "{" [ Effects ] "}" ]
+               { "description" StringLiteral | "effects" "{" [ Effects ] "}" }
                "{" { Statement } "}" ;
 Params      = Param { "," Param } ;
 Param       = Ident ":" Ident ;                 (* name : Type *)
@@ -158,9 +162,15 @@ Notes:
   operand. Bind a call's result to a name and test the name. This keeps conditions
   effect-free and the effect bound trivially the union over both arms.
 - Comparisons do not chain: `a < b < c` is a syntax error (parenthesize or use `&&`).
-- Each agent field (`model`, `policy`, `instructions`, `grants`, `input`, `output`) may
-  appear at most once; a repeated field keeps the first occurrence and yields a
-  duplicate-field diagnostic rather than silently overwriting.
+- Each agent field (`model`, `policy`, `description`, `instructions`, `constraints`,
+  `grants`, `input`, `output`) may appear at most once; a repeated field keeps the first
+  occurrence and yields a duplicate-field diagnostic rather than silently overwriting.
+- `description` (agent and workflow) lowers to `AgentSpec.Description` / `WorkflowSpec.Description`;
+  `constraints { … }` lowers to `AgentSpec.Constraints` (the agent tool-loop bound
+  `maxIterations`, `timeoutSeconds`, `temperature`, `requireStructuredOutput`) (#310). Each
+  constraint field appears at most once; `maxIterations`/`timeoutSeconds` are positive integer
+  literals. A workflow's `description` and `effects` clauses may appear in either order before
+  the body.
 - `instructions` is the agent prompt. It lowers verbatim into `AgentSpec.Instructions`
   (the existing runtime field) — no new prompt abstraction and no new runtime semantics —
   and is the reason for the multiline string form above.
