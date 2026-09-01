@@ -92,15 +92,15 @@ many times the loop runs; the effect set is the union of the body's reachable
 effects — `{workspace.read, workspace.write, process.exec}` — independent of the
 iteration count. Terfyn does not multiply effects by iterations.
 
-## Run it
+## Inspect it offline (no API keys)
+
+`validate` / `plan` / `apply` run on the deterministic `mock/gpt-4` model, so the
+capability boundary, the authority diff, and every bound are reproducible with no keys:
 
 ```bash
 terfyn validate --project examples/implement-review-loop
 terfyn plan     --project examples/implement-review-loop
 terfyn apply    --project examples/implement-review-loop --auto-approve
-terfyn run      workflow/ImplementAndReview \
-  --project examples/implement-review-loop \
-  --input-file examples/implement-review-loop/fixtures/task.json
 ```
 
 `plan` prints the effect bound — every effect each agent may autonomously reach,
@@ -115,10 +115,32 @@ Effect bound (Agent/Reviewer):
 The Reviewer's bound has **no `workspace.write`** — it cannot reach that effect,
 because it was never granted `write_file`.
 
-> The model is deterministic `mock/gpt-4` here so the example is reproducible with
-> no API keys. Swap `defaults.model` / the agents' `model` to `anthropic/…` or
-> `openai/…` (with the matching provider block and key) to run it for real. The loop
-> semantics, the capability boundary, and every bound are identical.
+## Run it for real
+
+The `workspace` tool ([`tools/workspace.yaml`](tools/workspace.yaml)) is the native
+filesystem + test-runner adapter: `read_file` / `write_file` operate inside a **sandbox
+root**, and `run_tests` runs an **operator-configured** command in it. Executing the loop
+therefore needs a real model to drive the agents and two env vars for the sandbox:
+
+```bash
+export ANTHROPIC_API_KEY=…                            # or OPENAI_API_KEY, matching the provider block
+export TERFYN_WORKSPACE_ROOT="$(mktemp -d)"           # the sandbox the agents read/write within
+export TERFYN_WORKSPACE_TEST_COMMAND="go test ./..."  # what run_tests executes, in the root
+
+# point the agents at a real model: edit defaults.model / the agents' model to anthropic/… or openai/…
+
+terfyn run workflow/ImplementAndReview \
+  --project examples/implement-review-loop \
+  --input-file examples/implement-review-loop/fixtures/task.json
+```
+
+The sandbox root confines every `read_file` / `write_file` — a `..` path that would escape
+is rejected — and `run_tests` runs only `TERFYN_WORKSPACE_TEST_COMMAND`, never a command the
+agent chooses, so the capability boundary holds at the filesystem too.
+
+> The deterministic `mock/gpt-4` model drives `validate` / `plan` / `apply`, but it cannot
+> execute the tool loop — it emits empty-argument tool calls — so `run` needs a real model.
+> The loop semantics, the capability boundary, and every bound are identical either way.
 
 ## Authority changes are reviewable before deployment
 

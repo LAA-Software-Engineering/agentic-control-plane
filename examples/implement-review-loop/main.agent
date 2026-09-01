@@ -9,9 +9,11 @@
 //   terfyn validate
 //   terfyn plan
 //   terfyn apply --auto-approve
-//   terfyn run workflow/ImplementAndReview --input-file fixtures/task.json
 //
-// See README.md for the capability boundary and the plan authority-widening walkthrough.
+// validate/plan/apply run offline on the mock model. Executing the loop needs a real
+// model plus a sandbox for the workspace tool (TERFYN_WORKSPACE_ROOT +
+// TERFYN_WORKSPACE_TEST_COMMAND) — see "Run it for real" in README.md, which also
+// covers the capability boundary and the plan authority-widening walkthrough.
 
 agent Implementer {
     model mock/gpt-4

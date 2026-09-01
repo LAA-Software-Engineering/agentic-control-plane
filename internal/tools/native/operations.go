@@ -30,6 +30,9 @@ var operationCatalog = map[string][]string{
 	"pull_request.get":  {"owner", "repo", "number"},
 	"pull_request.diff": {"owner", "repo", "number"},
 	"check_runs.list":   {"owner", "repo", "ref"},
+	"read_file":         {"path"},
+	"write_file":        {"path", "content"},
+	"run_tests":         {}, // command comes from TERFYN_WORKSPACE_TEST_COMMAND, not tool args
 }
 
 // OperationKnown reports whether operation is implemented by [Registry.Dispatch].

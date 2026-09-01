@@ -21,6 +21,9 @@ var dispatchHandlers = map[string]dispatchHandler{
 	"pull_request.fetch":        dispatchPullRequestFetch,
 	"pull_request.get":          dispatchPullRequestGet,
 	"pull_request.post_comment": dispatchPullRequestPostComment,
+	"read_file":                 dispatchWorkspaceReadFile,
+	"write_file":                dispatchWorkspaceWriteFile,
+	"run_tests":                 dispatchWorkspaceRunTests,
 }
 
 func dispatchEcho(_ context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
