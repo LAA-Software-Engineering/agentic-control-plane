@@ -316,6 +316,11 @@ type workflowLowerer struct {
 	used   map[string]int // reserved + generated step ids
 	steps  []spec.WorkflowStep
 	output *spec.WorkflowOutput
+	// synthetic is true while flattening a control-flow body (if/for/while) into
+	// steps; every step lowered under it is marked spec.WorkflowStep.Synthetic (#305)
+	// so the validator skips executable-graph checks on the effect-analysis-only
+	// projection of control flow.
+	synthetic bool
 }
 
 // reserveBindings claims every explicit binding name so generated (unbound / SSA
@@ -384,8 +389,12 @@ func (wl *workflowLowerer) lowerBody(body []lang.Stmt) {
 			// unpermitted effect past the effects clause (ADR 002 §5, #199). The
 			// flattened steps are a sound over-approximation for effect analysis
 			// and plan diffing, not an independently executable graph; execution
-			// runs from the execution IR.
+			// runs from the execution IR. They are marked Synthetic (#305) so the
+			// validator does not hold them to executable-graph invariants (needs
+			// wiring, per-field input-schema mapping).
+			wl.synthetic = true
 			wl.lowerControlStmts([]lang.Stmt{st}, frontier)
+			wl.synthetic = false
 		case *lang.ReturnStmt:
 			wl.output = &spec.WorkflowOutput{
 				Value: map[string]any{"value": wl.lowerValue(s.Value, "return", frontier)},
@@ -481,7 +490,7 @@ func (wl *workflowLowerer) lowerAssign(s *lang.AssignStmt, predNeeds []string) (
 // lowerCall lowers one call into a step, hoisting nested-call arguments into
 // their own SSA-temporary steps first, and records the step's needs.
 func (wl *workflowLowerer) lowerCall(id string, call *lang.CallExpr, predNeeds []string, pos spec.Pos) {
-	step := spec.WorkflowStep{ID: id, Pos: pos, NeedsDeclared: true}
+	step := spec.WorkflowStep{ID: id, Pos: pos, NeedsDeclared: true, Synthetic: wl.synthetic}
 	wl.applyCallee(&step, call.Callee)
 
 	var tempNeeds []string

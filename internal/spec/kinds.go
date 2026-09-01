@@ -238,6 +238,17 @@ type WorkflowStep struct {
 	WorkflowPos Pos   `yaml:"-" json:"-"`
 	ApprovalPos Pos   `yaml:"-" json:"-"`
 	NeedsPos    []Pos `yaml:"-" json:"-"`
+	// Synthetic marks a step SYNTHESIZED by flattening a `.agent` control-flow body
+	// (an `if`/`for`/`while` arm) into the resource projection (ADR 002 §5, #305).
+	// Such a step is a sound over-approximation for EFFECT ANALYSIS only — the union
+	// over reachable branches — and is NOT an independently executable node: execution
+	// runs the pinned execir program (control flow lives there), and since #278 the
+	// resource projection is never executed. So the executable-graph invariants
+	// (interpolation-predecessor `needs` wiring, per-field input-schema mapping of
+	// `with`) do not apply to it; argument type safety comes from the checker's type
+	// system, and effect analysis reads only `uses`/`agent`/`workflow`. Diagnostic
+	// metadata, not identity (`yaml:"-" json:"-"`).
+	Synthetic bool `yaml:"-" json:"-"`
 	// NeedsDeclared is true when the mapping included a `needs` key (even if empty). Because `Needs`
 	// is omitempty, an empty declared list would serialize away, so this bit is **part of identity**
 	// (`json:"needsDeclared"`), not merely diagnostic: it is the DAG-mode signal
