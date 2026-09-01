@@ -51,6 +51,38 @@ func extractRunID(out string) string {
 	return ""
 }
 
+// TestCLI_RuntimeSelection exercises `terfyn run --runtime` (issue #336): the flag overrides the
+// workflow's spec.runtime and selects an adapter from the runtime registry. claude-code dispatches
+// to the stub external adapter (not implemented yet), and an unknown name is rejected.
+func TestCLI_RuntimeSelection(t *testing.T) {
+	root := repoRoot(t)
+	proj := filepath.Join(root, "examples", "implement-review-loop")
+	input := filepath.Join(proj, "fixtures", "task.json")
+	db := filepath.Join(t.TempDir(), "runtime-select.db")
+
+	if _, err := runCLI(t, "plan", "--project", proj, "--state", db); err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if _, err := runCLI(t, "apply", "--project", proj, "--state", db, "--auto-approve"); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	// --runtime claude-code selects the external adapter, which is a stub until #337.
+	out, err := runCLI(t, "run", "workflow/ImplementAndReview", "--project", proj, "--state", db, "--input-file", input, "--runtime", "claude-code")
+	if err == nil {
+		t.Fatalf("claude-code stub should fail, out:\n%s", out)
+	}
+	if !strings.Contains(err.Error()+out, "not implemented") {
+		t.Fatalf("expected a not-implemented error from the stub, got err=%v\nout=%s", err, out)
+	}
+
+	// --runtime bogus is an unknown runtime.
+	out, err = runCLI(t, "run", "workflow/ImplementAndReview", "--project", proj, "--state", db, "--input-file", input, "--runtime", "bogus")
+	if err == nil || !strings.Contains(err.Error()+out, "unknown runtime") {
+		t.Fatalf("expected an unknown-runtime error, got err=%v\nout=%s", err, out)
+	}
+}
+
 func copyExampleTree(t *testing.T, src, dst string) {
 	t.Helper()
 	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {

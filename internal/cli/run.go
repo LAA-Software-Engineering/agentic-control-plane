@@ -14,6 +14,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/policy"
 	"github.com/Terfyn/terfyn/internal/render"
 	"github.com/Terfyn/terfyn/internal/runtime"
+	_ "github.com/Terfyn/terfyn/internal/runtime/claudecode" // register the claude-code runtime target (#336)
 	"github.com/Terfyn/terfyn/internal/runtime/local"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
@@ -39,6 +40,7 @@ func newRunCmd() *cobra.Command {
 	var idempotencyKey string
 	var source string
 	var requireAttribution bool
+	var runtimeName string
 
 	cmd := &cobra.Command{
 		Use:          "run workflow/<name>",
@@ -121,6 +123,7 @@ Exit codes (section 11.2):
 	cmd.Flags().StringVar(&requestID, "request-id", "", "per-invocation correlation id (generated when omitted)")
 	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "client reference key stored on the run (dedupe not enforced yet)")
 	cmd.Flags().StringVar(&source, "source", "", "run origin label (default: cli)")
+	cmd.Flags().StringVar(&runtimeName, "runtime", "", "runtime target: 'local' (default, the workflow's spec.runtime) or an external adapter such as 'claude-code'")
 	cmd.Flags().BoolVar(&requireAttribution, "require-attribution", false, "require explicit --tenant-id, --thread-id, and --actor-id (or set TERFYN_REQUIRE_ATTRIBUTION=1)")
 	return cmd
 }
@@ -288,6 +291,13 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 			wfRuntime = runtime.WorkflowRuntimeName(activeRC.Graph(), run.WorkflowName)
 		} else {
 			wfRuntime = runtime.WorkflowRuntimeName(activeRC.Graph(), wfName)
+		}
+		// --runtime overrides the workflow's spec.runtime, selecting an execution adapter (default:
+		// the workflow's own runtime, i.e. local). External adapters (e.g. claude-code) register
+		// alongside the local engine in the same runtime registry.
+		runtimeOverride, _ := cmd.Flags().GetString("runtime")
+		if override := strings.TrimSpace(runtimeOverride); override != "" {
+			wfRuntime = override
 		}
 
 		factory, err := runtime.Lookup(wfRuntime)
