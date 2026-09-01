@@ -255,12 +255,10 @@ func fullGraph(t *testing.T, r *lower.Result) *spec.ProjectGraph {
 // to a resource graph whose #197-owned structure — workflow steps, the needs
 // graph, and every symbolic reference — passes existing validation cleanly.
 //
-// The one thing that keeps full ValidateProjectGraph from passing is a
-// pre-existing IR limitation unrelated to lowering: ResolveAgentAdvertisedTools
-// (issue #160 agent-loop advertising) permits one operation per tool, while the
-// ADR 002 Reviewer grants two operations on tool.github. That gap is Epic F
-// (#188/#204) — see TestLower_MultiOperationGrantIsKnownGap and the PR notes.
-// This test asserts nothing ELSE is wrong.
+// The lowered ADR 002 program now validates fully: the multi-operation-grant
+// limitation that used to keep it from passing (ResolveAgentAdvertisedTools once
+// permitted one operation per tool, while the ADR 002 Reviewer grants two
+// operations on tool.github) was lifted in #291.
 func TestLower_ValidResourceGraph(t *testing.T) {
 	g := fullGraph(t, lowerFixture(t, "adr002"))
 
@@ -270,25 +268,41 @@ func TestLower_ValidResourceGraph(t *testing.T) {
 		t.Fatalf("lowered ADR 002 graph failed reference/graph validation: %v", err)
 	}
 
-	// Full validation may only surface the known multi-operation-grant gap.
+	// Full validation now passes with no errors — including the multi-operation
+	// Reviewer grant (#291).
 	for _, e := range flatten(spec.ValidateProjectGraph(g, "")) {
-		if strings.Contains(e.Error(), "twice with different operations") {
-			continue
-		}
-		t.Errorf("unexpected validation error (not the known Epic F multi-operation-grant gap): %v", e)
+		t.Errorf("unexpected validation error: %v", e)
 	}
 }
 
-// TestLower_MultiOperationGrantIsKnownGap pins the single point where the lowered
-// ADR 002 program is not yet fully valid, so a future Epic F change that lifts it
-// updates this test deliberately rather than silently. grants bind several
-// concrete operations per tool; AgentSpec.Tools as consumed by the #160 agent
-// loop does not yet represent that.
-func TestLower_MultiOperationGrantIsKnownGap(t *testing.T) {
+// TestLower_MultiOperationGrantResolved asserts the former one-operation-per-tool
+// limitation is gone (#291): the ADR 002 Reviewer's two operations on tool.github
+// lower and validate cleanly, and advertise as two distinct per-operation tool-defs.
+func TestLower_MultiOperationGrantResolved(t *testing.T) {
 	g := fullGraph(t, lowerFixture(t, "adr002"))
-	err := spec.ValidateProjectGraph(g, "")
-	if err == nil || !strings.Contains(err.Error(), "twice with different operations") {
-		t.Fatalf("expected the multi-operation-grant limitation; got: %v", err)
+	if err := spec.ValidateProjectGraph(g, ""); err != nil {
+		t.Fatalf("multi-operation grant should validate after #291, got: %v", err)
+	}
+	reviewer := g.Agents["Reviewer"]
+	if reviewer == nil {
+		t.Fatalf("no Reviewer agent in the lowered graph")
+	}
+	adv, err := spec.ResolveAgentAdvertisedTools(reviewer, g.Tools)
+	if err != nil {
+		t.Fatalf("advertise Reviewer tools: %v", err)
+	}
+	// The Reviewer grants multiple operations on one tool — each advertises separately.
+	byName := map[string]string{}
+	for _, a := range adv {
+		byName[a.Name] = a.Uses
+	}
+	if len(adv) < 2 {
+		t.Fatalf("expected multiple advertised operations, got %+v", adv)
+	}
+	for _, a := range adv {
+		if !strings.HasPrefix(a.Uses, "tool.") {
+			t.Fatalf("advertised uses %q is not a tool.<name>.<op> string", a.Uses)
+		}
 	}
 }
 

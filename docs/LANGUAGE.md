@@ -268,14 +268,17 @@ out of scope for the resource projection:
 a whole-input interpolation token in the engine/validator, and — for passing a whole input to
 a subworkflow — a callee input-document mapping rather than a one-key `with:` map (#194/#198).
 
-### Known limitation (Epic F)
+### Multiple operations per tool grant
 
-The ADR 002 `Reviewer` grants two operations on one tool
-(`tool.github.read_pr`, `tool.github.read_comments`). `AgentSpec.Tools` as consumed by the
-#160 agent loop currently advertises one operation per tool, so the lowered fixture is valid
-on every axis lowering owns (steps, `needs`, references) but does not yet pass full
-agent-spec validation. Lifting the one-operation-per-tool limit is tracked for Epic F
-(#188/#204); lowering already preserves every grant.
+An agent may grant several operations on **one** tool — the ADR 002 `Reviewer` grants two
+operations on `tool.github` (`tool.github.read_pr`, `tool.github.read_comments`), and the
+`implement-review` Implementer grants `read_file` + `write_file` + `run_tests` on one
+`workspace` tool. `AgentSpec.Tools` (consumed by the #160 agent loop) advertises **each
+operation as its own tool-def** (#291): a tool with a single granted operation keeps the bare
+tool name (`workspace`), and a tool with several is disambiguated as `<name>.<operation>`
+(`workspace.read_file`). Each operation is gated independently, so the capability boundary is
+per operation — an operation the agent did not grant is denied at resolution regardless of the
+prompt. The lowered ADR 002 fixture now passes full agent-spec validation.
 
 ## Type and effect checking (#198)
 

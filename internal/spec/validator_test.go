@@ -212,16 +212,16 @@ func TestValidateProjectGraph_agentAdvertisedTools(t *testing.T) {
 			t.Fatalf("got %v", err)
 		}
 	})
-	t.Run("conflicting ops", func(t *testing.T) {
+	t.Run("multiple ops on one tool", func(t *testing.T) {
+		// Several operations on one tool are valid — each advertises separately (#291).
 		g := &ProjectGraph{
 			Agents: map[string]*AgentResource{
 				"a": {Kind: KindAgent, Metadata: Metadata{Name: "a"}, Spec: AgentSpec{Tools: []string{"shell", "tool.shell.command.run"}}},
 			},
 			Tools: map[string]*ToolResource{"shell": native},
 		}
-		err := ValidateProjectGraph(g, t.TempDir())
-		if err == nil || !strings.Contains(err.Error(), "different operations") {
-			t.Fatalf("got %v", err)
+		if err := ValidateProjectGraph(g, t.TempDir()); err != nil {
+			t.Fatalf("multi-operation grant should validate, got %v", err)
 		}
 	})
 }
