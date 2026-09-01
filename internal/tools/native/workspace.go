@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -50,39 +52,62 @@ func workspaceRoot() (string, error) {
 	return abs, nil
 }
 
-// resolveWorkspacePath joins rel onto the sandbox root and confirms the result stays within it.
-// A leading slash is not honored as an absolute escape (filepath.Join contains it); `..` traversal
-// that would leave the root is rejected.
-func resolveWorkspacePath(root, rel string) (string, error) {
+// openWorkspaceRoot opens the sandbox root as an [os.Root]. Every read/write goes through the
+// returned handle, whose methods resolve paths with openat semantics: a `..` component or a
+// symlink that would leave the root is refused at the OS level (not by a string check), which
+// also closes the check-then-open TOCTOU a lexical gate would leave. Callers must Close it.
+func openWorkspaceRoot() (*os.Root, error) {
+	dir, err := workspaceRoot()
+	if err != nil {
+		return nil, err
+	}
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("native: workspace root %q: %w", dir, err)
+	}
+	return r, nil
+}
+
+// cleanWorkspaceRel normalizes a tool-supplied path to a forward-slash, root-relative name for
+// os.Root. A leading slash is treated as sandbox-root-relative (not an absolute escape); os.Root
+// enforces the real boundary on the remaining components, so `..`/symlink escapes are refused there.
+func cleanWorkspaceRel(rel string) (string, error) {
 	rel = strings.TrimSpace(rel)
 	if rel == "" {
 		return "", fmt.Errorf("field %q is required", "path")
 	}
-	full := filepath.Join(root, filepath.Clean("/"+rel)) // leading "/" neutralizes absolute paths
-	within, err := filepath.Rel(root, full)
-	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(os.PathSeparator)) {
-		return "", fmt.Errorf("path %q escapes the workspace root", rel)
+	rel = strings.TrimLeft(filepath.ToSlash(rel), "/")
+	if rel == "" {
+		return "", fmt.Errorf("field %q is required", "path")
 	}
-	return full, nil
+	return rel, nil
 }
 
 func dispatchWorkspaceReadFile(_ context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
 	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
-	root, err := workspaceRoot()
+	root, err := openWorkspaceRoot()
 	if err != nil {
 		return nil, meta, err
 	}
-	rel, err := stringFromWith(with, "path")
+	defer root.Close()
+	rawPath, err := stringFromWith(with, "path")
 	if err != nil {
 		return nil, meta, fmt.Errorf("native: read_file: %w", err)
 	}
-	full, err := resolveWorkspacePath(root, rel)
+	rel, err := cleanWorkspaceRel(rawPath)
 	if err != nil {
 		return nil, meta, fmt.Errorf("native: read_file: %w", err)
 	}
-	data, err := os.ReadFile(full)
+	f, err := root.Open(rel)
 	if err != nil {
-		return nil, meta, fmt.Errorf("native: read_file %q: %w", rel, err)
+		return nil, meta, fmt.Errorf("native: read_file %q: %w", rawPath, err)
+	}
+	defer f.Close()
+	// Bound the read itself, not just the result: read at most one byte past the cap so a larger
+	// file is reported truncated without loading all of it into memory.
+	data, err := io.ReadAll(io.LimitReader(f, maxWorkspaceReadBytes+1))
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: read_file %q: %w", rawPath, err)
 	}
 	truncated := false
 	if len(data) > maxWorkspaceReadBytes {
@@ -103,11 +128,12 @@ func dispatchWorkspaceReadFile(_ context.Context, with map[string]any, start tim
 
 func dispatchWorkspaceWriteFile(_ context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
 	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
-	root, err := workspaceRoot()
+	root, err := openWorkspaceRoot()
 	if err != nil {
 		return nil, meta, err
 	}
-	rel, err := stringFromWith(with, "path")
+	defer root.Close()
+	rawPath, err := stringFromWith(with, "path")
 	if err != nil {
 		return nil, meta, fmt.Errorf("native: write_file: %w", err)
 	}
@@ -115,15 +141,27 @@ func dispatchWorkspaceWriteFile(_ context.Context, with map[string]any, start ti
 	if err != nil {
 		return nil, meta, fmt.Errorf("native: write_file: %w", err)
 	}
-	full, err := resolveWorkspacePath(root, rel)
+	rel, err := cleanWorkspaceRel(rawPath)
 	if err != nil {
 		return nil, meta, fmt.Errorf("native: write_file: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		return nil, meta, fmt.Errorf("native: write_file %q: %w", rel, err)
+	if dir := path.Dir(rel); dir != "." {
+		// MkdirAll resolves through os.Root too, so a parent that escapes via `..`/symlink is refused.
+		if err := root.MkdirAll(dir, 0o755); err != nil {
+			return nil, meta, fmt.Errorf("native: write_file %q: %w", rawPath, err)
+		}
 	}
-	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
-		return nil, meta, fmt.Errorf("native: write_file %q: %w", rel, err)
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: write_file %q: %w", rawPath, err)
+	}
+	_, writeErr := f.Write([]byte(content))
+	closeErr := f.Close()
+	if writeErr != nil {
+		return nil, meta, fmt.Errorf("native: write_file %q: %w", rawPath, writeErr)
+	}
+	if closeErr != nil {
+		return nil, meta, fmt.Errorf("native: write_file %q: %w", rawPath, closeErr)
 	}
 	meta.DurationMs = time.Since(start).Milliseconds()
 	return map[string]any{"path": rel, "bytes": len(content), "ok": true}, meta, nil

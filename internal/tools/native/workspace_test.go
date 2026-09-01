@@ -82,6 +82,59 @@ func TestWorkspace_AbsolutePathContained(t *testing.T) {
 	}
 }
 
+// TestWorkspace_SymlinkEscapeRejected is the boundary the sandbox exists to hold: a symlink
+// *inside* the root pointing outside is lexically "within root" but escapes on access. os.Root
+// resolves through openat and refuses it, in both directions — read and write.
+func TestWorkspace_SymlinkEscapeRejected(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privilege on Windows")
+	}
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("TOP-SECRET"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspaceRoot, root)
+	r := NewRegistry()
+
+	if _, _, err := r.Dispatch(context.Background(), "read_file", map[string]any{"path": "escape/secret.txt"}); err == nil {
+		t.Fatal("read_file through an in-sandbox symlink escaped the root")
+	}
+	if _, _, err := r.Dispatch(context.Background(), "write_file", map[string]any{"path": "escape/pwned.txt", "content": "OWNED"}); err == nil {
+		t.Fatal("write_file through an in-sandbox symlink escaped the root")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "pwned.txt")); err == nil {
+		t.Fatal("write_file landed outside the sandbox via a symlink")
+	}
+}
+
+// TestWorkspace_ReadFileTruncatesLargeFile confirms the read is bounded by the cap (not read
+// whole then truncated): a file larger than the cap comes back truncated at exactly the cap.
+func TestWorkspace_ReadFileTruncatesLargeFile(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	big := make([]byte, maxWorkspaceReadBytes+4096)
+	for i := range big {
+		big[i] = 'a'
+	}
+	if err := os.WriteFile(filepath.Join(root, "big.txt"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "big.txt"})
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if out["truncated"] != true {
+		t.Fatalf("a file over the cap should be truncated: %#v", out)
+	}
+	if out["bytes"].(int) != maxWorkspaceReadBytes || len(out["content"].(string)) != maxWorkspaceReadBytes {
+		t.Fatalf("truncated read should be exactly the cap, got bytes=%v len=%d", out["bytes"], len(out["content"].(string)))
+	}
+}
+
 func TestWorkspace_RootRequired(t *testing.T) {
 	t.Setenv(envWorkspaceRoot, "")
 	if _, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "x"}); err == nil {
