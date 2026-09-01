@@ -31,7 +31,16 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 	if g.Workflows == nil {
 		g.Workflows = map[string]*spec.WorkflowResource{}
 	}
+	if g.Tools == nil {
+		g.Tools = map[string]*spec.ToolResource{}
+	}
+	if g.Policies == nil {
+		g.Policies = map[string]*spec.PolicyResource{}
+	}
 
+	// A duplicate (kind, name) across any ingress — an inline resource colliding with an imported
+	// YAML one, or two inline declarations — is an error with no precedence (ADR 005 §3): neither
+	// YAML nor .agent wins. Silent shadowing of a Policy or Tool would hide a safety-surface change.
 	var errs []error
 	seenAgent := make(map[string]bool, len(r.Agents))
 	for _, a := range r.Agents {
@@ -49,6 +58,22 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 		}
 		seenWorkflow[n] = true
 	}
+	seenTool := make(map[string]bool, len(r.Tools))
+	for _, t := range r.Tools {
+		n := t.Metadata.Name
+		if _, dup := g.Tools[n]; dup || seenTool[n] {
+			errs = append(errs, fmt.Errorf("project: duplicate Tool %q from lowered .agent source (also declared in YAML or another .agent block)", n))
+		}
+		seenTool[n] = true
+	}
+	seenPolicy := make(map[string]bool, len(r.Policies))
+	for _, pol := range r.Policies {
+		n := pol.Metadata.Name
+		if _, dup := g.Policies[n]; dup || seenPolicy[n] {
+			errs = append(errs, fmt.Errorf("project: duplicate Policy %q from lowered .agent source (also declared in YAML or another .agent block)", n))
+		}
+		seenPolicy[n] = true
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -58,6 +83,12 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 	}
 	for _, w := range r.Workflows {
 		g.Workflows[w.Metadata.Name] = w
+	}
+	for _, t := range r.Tools {
+		g.Tools[t.Metadata.Name] = t
+	}
+	for _, pol := range r.Policies {
+		g.Policies[pol.Metadata.Name] = pol
 	}
 	return nil
 }

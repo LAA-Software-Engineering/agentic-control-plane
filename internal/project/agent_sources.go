@@ -103,6 +103,25 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 				g.Workflows[name] = w
 			}
 		}
+		// Inline tool/policy declarations (ADR 005, issue #333) fold back like agents/workflows: a
+		// name already in g is a YAML resource cloned by pointer; a genuine cross-ingress duplicate
+		// was already reported by MergeLowered inside Check.
+		if g.Tools == nil {
+			g.Tools = map[string]*spec.ToolResource{}
+		}
+		for name, t := range prog.Graph.Tools {
+			if _, ok := g.Tools[name]; !ok {
+				g.Tools[name] = t
+			}
+		}
+		if g.Policies == nil {
+			g.Policies = map[string]*spec.PolicyResource{}
+		}
+		for name, pol := range prog.Graph.Policies {
+			if _, ok := g.Policies[name]; !ok {
+				g.Policies[name] = pol
+			}
+		}
 	}
 	// The checked execution IR (positional-arg rebinds included) is the pinned
 	// program for every .agent workflow (issue #260); the loader previously

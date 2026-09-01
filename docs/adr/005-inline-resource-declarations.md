@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (issue [#333](https://github.com/Terfyn/terfyn/issues/333))
+Accepted (2026-09-01) — issue [#333](https://github.com/Terfyn/terfyn/issues/333)
 
 ## Context
 

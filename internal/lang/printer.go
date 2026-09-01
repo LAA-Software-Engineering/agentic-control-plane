@@ -25,6 +25,10 @@ func Print(f *File) string {
 			printAgent(&b, n)
 		case *WorkflowDecl:
 			printWorkflow(&b, n)
+		case *ToolDecl:
+			printTool(&b, n)
+		case *PolicyDecl:
+			printPolicy(&b, n)
 		default:
 			fmt.Fprintf(&b, "/* unknown decl %T */\n", d)
 		}

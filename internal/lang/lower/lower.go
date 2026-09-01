@@ -36,6 +36,8 @@ type Options struct {
 type Result struct {
 	Agents    []*spec.AgentResource
 	Workflows []*spec.WorkflowResource
+	Tools     []*spec.ToolResource
+	Policies  []*spec.PolicyResource
 	SourceMap *SourceMap
 }
 
@@ -60,6 +62,12 @@ func (r *Result) ToGraph() *spec.ProjectGraph {
 	}
 	for _, w := range r.Workflows {
 		g.Workflows[w.Metadata.Name] = w
+	}
+	for _, t := range r.Tools {
+		g.Tools[t.Metadata.Name] = t
+	}
+	for _, pol := range r.Policies {
+		g.Policies[pol.Metadata.Name] = pol
 	}
 	return g
 }
@@ -88,6 +96,14 @@ func LowerFile(f *lang.File, opts Options) (*Result, lang.Diagnostics) {
 		case *lang.WorkflowDecl:
 			if w := l.workflow(decl); w != nil {
 				res.Workflows = append(res.Workflows, w)
+			}
+		case *lang.ToolDecl:
+			if t := l.tool(decl); t != nil {
+				res.Tools = append(res.Tools, t)
+			}
+		case *lang.PolicyDecl:
+			if pol := l.policy(decl); pol != nil {
+				res.Policies = append(res.Policies, pol)
 			}
 		}
 	}
