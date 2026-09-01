@@ -92,11 +92,12 @@ Param       = Ident ":" Ident ;                 (* name : Type *)
 Effects     = Effect { [ "," ] Effect } ;       (* commas optional *)
 Effect      = Ident { "." Ident } ;             (* bare dotted; no "tool." prefix *)
 
-Statement   = Assign | Parallel | If | For | Return | ExprStmt ;
+Statement   = Assign | Parallel | If | For | While | Return | ExprStmt ;
 Assign      = Ident "=" Expr ;
 Parallel    = "parallel" "{" { Assign } "}" ;   (* static fan-out, #192 *)
 If          = "if" Cond Block [ "else" ( If | Block ) ] ;            (* #199 *)
 For         = [ "parallel" ] "for" Ident "in" Expr Block ;           (* #199 *)
+While       = "while" Cond "limit" Number Block ;                    (* bounded, #288 *)
 Block       = "{" { Statement } "}" ;
 Return      = "return" Expr ;
 ExprStmt    = Expr ;                            (* a call for its effect *)
@@ -126,8 +127,13 @@ Notes:
   **contextual** keyword (matched only in loop position), so a parameter may still be
   named `in`; `true`/`false` are contextual boolean literals. `parallel for` is dynamic
   fan-out — a loop, not a graph field (ADR 002 §1).
-- **Conditions are pure**: a call is not allowed inside an `if` (or a comparison
-  operand). Bind a call's result to a name and test the name. This keeps conditions
+- `while <cond> limit N { … }` is the **bounded** loop (#288, ADR 002 §6). `limit` is a
+  **contextual** keyword (a parameter may still be named `limit`) and the bound `N` is a
+  **mandatory positive integer literal** — a missing, zero, fractional, or dynamic
+  (`limit input.max`) bound is a diagnostic. There is no unbounded `while` and no
+  `parallel while`. See [Bounded termination](#bounded-termination) for the semantics.
+- **Conditions are pure**: a call is not allowed inside an `if`, a `while`, or a comparison
+  operand. Bind a call's result to a name and test the name. This keeps conditions
   effect-free and the effect bound trivially the union over both arms.
 - Comparisons do not chain: `a < b < c` is a syntax error (parenthesize or use `&&`).
 - Each agent field (`model`, `policy`, `grants`, `input`, `output`) may appear at most
@@ -467,10 +473,43 @@ would — a conditional cannot smuggle an unpermitted effect past the clause (AD
 
 ### Bounded termination
 
-The surface has no unbounded (`while`) loop: every loop is bounded by its collection. The
-interpreter additionally caps the element count at `limits.maxLoopIterations`
-(`spec.DefaultMaxLoopIterations` = 1000; overridable per project/workflow), so a runtime
-collection cannot make a run unbounded — a loop over more elements fails loudly.
+Every loop is bounded, and the bound is decidable from the source text alone (ADR 002 §6):
+
+- `for x in coll { … }` is bounded by the collection length.
+- `while <cond> limit N { … }` is bounded by the **mandatory** `limit N`, a positive integer
+  literal fixed in source. There is **no** unbounded effectful `while` — a naked
+  `while cond { … }` would let a nondeterministic agent drive an unbounded number of tool and
+  model invocations, which is exactly what the platform bounds.
+
+The interpreter enforces both, independently of the compiler: for a `while` the effective
+ceiling is `min(N, limits.maxLoopIterations)` (`spec.DefaultMaxLoopIterations` = 1000;
+overridable per project/workflow), and the body runs **at most** that many times **even if the
+condition never becomes false** — an adversarial or malformed carried state cannot buy a
+`limit+1`th iteration. The per-loop `limit` is the semantics of the construct; the global cap is
+only an additional backstop. The iteration bound is a separate axis from the effect bound: the
+effect set is the union over the loop body's reachable steps regardless of `N` (no quantitative
+effect algebra).
+
+**Loop-carried state.** A `while` body runs on the enclosing scope (like a sequential `for`), so
+a binding that existed **before** the loop may be rebound inside and carries forward across
+iterations and out of the loop (last write wins). A binding first introduced **inside** the loop
+is loop-local — it is recreated each iteration and is **not** visible after the loop, because the
+loop may run zero times. Workflow parameters stay immutable, so carry state through a local:
+
+```agent
+state = input
+while !state.approved limit 3 {
+    implementation = Implementer(state)   // loop-local
+    state = Reviewer(implementation)      // preexisting: carries forward
+}
+return state
+```
+
+Durable replay stays sound across iterations: each iteration folds its index into the leaf's
+call identity, so an effectful leaf in iteration *i* memoizes under a stable, iteration-specific
+key and is never reissued on resume, and each iteration's condition is recorded so a resume
+reproduces the same iteration history (a divergent condition is a loud error, not a silently
+different run).
 
 ### `plan` under control flow — the execution IR is part of workflow identity
 

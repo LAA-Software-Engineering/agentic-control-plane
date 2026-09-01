@@ -115,6 +115,12 @@ func printStmt(b *strings.Builder, s Stmt, depth int) {
 			printStmt(b, st, depth+1)
 		}
 		fmt.Fprintf(b, "%s}\n", indent)
+	case *WhileStmt:
+		fmt.Fprintf(b, "%swhile %s limit %d {\n", indent, printExpr(n.Cond), n.Limit)
+		for _, st := range n.Body {
+			printStmt(b, st, depth+1)
+		}
+		fmt.Fprintf(b, "%s}\n", indent)
 	default:
 		fmt.Fprintf(b, "%s/* unknown stmt %T */\n", indent, s)
 	}

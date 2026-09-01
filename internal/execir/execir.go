@@ -159,6 +159,33 @@ type Loop struct {
 
 func (*Loop) node() {}
 
+// While is a bounded, condition-driven sequential loop — the lowering of
+// `while <cond> limit N { … }` (#288, ADR 002 §6). Before each iteration Cond is
+// evaluated over the current scope (pure, like a [Branch] condition); the body
+// runs while Cond is truthy, at most Limit times.
+//
+// The bound is load-bearing, not advisory: there is NO unbounded effectful loop
+// in the surface, and the interpreter caps executions at min(Limit,
+// MaxLoopIterations) regardless of whether Cond ever becomes false, so an
+// adversarial or malformed carried state cannot buy an extra iteration. Limit is
+// the per-loop explicit source bound; the global cap is only an additional
+// ceiling.
+//
+// Scope is the SEQUENTIAL [Loop] rule: the body runs on the enclosing scope so a
+// preexisting binding rebound in the body carries forward across iterations and
+// out of the loop (loop-carried state), while a body-local binding is recreated
+// each iteration. A Return in the body returns from the workflow and stops the
+// loop. Each iteration i folds i into the leaf CallSite.Loop vector, so an
+// effectful leaf in iteration i has a stable identity across a durable resume.
+type While struct {
+	Pos   Pos
+	Cond  Expr
+	Limit int
+	Body  []Node
+}
+
+func (*While) node() {}
+
 // Return sets the workflow output value.
 type Return struct {
 	Pos   Pos

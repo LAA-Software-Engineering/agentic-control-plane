@@ -319,6 +319,23 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 			wc.env = loopJoin(pre, wc.env)
 		}
 		return diags
+	case *lang.WhileStmt:
+		// A bounded `while` carries state exactly like a SEQUENTIAL `for` (#288):
+		// the condition is checked, then the body runs on a snapshot joined back
+		// with loopJoin. A name that existed BEFORE the loop may be rebound and
+		// survives (collapsed to an untyped union, since the loop may run zero
+		// times); a name first bound INSIDE is loop-local and does not escape. This
+		// is the loop-carried-state rule the interpreter mirrors (ADR 002 §6).
+		var diags lang.Diagnostics
+		_, d := wc.checkExpr(s.Cond)
+		diags = append(diags, d...)
+		pre := wc.env
+		wc.env = snapshotEnv(pre)
+		for _, st := range s.Body {
+			diags = append(diags, wc.checkStmt(st)...)
+		}
+		wc.env = loopJoin(pre, wc.env)
+		return diags
 	}
 	return nil
 }

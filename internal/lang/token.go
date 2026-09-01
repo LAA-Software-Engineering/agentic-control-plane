@@ -46,6 +46,7 @@ const (
 	KindIf       // if
 	KindElse     // else
 	KindFor      // for
+	KindWhile    // while
 
 	// Punctuation.
 	KindLBrace // {
@@ -89,6 +90,7 @@ var keywords = map[string]Kind{
 	"if":       KindIf,
 	"else":     KindElse,
 	"for":      KindFor,
+	"while":    KindWhile,
 }
 
 // String renders a Kind for diagnostics and tests.
@@ -114,6 +116,8 @@ func (k Kind) String() string {
 		return "'else'"
 	case KindFor:
 		return "'for'"
+	case KindWhile:
+		return "'while'"
 	case KindLBrace:
 		return "'{'"
 	case KindRBrace:

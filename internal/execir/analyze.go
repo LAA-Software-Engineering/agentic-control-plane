@@ -20,7 +20,7 @@ func RequiresInterpreter(p *Program) bool {
 func nodesRequireInterpreter(nodes []Node) bool {
 	for _, n := range nodes {
 		switch v := n.(type) {
-		case *Branch, *Loop:
+		case *Branch, *Loop, *While:
 			return true
 		case *Fork:
 			for _, b := range v.Branches {
