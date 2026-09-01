@@ -121,24 +121,29 @@ func TestLower_SameFileWorkflowCalleeIsWorkflowStep(t *testing.T) {
 	}
 }
 
-// TestLower_WholeInputReferenceIsDiagnostic asserts a bare reference to a
-// single-parameter workflow's input is a diagnostic rather than an invalid
-// ${input} token: the resource-model interpolation language has no token for the
-// entire workflow input, only input.<field>.
-func TestLower_WholeInputReferenceIsDiagnostic(t *testing.T) {
+// TestLower_WholeInputReferenceLowersCleanly asserts a bare reference to a
+// single-parameter workflow's input lowers to ${input} with no diagnostic (#303):
+// the execir path binds the whole input document to the parameter and runs it, and
+// the resource projection (no longer executed post-#278) carries an inert ${input}.
+func TestLower_WholeInputReferenceLowersCleanly(t *testing.T) {
 	src := "workflow Echo(input: T) -> T { return input }\n"
 	f, pd := lang.Parse("echo.agent", src)
 	if len(pd) > 0 {
 		t.Fatalf("unexpected parse diagnostics: %s", pd.Error())
 	}
-	_, ld := lower.LowerFile(f, lower.Options{})
-	if !strings.Contains(ld.Error(), "cannot reference the whole workflow input") {
-		t.Errorf("expected a whole-input diagnostic; got: %s", ld.Error())
+	if _, ld := lower.LowerFile(f, lower.Options{}); len(ld) > 0 {
+		t.Errorf("whole-input reference must lower cleanly now; got: %s", ld.Error())
 	}
-	// A field access on the same parameter must NOT diagnose.
+	// A field access on the same parameter must also lower cleanly.
 	f2, _ := lang.Parse("ok.agent", "workflow Echo(input: T) -> T { return input.field }\n")
 	if _, ld2 := lower.LowerFile(f2, lower.Options{}); len(ld2) > 0 {
 		t.Errorf("input.field must lower cleanly; got: %s", ld2.Error())
+	}
+	// The flagship pattern — the whole input aliased and handed to an agent — lowers
+	// cleanly (#303).
+	f3, _ := lang.Parse("flag.agent", "workflow W(input: S) -> S {\n    state = input\n    r = Reviewer(state)\n    return r\n}\n")
+	if _, ld3 := lower.LowerFile(f3, lower.Options{}); len(ld3) > 0 {
+		t.Errorf("state = input; Reviewer(state) must lower cleanly; got: %s", ld3.Error())
 	}
 }
 

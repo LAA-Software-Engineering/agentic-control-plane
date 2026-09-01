@@ -580,24 +580,17 @@ func (wl *workflowLowerer) lowerValue(e lang.Expr, idBase string, predNeeds []st
 // token renders a reference as an interpolation string, e.g. result.summary ->
 // ${steps.result.output.summary}, input.repo -> ${input.repo}.
 //
-// A bare reference to a single-parameter workflow's input resolves to the path
-// "input" alone, and the resource-model interpolation language has no token for
-// the whole workflow input — engine.resolvePath requires input.<field> (a step's
-// whole output is reachable as ${steps.<id>.output}, but the input root is not).
-// ${input} would skip-pass validation and fail-closed at run time, so it is
-// reported as a diagnostic. The best-effort ${input} is STILL returned: like a
-// duplicate name, an invalid token lives in a Result that carries diagnostics
-// (see the Result doc), and a caller must check diagnostics before use rather
-// than trust that only-valid IR was produced. Whole-input pass-through (handing a
-// subworkflow its entire input) additionally needs a callee input-document
-// mapping; both are follow-ups (docs/plans/197-lowering.md), not the resource
-// projection's job.
+// A reference resolving to the whole workflow input (the path "input" alone, from
+// the single-parameter `input` or an alias of it) is legitimate (#303): the execir
+// path binds the whole input document to that parameter (paramScope) and resolves
+// Ref{["input"]} to it, and the execir path is what runs. The resource projection
+// is a sound over-approximation for effect analysis and is no longer executed — the
+// WorkflowStep DAG runtime was retired (#278) — so a ${input} token in a with-map
+// is inert (no run-time resolvePath to fail-close against). It is therefore emitted
+// as ${input} rather than reported as a diagnostic, so the flagship's
+// `state = input; Implementer(state)` compiles and runs.
 func (wl *workflowLowerer) token(r *lang.RefExpr) any {
-	path := wl.prefixOf(r)
-	if path == "input" {
-		wl.l.diag(r.Position(), "cannot reference the whole workflow input; use input.<field> (the resource model has no interpolation token for the entire input)")
-	}
-	return "${" + path + "}"
+	return "${" + wl.prefixOf(r) + "}"
 }
 
 // prefixOf resolves a reference to its interpolation path (no ${}). An unresolved

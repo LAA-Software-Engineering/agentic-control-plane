@@ -237,8 +237,10 @@ Lowering rules:
 - **References.** A workflow parameter field lowers to `${input.…}`; a binding lowers to
   `${steps.<id>.output.…}`. `return <expr>` lowers to `output.value.value`. A **bare**
   reference to a single-parameter workflow's input (the whole input object, e.g.
-  `return input`) is a diagnostic: the interpolation language has no token for the entire
-  input, only `input.<field>` (see the whole-input limitation below).
+  `return input` or `Implementer(state)` where `state = input`) lowers to `${input}` and is
+  **not** a diagnostic (#303): the execir path binds the whole input document to the parameter
+  and runs it, and the resource projection — no longer executed since the DAG runtime was
+  retired (#278) — carries an inert `${input}`.
 - **Nested calls** SSA-flatten: a call passed as an argument is hoisted into its own step
   (id `<parent>_arg<i>`) referenced by `${steps.<temp>.output}`.
 - **Sequencing and `parallel`.** Statements chain through `needs` (issue #192): each
@@ -256,17 +258,18 @@ themselves (`WorkflowStep.*Pos`, `AgentSpec.ToolsPos`, #187) and in an auxiliary
 `lower.SourceMap` keyed by structural identity — so a validation, policy, or effect
 diagnostic on lowered IR underlines the `.agent` call site, not a synthesized name.
 
-### Known limitation (whole-input reference)
+### Whole-input references
 
-The interpolation language addresses a workflow's input only as `input.<field>`
-(`engine.resolvePath` requires at least two path segments), so there is no token for the
-*entire* input object — unlike a step, whose whole output is `${steps.<id>.output}`. A bare
-reference to a single-parameter workflow's input therefore is a diagnostic (lowering still
-emits a best-effort `${input}` into a Result that, carrying a diagnostic, is not a valid
-projection — callers check diagnostics before use). Supporting it needs two things that are
-out of scope for the resource projection:
-a whole-input interpolation token in the engine/validator, and — for passing a whole input to
-a subworkflow — a callee input-document mapping rather than a one-key `with:` map (#194/#198).
+A reference to a single-parameter workflow's **whole** input object — a bare `input`, or a
+binding aliased to it (`state = input`) — is legitimate and lowers to `${input}` (#303). The
+execir path binds the whole input document to that parameter (`paramScope`) and resolves it,
+so `state = input; Implementer(state)` — handing an agent the entire input, as the
+implement/review flagship does — compiles and runs. The resource projection carries an inert
+`${input}`: it is a sound over-approximation for effect analysis and is no longer executed (the
+`WorkflowStep` DAG runtime was retired, #278), so there is no run-time `resolvePath` to
+fail-close against. (Whole-input **pass-through to a subworkflow** — a callee input-document
+mapping rather than a one-key `with:` map — remains a separate follow-up; the agent-argument
+case the flagship needs is resolved.)
 
 ### Multiple operations per tool grant
 
