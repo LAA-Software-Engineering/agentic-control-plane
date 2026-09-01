@@ -27,10 +27,10 @@ func TestStubNotImplemented(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Invoke(context.Background(), nil, runtime.InvokeOptions{}); !errors.Is(err, errNotImplemented) {
+	if _, err := r.Invoke(context.Background(), nil, runtime.InvokeOptions{}); !errors.Is(err, errPendingIntegration) {
 		t.Fatalf("Invoke should be not-implemented, got %v", err)
 	}
-	if _, err := r.Resume(context.Background(), nil, runtime.ResumeOptions{}); !errors.Is(err, errNotImplemented) {
+	if _, err := r.Resume(context.Background(), nil, runtime.ResumeOptions{}); !errors.Is(err, errPendingIntegration) {
 		t.Fatalf("Resume should be not-implemented, got %v", err)
 	}
 	if h := r.Health(context.Background()); h.State != runtime.HealthDegraded {
@@ -41,7 +41,7 @@ func TestStubNotImplemented(t *testing.T) {
 // TestErrorNamesFollowUp keeps the not-implemented error pointing at the adapter issue so a user
 // who selects the runtime early gets a clear signpost.
 func TestErrorNamesFollowUp(t *testing.T) {
-	if !strings.Contains(errNotImplemented.Error(), "#337") {
-		t.Fatalf("not-implemented error should reference #337: %v", errNotImplemented)
+	if !strings.Contains(errPendingIntegration.Error(), "#338") {
+		t.Fatalf("not-implemented error should reference #338: %v", errPendingIntegration)
 	}
 }
