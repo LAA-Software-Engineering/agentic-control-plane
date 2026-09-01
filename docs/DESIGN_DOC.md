@@ -157,7 +157,11 @@ The system manages these resource types:
 * **Environment**
 * **ModelProvider**
 * **MemoryStore** later
-* **RuntimeTarget** later
+* **RuntimeTarget** — a named execution adapter (issue #336). A runtime is a name registered in the
+  `internal/runtime` registry (`local` is the built-in disk-backed engine); `terfyn run --runtime <name>`
+  overrides the workflow's `spec.runtime` to select one. External agent-runtime adapters (e.g.
+  `claude-code`, epic #335) register alongside `local`. A first-class RuntimeTarget *resource* with
+  per-target config surfaces in `plan` later (#342).
 * **Module** later
 
 Each resource has:
