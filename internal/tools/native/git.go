@@ -104,6 +104,16 @@ func gitPushBranch(ctx context.Context, with map[string]any) (map[string]any, er
 		return nil, fmt.Errorf("native: push_branch: %w", err)
 	}
 	remote := gitRemote()
+	// Enforce "no push to the default branch": a fix must land on a review branch, never directly
+	// on the remote's default. Resolve the remote's default and refuse a push that targets it. If the
+	// remote can't be queried, fall back to a conservative main/master denylist.
+	if def := remoteDefaultBranch(ctx, root, remote); def != "" {
+		if branch == def {
+			return nil, fmt.Errorf("native: push_branch: refusing to push the default branch %q; push a fix branch", branch)
+		}
+	} else if branch == "main" || branch == "master" {
+		return nil, fmt.Errorf("native: push_branch: refusing to push a likely default branch %q; push a fix branch", branch)
+	}
 	// Explicit src:dst refspec (both the validated branch) so the push always creates/updates
 	// refs/heads/<branch> and can never be read as a delete (`:branch`) or a flag.
 	refspec := "refs/heads/" + branch + ":refs/heads/" + branch
@@ -111,6 +121,30 @@ func gitPushBranch(ctx context.Context, with map[string]any) (map[string]any, er
 		return nil, err
 	}
 	return map[string]any{"branch": branch, "remote": remote, "pushed": true}, nil
+}
+
+// remoteDefaultBranch resolves the remote's default branch (the branch its HEAD points at) via
+// ls-remote --symref, or "" when it cannot be determined. It reads the remote — the same round trip
+// push makes — and never fails the push: an unresolved default falls back to the main/master denylist.
+func remoteDefaultBranch(ctx context.Context, root, remote string) string {
+	out, err := runGit(ctx, root, "ls-remote", "--symref", remote, "HEAD")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "ref:") {
+			continue
+		}
+		fields := strings.Fields(strings.TrimPrefix(line, "ref:"))
+		if len(fields) == 0 {
+			continue
+		}
+		if b := strings.TrimPrefix(fields[0], "refs/heads/"); b != fields[0] {
+			return b
+		}
+	}
+	return ""
 }
 
 func dispatchGitCreateBranch(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {

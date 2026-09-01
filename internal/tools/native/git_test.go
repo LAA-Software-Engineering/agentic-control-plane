@@ -126,6 +126,35 @@ func TestGitPushBranch_customRemote(t *testing.T) {
 	}
 }
 
+// TestGitPushBranch_refusesDefaultBranch is the invariant the tool exists to hold: a fix must land
+// on a review branch, never on the remote's default. The bare remote's default is main (init
+// default), so pushing main is refused and the ref does not move.
+func TestGitPushBranch_refusesDefaultBranch(t *testing.T) {
+	requireGit(t)
+	remote := t.TempDir()
+	gitCfg(t, remote, "init", "--bare")
+
+	root := initRepoWithCommit(t) // on default branch (main)
+	gitCfg(t, root, "remote", "add", "origin", remote)
+	// Seed the remote's default so ls-remote --symref resolves it, then advance locally.
+	gitCfg(t, root, "push", "origin", "refs/heads/main:refs/heads/main")
+	before := gitCfg(t, remote, "rev-parse", "refs/heads/main")
+	if err := os.WriteFile(filepath.Join(root, "x.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCfg(t, root, "add", "-A")
+	gitCfg(t, root, "commit", "-m", "local advance")
+	t.Setenv(envWorkspaceRoot, root)
+
+	_, _, err := NewRegistry().Dispatch(context.Background(), "push_branch", map[string]any{"branch": "main"})
+	if err == nil || !strings.Contains(err.Error(), "default branch") {
+		t.Fatalf("pushing the default branch must be refused, got %v", err)
+	}
+	if after := gitCfg(t, remote, "rev-parse", "refs/heads/main"); after != before {
+		t.Fatalf("remote default branch moved despite the refusal: %s -> %s", before, after)
+	}
+}
+
 func TestGit_missingRoot(t *testing.T) {
 	t.Setenv(envWorkspaceRoot, "")
 	if _, _, err := NewRegistry().Dispatch(context.Background(), "create_branch", map[string]any{"name": "x"}); err == nil {
