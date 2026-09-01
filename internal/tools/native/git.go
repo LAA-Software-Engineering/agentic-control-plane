@@ -72,7 +72,7 @@ func runGit(ctx context.Context, root string, args ...string) (string, error) {
 }
 
 func gitCreateBranch(ctx context.Context, with map[string]any) (map[string]any, error) {
-	root, err := workspaceRoot()
+	root, err := workspaceRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func gitCreateBranch(ctx context.Context, with map[string]any) (map[string]any, 
 }
 
 func gitPushBranch(ctx context.Context, with map[string]any) (map[string]any, error) {
-	root, err := workspaceRoot()
+	root, err := workspaceRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
