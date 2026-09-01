@@ -168,10 +168,20 @@ func validateNestedRunState(n *NestedRunState, g *spec.ProjectGraph, parent *spe
 		if err != nil {
 			return err
 		}
-		completed := append([]string(nil), n.Completed...)
-		completed = append(completed, completedStepIDs(n.Steps)...)
-		if err := validateCheckpointSteps(n.Steps, callee, -1, completed); err != nil {
-			return fmt.Errorf("engine: nested checkpoint workflow %q: %w", n.Workflow, err)
+		// An execir nested frame (ExecKey set) carries its authoritative durable
+		// state in ExecMemo/ExecControl; its Steps map is output/interpolation-only,
+		// and under control flow a leaf's binding name legitimately differs from the
+		// callee's WorkflowStep ids (and recurs across `while` iterations). The
+		// DAG-era membership check therefore does not apply — the same relaxation as
+		// the top-level checkpoint (#290). The size cap above and the stepId/workflow
+		// and nesting guards still hold. Since #278 every nested subworkflow runs on
+		// execir, so a freshly written nested frame always sets ExecKey.
+		if n.ExecKey == "" {
+			completed := append([]string(nil), n.Completed...)
+			completed = append(completed, completedStepIDs(n.Steps)...)
+			if err := validateCheckpointSteps(n.Steps, callee, -1, completed); err != nil {
+				return fmt.Errorf("engine: nested checkpoint workflow %q: %w", n.Workflow, err)
+			}
 		}
 		parent = callee
 		n = n.Nested

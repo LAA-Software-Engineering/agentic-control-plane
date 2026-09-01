@@ -578,6 +578,77 @@ func TestExecIRResume_NestedSubworkflow(t *testing.T) {
 	}
 }
 
+// TestExecIRResume_HitlGateInsideWhileInsideSubworkflow is the nested counterpart
+// of TestExecIRResume_HitlGateInsideWhileLoop (#290): the bounded `while` with a
+// gated body runs inside a `workflow:` callee. It carries through TWO suspend/resume
+// cycles so the gated leaf `pub` completes inside the nested frame (resume 1) and
+// the NEXT load (resume 2) revalidates that frame — the point where the ungated
+// nested DAG-era Steps-membership check used to reject a non-step bind. Proves the
+// nested relaxation and that the inner pre-gate tool replays per iteration.
+func TestExecIRResume_HitlGateInsideWhileInsideSubworkflow(t *testing.T) {
+	t.Parallel()
+	graph := nestedSubworkflowGraph()
+	// The inner pinned program binds `pub` (NOT the callee's `gatestep` step id),
+	// reproducing the control-flow bind/step-id divergence one layer down. Point the
+	// inner output at that bind.
+	graph.Workflows["inner"].Spec.Output = &spec.WorkflowOutput{Value: map[string]any{"done": "${steps.pub.output}"}}
+	ex, ct, runID, started := newResumeExecutor(t, graph, "outer")
+	ex.Executables = map[string]*execir.Program{
+		"outer": {Workflow: "outer", Params: []string{"input"}, Body: []execir.Node{
+			&execir.InvokeWorkflow{Bind: "sub", Workflow: "inner", Args: map[string]execir.Value{"topic": execir.Lit{V: "hi"}}},
+		}},
+		"inner": {Workflow: "inner", Params: []string{"input"}, Body: []execir.Node{
+			&execir.While{Cond: execir.Leaf{V: execir.Lit{V: true}}, Limit: 2, Body: []execir.Node{
+				&execir.InvokeTool{Bind: "prep", Uses: "tool.helper.echo", Args: map[string]execir.Value{"topic": execir.Lit{V: "hi"}}},
+				&execir.InvokeTool{Bind: "pub", Uses: "tool.publisher.echo", Args: map[string]execir.Value{"body": execir.Lit{V: "x"}}},
+			}},
+		}},
+	}
+	ctx := context.Background()
+	base := RunInput{RunID: runID, WorkflowName: "outer", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}}
+	approve := func() RunInput {
+		r := base
+		r.Resume = true
+		r.Hitl = HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"}}
+		return r
+	}
+
+	// Fresh: inner iteration 0 prep runs, gate suspends.
+	if err := ex.Run(ctx, base); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("fresh run should interrupt at the inner gate, got %v", err)
+	}
+	if got := ct.count("tool.helper.echo"); got != 1 {
+		t.Fatalf("inner iteration 0 prep should run once, got %d", got)
+	}
+
+	// Resume 1: inner iteration 0's gate completes (nested Steps gains `pub`); inner
+	// iteration 1's prep runs; gate suspends again. The next load (resume 2)
+	// revalidates this nested frame.
+	if err := ex.Run(ctx, approve()); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("resume 1 should suspend at inner iteration 1's gate, got %v", err)
+	}
+	if got := ct.count("tool.helper.echo"); got != 2 {
+		t.Fatalf("inner prep fired %d times; want 2 (iteration 0 replayed from the nested memo, iteration 1 ran)", got)
+	}
+	if got := ct.count("tool.publisher.echo"); got != 1 {
+		t.Fatalf("inner publisher fired %d times after resume 1; want 1", got)
+	}
+
+	// Resume 2: inner iteration 1's gate completes; the loop hits limit 2; the run succeeds.
+	if err := ex.Run(ctx, approve()); err != nil {
+		t.Fatalf("resume 2: %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusSucceeded {
+		t.Fatalf("final status = %q err=%q", run.Status, run.ErrorText)
+	}
+	if got := ct.count("tool.helper.echo"); got != 2 {
+		t.Fatalf("inner prep re-issued (%d): nested memo replay across while iterations must be side-effect-free", got)
+	}
+	if got := ct.count("tool.publisher.echo"); got != 2 {
+		t.Fatalf("inner publisher fired %d times; want exactly 2 (once per iteration)", got)
+	}
+}
+
 // TestExecIR_UsesPinnedProgram proves runViaExecIR executes the PINNED program
 // (Executor.Executables) rather than re-lowering the resource graph (issue #260):
 // a sentinel program that invokes a different tool than the workflow's steps runs
