@@ -49,6 +49,14 @@ func workflowStepsByID(w *WorkflowSpec) map[string]WorkflowStep {
 }
 
 func checkStepWithWiring(g *ProjectGraph, wfName string, st WorkflowStep, byID map[string]WorkflowStep, inputDoc *schema.Document) []error {
+	// A synthetic (flattened control-flow) step is not an executable node: its `with`
+	// carries structural placeholder keys (e.g. a single positional agent arg is
+	// arg0, an agent input being a whole document, not named fields), and it is never
+	// executed (#305, ADR 002 §5). Argument type safety is enforced by the checker's
+	// type system; skip the per-field input-schema wiring check here.
+	if st.Synthetic {
+		return nil
+	}
 	if len(st.With) == 0 {
 		return nil
 	}

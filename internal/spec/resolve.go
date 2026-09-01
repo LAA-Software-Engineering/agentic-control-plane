@@ -180,6 +180,13 @@ func validateWorkflowStepOrder(wfName string, w *WorkflowSpec) error {
 	}
 	explicit := WorkflowUsesExplicitNeeds(w.Steps)
 	for i, st := range w.Steps {
+		// A synthetic (flattened control-flow) step is an effect-analysis
+		// over-approximation, not an executable node — its data-dependency `needs`
+		// are not threaded and it is never executed (#305, ADR 002 §5). Skip the
+		// predecessor/order check; the checker's type system validates its references.
+		if st.Synthetic {
+			continue
+		}
 		sid := strings.TrimSpace(st.ID)
 		ancestors := StepAncestorIDs(w.Steps, i)
 		for _, sval := range CollectWithStringValues(st.With) {
