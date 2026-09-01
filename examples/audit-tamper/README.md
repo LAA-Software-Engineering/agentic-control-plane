@@ -13,11 +13,10 @@ This example is the distinctive **tamper-evident trace** demo. A successful mock
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports resources; `mock` model (no API keys). |
-| `workflows/note.yaml` | One agent step; the run is expected to **succeed**. |
-| `agents/scribe.yaml` | No `spec.tools` (single-shot mock JSON). |
+| `project.yaml` | Imports the policy; `mock` model (no API keys). |
+| `main.agent` | The `scribe` agent and the `note` workflow, authored in [`.agent`](../../docs/LANGUAGE.md) (discovered automatically, not imported). The run is expected to **succeed**. |
 | `policies/cheap-ceiling.yaml` | `maxTotalCostUsd: 5`. |
-| `schemas/*.json` | Workflow input and agent output. |
+| `schemas/*.json` | Workflow input (`NoteInput`) and agent output (`NoteOutput`). |
 | `fixtures/sample-input.json` | Tiny `{topic}` payload. |
 | `scripts/tamper-trace.sh` | Updates **one** `data_json` for `--run` / `--state`. Needs **python3** (stdlib `sqlite3`) or the **sqlite3** CLI. |
 
