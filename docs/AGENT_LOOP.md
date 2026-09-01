@@ -28,7 +28,7 @@ Issue #189 computes the effect bound in [`internal/effects`](../internal/effects
 
 ### Closed world (#204)
 
-For MCP tools the grant is only meaningful against a **pinned operation manifest**. [#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) is **not shipped**; MCP `tools/list` can still expand the world. A closed world is **not** already guaranteed.
+For MCP tools the grant is only meaningful against a **pinned operation manifest**. [#204](https://github.com/LAA-Software-Engineering/terfyn/issues/204) ships the dispatch-time closed world: an operation absent from the tool's deployed capability manifest (derived from declared `spec.operations`, never from a live `tools/list`) is denied on the policy path (`ReasonOperationNotInManifest`, exit **5**, trace event), so a remote `tools/list` advertising an extra operation **cannot** expand the callable set. Closed-world enforcement is **opt-in per tool**: a tool that declares no `operations` key keeps an open callable set (see [`docs/SOUNDNESS.md`](SOUNDNESS.md) S2). The remaining scoped item is the **run-pinned** manifest at resume — enforcing the manifest a suspended run started with — which depends on [#207](https://github.com/LAA-Software-Engineering/terfyn/issues/207).
 
 ## How tools are advertised
 
