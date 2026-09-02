@@ -90,5 +90,6 @@ change to it surfaces as a `runtime_target_change` risk item — an execution-su
 an authority widening.
 
 See [ADR 006](adr/006-external-agent-runtimes.md) for the decision to promote `RuntimeTarget` from
-"later" to a real resource, and [`docs/architecture.md`](architecture.md) for where the runtime
-boundary sits in the control plane.
+"later" to a real resource, [`RUNTIME_TARGET_CONTRACT.md`](RUNTIME_TARGET_CONTRACT.md) for the
+explicit bar a new external runtime (Codex, Gemini CLI) must meet, and
+[`docs/architecture.md`](architecture.md) for where the runtime boundary sits in the control plane.
