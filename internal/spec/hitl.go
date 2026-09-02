@@ -43,7 +43,8 @@ type HitlPolicy struct {
 	DescriptionPrefix string `yaml:"descriptionPrefix,omitempty" json:"descriptionPrefix,omitempty"`
 	// ToolSwitchMap maps source operation to allowed target operations for switch decisions.
 	ToolSwitchMap map[string][]string `yaml:"toolSwitchMap,omitempty" json:"toolSwitchMap,omitempty"`
-	// RedactKeys masks top-level arg keys in approval prompts (merged with per-call redactKeys).
+	// RedactKeys masks matching arg keys in approval prompts and trace events, at any depth
+	// (including inside lists), case-insensitively by substring (merged with per-call redactKeys).
 	RedactKeys []string `yaml:"redactKeys,omitempty" json:"redactKeys,omitempty"`
 }
 

@@ -277,34 +277,67 @@ func shallowCopyMap(m map[string]any) map[string]any {
 	return out
 }
 
-// RedactHitlArgs returns a copy of args with sensitive keys masked for prompts.
+// RedactHitlArgs returns a copy of args with sensitive keys masked for prompts and trace events.
+// A configured key is masked wherever it occurs in the argument tree — top level, nested in a map,
+// AND nested in a list (or a map inside a list) — and matched case-insensitively by substring, the
+// same traversal and key-matching as trace redaction (trace.redactValue). Substring is the safe
+// direction for a redaction primitive: a `token` key hides `authToken` / `X-Auth-Token` too, and
+// the operator prompt (internal/cli/hitl.go) has no second redaction pass, so a variant-named
+// secret would otherwise be shown to the human in clear text. The map-only flatten path this
+// previously used treated any list as an opaque leaf and matched keys exactly, so a secret under an
+// array key (e.g. with.items: [{ token: … }]) leaked to the prompt and the hitl_request_created
+// trace event (issue #358).
 func RedactHitlArgs(args map[string]any, redactKeys []string) map[string]any {
 	if len(redactKeys) == 0 {
 		return shallowCopyMap(args)
 	}
-	flat := flattenArgs(args)
-	redacted := shallowCopyMap(args)
-	for path := range flat {
-		if pathDenied(path, nil, redactKeys) {
-			setNestedValue(redacted, path, RedactedSecretPlaceholder)
+	patterns := make([]string, 0, len(redactKeys))
+	for _, k := range redactKeys {
+		if k = strings.ToLower(strings.TrimSpace(k)); k != "" {
+			patterns = append(patterns, k)
 		}
 	}
-	return redacted
+	out, _ := redactHitlValue(args, patterns).(map[string]any)
+	if out == nil {
+		return map[string]any{}
+	}
+	return out
 }
 
-func setNestedValue(root map[string]any, path string, value any) {
-	parts := strings.Split(path, ".")
-	cur := root
-	for i, p := range parts {
-		if i == len(parts)-1 {
-			cur[p] = value
-			return
+// redactHitlValue deep-copies v, replacing the whole value under any map key matching a redact
+// pattern with the placeholder and recursing into both maps and slices so a matched key is masked
+// at any depth. patterns must be lowercased.
+func redactHitlValue(v any, patterns []string) any {
+	switch val := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, child := range val {
+			if redactKeyMatches(k, patterns) {
+				out[k] = RedactedSecretPlaceholder
+				continue
+			}
+			out[k] = redactHitlValue(child, patterns)
 		}
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			cur[p] = next
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, child := range val {
+			out[i] = redactHitlValue(child, patterns)
 		}
-		cur = next
+		return out
+	default:
+		return v
 	}
+}
+
+// redactKeyMatches reports whether a map key matches any redact pattern, case-insensitively and by
+// substring (mirroring trace.redactValue's keyMatchesRedact). patterns must be lowercased.
+func redactKeyMatches(key string, patterns []string) bool {
+	k := strings.ToLower(strings.TrimSpace(key))
+	for _, p := range patterns {
+		if p != "" && strings.Contains(k, p) {
+			return true
+		}
+	}
+	return false
 }
