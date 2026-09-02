@@ -4,12 +4,14 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/Terfyn/terfyn/internal/runtime/agentcli"
 )
 
 func TestCheckNoBuiltinToolExposure_AdapterArgvIsSound(t *testing.T) {
 	// The adapter's own argv (empty --tools denial + strict MCP config) must pass the guard.
 	c := ClaudeCodeRuntime{Bin: "claude"}
-	argv := c.argv(RunSpec{Prompt: "go", MCPConfig: "/tmp/run.json"})
+	argv := c.argv(agentcli.RunSpec{Prompt: "go", MCPConfig: "/tmp/run.json"})
 	if err := checkNoBuiltinToolExposure(argv); err != nil {
 		t.Fatalf("the adapter's own argv must be sound, got %v", err)
 	}
@@ -60,7 +62,7 @@ func TestRunSession_ExtraArgsBuiltinExposureRefused(t *testing.T) {
 		return successStream, nil
 	}
 	c := ClaudeCodeRuntime{Run: runner}
-	_, err := c.RunSession(context.Background(), RunSpec{Prompt: "x", ExtraArgs: []string{"--allowedTools", "Bash"}})
+	_, err := c.RunSession(context.Background(), agentcli.RunSpec{Prompt: "x", ExtraArgs: []string{"--allowedTools", "Bash"}})
 	if err == nil || !strings.Contains(err.Error(), "S9") {
 		t.Fatalf("smuggled built-in via ExtraArgs must be refused, got %v", err)
 	}
@@ -93,7 +95,7 @@ func TestCheckExtraArgsNoAuthoritySurface(t *testing.T) {
 // ExtraArgs fence — it is checked on ExtraArgs specifically, not the whole argv.
 func TestRunSession_TerfynMCPConfigNotFlaggedButExtraArgsIs(t *testing.T) {
 	c := ClaudeCodeRuntime{Run: fakeRunner(successStream, nil, nil)}
-	if _, err := c.RunSession(context.Background(), RunSpec{Prompt: "x", MCPConfig: "/run/mcp.json"}); err != nil {
+	if _, err := c.RunSession(context.Background(), agentcli.RunSpec{Prompt: "x", MCPConfig: "/run/mcp.json"}); err != nil {
 		t.Fatalf("Terfyn's own --mcp-config must be allowed, got %v", err)
 	}
 
@@ -103,7 +105,7 @@ func TestRunSession_TerfynMCPConfigNotFlaggedButExtraArgsIs(t *testing.T) {
 		return successStream, nil
 	}
 	c2 := ClaudeCodeRuntime{Run: runner}
-	_, err := c2.RunSession(context.Background(), RunSpec{Prompt: "x", MCPConfig: "/run/mcp.json", ExtraArgs: []string{"--mcp-config", "/evil.json"}})
+	_, err := c2.RunSession(context.Background(), agentcli.RunSpec{Prompt: "x", MCPConfig: "/run/mcp.json", ExtraArgs: []string{"--mcp-config", "/evil.json"}})
 	if err == nil || !strings.Contains(err.Error(), "S9") {
 		t.Fatalf("a smuggled second --mcp-config must be refused, got %v", err)
 	}

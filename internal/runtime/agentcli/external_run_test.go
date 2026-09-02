@@ -1,4 +1,4 @@
-package claudecode
+package agentcli
 
 import (
 	"bytes"
@@ -17,6 +17,18 @@ import (
 	"github.com/Terfyn/terfyn/internal/tools"
 	"github.com/Terfyn/terfyn/internal/trace"
 )
+
+// fakeDriver is an AgentRuntime whose RunSession is a test-supplied function. It stands in for a
+// real CLI driver (ClaudeCodeRuntime, GeminiRuntime, …) so the composition can be tested without a
+// process: the function receives the RunSpec (including the per-run MCPConfig path) and returns the
+// Session the driver would have parsed.
+type fakeDriver struct {
+	run func(ctx context.Context, spec RunSpec) (Session, error)
+}
+
+func (f fakeDriver) RunSession(ctx context.Context, spec RunSpec) (Session, error) {
+	return f.run(ctx, spec)
+}
 
 // fakeExec records the granted calls the dispatcher routes to it.
 type fakeExec struct{ calls []string }
@@ -48,18 +60,12 @@ func reviewerGraph() *spec.ProjectGraph {
 	}
 }
 
-// mcpConfigEndpoint reads the --mcp-config file the driver wrote and returns the loopback URL and
-// Authorization header the spawned agent would use.
-func mcpConfigEndpoint(t *testing.T, argv []string) (url, auth string) {
+// mcpEndpointFromConfig reads the --mcp-config file the composition wrote and returns the loopback
+// URL and Authorization header the spawned agent would use.
+func mcpEndpointFromConfig(t *testing.T, path string) (url, auth string) {
 	t.Helper()
-	var path string
-	for i := 0; i+1 < len(argv); i++ {
-		if argv[i] == "--mcp-config" {
-			path = argv[i+1]
-		}
-	}
 	if path == "" {
-		t.Fatal("no --mcp-config in argv")
+		t.Fatal("empty MCPConfig path")
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -100,9 +106,9 @@ func callMCP(t *testing.T, url, auth, toolName string, args map[string]any) map[
 	return out
 }
 
-// End-to-end without a real claude: the fake process reads the --mcp-config, authenticates to the
-// per-run endpoint, drives a GRANTED tool (routed through policy to the executor) and an UNGRANTED
-// one (refused by the closed world), then returns a success stream. Proves the whole composition:
+// End-to-end with a fake driver: the driver reads the per-run MCPConfig, authenticates to the
+// endpoint, drives a GRANTED tool (routed through policy to the executor) and an UNGRANTED one
+// (refused by the closed world), then returns a success Session. Proves the whole composition:
 // grant compilation, authenticated transport, policy dispatch, trace, and budget.
 func TestRunExternalAgent_endToEnd(t *testing.T) {
 	ctx := context.Background()
@@ -120,8 +126,8 @@ func TestRunExternalAgent_endToEnd(t *testing.T) {
 	exec := &fakeExec{}
 
 	var grantedOK, ungrantedRefused bool
-	runner := func(_ context.Context, argv []string, _ string) (string, error) {
-		url, auth := mcpConfigEndpoint(t, argv)
+	driver := fakeDriver{run: func(_ context.Context, spec RunSpec) (Session, error) {
+		url, auth := mcpEndpointFromConfig(t, spec.MCPConfig)
 		// A granted op: routes through policy to the executor, isError=false.
 		got := callMCP(t, url, auth, "workspace_read_file", map[string]any{"path": "main.go"})
 		if res, ok := got["result"].(map[string]any); ok && res["isError"] == false {
@@ -132,10 +138,10 @@ func TestRunExternalAgent_endToEnd(t *testing.T) {
 		if bad["error"] != nil {
 			ungrantedRefused = true
 		}
-		return successStream, nil
-	}
+		return Session{StopReason: StopSuccess, CostUSD: 0.0123, NumTurns: 1, Turns: []Turn{{Text: "done"}}}, nil
+	}}
 
-	got, run, err := ClaudeCodeRuntime{Run: runner}.RunExternalAgent(ctx, ExternalAgentRun{
+	got, run, err := RunExternalAgent(ctx, driver, ExternalAgentRun{
 		Graph:     graph,
 		Agent:     graph.Agents["Reviewer"],
 		Eval:      policy.NewEvaluator(graph, nil),
@@ -179,13 +185,15 @@ func TestRunExternalAgent_endToEnd(t *testing.T) {
 	_ = run
 }
 
-// A budget breach fails closed even though the harness reported success.
+// A budget breach fails closed even though the driver reported success.
 func TestRunExternalAgent_budgetFailsClosed(t *testing.T) {
 	ctx := context.Background()
 	graph := reviewerGraph()
 	eval := policy.NewEvaluator(graph, &spec.PolicySpec{Execution: &spec.PolicyExecution{MaxTotalCostUsd: 0.01}})
-	runner := fakeRunner(successStream, nil, nil) // successStream carries total_cost_usd 0.0123 > 0.01
-	_, _, err := ClaudeCodeRuntime{Run: runner}.RunExternalAgent(ctx, ExternalAgentRun{
+	driver := fakeDriver{run: func(_ context.Context, _ RunSpec) (Session, error) {
+		return Session{StopReason: StopSuccess, CostUSD: 0.0123}, nil // 0.0123 > 0.01
+	}}
+	_, _, err := RunExternalAgent(ctx, driver, ExternalAgentRun{
 		Graph:     graph,
 		Agent:     graph.Agents["Reviewer"],
 		Eval:      eval,
