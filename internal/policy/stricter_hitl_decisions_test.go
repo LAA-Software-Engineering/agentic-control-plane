@@ -88,6 +88,48 @@ func TestStricterHitl_UnsetSideKeepsExplicitRestriction(t *testing.T) {
 	}
 }
 
+// The unset-identity break (issue #357 review): an *unset* side resolves to its defaults
+// ({approve, reject}, no edit), which is a proper subset of the universe. Merging it with an
+// explicit {edit}-only side must NOT permit edit — the unset side never permitted it.
+func TestStricterHitl_UnsetSideExcludesUnpermittedDecision(t *testing.T) {
+	unset := hitlDecisionsPolicy()                         // defaults => {approve, reject}, no edit
+	editOnly := hitlDecisionsPolicy(spec.HitlDecisionEdit) // explicit {edit}
+	for _, tc := range []struct {
+		name string
+		a, b *spec.PolicySpec
+	}{
+		{"unset_then_edit", unset, editOnly},
+		{"edit_then_unset", editOnly, unset},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergedHitlDecisions(t, tc.a, tc.b)
+			if IsDecisionAllowed(spec.HitlDecisionEdit, got) {
+				t.Fatalf("edit must not survive: the unset side never permitted it, got %v", got)
+			}
+			// The two effective sets are disjoint ({approve,reject} vs {edit}), so nothing is permitted.
+			if len(got) != 0 {
+				t.Fatalf("stricter of disjoint effective sets must permit nothing, got %v", got)
+			}
+		})
+	}
+}
+
+// Overlap through the unset side's defaults: unset ({approve,reject}) ∩ {approve,edit} = {approve}.
+// approve survives (both permit it), reject is removed by the explicit side, edit is removed by the
+// unset side's defaults.
+func TestStricterHitl_UnsetIntersectsThroughDefaults(t *testing.T) {
+	got := mergedHitlDecisions(t, hitlDecisionsPolicy(), hitlDecisionsPolicy(spec.HitlDecisionApprove, spec.HitlDecisionEdit))
+	if !IsDecisionAllowed(spec.HitlDecisionApprove, got) {
+		t.Fatalf("approve must survive (both sides permit it), got %v", got)
+	}
+	if IsDecisionAllowed(spec.HitlDecisionReject, got) {
+		t.Fatalf("reject was restricted away by the explicit side, got %v", got)
+	}
+	if IsDecisionAllowed(spec.HitlDecisionEdit, got) {
+		t.Fatalf("edit is not in the unset side's defaults, got %v", got)
+	}
+}
+
 // An unset config still resolves to the default decision set (the sentinel path must not leak into
 // the ordinary case).
 func TestResolveHitl_UnsetResolvesToDefaults(t *testing.T) {

@@ -190,20 +190,32 @@ func mergeStricterHitl(a, b *spec.HitlPolicy) *spec.HitlPolicy {
 
 func mergeHitlInterruptValue(a, b spec.HitlInterruptValue) spec.HitlInterruptValue {
 	out := spec.HitlInterruptValue{Enabled: a.Enabled || b.Enabled}
-	if a.Config == nil && b.Config == nil {
-		return out
-	}
-	if a.Config == nil {
-		out.Config = cloneHitlInterruptConfig(b.Config)
-		return out
-	}
-	if b.Config == nil {
-		out.Config = cloneHitlInterruptConfig(a.Config)
-		return out
-	}
 	ca, cb := a.Config, b.Config
-	out.Config = &spec.HitlInterruptConfig{
-		AllowedDecisions: joinDecisionAllow(ca.AllowedDecisions, cb.AllowedDecisions),
+	if ca == nil && cb == nil {
+		return out
+	}
+	// Union the non-decision fields (an absent side contributes nothing there), then set
+	// AllowedDecisions to the intersection of the two sides' *effective* decision sets. Each side's
+	// effective set is its explicit allowedDecisions, else its default decision set — never the
+	// universe (issue #357): treating an unset side as the universe let the other side's explicit
+	// decisions survive the merge even when the unset side's real defaults excluded them (e.g. a
+	// side that never permitted `edit` merging with an `[edit]`-only side).
+	merged := mergeHitlConfigFields(ca, cb)
+	merged.AllowedDecisions = intersectDecisions(effectiveDecisions(ca), effectiveDecisions(cb))
+	out.Config = merged
+	return out
+}
+
+// mergeHitlConfigFields unions the non-decision fields of two HITL configs (either may be nil). The
+// caller sets AllowedDecisions.
+func mergeHitlConfigFields(ca, cb *spec.HitlInterruptConfig) *spec.HitlInterruptConfig {
+	if ca == nil {
+		return cloneHitlInterruptConfig(cb)
+	}
+	if cb == nil {
+		return cloneHitlInterruptConfig(ca)
+	}
+	return &spec.HitlInterruptConfig{
 		Description:      joinNonEmptyPrefix(ca.Description, cb.Description),
 		AllowedEditArgs:  joinAllowList(ca.AllowedEditArgs, cb.AllowedEditArgs),
 		DeniedEditArgs:   unionStrings(ca.DeniedEditArgs, cb.DeniedEditArgs),
@@ -212,6 +224,54 @@ func mergeHitlInterruptValue(a, b spec.HitlInterruptValue) spec.HitlInterruptVal
 		AllowedEditTools: joinAllowList(ca.AllowedEditTools, cb.AllowedEditTools),
 		SwitchMap:        joinAllowMap(ca.SwitchMap, cb.SwitchMap),
 		RedactKeys:       unionStrings(ca.RedactKeys, cb.RedactKeys),
+	}
+}
+
+// effectiveDecisions is the decision set a HITL config actually permits: its explicit
+// allowedDecisions if set, else the operation-independent default set — {approve, reject}, plus
+// `edit` when the config declares edit args/paths and `switch` when it declares switch targets
+// locally. A `switch` permitted only via a policy-level toolSwitchMap for a specific operation is
+// not known at merge time; omitting it keeps the stricter merge fail-closed (the merge may be
+// stricter than the true intersection for `switch`, never more permissive), preserving
+// monotonicity (merged ⊆ each side).
+func effectiveDecisions(cfg *spec.HitlInterruptConfig) []spec.HitlDecisionKind {
+	if cfg != nil && len(cfg.AllowedDecisions) > 0 {
+		return append([]spec.HitlDecisionKind(nil), cfg.AllowedDecisions...)
+	}
+	out := []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject}
+	if cfg != nil {
+		if len(cfg.AllowedEditArgs) > 0 || len(cfg.AllowedEditPaths) > 0 || len(cfg.DeniedEditArgs) > 0 || len(cfg.DeniedEditPaths) > 0 {
+			out = append(out, spec.HitlDecisionEdit)
+		}
+		if len(cfg.AllowedEditTools) > 0 || len(cfg.SwitchMap) > 0 {
+			out = append(out, spec.HitlDecisionSwitch)
+		}
+	}
+	return out
+}
+
+// intersectDecisions returns the decisions present in both a and b, in a's order and de-duplicated.
+// An empty intersection is the deny-all sentinel (see hitlDecisionNone) — never an empty slice,
+// which downstream would re-read as "unset ⇒ defaults" and fail open.
+func intersectDecisions(a, b []spec.HitlDecisionKind) []spec.HitlDecisionKind {
+	seen := make(map[spec.HitlDecisionKind]struct{}, len(b))
+	for _, k := range b {
+		seen[k] = struct{}{}
+	}
+	var out []spec.HitlDecisionKind
+	used := map[spec.HitlDecisionKind]struct{}{}
+	for _, k := range a {
+		if _, ok := seen[k]; !ok {
+			continue
+		}
+		if _, dup := used[k]; dup {
+			continue
+		}
+		used[k] = struct{}{}
+		out = append(out, k)
+	}
+	if len(out) == 0 {
+		return []spec.HitlDecisionKind{hitlDecisionNone}
 	}
 	return out
 }
@@ -237,41 +297,6 @@ func joinAllowList(a, b []string) []string {
 		return append([]string(nil), a...)
 	}
 	return intersectStrings(a, b)
-}
-
-func joinDecisionAllow(a, b []spec.HitlDecisionKind) []spec.HitlDecisionKind {
-	if len(a) == 0 {
-		return append([]spec.HitlDecisionKind(nil), b...)
-	}
-	if len(b) == 0 {
-		return append([]spec.HitlDecisionKind(nil), a...)
-	}
-	seen := map[spec.HitlDecisionKind]struct{}{}
-	for _, k := range b {
-		seen[k] = struct{}{}
-	}
-	var out []spec.HitlDecisionKind
-	used := map[spec.HitlDecisionKind]struct{}{}
-	for _, k := range a {
-		if _, ok := seen[k]; !ok {
-			continue
-		}
-		if _, dup := used[k]; dup {
-			continue
-		}
-		used[k] = struct{}{}
-		out = append(out, k)
-	}
-	if len(out) == 0 {
-		// Both sides explicitly restricted decisions, and their intersection is empty (disjoint
-		// restrictions — e.g. a caller allowing only {approve} and a callee only {reject}). The
-		// stricter merge must permit NEITHER. Returning an empty slice here would be re-read
-		// downstream as "unset → default decision set" (defaultHitlDecisions), restoring decisions
-		// both policies forbade — a fail-open. Emit the deny-all sentinel instead; ResolveHitlReview
-		// collapses it to an empty (deny-all) resolved set. See hitlDecisionNone.
-		return []spec.HitlDecisionKind{hitlDecisionNone}
-	}
-	return out
 }
 
 func joinAllowMap(a, b map[string][]string) map[string][]string {
