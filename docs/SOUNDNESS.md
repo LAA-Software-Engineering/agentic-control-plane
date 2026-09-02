@@ -124,6 +124,34 @@ understand. An unsupported version fails resume loudly, naming both the found an
 graph, and schema bundle. *Scope:* the `execution_ir` artifact does not exist yet — this invariant
 extends to it when #260 lands, and the format check is part of that issue's acceptance criteria.
 
+### S9 — An external runtime's callable set is exactly the pinned grants
+**Precondition: the run executes under an external agent runtime** (a `RuntimeTarget` other
+than the built-in local engine — e.g. `--runtime claude-code`, epic #335). For such a run, the
+operations reachable by the external agent are **exactly the grant operations Terfyn compiled
+into the per-run MCP server** (`internal/runtime/mcpserver`, from the pinned capability manifest,
+S2/S3), and **nothing else**. The external CLI's own built-in tools (Bash, Edit, WebFetch, …)
+must **never** be exposed — not directly, and not as a stand-in for a scoped grant. Mapping
+`tool.workspace.run_tests → Bash` is the canonical violation: `plan` would advertise `effect
+bound: workspace.test` while the real authority is Bash's unbounded filesystem/network/process/
+git. Broad capability is permitted only **loudly**: arbitrary shell must be an explicit
+`grants { tool.shell.exec }` that compiles to a Terfyn-owned MCP op, so `plan` shows the true
+authority surface (ADR 004 §5 — hidden broad capabilities are the non-goal). *Enforced in:*
+`internal/runtime/claudecode` (`denyBuiltinToolsArgs` emits no built-in allowance;
+`checkNoBuiltinToolExposure` fails closed on any argv — including caller `ExtraArgs` — that would
+expose a built-in or bypass the permission boundary, and `checkExtraArgsNoAuthoritySurface`
+rejects `ExtraArgs` carrying the transport/scope flags — `--mcp-config`, `--add-dir` — that would
+alter the callable set out of band, e.g. a second MCP server whose tools never pass
+`CheckToolCall`), `internal/runtime/mcpserver` (`Compile` advertises only manifest grant ops,
+never a built-in). *Depends on:* S2/S3 — the manifest the
+grants resolve against is the closed, pinned one. *Learned from:* #337/#338 — the entire
+capability boundary of the external runtime is one argv decision (`--tools ""`), an unverified
+contract against a CLI Terfyn does not own; the review on that adapter (#347) flagged that a
+built-in re-enabled out of band would be a silent capability escape, so the guard fails closed
+before any spawn. **Live-verification obligation:** that the pinned CLI actually *denies* built-in
+tools for the emitted flags (not merely that the adapter emits them) must be confirmed by an
+integration check against the pinned CLI version before the runtime is wired to a live run — a
+unit test with a fake process cannot close this gap.
+
 ---
 
 ## The Authority TCB
@@ -161,6 +189,7 @@ internal/plan (digest/authority)                                  (PLAN)
 internal/apply        internal/deploy                             (APPLY / snapshot + pins)
 internal/policy       internal/tools        internal/schema       (RUN / pinned enforcement)
 internal/runtime      internal/engine       internal/state        (RUN → EXECUTION)
+internal/runtime/claudecode   internal/runtime/mcpserver          (S9 / external-runtime boundary)
 internal/spec (identity, manifest, schema fields)
 ```
 
@@ -168,7 +197,9 @@ internal/spec (identity, manifest, schema fields)
 `internal/schema` is S4's exhibit (the #253 `FileLoader` near-miss); `internal/apply` is the APPLY
 box. Omitting any of them is exactly the "looks complete in a table, does not cover its own
 exhibits" failure this document exists to prevent. `internal/execir` joins the list the moment S7
-stops being "planned".
+stops being "planned"; `internal/runtime/claudecode` and `internal/runtime/mcpserver` are S9's
+exhibits — the external-runtime boundary where a re-enabled built-in tool would make `plan`'s
+advertised authority a lie.
 
 **Review standard.** A change to a TCB package is reviewed against the invariants, not just for local
 correctness. The reviewer's first question is:
