@@ -1,0 +1,133 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Terfyn Agent",
+  "scopeName": "source.agent",
+  "fileTypes": ["agent"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#triple-string" },
+    { "include": "#string" },
+    { "include": "#declaration" },
+    { "include": "#grants-block" },
+    { "include": "#effects-block" },
+    { "include": "#keyword" },
+    { "include": "#field" },
+    { "include": "#file-ref" },
+    { "include": "#constant" },
+    { "include": "#model-ref" },
+    { "include": "#tool-ref" },
+    { "include": "#operator" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.agent"
+    },
+    "triple-string": {
+      "comment": "Multiline \"\"\"...\"\"\" prose (raw at the lexer; #196).",
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
+      "name": "string.quoted.triple.agent",
+      "patterns": [{ "include": "#interpolation" }]
+    },
+    "string": {
+      "comment": "Single-line \"...\" with \\\" \\\\ \\n \\t \\r escapes.",
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.agent",
+      "patterns": [
+        { "match": "\\\\[\"\\\\ntr]", "name": "constant.character.escape.agent" },
+        { "include": "#interpolation" }
+      ]
+    },
+    "interpolation": {
+      "comment": "${...} template interpolation inside a string.",
+      "begin": "\\$\\{",
+      "end": "\\}",
+      "name": "meta.template.expression.agent",
+      "beginCaptures": { "0": { "name": "punctuation.definition.template-expression.begin.agent" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.template-expression.end.agent" } },
+      "patterns": [{ "match": "[A-Za-z_][A-Za-z0-9_.-]*", "name": "variable.other.agent" }]
+    },
+    "declaration": {
+      "comment": "A top-level resource header: agent/workflow/tool/policy <Name>.",
+      "match": "\\b(agent|workflow|tool|policy)\\b\\s+([A-Za-z_][A-Za-z0-9_-]*)",
+      "captures": {
+        "1": { "name": "storage.type.agent" },
+        "2": { "name": "entity.name.type.agent" }
+      }
+    },
+    "keyword": {
+      "comment": "Reserved words and control flow (#199, #288, #361).",
+      "match": "\\b(agent|workflow|parallel|return|if|else|for|in|while|retry|until|limit)\\b",
+      "name": "keyword.control.agent"
+    },
+    "field": {
+      "comment": "Contextual field / section words for agents, workflows, tools, and policies.",
+      "match": "\\b(model|policy|grants|effects|instructions|description|constraints|input|output|runtime|memory|approvals|execution|operations|safety|permissions|maxIterations|timeoutSeconds|temperature|requireStructuredOutput|maxTotalCostUsd|maxWallClockSeconds|requiredFor|permitWithApproval)\\b",
+      "name": "keyword.other.field.agent"
+    },
+    "file-ref": {
+      "comment": "instructions file(\"path\") load-time reference (#360).",
+      "match": "\\b(file)\\s*(?=\\()",
+      "name": "support.function.agent"
+    },
+    "constant": {
+      "patterns": [
+        { "match": "\\b(true|false)\\b", "name": "constant.language.boolean.agent" },
+        { "match": "\\b\\d+(\\.\\d+)?\\b", "name": "constant.numeric.agent" }
+      ]
+    },
+    "model-ref": {
+      "comment": "A <provider>/<name> model reference such as anthropic/claude-sonnet-4-5.",
+      "match": "\\b([a-z][a-z0-9_-]*)(/)([A-Za-z0-9][A-Za-z0-9_.-]*)",
+      "captures": {
+        "1": { "name": "entity.name.namespace.agent" },
+        "2": { "name": "punctuation.separator.model.agent" },
+        "3": { "name": "entity.name.tag.model.agent" }
+      }
+    },
+    "tool-ref": {
+      "comment": "A grant / uses reference: tool.<name>.<operation>.",
+      "match": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_.-]*)",
+      "captures": {
+        "1": { "name": "keyword.other.grant.agent" },
+        "2": { "name": "punctuation.accessor.agent" },
+        "3": { "name": "support.type.grant.agent" }
+      }
+    },
+    "grants-block": {
+      "comment": "grants { tool.<name>.<operation> ... } — each line is a capability grant.",
+      "begin": "\\b(grants)\\b\\s*(\\{)",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.other.field.agent" },
+        "2": { "name": "punctuation.section.block.begin.agent" }
+      },
+      "endCaptures": { "0": { "name": "punctuation.section.block.end.agent" } },
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#tool-ref" }
+      ]
+    },
+    "effects-block": {
+      "comment": "effects { github.read, workspace.write, ... } — bare dotted effect idents.",
+      "begin": "\\b(effects)\\b\\s*(\\{)",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.other.field.agent" },
+        "2": { "name": "punctuation.section.block.begin.agent" }
+      },
+      "endCaptures": { "0": { "name": "punctuation.section.block.end.agent" } },
+      "patterns": [
+        { "include": "#comment" },
+        { "match": "[a-z][A-Za-z0-9_-]*(?:\\.[A-Za-z0-9_-]+)+", "name": "entity.name.tag.effect.agent" },
+        { "match": ",", "name": "punctuation.separator.agent" }
+      ]
+    },
+    "operator": {
+      "match": "->|==|!=|<=|>=|&&|\\|\\||[!<>=]",
+      "name": "keyword.operator.agent"
+    }
+  }
+}

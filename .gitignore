@@ -38,3 +38,8 @@ tmp/
 examples/**/.agentic/
 **/.agentic/local.yaml
 **/.agentic/resolved-config.json
+
+# VS Code extension build outputs (editors/vscode)
+editors/vscode/node_modules/
+editors/vscode/*.vsix
+editors/vscode/package-lock.json

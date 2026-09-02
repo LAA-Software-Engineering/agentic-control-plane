@@ -1,0 +1,64 @@
+# Build (and, on a release, attach) the Terfyn Agent VS Code extension .vsix (issue #362).
+name: VS Code extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "editors/vscode/**"
+      - ".github/workflows/vscode-extension.yml"
+  pull_request:
+    paths:
+      - "editors/vscode/**"
+      - ".github/workflows/vscode-extension.yml"
+  release:
+    types: [published]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package .vsix
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate the TextMate grammar and manifest are well-formed JSON
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('syntaxes/agent.tmLanguage.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('language-configuration.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
+      - name: Package the extension
+        run: npx --yes @vscode/vsce@^3 package --out terfyn-agent.vsix
+      - name: Upload the .vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terfyn-agent-vsix
+          path: editors/vscode/terfyn-agent.vsix
+          if-no-files-found: error
+
+  attach-to-release:
+    name: Attach .vsix to the release
+    needs: package
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: terfyn-agent-vsix
+      - name: Upload to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: terfyn-agent.vsix
