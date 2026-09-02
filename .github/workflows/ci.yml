@@ -23,7 +23,7 @@ jobs:
   build-and-test:
     name: Go ${{ matrix.go }} — ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -69,9 +69,14 @@ jobs:
           ./terfyn${{ runner.os == 'Windows' && '.exe' || '' }} validate \
             --strict --no-color --project internal/cli/testdata/validate_ok
 
+      # Run the suite exactly ONCE per OS. Coverage is only consumed on Linux (see the
+      # steps below), so the coverage pass runs there; the other OSes run the plain race
+      # suite. Previously every OS ran the full -race suite TWICE (plain + coverage),
+      # which pushed the slow windows-latest runner past its job timeout.
       # Use bash on Windows: PowerShell misparses -coverprofile=coverage.out
       # (".out" becomes a separate argument / package path).
       - name: Unit tests
+        if: runner.os != 'Linux'
         shell: bash
         run: |
           go test -v \
@@ -81,6 +86,10 @@ jobs:
             -timeout=10m \
             ./...
 
+      - name: Unit tests + coverage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
           tested_packages="$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | sed '/^$/d')"
           go test -v \
             -race \
