@@ -40,19 +40,18 @@ func (c ClaudeCodeRuntime) runner() processRunner {
 	return execProcessRunner
 }
 
-// argv builds the non-interactive command line. The exact flag set is an implementation detail
-// behind the adapter (issue #337 flags them for verification against the current CLI reference):
-// non-interactive print mode, stream-json output, no built-in tools, and strict MCP config so the
-// only tools are the granted ones served by Terfyn's per-run MCP server.
+// argv builds the non-interactive command line: print mode, stream-json output, the
+// built-in-tool denial (see denyBuiltinToolsArgs), and strict MCP config so the only
+// reachable tools are the granted ones served by Terfyn's per-run MCP server.
 func (c ClaudeCodeRuntime) argv(spec RunSpec) []string {
 	args := []string{
 		c.bin(),
 		"-p", spec.Prompt,
 		"--output-format", "stream-json",
-		"--verbose",   // required alongside stream-json in print mode
-		"--tools", "", // no built-in tools; grants become MCP ops, never --tools "Bash" (#339)
-		"--strict-mcp-config",
+		"--verbose", // required alongside stream-json in print mode
 	}
+	args = append(args, denyBuiltinToolsArgs()...)
+	args = append(args, "--strict-mcp-config")
 	if s := strings.TrimSpace(spec.SystemPrompt); s != "" {
 		args = append(args, "--system-prompt", s)
 	}
@@ -63,6 +62,28 @@ func (c ClaudeCodeRuntime) argv(spec RunSpec) []string {
 		args = append(args, "--mcp-config", m)
 	}
 	return append(args, spec.ExtraArgs...)
+}
+
+// denyBuiltinToolsArgs returns the flags that must leave the external agent with *no*
+// built-in tools (no Bash, Edit, WebFetch, …), so grants become MCP operations and
+// nothing else is reachable. This one decision is the entire capability boundary of the
+// external runtime, and it is the epic's #338 verification gate — an UNVERIFIED contract
+// against a CLI this repo does not own:
+//
+//   - `--tools ""` is a best guess. The CLI's documented knobs are `--allowedTools` /
+//     `--disallowedTools`; `--tools` may not be recognized at all (then the real
+//     execProcessRunner exits non-zero — fail-loud, acceptable — but the argv is wrong).
+//   - Even if `--tools` is accepted, that an *empty value* denies rather than defaults to
+//     the full built-in set is unproven. If it defaults, an external agent gets Bash while
+//     Terfyn believes only the MCP grants are reachable — a capability escape.
+//
+// No unit test with a fake process can close this gap (it only proves the adapter *emits*
+// the flag, not that `claude` *honors* it). Before #338 wires RunSession to a live run, this
+// MUST be pinned to a CLI version and confirmed by an integration check that a denied
+// built-in tool is genuinely unreachable; until then the runtime stays fail-closed via
+// errPendingIntegration and this boundary is documentation, not enforcement.
+func denyBuiltinToolsArgs() []string {
+	return []string{"--tools", ""}
 }
 
 // MaxTurnsError reports that the external agent hit its turn cap before finishing. Callers can treat
@@ -87,6 +108,12 @@ func (c ClaudeCodeRuntime) RunSession(ctx context.Context, spec RunSpec) (Sessio
 			return Session{}, fmt.Errorf("claudecode: run agent: %w", runErr)
 		}
 		return Session{}, parseErr
+	}
+	if runErr != nil {
+		// The stream parsed, so the result event is authoritative for the outcome, but the
+		// process still exited non-zero (a late crash/signal/wrapper failure after the
+		// result). Keep that on the session for the audit trail rather than dropping it.
+		session.ProcessError = runErr.Error()
 	}
 
 	switch {

@@ -109,6 +109,48 @@ func TestRunSession_ErrorResult(t *testing.T) {
 	}
 }
 
+// A result event with an empty/missing subtype and is_error:false must fail closed as
+// StopError rather than being silently taken as success (the enforcer-of-record boundary).
+func TestNormalizeStop_EmptySubtypeFailsClosed(t *testing.T) {
+	if got := normalizeStop("", false); got != StopError {
+		t.Fatalf("empty subtype must be StopError, got %v", got)
+	}
+	if got := normalizeStop("something_new", false); got != StopError {
+		t.Fatalf("unknown subtype must be StopError, got %v", got)
+	}
+	if got := normalizeStop("success", true); got != StopError {
+		t.Fatalf("success subtype with is_error must be StopError, got %v", got)
+	}
+}
+
+func TestRunSession_EmptySubtypeIsError(t *testing.T) {
+	stream := `{"type":"result","subtype":"","num_turns":1,"result":"partial","is_error":false}`
+	c := ClaudeCodeRuntime{Run: fakeRunner(stream, nil, nil)}
+	s, err := c.RunSession(context.Background(), RunSpec{Prompt: "x"})
+	if err == nil || !strings.Contains(err.Error(), "ended in error") {
+		t.Fatalf("a result with no subtype must fail closed, got %v", err)
+	}
+	if s.StopReason != StopError {
+		t.Fatalf("stop: %+v", s)
+	}
+}
+
+// When the stream parses cleanly but the process still exited non-zero (a late crash after
+// a good result), the result stays authoritative but the exit error must be kept for audit.
+func TestRunSession_PostResultExitErrorPreserved(t *testing.T) {
+	c := ClaudeCodeRuntime{Run: fakeRunner(successStream, errors.New("signal: killed"), nil)}
+	s, err := c.RunSession(context.Background(), RunSpec{Prompt: "x"})
+	if err != nil {
+		t.Fatalf("result event is authoritative for a success, got %v", err)
+	}
+	if s.StopReason != StopSuccess {
+		t.Fatalf("stop: %+v", s)
+	}
+	if !strings.Contains(s.ProcessError, "signal: killed") {
+		t.Fatalf("post-result exit error must be kept on the session, got %q", s.ProcessError)
+	}
+}
+
 func containsPair(argv []string, flag, val string) bool {
 	for i := 0; i+1 < len(argv); i++ {
 		if argv[i] == flag && argv[i+1] == val {

@@ -80,20 +80,25 @@ func assistantTurn(m *streamMessage) Turn {
 	return t
 }
 
+// normalizeStop maps a result event's subtype to a StopReason. It is fail-closed:
+// only the explicit "success" subtype (with is_error:false) is a success — every
+// other shape, including an empty/missing subtype or an unrecognized one, normalizes
+// to StopError. For a boundary whose job is to be the enforcer of record, an
+// unparseable result reason is safer treated as an error than silently as success.
 func normalizeStop(subtype string, isError bool) StopReason {
 	switch strings.TrimSpace(subtype) {
 	case "success":
+		if isError { // an explicit error flag overrides a "success" subtype
+			return StopError
+		}
 		return StopSuccess
 	case "error_max_turns":
 		return StopMaxTurns
-	}
-	if isError {
+	default:
+		// Any other shape — an unrecognized subtype, or an empty/missing one — is
+		// fail-closed. (Previously an empty subtype normalized to StopSuccess.)
 		return StopError
 	}
-	if subtype == "" {
-		return StopSuccess
-	}
-	return StopError
 }
 
 type streamEvent struct {

@@ -63,4 +63,9 @@ type Session struct {
 	CostUSD         float64
 	StopReason      StopReason
 	IsError         bool
+	// ProcessError records a non-zero process exit that occurred even though the stream
+	// carried a parseable result event (e.g. a success result followed by a late crash,
+	// signal, or wrapper failure). The result event stays authoritative for StopReason, but
+	// the exit error is kept here rather than dropped so it reaches the audit trail (#341).
+	ProcessError string
 }
