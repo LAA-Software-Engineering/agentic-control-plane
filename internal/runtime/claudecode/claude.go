@@ -105,8 +105,13 @@ func (e *MaxTurnsError) Error() string {
 func (c ClaudeCodeRuntime) RunSession(ctx context.Context, spec RunSpec) (Session, error) {
 	args := c.argv(spec)
 	// S9 soundness fence: never spawn an agent whose argv would expose a built-in tool or
-	// bypass the permission boundary (e.g. an ExtraArgs that smuggles --allowedTools Bash).
+	// bypass the permission boundary (e.g. an ExtraArgs that smuggles --allowedTools Bash), and
+	// never let ExtraArgs carry the transport/scope flags that alter the callable set out of band
+	// (a second --mcp-config whose tools bypass CheckToolCall, or --add-dir).
 	if err := checkNoBuiltinToolExposure(args); err != nil {
+		return Session{}, err
+	}
+	if err := checkExtraArgsNoAuthoritySurface(spec.ExtraArgs); err != nil {
 		return Session{}, err
 	}
 	stdout, runErr := c.runner()(ctx, args, "")

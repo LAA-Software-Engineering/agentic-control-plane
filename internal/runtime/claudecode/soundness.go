@@ -17,7 +17,10 @@ import (
 //
 // The adapter never emits a built-in-tool allowance itself (see argv / denyBuiltinToolsArgs).
 // This guard is the fail-closed fence for the one remaining ingress — caller-supplied
-// RunSpec.ExtraArgs — so an out-of-band flag cannot smuggle a built-in past the denial.
+// RunSpec.ExtraArgs. Two checks cover the two ways an ExtraArgs flag can break S9:
+// checkNoBuiltinToolExposure rejects anything that would expose a built-in tool or bypass the
+// permission boundary, and checkExtraArgsNoAuthoritySurface rejects the transport/scope flags
+// (--mcp-config, --add-dir) that would alter the callable set out of band from the grant.
 
 // ErrUnsoundToolExposure is returned when an assembled argv would expose a built-in tool or
 // bypass the permission boundary, in violation of S9. It is a hard refusal, not a warning: the
@@ -55,6 +58,33 @@ func checkNoBuiltinToolExposure(argv []string) error {
 			if tok, ok := firstBuiltinToken(val); ok {
 				return &unsoundToolExposureError{reason: fmt.Sprintf("%s would expose built-in tool %q; grants must resolve to Terfyn MCP ops (mcp__*), not built-ins", flag, tok)}
 			}
+		}
+	}
+	return nil
+}
+
+// checkExtraArgsNoAuthoritySurface rejects the authority-surface flags that only the adapter may
+// set, if they arrive via caller-supplied ExtraArgs. These do not expose a built-in tool, but
+// they still change "the callable set is exactly the pinned grants" (S9), so the built-in fence
+// alone is not enough:
+//
+//   - --mcp-config: the per-run MCP server is set from RunSpec.MCPConfig. A second --mcp-config
+//     smuggled through ExtraArgs registers a server whose tools the CLI calls directly — they
+//     never pass the mcpserver PolicyDispatcher / CheckToolCall path, so their operations are
+//     outside the pinned grants entirely.
+//   - --add-dir: widens the filesystem scope the agent can reach, out of band from the grant.
+//
+// ExtraArgs is Terfyn-internal, not agent-controlled, so this is defense in depth: the ingress
+// must carry neither transport nor scope flags. It is checked on ExtraArgs specifically (not the
+// whole argv) because the adapter legitimately emits its own single --mcp-config.
+func checkExtraArgsNoAuthoritySurface(extraArgs []string) error {
+	for _, arg := range extraArgs {
+		flag, _, _ := splitFlag(arg)
+		switch normalizeFlag(flag) {
+		case "--mcp-config":
+			return &unsoundToolExposureError{reason: "--mcp-config must not be passed via ExtraArgs: the per-run MCP server is set from RunSpec.MCPConfig, and a smuggled server's tools would bypass Terfyn policy (CheckToolCall)"}
+		case "--add-dir":
+			return &unsoundToolExposureError{reason: "--add-dir must not be passed via ExtraArgs: it widens the agent's filesystem authority surface out of band from the grant"}
 		}
 	}
 	return nil

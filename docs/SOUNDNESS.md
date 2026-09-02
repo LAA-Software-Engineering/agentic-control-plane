@@ -138,8 +138,11 @@ git. Broad capability is permitted only **loudly**: arbitrary shell must be an e
 authority surface (ADR 004 §5 — hidden broad capabilities are the non-goal). *Enforced in:*
 `internal/runtime/claudecode` (`denyBuiltinToolsArgs` emits no built-in allowance;
 `checkNoBuiltinToolExposure` fails closed on any argv — including caller `ExtraArgs` — that would
-expose a built-in or bypass the permission boundary), `internal/runtime/mcpserver` (`Compile`
-advertises only manifest grant ops, never a built-in). *Depends on:* S2/S3 — the manifest the
+expose a built-in or bypass the permission boundary, and `checkExtraArgsNoAuthoritySurface`
+rejects `ExtraArgs` carrying the transport/scope flags — `--mcp-config`, `--add-dir` — that would
+alter the callable set out of band, e.g. a second MCP server whose tools never pass
+`CheckToolCall`), `internal/runtime/mcpserver` (`Compile` advertises only manifest grant ops,
+never a built-in). *Depends on:* S2/S3 — the manifest the
 grants resolve against is the closed, pinned one. *Learned from:* #337/#338 — the entire
 capability boundary of the external runtime is one argv decision (`--tools ""`), an unverified
 contract against a CLI Terfyn does not own; the review on that adapter (#347) flagged that a

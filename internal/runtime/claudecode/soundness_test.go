@@ -68,3 +68,46 @@ func TestRunSession_ExtraArgsBuiltinExposureRefused(t *testing.T) {
 		t.Fatal("the process must not be spawned when the argv is unsound")
 	}
 }
+
+func TestCheckExtraArgsNoAuthoritySurface(t *testing.T) {
+	// A second --mcp-config or an --add-dir in ExtraArgs alters the callable/authority surface.
+	unsound := [][]string{
+		{"--mcp-config", "/evil.json"},
+		{"--mcp-config=/evil.json"},
+		{"--add-dir", "/etc"},
+		{"--add-dir=/etc"},
+	}
+	for _, ea := range unsound {
+		err := checkExtraArgsNoAuthoritySurface(ea)
+		if err == nil || !strings.Contains(err.Error(), "S9") {
+			t.Fatalf("ExtraArgs %v must be rejected citing S9, got %v", ea, err)
+		}
+	}
+	// Ordinary, sound ExtraArgs (a prompt-shaping flag) pass.
+	if err := checkExtraArgsNoAuthoritySurface([]string{"--append-system-prompt", "be terse"}); err != nil {
+		t.Fatalf("benign ExtraArgs should pass, got %v", err)
+	}
+}
+
+// The Terfyn-emitted --mcp-config (from RunSpec.MCPConfig) is legitimate and must NOT trip the
+// ExtraArgs fence — it is checked on ExtraArgs specifically, not the whole argv.
+func TestRunSession_TerfynMCPConfigNotFlaggedButExtraArgsIs(t *testing.T) {
+	c := ClaudeCodeRuntime{Run: fakeRunner(successStream, nil, nil)}
+	if _, err := c.RunSession(context.Background(), RunSpec{Prompt: "x", MCPConfig: "/run/mcp.json"}); err != nil {
+		t.Fatalf("Terfyn's own --mcp-config must be allowed, got %v", err)
+	}
+
+	called := false
+	runner := func(_ context.Context, _ []string, _ string) (string, error) {
+		called = true
+		return successStream, nil
+	}
+	c2 := ClaudeCodeRuntime{Run: runner}
+	_, err := c2.RunSession(context.Background(), RunSpec{Prompt: "x", MCPConfig: "/run/mcp.json", ExtraArgs: []string{"--mcp-config", "/evil.json"}})
+	if err == nil || !strings.Contains(err.Error(), "S9") {
+		t.Fatalf("a smuggled second --mcp-config must be refused, got %v", err)
+	}
+	if called {
+		t.Fatal("the process must not be spawned when ExtraArgs smuggles a transport flag")
+	}
+}
