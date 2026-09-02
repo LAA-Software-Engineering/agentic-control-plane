@@ -22,6 +22,7 @@ import (
 
 	"github.com/Terfyn/terfyn/internal/config"
 	"github.com/Terfyn/terfyn/internal/engine"
+	"github.com/Terfyn/terfyn/internal/execir"
 	"github.com/Terfyn/terfyn/internal/policy"
 	"github.com/Terfyn/terfyn/internal/runtime"
 	"github.com/Terfyn/terfyn/internal/spec"
@@ -89,7 +90,7 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		return runtime.RunResult{}, err
 	}
 
-	agent, err := singleDrivenAgent(graph, wf)
+	agent, err := resolveDrivenAgent(graph, wf, cfg.Executables())
 	if err != nil {
 		return runtime.RunResult{}, err
 	}
@@ -187,31 +188,41 @@ func (r *Runtime) Health(_ context.Context) runtime.HealthStatus {
 	return runtime.HealthStatus{State: runtime.HealthOK, Details: "claude-code external runtime (resume pending, #367)"}
 }
 
-// singleDrivenAgent returns the one agent a workflow drives externally. The external runtime runs a
-// single agent's own bounded loop (claude's --max-turns); a workflow that references zero or
-// multiple distinct agents (multi-agent / control-flow orchestration) is refused loudly — that
-// mapping is a #367 follow-up. Tool-only (uses:) steps are ignored.
-func singleDrivenAgent(graph *spec.ProjectGraph, wf *spec.WorkflowResource) (*spec.AgentResource, error) {
-	seen := map[string]bool{}
-	var names []string
-	for _, s := range wf.Spec.Steps {
-		if a := strings.TrimSpace(s.Agent); a != "" && !seen[a] {
-			seen[a] = true
-			names = append(names, a)
+// resolveDrivenAgent returns the one agent a workflow drives externally, gating on the workflow's
+// EXECUTABLE (execir.Program), not a count of distinct agent names. The external agent runs its OWN
+// bounded loop (claude's --max-turns); Terfyn does not orchestrate a workflow's steps through it. So
+// the only faithful shape is exactly ONE unconditional agent invocation: any control flow
+// (if/for/while/retry/parallel), a second agent, or a tool / subworkflow / approval step would be
+// silently dropped by spawning the agent once — changing the run's success/failure outcome versus
+// the internal engine (e.g. a `retry until … limit N` whose fail-on-exhaustion never runs). Those
+// are refused loudly. The whitelist is InvokeAgent plus binding/return plumbing (Let, Return);
+// every other node kind — including any that requires the interpreter — is rejected.
+func resolveDrivenAgent(graph *spec.ProjectGraph, wf *spec.WorkflowResource, execs map[string]*execir.Program) (*spec.AgentResource, error) {
+	name := wf.Metadata.Name
+	prog := execs[name]
+	if prog == nil {
+		return nil, fmt.Errorf("claudecode: workflow %q has no executable program; the external runtime supports only a single-agent workflow (one unconditional agent invocation)", name)
+	}
+	agentName := ""
+	agentInvokes := 0
+	for _, n := range prog.Body {
+		switch v := n.(type) {
+		case *execir.InvokeAgent:
+			agentInvokes++
+			agentName = v.Agent
+		case *execir.Let, *execir.Return:
+			// Alias binding / workflow return — no invocation, no orchestration.
+		default:
+			return nil, fmt.Errorf("claudecode: workflow %q is not a single-agent workflow — it contains a %T step; the external runtime supports exactly one unconditional agent invocation (no tools, subworkflows, approvals, or control flow)", name, n)
 		}
 	}
-	switch len(names) {
-	case 0:
-		return nil, fmt.Errorf("claudecode: workflow %q drives no agent; the external runtime runs a single agent", wf.Metadata.Name)
-	case 1:
-		if ar := graph.Agents[names[0]]; ar != nil {
-			return ar, nil
-		}
-		return nil, fmt.Errorf("claudecode: workflow %q references unknown agent %q", wf.Metadata.Name, names[0])
-	default:
-		return nil, fmt.Errorf("claudecode: workflow %q drives %d agents (%s); the external runtime currently supports single-agent workflows (multi-agent/control-flow orchestration is a #367 follow-up)",
-			wf.Metadata.Name, len(names), strings.Join(names, ", "))
+	if agentInvokes != 1 {
+		return nil, fmt.Errorf("claudecode: workflow %q drives %d agent invocations; the external runtime supports a single-agent workflow (exactly one unconditional agent invocation)", name, agentInvokes)
 	}
+	if ar := graph.Agents[agentName]; ar != nil {
+		return ar, nil
+	}
+	return nil, fmt.Errorf("claudecode: workflow %q references unknown agent %q", name, agentName)
 }
 
 // workflowEvaluator builds the policy evaluator that governs the run's tool calls, mirroring the
