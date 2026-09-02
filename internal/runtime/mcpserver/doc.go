@@ -18,8 +18,10 @@
 // mapping (#340), and trace integration (#341) wrap this server in their own issues.
 //
 // Two transports serve the same [Server]: [Server.Serve] frames JSON-RPC over stdio, and
-// [Server.HTTPHandler] / [Server.ListenLocal] serve it over loopback HTTP (issue #367). The
-// external Claude Code runtime uses the HTTP transport so the per-run server stays in the Terfyn
-// process — with direct access to the run's dispatcher — rather than a subprocess that would have
-// to re-hydrate the run's authority.
+// [Server.ListenLocal] serves it over loopback HTTP (issue #367). The external Claude Code runtime
+// uses the HTTP transport so the per-run server stays in the Terfyn process — with direct access to
+// the run's dispatcher — rather than a subprocess that would have to re-hydrate the run's authority.
+// The endpoint carries that authority, so ListenLocal binds it to a per-run bearer token (loopback
+// keeps it off-host; the token keeps same-host processes out); the bare [Server.HTTPHandler] is
+// unauthenticated and must not be exposed without the caller's own auth.
 package mcpserver

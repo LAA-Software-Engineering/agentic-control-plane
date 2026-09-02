@@ -93,21 +93,26 @@ func TestHTTPHandler_malformedBodyIsParseError(t *testing.T) {
 	}
 }
 
-// End-to-end over a real loopback listener: a client reaches the per-run server the way the
-// external agent would.
+// End-to-end over a real loopback listener: an authenticated client reaches the per-run server the
+// way the external agent (spawned with the returned Transport's Authorization header) would.
 func TestListenLocal_endToEnd(t *testing.T) {
 	fd := &fakeDispatcher{out: map[string]any{"echo": "hi"}}
-	url, stop, err := newTestServer(fd).ListenLocal()
+	tr, stop, err := newTestServer(fd).ListenLocal()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stop()
-	if !strings.HasPrefix(url, "http://127.0.0.1:") {
-		t.Fatalf("loopback url = %q", url)
+	if !strings.HasPrefix(tr.URL, "http://127.0.0.1:") {
+		t.Fatalf("loopback url = %q", tr.URL)
+	}
+	if !strings.HasPrefix(tr.Headers["Authorization"], "Bearer ") {
+		t.Fatalf("missing bearer header: %v", tr.Headers)
 	}
 
-	resp, err := http.Post(url, "application/json",
+	req, _ := http.NewRequest(http.MethodPost, tr.URL,
 		bytes.NewReader([]byte(`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"workspace_run_tests","arguments":{}}}`)))
+	req.Header.Set("Authorization", tr.Headers["Authorization"])
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,5 +123,64 @@ func TestListenLocal_endToEnd(t *testing.T) {
 	}
 	if fd.gotUses != "tool.workspace.run_tests" {
 		t.Fatalf("dispatcher over loopback got uses=%q", fd.gotUses)
+	}
+}
+
+// The loopback endpoint carries the run's authority, so a same-host request without the per-run
+// bearer token (or with the wrong one) is rejected before reaching the dispatcher.
+func TestListenLocal_requiresBearer(t *testing.T) {
+	fd := &fakeDispatcher{}
+	tr, stop, err := newTestServer(fd).ListenLocal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_read_file","arguments":{}}}`
+
+	for _, tc := range []struct {
+		name, auth string
+		wantCode   int
+	}{
+		{"no token", "", http.StatusUnauthorized},
+		{"wrong token", "Bearer nope", http.StatusUnauthorized},
+		{"correct token", tr.Headers["Authorization"], http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodPost, tr.URL, strings.NewReader(body))
+			if tc.auth != "" {
+				req.Header.Set("Authorization", tc.auth)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != tc.wantCode {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.wantCode)
+			}
+		})
+	}
+	// The dispatcher must only have been reached by the authorized request.
+	if fd.gotUses != "tool.workspace.read_file" {
+		t.Fatalf("dispatcher reached improperly: uses=%q", fd.gotUses)
+	}
+}
+
+func TestMCPConfigJSON_httpEmitsHeaders(t *testing.T) {
+	b, err := MCPConfigJSON("terfyn", Transport{URL: "http://127.0.0.1:9/mcp", Headers: map[string]string{"Authorization": "Bearer tok"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]map[string]map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	entry := doc["mcpServers"]["terfyn"]
+	if entry["type"] != "http" {
+		t.Fatalf("type = %v", entry["type"])
+	}
+	hdrs, ok := entry["headers"].(map[string]any)
+	if !ok || hdrs["Authorization"] != "Bearer tok" {
+		t.Fatalf("headers = %v", entry["headers"])
 	}
 }
