@@ -186,6 +186,21 @@ type While struct {
 
 func (*While) node() {}
 
+// Retry is a bounded RETRY loop (#361): it runs Body up to Limit times, checking Cond (the
+// SUCCESS condition) AFTER each attempt, and — unlike While, which exits silently on
+// exhaustion — FAILS the run (RetryExhausted) if the attempts are exhausted with Cond still
+// false. Cond is pure over already-bound values (same rule as Branch). Each attempt i folds i
+// into the leaf CallSite.Loop vector, so an effectful leaf has a stable identity across a
+// durable resume, exactly like While/Loop.
+type Retry struct {
+	Pos   Pos
+	Cond  Expr
+	Limit int
+	Body  []Node
+}
+
+func (*Retry) node() {}
+
 // Return sets the workflow output value.
 type Return struct {
 	Pos   Pos

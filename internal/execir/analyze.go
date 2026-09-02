@@ -22,7 +22,7 @@ func RequiresInterpreter(p *Program) bool {
 func nodesRequireInterpreter(nodes []Node) bool {
 	for _, n := range nodes {
 		switch v := n.(type) {
-		case *Branch, *Loop, *While:
+		case *Branch, *Loop, *While, *Retry:
 			return true
 		case *Fork:
 			for _, b := range v.Branches {
@@ -120,6 +120,14 @@ func boundsOf(nodes []Node, factor int, dataBounded bool, cap int) map[calleeKey
 			// multiplying that tight factor — not the raw source Limit — keeps the
 			// bound honest (matching what can actually run) AND overflow-resistant
 			// (each factor is ≤ cap). satMul saturates as a backstop for deep nesting.
+			lim := v.Limit
+			if lim <= 0 || lim > cap {
+				lim = cap
+			}
+			mergeSum(boundsOf(v.Body, satMul(factor, lim), dataBounded, cap))
+		case *Retry:
+			// A bounded retry-until runs its body at most Limit times, exactly like a while
+			// (#361) — the same iteration factor, capped at min(Limit, MaxLoopIterations).
 			lim := v.Limit
 			if lim <= 0 || lim > cap {
 				lim = cap

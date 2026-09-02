@@ -339,6 +339,22 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 		}
 		wc.env = loopJoin(pre, wc.env)
 		return diags
+	case *lang.RetryStmt:
+		// A bounded `retry until` carries state like `while` (#361): the body runs on a
+		// snapshot joined back with loopJoin, then the condition is checked. A name bound
+		// before the loop may be rebound and survives (untyped union — the body runs at
+		// least once but the success attempt count varies); a name first bound inside is
+		// loop-local.
+		var diags lang.Diagnostics
+		pre := wc.env
+		wc.env = snapshotEnv(pre)
+		for _, st := range s.Body {
+			diags = append(diags, wc.checkStmt(st)...)
+		}
+		_, d := wc.checkExpr(s.Cond)
+		diags = append(diags, d...)
+		wc.env = loopJoin(pre, wc.env)
+		return diags
 	}
 	return nil
 }

@@ -554,6 +554,12 @@ func (p *parser) parseStmt() Stmt {
 		}
 		return p.parseParallel()
 	case KindIdent:
+		// `retry until <cond> limit <N> { }` is the bounded-retry construct (#361). `retry`
+		// and `until` are contextual keywords: only the `retry until` shape triggers it, so a
+		// binding named `retry` (e.g. `retry = ...`) is still an ordinary assignment below.
+		if p.cur.Lit == "retry" && p.peekt.Kind == KindIdent && p.peekt.Lit == "until" {
+			return p.parseRetry()
+		}
 		// `name = expr` is an assignment; anything else is an expression
 		// statement (a bare call for its effect).
 		if p.peekt.Kind == KindEquals {
@@ -639,7 +645,7 @@ func (p *parser) parseWhile() *WhileStmt {
 	stmt.Cond = p.parseExpr()
 	if p.cur.Kind == KindIdent && p.cur.Lit == "limit" {
 		p.advance()
-		stmt.Limit = p.parseLimit()
+		stmt.Limit = p.parseLimit("while")
 	} else {
 		p.errorf(p.cur.Pos, "expected 'limit' <positive integer> after the while condition (an unbounded while is not allowed), got %s", p.cur)
 	}
@@ -647,23 +653,42 @@ func (p *parser) parseWhile() *WhileStmt {
 	return stmt
 }
 
-// parseLimit consumes the mandatory positive-integer bound after `limit`. A
-// non-number (e.g. a dynamic `limit input.max`), a fractional, or a non-positive
-// value is a diagnostic; Limit is left 0 so the program is not treated as valid.
-func (p *parser) parseLimit() int {
+// parseRetry parses `retry until <cond> limit <N> { body }` (#361). The current token is the
+// contextual `retry` keyword and the lookahead is `until`. Like `while`, the bound N must be a
+// positive integer literal — the language admits no unbounded effectful loop (ADR 002 §6).
+func (p *parser) parseRetry() *RetryStmt {
+	stmt := &RetryStmt{Pos: p.cur.Pos}
+	p.advance() // consume 'retry'
+	p.advance() // consume 'until' (verified by the caller's lookahead)
+	stmt.Cond = p.parseExpr()
+	if p.cur.Kind == KindIdent && p.cur.Lit == "limit" {
+		p.advance()
+		stmt.Limit = p.parseLimit("retry")
+	} else {
+		p.errorf(p.cur.Pos, "expected 'limit' <positive integer> after the retry-until condition (an unbounded retry is not allowed), got %s", p.cur)
+	}
+	stmt.Body = p.parseBlock("to open retry body")
+	return stmt
+}
+
+// parseLimit consumes the mandatory positive-integer bound after `limit` for a bounded loop
+// (`construct` names it for diagnostics). A non-number (e.g. a dynamic `limit input.max`), a
+// fractional, or a non-positive value is a diagnostic; Limit is left 0 so the program is not
+// treated as valid.
+func (p *parser) parseLimit(construct string) int {
 	tok := p.cur
 	if tok.Kind != KindNumber {
-		p.errorf(tok.Pos, "while limit must be a positive integer literal, got %s (a dynamic or non-integer bound is not allowed)", tok)
+		p.errorf(tok.Pos, "%s limit must be a positive integer literal, got %s (a dynamic or non-integer bound is not allowed)", construct, tok)
 		return 0
 	}
 	p.advance()
 	if strings.Contains(tok.Lit, ".") {
-		p.errorf(tok.Pos, "while limit must be a whole number, got %q", tok.Lit)
+		p.errorf(tok.Pos, "%s limit must be a whole number, got %q", construct, tok.Lit)
 		return 0
 	}
 	n, err := strconv.ParseInt(tok.Lit, 10, 64)
 	if err != nil || n <= 0 {
-		p.errorf(tok.Pos, "while limit must be a positive integer, got %q", tok.Lit)
+		p.errorf(tok.Pos, "%s limit must be a positive integer, got %q", construct, tok.Lit)
 		return 0
 	}
 	return int(n)

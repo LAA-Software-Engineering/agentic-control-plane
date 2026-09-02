@@ -78,6 +78,8 @@ func (el *execLowerer) reserve(stmts []lang.Stmt) {
 			el.reserve(s.Body)
 		case *lang.WhileStmt:
 			el.reserve(s.Body)
+		case *lang.RetryStmt:
+			el.reserve(s.Body)
 		}
 	}
 }
@@ -147,6 +149,17 @@ func (el *execLowerer) lowerStmt(st lang.Stmt) []execir.Node {
 		// body. The interpreter enforces the bound (ADR 002 §6); the resource
 		// projection flattens the body separately for effect analysis.
 		return []execir.Node{&execir.While{
+			Pos:   s.Pos,
+			Cond:  el.lowerCond(s.Cond),
+			Limit: s.Limit,
+			Body:  el.lowerStmts(s.Body),
+		}}
+	case *lang.RetryStmt:
+		// A bounded retry-until lowers to execir.Retry: the success condition (pure over
+		// already-bound values, same rule as a Branch), the explicit source Limit, and the
+		// body. The interpreter runs the body up to Limit times, checks the condition after
+		// each attempt, and fails the run on exhaustion (#361).
+		return []execir.Node{&execir.Retry{
 			Pos:   s.Pos,
 			Cond:  el.lowerCond(s.Cond),
 			Limit: s.Limit,
