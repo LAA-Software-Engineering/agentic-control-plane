@@ -65,10 +65,14 @@ func (c ClaudeCodeRuntime) argv(spec RunSpec) []string {
 }
 
 // denyBuiltinToolsArgs returns the flags that must leave the external agent with *no*
-// built-in tools (no Bash, Edit, WebFetch, …), so grants become MCP operations and
-// nothing else is reachable. This one decision is the entire capability boundary of the
-// external runtime, and it is the epic's #338 verification gate — an UNVERIFIED contract
-// against a CLI this repo does not own:
+// built-in tools (no Bash, Edit, WebFetch, …), so grants become MCP operations and nothing
+// else is reachable. This is the S9 boundary (docs/SOUNDNESS.md): the external-runtime
+// callable set is exactly the pinned grants; a built-in standing in for a scoped grant is
+// unsound. checkNoBuiltinToolExposure fences the caller-supplied ExtraArgs ingress against
+// it; the guard here is what the adapter itself contributes.
+//
+// It remains an UNVERIFIED contract against a CLI this repo does not own — the live
+// verification gate for the runtime integration:
 //
 //   - `--tools ""` is a best guess. The CLI's documented knobs are `--allowedTools` /
 //     `--disallowedTools`; `--tools` may not be recognized at all (then the real
@@ -78,10 +82,10 @@ func (c ClaudeCodeRuntime) argv(spec RunSpec) []string {
 //     Terfyn believes only the MCP grants are reachable — a capability escape.
 //
 // No unit test with a fake process can close this gap (it only proves the adapter *emits*
-// the flag, not that `claude` *honors* it). Before #338 wires RunSession to a live run, this
+// the flag, not that `claude` *honors* it). Before RunSession is wired to a live run, this
 // MUST be pinned to a CLI version and confirmed by an integration check that a denied
-// built-in tool is genuinely unreachable; until then the runtime stays fail-closed via
-// errPendingIntegration and this boundary is documentation, not enforcement.
+// built-in tool is genuinely unreachable; until then the runtime stays fail-closed at the
+// Invoke/Resume seam and this half of the boundary is documentation, not enforcement.
 func denyBuiltinToolsArgs() []string {
 	return []string{"--tools", ""}
 }
@@ -99,7 +103,13 @@ func (e *MaxTurnsError) Error() string {
 // in max-turns is returned with a *MaxTurnsError; any other error result is returned with an error;
 // a success returns (session, nil).
 func (c ClaudeCodeRuntime) RunSession(ctx context.Context, spec RunSpec) (Session, error) {
-	stdout, runErr := c.runner()(ctx, c.argv(spec), "")
+	args := c.argv(spec)
+	// S9 soundness fence: never spawn an agent whose argv would expose a built-in tool or
+	// bypass the permission boundary (e.g. an ExtraArgs that smuggles --allowedTools Bash).
+	if err := checkNoBuiltinToolExposure(args); err != nil {
+		return Session{}, err
+	}
+	stdout, runErr := c.runner()(ctx, args, "")
 
 	session, parseErr := parseStreamJSON(strings.NewReader(stdout))
 	if parseErr != nil {
