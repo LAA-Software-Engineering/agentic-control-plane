@@ -65,7 +65,9 @@ actually denied before a live run).
 The live wiring of a `claude -p` run through the adapter + per-run server is the final integration
 step of the epic; until it lands, `terfyn run --runtime claude-code` fails closed rather than
 silently degrading. Interactive HITL round-trips for an out-of-process agent, and any second
-external adapter (Codex, Gemini CLI), are follow-ups that satisfy the same boundary.
+external adapter (Codex, Gemini CLI), are follow-ups that satisfy the same boundary. The explicit bar
+such an adapter must meet is written up in
+[`RUNTIME_TARGET_CONTRACT.md`](../RUNTIME_TARGET_CONTRACT.md).
 
 ## Consequences
 
