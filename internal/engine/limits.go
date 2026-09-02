@@ -8,22 +8,14 @@ import (
 	"github.com/Terfyn/terfyn/internal/trace"
 )
 
-// Default and hard-cap for agent.spec.constraints.maxIterations (issue #160).
-// Unset or zero uses the default; values above the hard cap are clamped.
-const (
-	defaultAgentMaxIterations = 8
-	hardAgentMaxIterations    = 32
-)
-
+// agentMaxIterations resolves the loop's iteration bound (issue #160). The default/hard-cap
+// semantics live in spec.ResolveMaxIterations, the single source of truth shared with the
+// external-runtime turn mapping (issue #340), so the ceiling is identical across runtimes.
 func agentMaxIterations(agent *spec.AgentResource) int {
-	n := defaultAgentMaxIterations
-	if agent != nil && agent.Spec.Constraints != nil && agent.Spec.Constraints.MaxIterations > 0 {
-		n = agent.Spec.Constraints.MaxIterations
+	if agent == nil {
+		return spec.ResolveMaxIterations(nil)
 	}
-	if n > hardAgentMaxIterations {
-		return hardAgentMaxIterations
-	}
-	return n
+	return spec.ResolveMaxIterations(agent.Spec.Constraints)
 }
 
 func (e *Executor) redactionOpts() trace.RedactionOptions {

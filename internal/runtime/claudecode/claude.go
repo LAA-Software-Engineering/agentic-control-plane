@@ -58,6 +58,10 @@ func (c ClaudeCodeRuntime) argv(spec RunSpec) []string {
 	if spec.MaxTurns > 0 {
 		args = append(args, "--max-turns", strconv.Itoa(spec.MaxTurns))
 	}
+	if spec.MaxBudgetUSD > 0 {
+		// A harness-side belt; Terfyn's CheckRun remains the enforcer of record (#340).
+		args = append(args, "--max-budget-usd", strconv.FormatFloat(spec.MaxBudgetUSD, 'f', -1, 64))
+	}
 	if m := strings.TrimSpace(spec.MCPConfig); m != "" {
 		args = append(args, "--mcp-config", m)
 	}

@@ -22,8 +22,9 @@ type AgentRuntime interface {
 type RunSpec struct {
 	Prompt       string
 	SystemPrompt string
-	MaxTurns     int    // → --max-turns (0 = leave to the CLI default); budget mapping is #340
-	MCPConfig    string // → --mcp-config (per-run server, #338)
+	MaxTurns     int     // → --max-turns (0 = leave to the CLI default); mapped from constraints.maxIterations (#340)
+	MaxBudgetUSD float64 // → --max-budget-usd (0 = no harness ceiling); a belt only — Terfyn's CheckRun stays authoritative (#340)
+	MCPConfig    string  // → --mcp-config (per-run server, #338)
 	ExtraArgs    []string
 }
 
