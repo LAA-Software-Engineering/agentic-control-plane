@@ -262,6 +262,15 @@ func joinDecisionAllow(a, b []spec.HitlDecisionKind) []spec.HitlDecisionKind {
 		used[k] = struct{}{}
 		out = append(out, k)
 	}
+	if len(out) == 0 {
+		// Both sides explicitly restricted decisions, and their intersection is empty (disjoint
+		// restrictions — e.g. a caller allowing only {approve} and a callee only {reject}). The
+		// stricter merge must permit NEITHER. Returning an empty slice here would be re-read
+		// downstream as "unset → default decision set" (defaultHitlDecisions), restoring decisions
+		// both policies forbade — a fail-open. Emit the deny-all sentinel instead; ResolveHitlReview
+		// collapses it to an empty (deny-all) resolved set. See hitlDecisionNone.
+		return []spec.HitlDecisionKind{hitlDecisionNone}
+	}
 	return out
 }
 

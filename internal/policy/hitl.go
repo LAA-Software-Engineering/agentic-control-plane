@@ -9,6 +9,28 @@ import (
 	"github.com/Terfyn/terfyn/internal/tools"
 )
 
+// hitlDecisionNone marks a HITL gate that permits NO decision — the stricter merge of two disjoint
+// allowedDecisions restrictions (a caller allowing only {approve} and a callee only {reject}
+// together permit neither). It is produced solely by joinDecisionAllow during a stricter merge and
+// is never authorable: the spec validator rejects unknown decision kinds, so it cannot arrive from
+// a serialized policy or collide with a real decision. ResolveHitlReview collapses it to an empty
+// (deny-all) resolved decision set — which IsDecisionAllowed treats as "no decision permitted", the
+// fail-closed outcome. Without it, an empty intersection was re-read as "unset → default decision
+// set", restoring decisions both policies forbade (issue #357).
+const hitlDecisionNone spec.HitlDecisionKind = "\x00terfyn-deny-all"
+
+// collapseDenyAll turns a decision set carrying the deny-all sentinel into an explicit empty set.
+// An empty resolved AllowedDecisions means "no decision permitted" and is terminal — it is never
+// re-expanded to the default set, unlike an unset config at authoring time.
+func collapseDenyAll(decisions []spec.HitlDecisionKind) []spec.HitlDecisionKind {
+	for _, d := range decisions {
+		if d == hitlDecisionNone {
+			return []spec.HitlDecisionKind{}
+		}
+	}
+	return decisions
+}
+
 // ResolvedHitlReview is the merged review configuration for one gated tool call.
 type ResolvedHitlReview struct {
 	Description      string
@@ -75,6 +97,9 @@ func ResolveHitlReview(graph *spec.ProjectGraph, pol *spec.PolicySpec, uses stri
 	if cfg != nil && len(cfg.AllowedEditTools) > 0 {
 		review.SwitchTargets = uniqueStrings(append(review.SwitchTargets, cfg.AllowedEditTools...))
 	}
+	// A stricter merge of disjoint decision restrictions carries the deny-all sentinel; collapse it
+	// to an explicit empty decision set (fail closed) rather than letting it leak to the operator.
+	review.AllowedDecisions = collapseDenyAll(review.AllowedDecisions)
 	return review, nil
 }
 
