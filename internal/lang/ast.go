@@ -46,14 +46,18 @@ func (i *Ident) Position() Pos { return i.Pos }
 type AgentDecl struct {
 	Pos          Pos
 	Name         *Ident
-	Model        *ModelRef    // model <provider>/<name>
-	Policy       *Ident       // policy <name> (reference to a Policy resource)
-	Description  *StringLit   // description "..." (lowers to AgentSpec.Description)
-	Instructions *StringLit   // instructions "..." (the agent prompt; lowers to AgentSpec.Instructions)
-	Constraints  *Constraints // constraints { maxIterations ... } (lowers to AgentSpec.Constraints)
-	Grants       []*Grant     // grants { tool.<name>.<operation> ... }
-	Input        *TypeRef     // input <Type>
-	Output       *TypeRef     // output <Type>
+	Model        *ModelRef  // model <provider>/<name>
+	Policy       *Ident     // policy <name> (reference to a Policy resource)
+	Description  *StringLit // description "..." (lowers to AgentSpec.Description)
+	Instructions *StringLit // instructions "..." (inline prompt; lowers to AgentSpec.Instructions)
+	// InstructionsFile is the `instructions file("path")` form (#360): a load-time file reference,
+	// mutually exclusive with Instructions. Its UTF-8 contents lower verbatim into
+	// AgentSpec.Instructions exactly as an inline string would.
+	InstructionsFile *InstructionsFile
+	Constraints      *Constraints // constraints { maxIterations ... } (lowers to AgentSpec.Constraints)
+	Grants           []*Grant     // grants { tool.<name>.<operation> ... }
+	Input            *TypeRef     // input <Type>
+	Output           *TypeRef     // output <Type>
 }
 
 // Constraints is the `constraints { ... }` block: the fixed set of agent execution
@@ -82,6 +86,22 @@ type StringLit struct {
 }
 
 func (s *StringLit) Position() Pos { return s.Pos }
+
+// InstructionsFile is `instructions file("path")` — a load-time file reference (#360). Path is the
+// quoted relative path literal; Resolved holds the file's UTF-8 contents once the project loader has
+// read and validated the path. It is a pointer so an unresolved reference (nil, e.g. after a bare
+// lang.Parse under `terfyn fmt`, which re-emits the file("...") form) is distinct from a
+// legitimately empty file (non-nil ""): lowering rejects an unresolved ref rather than silently
+// pinning an empty prompt into the spec hash / deployment snapshot. The resolved text lowers
+// verbatim into AgentSpec.Instructions like any inline instruction — a changed file surfaces as a
+// plan diff, not a silent behavior change.
+type InstructionsFile struct {
+	Pos      Pos
+	Path     *StringLit
+	Resolved *string
+}
+
+func (f *InstructionsFile) Position() Pos { return f.Pos }
 
 // ModelRef is a `<provider>/<name>` model reference such as openai/gpt-5.
 // Provider and Name preserve hyphens (gpt-5); Raw is the reassembled text.

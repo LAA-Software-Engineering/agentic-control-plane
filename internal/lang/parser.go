@@ -178,7 +178,13 @@ func (p *parser) parseAgent() *AgentDecl {
 			}
 		case "instructions":
 			p.advance()
-			if s := p.parseStringLit("after 'instructions'"); !dup(field, fpos) {
+			// instructions accepts an inline string literal OR a load-time file reference,
+			// file("path") (#360). `file` is a contextual identifier followed by '('.
+			if p.cur.Kind == KindIdent && p.cur.Lit == "file" {
+				if fr := p.parseFileRef(); !dup(field, fpos) {
+					decl.InstructionsFile = fr
+				}
+			} else if s := p.parseStringLit("after 'instructions'"); !dup(field, fpos) {
 				decl.Instructions = s
 			}
 		case "constraints":
@@ -221,6 +227,20 @@ func (p *parser) parseStringLit(where string) *StringLit {
 	s := &StringLit{Pos: p.cur.Pos, Value: p.cur.Lit}
 	p.advance()
 	return s
+}
+
+// parseFileRef parses `file("path")` — a load-time file reference (#360). The current token is the
+// contextual identifier `file`. The path is a string literal; the parser does not read it (the
+// project loader resolves and reads it relative to the .agent file, within the project root).
+func (p *parser) parseFileRef() *InstructionsFile {
+	fr := &InstructionsFile{Pos: p.cur.Pos}
+	p.advance() // consume 'file'
+	if _, ok := p.expect(KindLParen, "after 'file' in a file(...) reference"); !ok {
+		return fr
+	}
+	fr.Path = p.parseStringLit("for the path inside file(...)")
+	p.expect(KindRParen, "to close a file(...) reference")
+	return fr
 }
 
 // parseConstraints parses `{ maxIterations N timeoutSeconds N ... }` — the fixed

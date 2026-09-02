@@ -166,6 +166,14 @@ func (l *lowerer) classifyDecls(f *lang.File) {
 	}
 }
 
+// instructionsFilePath returns the referenced path for diagnostics ("" if malformed).
+func instructionsFilePath(f *lang.InstructionsFile) string {
+	if f == nil || f.Path == nil {
+		return ""
+	}
+	return f.Path.Value
+}
+
 func declNamePos(id *lang.Ident, fallback spec.Pos) spec.Pos {
 	if id != nil && !id.Pos.IsZero() {
 		return id.Pos
@@ -210,6 +218,17 @@ func (l *lowerer) agent(d *lang.AgentDecl) *spec.AgentResource {
 	if d.Instructions != nil {
 		ar.Spec.Instructions = d.Instructions.Value
 		l.sm.set(KeyAgentInstructions(name), d.Instructions.Pos)
+	} else if d.InstructionsFile != nil {
+		// instructions file("path") (#360): the file's contents, resolved by the project loader,
+		// lower verbatim exactly as an inline string would. Resolved is a pointer: a nil here means
+		// the reference reached lowering WITHOUT loader resolution — which would silently pin an
+		// empty prompt into the spec hash/snapshot — so it is a hard diagnostic, not a benign empty.
+		if d.InstructionsFile.Resolved == nil {
+			l.diag(d.InstructionsFile.Pos, "instructions file(%q) reached lowering without loader resolution — file references must be resolved by the project loader", instructionsFilePath(d.InstructionsFile))
+		} else {
+			ar.Spec.Instructions = *d.InstructionsFile.Resolved
+			l.sm.set(KeyAgentInstructions(name), d.InstructionsFile.Pos)
+		}
 	}
 	// grants -> AgentSpec.Tools: an autonomous capability bound, not a call list
 	// (ADR 002). Each grant reconstructs the tool.<name>.<operation> uses string.

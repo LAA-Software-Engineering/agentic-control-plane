@@ -56,3 +56,21 @@ func TestLower_InstructionsCopiedExactly(t *testing.T) {
 		t.Fatalf("reload changed instructions:\n got %q\nwant %q", reloaded.Spec.Instructions, want)
 	}
 }
+
+// TestLower_InstructionsFileUnresolvedIsDiagnostic asserts a file("...") reference that reaches
+// lowering WITHOUT loader resolution (Resolved == nil) is a hard diagnostic, not a silent empty
+// prompt pinned into the spec hash (#360 review). The project loader resolves the ref before
+// lowering; this guards a future path that skips it.
+func TestLower_InstructionsFileUnresolvedIsDiagnostic(t *testing.T) {
+	f, diags := lang.Parse("a.agent", "agent R {\n    instructions file(\"prompts/r.md\")\n}\n")
+	if diags.HasErrors() {
+		t.Fatalf("parse diags: %s", diags.Error())
+	}
+	_, ld := lower.LowerFile(f, lower.Options{})
+	if !ld.HasErrors() {
+		t.Fatal("an unresolved instructions file() ref must be a lowering diagnostic")
+	}
+	if !strings.Contains(ld.Error(), "without loader resolution") {
+		t.Fatalf("diagnostic = %q", ld.Error())
+	}
+}
