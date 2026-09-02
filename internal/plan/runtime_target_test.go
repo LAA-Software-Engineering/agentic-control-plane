@@ -80,9 +80,7 @@ func TestPlan_RuntimeIndependentEffectBound(t *testing.T) {
 func TestSummarizeWorkflowRisk_RuntimeChangeEmitsItem(t *testing.T) {
 	sink := newRiskSink()
 	op := Operation{Action: ActionUpdate, Target: spec.ResourceID{Kind: spec.KindWorkflow, Name: "pr-review"}}
-	oldJSON := `{"spec":{"runtime":"local"}}`
-	newJSON := `{"spec":{"runtime":"claude-code"}}`
-	summarizeWorkflowRisk(sink, minimalGraph(), op, oldJSON, newJSON, true)
+	summarizeWorkflowRisk(sink, op, `{"spec":{"runtime":"local"}}`, `{"spec":{"runtime":"claude-code"}}`, true, "", "")
 	items := finalizeRiskItems(sink.items).Items
 	if len(items) != 1 || items[0].Category != RiskCategoryRuntimeTargetChange {
 		t.Fatalf("expected one runtime_target_change item, got %+v", items)
@@ -96,13 +94,64 @@ func TestSummarizeWorkflowRisk_NoChangeNoItem(t *testing.T) {
 	sink := newRiskSink()
 	op := Operation{Action: ActionUpdate, Target: spec.ResourceID{Kind: spec.KindWorkflow, Name: "pr-review"}}
 	// Unset vs explicit "local" resolve to the same effective target — not a change.
-	summarizeWorkflowRisk(sink, minimalGraph(), op, `{"spec":{}}`, `{"spec":{"runtime":"local"}}`, true)
+	summarizeWorkflowRisk(sink, op, `{"spec":{}}`, `{"spec":{"runtime":"local"}}`, true, "", "")
 	// A create emits nothing (selection is shown by the Runtime targets section, not a risk item).
-	summarizeWorkflowRisk(sink, minimalGraph(),
+	summarizeWorkflowRisk(sink,
 		Operation{Action: ActionCreate, Target: spec.ResourceID{Kind: spec.KindWorkflow, Name: "pr-review"}},
-		"", `{"spec":{"runtime":"claude-code"}}`, false)
+		"", `{"spec":{"runtime":"claude-code"}}`, false, "", "")
 	if items := finalizeRiskItems(sink.items).Items; len(items) != 0 {
 		t.Fatalf("expected no risk items, got %+v", items)
+	}
+}
+
+// A workflow that leaves spec.runtime unset while the project default flips emits NO per-workflow
+// item (its own field is byte-unchanged) — the move is reported once at project scope instead.
+func TestSummarizeWorkflowRisk_DefaultFlipNotDoubleCounted(t *testing.T) {
+	sink := newRiskSink()
+	op := Operation{Action: ActionUpdate, Target: spec.ResourceID{Kind: spec.KindWorkflow, Name: "pr-review"}}
+	summarizeWorkflowRisk(sink, op, `{"spec":{}}`, `{"spec":{}}`, true, "local", "claude-code")
+	if items := finalizeRiskItems(sink.items).Items; len(items) != 0 {
+		t.Fatalf("unset-in-both workflow must not emit on a default flip, got %+v", items)
+	}
+}
+
+// The default flip itself is surfaced once at project scope.
+func TestSummarizeProjectRuntimeRisk(t *testing.T) {
+	sink := newRiskSink()
+	summarizeProjectRuntimeRisk(sink, "acme", "local", "claude-code")
+	items := finalizeRiskItems(sink.items).Items
+	if len(items) != 1 || items[0].Category != RiskCategoryRuntimeTargetChange || items[0].Target.Kind != RiskTargetProject {
+		t.Fatalf("expected one project-scope runtime_target_change, got %+v", items)
+	}
+	// An effective no-op default change ("" default == local) emits nothing.
+	sink2 := newRiskSink()
+	summarizeProjectRuntimeRisk(sink2, "acme", "", "local")
+	if items := finalizeRiskItems(sink2.items).Items; len(items) != 0 {
+		t.Fatalf("effective no-op default change must not emit, got %+v", items)
+	}
+}
+
+// End-to-end through ComputePlan: flipping the project default from local to claude-code on a
+// prior deployment surfaces exactly one project-scope runtime_target_change (not one per workflow).
+func TestComputePlan_ProjectDefaultFlipSurfacedOnce(t *testing.T) {
+	steps := []spec.WorkflowStep{{ID: "review", Agent: "reviewer"}}
+	prior := effectGraph([]string{"tool.github.post_comment"}, steps) // default unset → local
+	current := effectGraph([]string{"tool.github.post_comment"}, steps)
+	current.Spec.Defaults = &spec.ProjectDefaults{Runtime: "claude-code"}
+
+	applied := appliedFromDesired(t, "dev", prior)
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", current, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rt []RiskItem
+	for _, it := range pl.Risk.Items {
+		if it.Category == RiskCategoryRuntimeTargetChange {
+			rt = append(rt, it)
+		}
+	}
+	if len(rt) != 1 || rt[0].Target.Kind != RiskTargetProject {
+		t.Fatalf("a default flip should surface once at project scope, got %+v", rt)
 	}
 }
 

@@ -141,6 +141,7 @@ const (
 	RiskTargetAgent    RiskTargetKind = "agent"
 	RiskTargetTool     RiskTargetKind = "tool"
 	RiskTargetWorkflow RiskTargetKind = "workflow"
+	RiskTargetProject  RiskTargetKind = "project"
 )
 
 // RiskTarget identifies the changed resource for a [RiskItem].
