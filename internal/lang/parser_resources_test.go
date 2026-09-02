@@ -82,6 +82,37 @@ func TestToolPolicyContextualKeywords(t *testing.T) {
 	}
 }
 
+// TestParseToolDecl_DuplicateOperationRejected keeps parity with the YAML loader (which rejects a
+// duplicate mapping key): a repeated operation name inside one inline tool is a diagnostic, not a
+// silent last-wins.
+func TestParseToolDecl_DuplicateOperationRejected(t *testing.T) {
+	_, diags := Parse("t.agent", `tool ws {
+    type native
+    operations {
+        read_file { effects { workspace.read } }
+        read_file { effects { workspace.write } }
+    }
+}`)
+	found := false
+	for _, d := range diags {
+		if containsStr(d.Msg, "duplicate operation") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a duplicate operation name must be diagnosed, got: %v", diags)
+	}
+}
+
+func containsStr(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return len(sub) == 0
+}
+
 // TestPrintRoundTrip_ToolPolicy: parse → Print → re-parse yields the same declarations, and the
 // printed form is itself valid .agent (no `;`).
 func TestPrintRoundTrip_ToolPolicy(t *testing.T) {
