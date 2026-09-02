@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/Terfyn/terfyn/internal/spec"
@@ -35,11 +36,51 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite foreign_keys: %w", err)
 	}
+	if err := applyPerformancePragmas(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := Migrate(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	return &Store{db: db}, nil
+}
+
+// applyPerformancePragmas tunes the write path, which is dominated by the fsync each transaction
+// issues while building the schema and appending run/trace rows. The default DELETE journal fsyncs
+// on every commit; that cost is what makes the file-backed store slow on runners with slow disk
+// I/O (notably Windows CI, further amplified by antivirus scanning of every temp .db and by -race).
+//
+// Production keeps full durability: WAL commits are still fsynced, and synchronous=NORMAL only
+// relaxes the *checkpoint* fsync — a WAL+NORMAL database survives an application crash and loses at
+// most the last transaction on OS/power loss. busy_timeout makes concurrent opens of the same file
+// wait rather than fail with SQLITE_BUSY.
+//
+// Under `go test` the databases are throwaway TempDir files, so we trade durability for speed:
+// synchronous=OFF removes every fsync and journal_mode=MEMORY keeps the rollback journal in RAM,
+// which also avoids creating the -wal/-shm/-journal sidecar files that antivirus would otherwise
+// scan. Correctness within a run is unaffected: MaxOpenConns(1) means a single connection, and a
+// crash mid-test only discards a database we were about to delete anyway.
+func applyPerformancePragmas(ctx context.Context, db *sql.DB) error {
+	pragmas := []string{
+		`PRAGMA busy_timeout=5000`,
+		`PRAGMA journal_mode=WAL`,
+		`PRAGMA synchronous=NORMAL`,
+	}
+	if testing.Testing() {
+		pragmas = []string{
+			`PRAGMA busy_timeout=5000`,
+			`PRAGMA journal_mode=MEMORY`,
+			`PRAGMA synchronous=OFF`,
+		}
+	}
+	for _, p := range pragmas {
+		if _, err := db.ExecContext(ctx, p); err != nil {
+			return fmt.Errorf("sqlite pragma %q: %w", p, err)
+		}
+	}
+	return nil
 }
 
 // Close releases the database handle.

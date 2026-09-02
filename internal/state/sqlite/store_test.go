@@ -5,12 +5,47 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
 )
+
+// TestOpen_appliesTestPerformancePragmas guards the write-path tuning (issue #372). Because the
+// suite runs under `go test`, applyPerformancePragmas selects the fast throwaway settings; assert
+// they took effect and that foreign_keys is still enforced.
+func TestOpen_appliesTestPerformancePragmas(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "pragmas.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	pragma := func(name string) string {
+		t.Helper()
+		var v string
+		if err := st.db.QueryRowContext(ctx, "PRAGMA "+name).Scan(&v); err != nil {
+			t.Fatalf("PRAGMA %s: %v", name, err)
+		}
+		return v
+	}
+	// synchronous=OFF -> 0, journal_mode=MEMORY, and FK enforcement stays on (=1).
+	if got := pragma("synchronous"); got != "0" {
+		t.Errorf("synchronous = %q, want 0 (OFF) under test", got)
+	}
+	if got := strings.ToLower(pragma("journal_mode")); got != "memory" {
+		t.Errorf("journal_mode = %q, want memory under test", got)
+	}
+	if got := pragma("foreign_keys"); got != "1" {
+		t.Errorf("foreign_keys = %q, want 1 (ON)", got)
+	}
+	if got := pragma("busy_timeout"); got != "5000" {
+		t.Errorf("busy_timeout = %q, want 5000", got)
+	}
+}
 
 func TestOpen_createsTablesAndRoundTripAppliedResource(t *testing.T) {
 	ctx := context.Background()
