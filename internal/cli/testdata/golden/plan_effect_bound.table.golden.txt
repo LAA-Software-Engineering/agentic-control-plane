@@ -38,6 +38,9 @@ Authority:
   static      -> WIDENED
   autonomous  -> WIDENED
 
+Runtime targets:
+  Workflow/pr-review -> local
+
 Risk delta:
 high:
 - [high] authority_widening: AUTONOMOUS authority WIDENED.

@@ -125,6 +125,7 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 		EffectBound:        ea.bound,
 		Authority:          ea.auth,
 		InvocationBounds:   invocationBounds(execs),
+		RuntimeTargets:     workflowRuntimeTargets(g),
 	}, nil
 }
 

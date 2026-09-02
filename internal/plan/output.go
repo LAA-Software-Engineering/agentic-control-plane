@@ -92,6 +92,9 @@ func planTableSections(p *Plan) []planTableSection {
 	if len(p.InvocationBounds) > 0 {
 		secs = append(secs, planTableSection{Title: "Invocation bounds", Body: formatInvocationBoundsBody(p.InvocationBounds)})
 	}
+	if len(p.RuntimeTargets) > 0 {
+		secs = append(secs, planTableSection{Title: "Runtime targets", Body: formatRuntimeTargetsBody(p.RuntimeTargets)})
+	}
 
 	if len(other) > 0 {
 		secs = append(secs, planTableSection{Title: "Risk delta", Items: other})
@@ -203,6 +206,14 @@ func formatInvocationBoundsBody(wbs []WorkflowInvocationBounds) string {
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
+func formatRuntimeTargetsBody(rts []RuntimeTargetItem) string {
+	var b strings.Builder
+	for _, rt := range rts {
+		fmt.Fprintf(&b, "  Workflow/%s -> %s\n", rt.Workflow, rt.Runtime)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
 func formatAuthorityBody(a AuthorityDelta) string {
 	return fmt.Sprintf("  static      -> %s\n  autonomous  -> %s",
 		formatAuthorityStatus(a.Static), formatAuthorityStatus(a.Autonomous))
@@ -264,6 +275,7 @@ type RiskExport struct {
 	EffectDelta      []RiskItem                 `json:"effectDelta,omitempty" yaml:"effectDelta,omitempty"`
 	Authority        *AuthorityDelta            `json:"authority,omitempty" yaml:"authority,omitempty"`
 	InvocationBounds []WorkflowInvocationBounds `json:"invocationBounds,omitempty" yaml:"invocationBounds,omitempty"`
+	RuntimeTargets   []RuntimeTargetItem        `json:"runtimeTargets,omitempty" yaml:"runtimeTargets,omitempty"`
 }
 
 // ExportRisk returns the machine-readable risk view for -o json and -o yaml.
@@ -295,6 +307,9 @@ func ExportRisk(p *Plan) RiskExport {
 	}
 	if len(p.InvocationBounds) > 0 {
 		out.InvocationBounds = p.InvocationBounds
+	}
+	if len(p.RuntimeTargets) > 0 {
+		out.RuntimeTargets = p.RuntimeTargets
 	}
 	return out
 }

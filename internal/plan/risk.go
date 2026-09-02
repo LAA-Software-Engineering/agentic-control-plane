@@ -112,6 +112,8 @@ func summarizeRisks(
 			summarizeAgentRisk(sink, g, op, oldJSON, des.json, hadPrev)
 		case spec.KindTool:
 			summarizeToolRisk(sink, g, op, oldJSON, des.json, hadPrev)
+		case spec.KindWorkflow:
+			summarizeWorkflowRisk(sink, g, op, oldJSON, des.json, hadPrev)
 		}
 	}
 
@@ -339,6 +341,55 @@ func summarizeAgentRisk(sink *riskSink, g *spec.ProjectGraph, op Operation, oldJ
 		}
 		sink.add(toolSurfaceItem(g, name, toolName, target, wit))
 	}
+}
+
+// summarizeWorkflowRisk surfaces a runtime-target *change* (issue #342). The runtime is replaceable
+// but the authority is not: the effect bound is computed from the graph and is identical whichever
+// runtime runs it, so a runtime change is an execution-substrate change, not an authority widening.
+// It is surfaced rather than hidden, matching the honesty boundary (ADR 004 §5).
+//
+// A change is reported only against a prior deployment; the current selection (including on a fresh
+// create) is shown by the plan's Runtime targets section, not as a risk item — so plan output for
+// the same program under two runtimes differs only by that line, never by an extra risk finding.
+func summarizeWorkflowRisk(sink *riskSink, g *spec.ProjectGraph, op Operation, oldJSON, newJSON string, hadPrev bool) {
+	if op.Action == ActionCreate || !hadPrev {
+		return
+	}
+	newRT, ok := parseWorkflowRuntime(newJSON)
+	if !ok {
+		return
+	}
+	oldRT, ok := parseWorkflowRuntime(oldJSON)
+	if !ok {
+		return
+	}
+	def := projectDefaultRuntime(g)
+	oldEff, newEff := effectiveRuntime(oldRT, def), effectiveRuntime(newRT, def)
+	if oldEff == newEff {
+		return
+	}
+	name := op.Target.Name
+	sink.add(RiskItem{
+		Category: RiskCategoryRuntimeTargetChange,
+		Severity: RiskSeverityMedium,
+		Reason:   fmt.Sprintf("Workflow runtime target changed %q → %q (Workflow/%s); same authority bound, different execution substrate.", oldEff, newEff, name),
+		Target:   RiskTarget{Kind: RiskTargetWorkflow, Name: name},
+		Witness:  staticResourceWitness(WitnessKindWorkflow, name),
+	})
+}
+
+func parseWorkflowRuntime(resourceJSON string) (string, bool) {
+	var env jsonEnvelope
+	if err := json.Unmarshal([]byte(resourceJSON), &env); err != nil {
+		return "", false
+	}
+	var w struct {
+		Runtime string `json:"runtime"`
+	}
+	if err := json.Unmarshal(env.Spec, &w); err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(w.Runtime), true
 }
 
 func toolSurfaceItem(g *spec.ProjectGraph, agentName, toolName string, target RiskTarget, wit []WitnessHop) RiskItem {
