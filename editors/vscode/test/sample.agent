@@ -1,0 +1,56 @@
+// A representative .agent source exercising the highlighted constructs (issue #362).
+// Not compiled by anything — it is a highlighting fixture for the grammar.
+
+agent Implementer {
+    model anthropic/claude-sonnet-4-5
+    policy coding-agent
+
+    instructions """
+    You are the implementation agent.
+    Address the reviewer's ${feedback} and run the tests.
+    """
+
+    constraints {
+        maxIterations 8
+        requireStructuredOutput true
+    }
+
+    grants {
+        tool.workspace.read_file
+        tool.workspace.write_file
+        tool.workspace.run_tests
+    }
+
+    input CodingState
+    output CodingState
+}
+
+agent Reviewer {
+    model openai/gpt-5
+    instructions file("prompts/reviewer.md")
+    grants {
+        tool.workspace.read_file
+        tool.workspace.run_tests
+    }
+}
+
+workflow FixPullRequest(input: FixTask) -> CodingState
+    effects {
+        workspace.read,
+        workspace.write,
+        process.exec
+    }
+{
+    state = input
+
+    retry until state.approved limit 3 {
+        implementation = Implementer(state)
+        state          = Reviewer(implementation)
+    }
+
+    if state.approved {
+        return state
+    } else {
+        return state
+    }
+}

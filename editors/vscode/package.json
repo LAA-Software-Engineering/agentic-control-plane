@@ -1,0 +1,45 @@
+{
+  "name": "terfyn-agent",
+  "displayName": "Terfyn Agent",
+  "description": "Syntax highlighting for Terfyn .agent authoring files.",
+  "version": "0.1.0",
+  "publisher": "terfyn",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "keywords": ["terfyn", "agent", "agentic", "llm"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Terfyn/terfyn.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/Terfyn/terfyn/issues"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "agent",
+        "aliases": ["Terfyn Agent", "agent"],
+        "extensions": [".agent"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "agent",
+        "scopeName": "source.agent",
+        "path": "./syntaxes/agent.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "package": "vsce package --out terfyn-agent.vsix",
+    "vscode:prepublish": "echo 'no build step — declarative grammar only'"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.1"
+  }
+}
