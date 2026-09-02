@@ -67,14 +67,15 @@ func TestCLI_RuntimeSelection(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	// --runtime claude-code selects the external adapter; the spawn/stream driver exists (#337) but
-	// the workflow-run integration (per-run MCP server) is pending #338, so run fails clearly.
+	// --runtime claude-code selects the external adapter (#337/#367). ImplementAndReview drives TWO
+	// agents (Implementer + Reviewer); the external runtime runs a single agent, so it refuses a
+	// multi-agent workflow loudly rather than mis-orchestrating it.
 	out, err := runCLI(t, "run", "workflow/ImplementAndReview", "--project", proj, "--state", db, "--input-file", input, "--runtime", "claude-code")
 	if err == nil {
-		t.Fatalf("claude-code run should fail pending integration, out:\n%s", out)
+		t.Fatalf("claude-code run of a multi-agent workflow should fail, out:\n%s", out)
 	}
-	if !strings.Contains(err.Error()+out, "#338") {
-		t.Fatalf("expected a pending-integration error pointing at #338, got err=%v\nout=%s", err, out)
+	if !strings.Contains(err.Error()+out, "single-agent") {
+		t.Fatalf("expected a single-agent limitation error, got err=%v\nout=%s", err, out)
 	}
 
 	// --runtime bogus is an unknown runtime.
