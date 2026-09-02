@@ -277,34 +277,50 @@ func shallowCopyMap(m map[string]any) map[string]any {
 	return out
 }
 
-// RedactHitlArgs returns a copy of args with sensitive keys masked for prompts.
+// RedactHitlArgs returns a copy of args with sensitive keys masked for prompts and trace events.
+// A configured key is masked wherever it occurs in the argument tree — top level, nested in a map,
+// AND nested in a list (or a map inside a list) — matching how trace.redactValue handles arrays.
+// The map-only flatten path this previously used treated any list as an opaque leaf, so a secret
+// under an array key (e.g. with.items: [{ token: … }]) leaked to the operator prompt and into the
+// hitl_request_created trace event (issue #358).
 func RedactHitlArgs(args map[string]any, redactKeys []string) map[string]any {
 	if len(redactKeys) == 0 {
 		return shallowCopyMap(args)
 	}
-	flat := flattenArgs(args)
-	redacted := shallowCopyMap(args)
-	for path := range flat {
-		if pathDenied(path, nil, redactKeys) {
-			setNestedValue(redacted, path, RedactedSecretPlaceholder)
+	redact := make(map[string]struct{}, len(redactKeys))
+	for _, k := range redactKeys {
+		if k = strings.TrimSpace(k); k != "" {
+			redact[k] = struct{}{}
 		}
 	}
-	return redacted
+	out, _ := redactHitlValue(args, redact).(map[string]any)
+	if out == nil {
+		return map[string]any{}
+	}
+	return out
 }
 
-func setNestedValue(root map[string]any, path string, value any) {
-	parts := strings.Split(path, ".")
-	cur := root
-	for i, p := range parts {
-		if i == len(parts)-1 {
-			cur[p] = value
-			return
+// redactHitlValue deep-copies v, replacing the whole value under any map key in redact with the
+// placeholder and recursing into both maps and slices so a matched key is masked at any depth.
+func redactHitlValue(v any, redact map[string]struct{}) any {
+	switch val := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, child := range val {
+			if _, deny := redact[strings.TrimSpace(k)]; deny {
+				out[k] = RedactedSecretPlaceholder
+				continue
+			}
+			out[k] = redactHitlValue(child, redact)
 		}
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			cur[p] = next
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, child := range val {
+			out[i] = redactHitlValue(child, redact)
 		}
-		cur = next
+		return out
+	default:
+		return v
 	}
 }

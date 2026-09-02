@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -196,6 +197,38 @@ func TestRedactHitlArgs_masksKeys(t *testing.T) {
 	}
 	if out["token"] != RedactedSecretPlaceholder {
 		t.Fatalf("token not redacted: %v", out["token"])
+	}
+}
+
+// A configured key must be masked wherever it occurs — nested in a map, in a list, and in a map
+// inside a list — not only at the top level (issue #358). Previously anything under a list leaked.
+func TestRedactHitlArgs_masksNestedInArrays(t *testing.T) {
+	args := map[string]any{
+		"topSecret": "MASK_TOP",
+		"config":    []any{map[string]any{"topSecret": "MASK_IN_LIST"}},
+		"nested":    map[string]any{"topSecret": "MASK_IN_MAP"},
+		"deep":      []any{[]any{map[string]any{"topSecret": "MASK_DEEP"}}},
+		"keep":      "visible",
+		"list":      []any{"a", "b"},
+	}
+	out := RedactHitlArgs(args, []string{"topSecret"})
+	b, _ := json.Marshal(out)
+	s := string(b)
+	for _, leak := range []string{"MASK_TOP", "MASK_IN_LIST", "MASK_IN_MAP", "MASK_DEEP"} {
+		if strings.Contains(s, leak) {
+			t.Fatalf("secret %q leaked past redaction: %s", leak, s)
+		}
+	}
+	// Non-secret data is preserved.
+	if !strings.Contains(s, "visible") || out["keep"] != "visible" {
+		t.Fatalf("non-secret value was altered: %s", s)
+	}
+	if list, ok := out["list"].([]any); !ok || len(list) != 2 || list[0] != "a" {
+		t.Fatalf("non-secret list altered: %v", out["list"])
+	}
+	// The input is not mutated in place.
+	if cfg := args["config"].([]any); cfg[0].(map[string]any)["topSecret"] != "MASK_IN_LIST" {
+		t.Fatalf("RedactHitlArgs mutated its input")
 	}
 }
 
