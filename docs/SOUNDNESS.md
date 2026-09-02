@@ -150,7 +150,11 @@ built-in re-enabled out of band would be a silent capability escape, so the guar
 before any spawn. **Live-verification obligation:** that the pinned CLI actually *denies* built-in
 tools for the emitted flags (not merely that the adapter emits them) must be confirmed by an
 integration check against the pinned CLI version before the runtime is wired to a live run — a
-unit test with a fake process cannot close this gap.
+unit test with a fake process cannot close this gap. *Exhibit:*
+`internal/runtime/claudecode` `TestS9Live_builtinsAreDeniedByPinnedCLI` (build tag `s9live`,
+env gate `TERFYN_S9_LIVE=1`) spawns the real `claude` with the adapter's real argv and asserts
+the CLI advertises only the granted `mcp__*` op at init and cannot write a sentinel file via a
+built-in; see [`EXTERNAL_RUNTIME.md`](EXTERNAL_RUNTIME.md) → *Running the S9 live check*.
 
 ---
 
