@@ -3,10 +3,15 @@ package claudecode
 import (
 	"context"
 	"errors"
-	"strings"
+	"path/filepath"
 	"testing"
 
+	"github.com/Terfyn/terfyn/internal/config"
+	"github.com/Terfyn/terfyn/internal/execir"
 	"github.com/Terfyn/terfyn/internal/runtime"
+	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/state/sqlite"
 )
 
 func TestRegistered(t *testing.T) {
@@ -22,26 +27,122 @@ func TestRegistered(t *testing.T) {
 	}
 }
 
-func TestStubNotImplemented(t *testing.T) {
+func TestResumeStillPending(t *testing.T) {
 	r, err := NewFromDeps(runtime.Deps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Invoke(context.Background(), nil, runtime.InvokeOptions{}); !errors.Is(err, errPendingIntegration) {
-		t.Fatalf("Invoke should be not-implemented, got %v", err)
+	if _, err := r.Resume(context.Background(), nil, runtime.ResumeOptions{}); !errors.Is(err, errResumePending) {
+		t.Fatalf("Resume should be pending (#367 follow-up), got %v", err)
 	}
-	if _, err := r.Resume(context.Background(), nil, runtime.ResumeOptions{}); !errors.Is(err, errPendingIntegration) {
-		t.Fatalf("Resume should be not-implemented, got %v", err)
-	}
-	if h := r.Health(context.Background()); h.State != runtime.HealthDegraded {
-		t.Fatalf("stub Health should be degraded, got %q", h.State)
+	if h := r.Health(context.Background()); h.State != runtime.HealthOK {
+		t.Fatalf("wired runtime Health should be OK, got %q", h.State)
 	}
 }
 
-// TestErrorNamesFollowUp keeps the not-implemented error pointing at the adapter issue so a user
-// who selects the runtime early gets a clear signpost.
-func TestErrorNamesFollowUp(t *testing.T) {
-	if !strings.Contains(errPendingIntegration.Error(), "#338") {
-		t.Fatalf("not-implemented error should reference #338: %v", errPendingIntegration)
+// TestInvoke_endToEnd drives the flagship single-agent workflow through a fake process, exercising
+// the full run lifecycle: resolve the driven agent, create the run row + trace, run, and FinishRun.
+func TestInvoke_endToEnd(t *testing.T) {
+	ctx := context.Background()
+	root, err := filepath.Abs(filepath.Join("..", "..", "..", "examples", "external-runtime-reviewer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Resolve(config.ResolveOptions{ProjectRoot: root, Env: ""})
+	if err != nil {
+		t.Fatalf("resolve flagship project: %v", err)
+	}
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "invoke.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	rt := &Runtime{
+		deps:   runtime.Deps{Store: st},
+		driver: ClaudeCodeRuntime{Run: fakeRunner(successStream, nil, nil)},
+	}
+	res, err := rt.Invoke(ctx, cfg, runtime.InvokeOptions{
+		WorkflowName: "review",
+		InputJSON:    []byte(`{"change":"add a null check"}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if res.RunID == "" {
+		t.Fatal("no run id")
+	}
+
+	run, err := st.GetRun(ctx, res.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != state.RunStatusSucceeded {
+		t.Fatalf("run status = %q, want succeeded", run.Status)
+	}
+
+	events, err := st.ListTraceEventsByRunID(ctx, res.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) < 2 || events[0].Type != "run_started" || events[len(events)-1].Type != "run_finished" {
+		t.Fatalf("run should be bracketed by run_started..run_finished, got %+v", events)
+	}
+}
+
+// A workflow whose name is unknown is a clear error, not a silent no-op.
+func TestInvoke_unknownWorkflow(t *testing.T) {
+	ctx := context.Background()
+	root, _ := filepath.Abs(filepath.Join("..", "..", "..", "examples", "external-runtime-reviewer"))
+	cfg, err := config.Resolve(config.ResolveOptions{ProjectRoot: root, Env: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, _ := sqlite.Open(ctx, filepath.Join(t.TempDir(), "u.db"))
+	t.Cleanup(func() { _ = st.Close() })
+	rt := &Runtime{deps: runtime.Deps{Store: st}, driver: ClaudeCodeRuntime{Run: fakeRunner(successStream, nil, nil)}}
+	if _, err := rt.Invoke(ctx, cfg, runtime.InvokeOptions{WorkflowName: "nope"}); err == nil {
+		t.Fatal("unknown workflow must error")
+	}
+}
+
+// resolveDrivenAgent gates on the executable, not a distinct-agent count (issue #367 review): a
+// single-agent workflow wrapped in control flow, or a multi-step chain, drops orchestration when
+// spawned once, so it must be refused — not silently accepted.
+func TestResolveDrivenAgent_gatesOnExecutable(t *testing.T) {
+	graph := reviewerGraph()
+	graph.Agents["Other"] = &spec.AgentResource{Metadata: spec.Metadata{Name: "Other"}, Spec: spec.AgentSpec{Model: "mock/gpt-4"}}
+	wf := &spec.WorkflowResource{Metadata: spec.Metadata{Name: "review"}}
+
+	prog := func(nodes ...execir.Node) map[string]*execir.Program {
+		return map[string]*execir.Program{"review": {Workflow: "review", Body: nodes}}
+	}
+
+	// Faithful: exactly one unconditional agent invocation (+ return).
+	ar, err := resolveDrivenAgent(graph, wf, prog(&execir.InvokeAgent{Agent: "Reviewer"}, &execir.Return{}))
+	if err != nil || ar == nil || ar.Metadata.Name != "Reviewer" {
+		t.Fatalf("faithful single-agent workflow: ar=%v err=%v", ar, err)
+	}
+
+	// Refused shapes.
+	cases := map[string]*execir.Program{
+		"control flow (retry)":  {Body: []execir.Node{&execir.InvokeAgent{Agent: "Reviewer"}, &execir.Retry{}}},
+		"control flow (branch)": {Body: []execir.Node{&execir.Branch{}}},
+		"multi-agent":           {Body: []execir.Node{&execir.InvokeAgent{Agent: "Reviewer"}, &execir.InvokeAgent{Agent: "Other"}}},
+		"multi-step chain":      {Body: []execir.Node{&execir.InvokeAgent{Agent: "Reviewer"}, &execir.InvokeTool{Uses: "tool.workspace.read_file"}}},
+		"tool-only (no agent)":  {Body: []execir.Node{&execir.InvokeTool{Uses: "tool.workspace.read_file"}}},
+		"subworkflow":           {Body: []execir.Node{&execir.InvokeWorkflow{Workflow: "other"}, &execir.InvokeAgent{Agent: "Reviewer"}}},
+	}
+	for name, p := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := resolveDrivenAgent(graph, wf, map[string]*execir.Program{"review": p}); err == nil {
+				t.Fatalf("%s must be refused by the external runtime", name)
+			}
+		})
+	}
+
+	// No executable at all is refused (fail closed).
+	if _, err := resolveDrivenAgent(graph, wf, nil); err == nil {
+		t.Fatal("a workflow with no executable must be refused")
 	}
 }
