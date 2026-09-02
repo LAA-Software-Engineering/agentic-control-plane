@@ -21,8 +21,8 @@ func TestParse_instructionsFileRef(t *testing.T) {
 	if ad.InstructionsFile.Path.Value != "prompts/r.md" {
 		t.Fatalf("path = %q", ad.InstructionsFile.Path.Value)
 	}
-	if ad.InstructionsFile.Resolved != "" {
-		t.Fatal("Resolved must be empty after a bare parse (the loader fills it)")
+	if ad.InstructionsFile.Resolved != nil {
+		t.Fatal("Resolved must be nil (unresolved) after a bare parse — the loader fills it")
 	}
 	// fmt round-trips the file() reference, never resolved text, and is idempotent.
 	out := Print(f)

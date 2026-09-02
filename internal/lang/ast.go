@@ -88,16 +88,17 @@ type StringLit struct {
 func (s *StringLit) Position() Pos { return s.Pos }
 
 // InstructionsFile is `instructions file("path")` — a load-time file reference (#360). Path is the
-// quoted relative path literal; Resolved holds the file's UTF-8 contents, filled by the project
-// loader after reading and validating the path (it is empty after a bare lang.Parse, e.g. under
-// `terfyn fmt`, which re-emits the file("...") form rather than the resolved text). The resolved
-// text lowers verbatim into AgentSpec.Instructions and is therefore pinned into the deployment
-// snapshot and folded into the spec hash like any inline instruction — a changed file surfaces as
-// a plan diff, not a silent behavior change.
+// quoted relative path literal; Resolved holds the file's UTF-8 contents once the project loader has
+// read and validated the path. It is a pointer so an unresolved reference (nil, e.g. after a bare
+// lang.Parse under `terfyn fmt`, which re-emits the file("...") form) is distinct from a
+// legitimately empty file (non-nil ""): lowering rejects an unresolved ref rather than silently
+// pinning an empty prompt into the spec hash / deployment snapshot. The resolved text lowers
+// verbatim into AgentSpec.Instructions like any inline instruction — a changed file surfaces as a
+// plan diff, not a silent behavior change.
 type InstructionsFile struct {
 	Pos      Pos
 	Path     *StringLit
-	Resolved string
+	Resolved *string
 }
 
 func (f *InstructionsFile) Position() Pos { return f.Pos }

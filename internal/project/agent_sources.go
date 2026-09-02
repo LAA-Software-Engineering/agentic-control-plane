@@ -36,7 +36,7 @@ func resolveInstructionFiles(f *lang.File, agentPath, rootAbs string) error {
 			return fmt.Errorf("%s: agent instructions file(%q): %w",
 				ad.InstructionsFile.Path.Pos, ad.InstructionsFile.Path.Value, err)
 		}
-		ad.InstructionsFile.Resolved = text
+		ad.InstructionsFile.Resolved = &text
 	}
 	return nil
 }

@@ -25,8 +25,8 @@ func TestResolveInstructionFiles_reads(t *testing.T) {
 		t.Fatal(err)
 	}
 	ad := f.Decls[0].(*lang.AgentDecl)
-	if ad.InstructionsFile.Resolved != "hello prompt" {
-		t.Fatalf("resolved = %q", ad.InstructionsFile.Resolved)
+	if ad.InstructionsFile.Resolved == nil || *ad.InstructionsFile.Resolved != "hello prompt" {
+		t.Fatalf("resolved = %v", ad.InstructionsFile.Resolved)
 	}
 }
 
