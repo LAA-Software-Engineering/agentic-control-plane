@@ -14,8 +14,12 @@ type Transport struct {
 	// stdio transport
 	Command string
 	Args    []string
-	// http transport (e.g. a local socket bound to 127.0.0.1)
+	// http transport (e.g. a loopback endpoint from Server.ListenLocal)
 	URL string
+	// Headers are sent on every HTTP request to URL — for the per-run bearer token that
+	// authenticates the endpoint (e.g. {"Authorization": "Bearer <token>"}). Claude Code's
+	// --mcp-config honors http headers.
+	Headers map[string]string
 }
 
 // MCPConfigJSON renders the --mcp-config document that registers the per-run server under
@@ -29,6 +33,9 @@ func MCPConfigJSON(serverName string, t Transport) ([]byte, error) {
 	switch {
 	case t.URL != "":
 		entry = map[string]any{"type": "http", "url": t.URL}
+		if len(t.Headers) > 0 {
+			entry["headers"] = t.Headers
+		}
 	case t.Command != "":
 		entry = map[string]any{"type": "stdio", "command": t.Command, "args": t.Args}
 	default:
