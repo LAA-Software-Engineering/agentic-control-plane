@@ -88,6 +88,53 @@ func normSpecJSON(t *testing.T, tr *spec.ToolResource) string {
 	return string(b)
 }
 
+// TestInlinePolicy_YAMLEquivalence mirrors the tool golden on the security-relevant policy
+// projection (permit / permitWithApproval / requiredFor / execution): an inline policy and its YAML
+// twin normalize to byte-identical spec JSON, so a future change to policy lowering or normalization
+// cannot silently diverge on the approval/effect surface.
+func TestInlinePolicy_YAMLEquivalence(t *testing.T) {
+	agentSrc := `policy coding {
+    execution { maxTotalCostUsd 5  maxWallClockSeconds 300 }
+    approvals { requiredFor { tool.workspace.run_tests } }
+    effects {
+        permit             { workspace.read }
+        permitWithApproval { workspace.write }
+    }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Policy
+metadata: {name: coding}
+spec:
+  execution: {maxTotalCostUsd: 5, maxWallClockSeconds: 300}
+  approvals: {requiredFor: [tool.workspace.run_tests]}
+  effects:
+    permit: [workspace.read]
+    permitWithApproval: [workspace.write]
+`
+	inline := lowerToolsOrFatal(t, agentSrc).Policies[0]
+
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "coding.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.PolicyResource)
+
+	if normPolicySpecJSON(t, inline) != normPolicySpecJSON(t, fromYAML) {
+		t.Fatalf("inline policy spec differs from YAML twin:\n inline: %s\n yaml:   %s", normPolicySpecJSON(t, inline), normPolicySpecJSON(t, fromYAML))
+	}
+}
+
+func normPolicySpecJSON(t *testing.T, pr *spec.PolicyResource) string {
+	t.Helper()
+	g := &spec.ProjectGraph{Policies: map[string]*spec.PolicyResource{pr.Metadata.Name: pr}}
+	spec.NormalizeProjectGraph(g)
+	b, err := json.Marshal(g.Policies[pr.Metadata.Name].Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
 func TestInlinePolicy_Lowering(t *testing.T) {
 	res := lowerToolsOrFatal(t, `policy p {
     execution { maxTotalCostUsd 5 maxWallClockSeconds 300 }
