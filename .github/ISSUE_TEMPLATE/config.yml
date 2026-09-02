@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Terfyn/terfyn/security/advisories/new
+    about: Please report vulnerabilities privately — not as a public issue. See SECURITY.md.
   - name: Documentation
     url: https://github.com/Terfyn/terfyn/tree/main/docs
     about: Spec, CLI behavior, the .agent grammar, examples, and the authority-soundness invariants — often the fastest answer.

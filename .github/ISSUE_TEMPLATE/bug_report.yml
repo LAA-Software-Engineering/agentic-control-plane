@@ -7,7 +7,10 @@ body:
       value: |
         Thanks for filing a bug. Please include enough to reproduce it — a minimal `.agent`/YAML
         project and the exact command usually does it. If the report involves a security or
-        authority-boundary weakness, please avoid posting a working exploit in a public issue.
+        authority-boundary weakness (a break of an invariant in
+        [SOUNDNESS.md](https://github.com/Terfyn/terfyn/blob/main/docs/SOUNDNESS.md)), please report
+        it privately per [SECURITY.md](https://github.com/Terfyn/terfyn/blob/main/SECURITY.md)
+        instead of filing a public issue.
   - type: textarea
     id: what-happened
     attributes:
