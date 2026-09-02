@@ -362,6 +362,8 @@ func (r *runner) exec(scope map[string]any, n Node, path, loop []int) error {
 		return r.execLoop(scope, v, path, loop)
 	case *While:
 		return r.execWhile(scope, v, path, loop)
+	case *Retry:
+		return r.execRetry(scope, v, path, loop)
 	case *Graph:
 		return r.execGraph(scope, v, path, loop)
 	case *Return:
@@ -569,6 +571,54 @@ func (r *runner) execWhile(scope map[string]any, w *While, path, loop []int) err
 		}
 	}
 	return nil
+}
+
+// RetryExhaustedError terminates a run when a `retry until` loop exhausts its attempts with the
+// success condition still false (#361). It is the explicit, deterministic failure that `while`
+// lacks: rather than falling through when the bound is reached, the run ends as not-successful.
+type RetryExhaustedError struct {
+	Limit int
+}
+
+func (e *RetryExhaustedError) Error() string {
+	return fmt.Sprintf("retry until: exhausted %d attempts with the condition still false", e.Limit)
+}
+
+// execRetry runs a bounded retry-until loop (#361). The body runs up to Limit times; the SUCCESS
+// condition is checked AFTER each attempt (so the body always runs at least once), and the loop
+// exits as soon as it becomes true. Exhausting the attempts with the condition still false is a
+// terminal RetryExhaustedError — the visible failure a bounded agent-retry loop wants, versus
+// while's silent success on exhaustion. Each attempt's control decision is recorded so a durable
+// resume replays the same number of attempts (S7).
+func (r *runner) execRetry(scope map[string]any, rt *Retry, path, loop []int) error {
+	max := r.in.maxIters()
+	if rt.Limit > 0 && rt.Limit < max {
+		max = rt.Limit
+	}
+	for i := 0; i < max; i++ {
+		iter := extend(loop, i)
+		if err := r.execAll(scope, rt.Body, path, iter); err != nil {
+			return err
+		}
+		if r.done {
+			return nil
+		}
+		cond, err := evalExpr(scope, rt.Cond)
+		if err != nil {
+			return err
+		}
+		taken := 0
+		if cond {
+			taken = 1
+		}
+		if err := r.sess.checkControl(controlKey("retry:", path, iter), taken); err != nil {
+			return err
+		}
+		if cond {
+			return nil
+		}
+	}
+	return &RetryExhaustedError{Limit: rt.Limit}
 }
 
 // execLoopParallel is dynamic fan-out: one iteration per collection element,

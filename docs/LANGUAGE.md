@@ -119,12 +119,13 @@ Param       = Ident ":" Ident ;                 (* name : Type *)
 Effects     = Effect { [ "," ] Effect } ;       (* commas optional *)
 Effect      = Ident { "." Ident } ;             (* bare dotted; no "tool." prefix *)
 
-Statement   = Assign | Parallel | If | For | While | Return | ExprStmt ;
+Statement   = Assign | Parallel | If | For | While | Retry | Return | ExprStmt ;
 Assign      = Ident "=" Expr ;
 Parallel    = "parallel" "{" { Assign } "}" ;   (* static fan-out, #192 *)
 If          = "if" Cond Block [ "else" ( If | Block ) ] ;            (* #199 *)
 For         = [ "parallel" ] "for" Ident "in" Expr Block ;           (* #199 *)
 While       = "while" Cond "limit" Number Block ;                    (* bounded, #288 *)
+Retry       = "retry" "until" Cond "limit" Number Block ;            (* bounded, fail-on-exhaustion, #361 *)
 Block       = "{" { Statement } "}" ;
 Return      = "return" Expr ;
 ExprStmt    = Expr ;                            (* a call for its effect *)
@@ -159,6 +160,17 @@ Notes:
   **mandatory positive integer literal** — a missing, zero, fractional, or dynamic
   (`limit input.max`) bound is a diagnostic. There is no unbounded `while` and no
   `parallel while`. See [Bounded termination](#bounded-termination) for the semantics.
+- `retry until <cond> limit N { … }` is the **bounded-retry** companion (#361): run the body
+  up to `N` times, check `<cond>` (the *success* condition) **after each attempt**, and exit
+  the loop as soon as it is true — but if the attempts are **exhausted** with `<cond>` still
+  false, the run **fails** (a distinct, deterministic terminal error) rather than falling
+  through. This is the difference from `while`: `while !approved limit 3` exits *successfully*
+  after 3 rejected rounds, so execution reaches whatever follows the loop; `retry until approved
+  limit 3` reaches the code after the block **only** when `approved` is true, and otherwise
+  terminates the run as not-successful. `retry` and `until` are contextual keywords (only the
+  `retry until` shape is the construct; a binding may still be named `retry`), the bound obeys
+  the same `limit N` rule as `while`, and the per-run iteration bound in `terfyn plan` is
+  identical.
 - **Conditions are pure**: a call is not allowed inside an `if`, a `while`, or a comparison
   operand. Bind a call's result to a name and test the name. This keeps conditions
   effect-free and the effect bound trivially the union over both arms.

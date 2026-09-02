@@ -299,6 +299,25 @@ type WhileStmt struct {
 func (s *WhileStmt) Position() Pos { return s.Pos }
 func (s *WhileStmt) stmtNode()     {}
 
+// RetryStmt is `retry until <Cond> limit <N> { <Body> }` (#361): a bounded RETRY loop,
+// the fail-on-exhaustion companion to `while`. It runs its body until Cond (the SUCCESS
+// condition) becomes truthy, at most Limit times; the condition is checked AFTER each
+// attempt so the body always runs at least once, and — unlike `while`, which exits
+// silently when its bound is reached — if the attempts are exhausted with Cond still
+// false the run FAILS with an explicit, deterministic outcome rather than falling through.
+// Limit is a positive integer literal (the same bound rule as `while`; ADR 002 §6), so the
+// per-run iteration bound it contributes to `terfyn plan` is identical. Loop-carried state
+// follows the sequential-loop rule. It lowers to the execution IR's Retry.
+type RetryStmt struct {
+	Pos   Pos
+	Cond  Expr
+	Limit int
+	Body  []Stmt
+}
+
+func (s *RetryStmt) Position() Pos { return s.Pos }
+func (s *RetryStmt) stmtNode()     {}
+
 // --- Expressions ------------------------------------------------------------
 
 // Expr is a workflow expression: a CallExpr, a RefExpr, or — in a condition or

@@ -446,7 +446,7 @@ func (wl *workflowLowerer) lowerBody(body []lang.Stmt) {
 			if len(next) > 0 {
 				frontier = next
 			}
-		case *lang.IfStmt, *lang.ForStmt, *lang.WhileStmt:
+		case *lang.IfStmt, *lang.ForStmt, *lang.WhileStmt, *lang.RetryStmt:
 			// Control flow does not become a WorkflowStep field (ADR 002 §4); it
 			// lowers to the execution IR (LowerExec). The resource projection
 			// instead FLATTENS every reachable arm/body into steps so the effect
@@ -506,6 +506,11 @@ func (wl *workflowLowerer) lowerControlStmts(body []lang.Stmt, predNeeds []strin
 			// A bounded while flattens its body the same way (the union over the
 			// reachable steps); the iteration bound is orthogonal to the effect
 			// bound (ADR 002 §6) and is not represented in the resource projection.
+			wl.lowerControlStmts(s.Body, predNeeds)
+		case *lang.RetryStmt:
+			// A bounded retry-until flattens its body the same way as while: the effect
+			// bound is the union over the reachable steps, orthogonal to the iteration
+			// bound and the on-exhaustion failure (#361).
 			wl.lowerControlStmts(s.Body, predNeeds)
 		case *lang.ReturnStmt:
 			wl.output = &spec.WorkflowOutput{

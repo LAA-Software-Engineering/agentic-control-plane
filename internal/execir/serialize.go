@@ -158,6 +158,9 @@ func wireNode(n Node) nodeWire {
 	case *While:
 		ew := wireExpr(v.Cond)
 		return nodeWire{Kind: "while", Cond: &ew, Limit: v.Limit, Body: wireNodes(v.Body)}
+	case *Retry:
+		ew := wireExpr(v.Cond)
+		return nodeWire{Kind: "retry", Cond: &ew, Limit: v.Limit, Body: wireNodes(v.Body)}
 	case *Return:
 		vw := wireVal(v.Value)
 		return nodeWire{Kind: "return", Value: &vw}
@@ -294,6 +297,8 @@ func decodeNode(n nodeWire) Node {
 		return &Loop{Var: n.Var, Parallel: n.Parallel, Collection: decodeValPtr(n.Collection), Body: decodeNodes(n.Body)}
 	case "while":
 		return &While{Cond: decodeExprPtr(n.Cond), Limit: n.Limit, Body: decodeNodes(n.Body)}
+	case "retry":
+		return &Retry{Cond: decodeExprPtr(n.Cond), Limit: n.Limit, Body: decodeNodes(n.Body)}
 	case "return":
 		return &Return{Value: decodeValPtr(n.Value)}
 	case "graph":

@@ -96,6 +96,12 @@ func encodeNode(b *strings.Builder, n Node) {
 		b.WriteString(" limit ")
 		b.WriteString(strconv.Itoa(v.Limit))
 		encodeNodes(b, v.Body)
+	case *Retry:
+		b.WriteString("retry until ")
+		encodeExpr(b, v.Cond)
+		b.WriteString(" limit ")
+		b.WriteString(strconv.Itoa(v.Limit))
+		encodeNodes(b, v.Body)
 	case *Return:
 		b.WriteString("return ")
 		encodeValue(b, v.Value)
