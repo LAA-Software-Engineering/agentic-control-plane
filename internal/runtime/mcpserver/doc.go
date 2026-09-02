@@ -16,4 +16,10 @@
 // tools.ToolExecutor.Call — so the capability grant, not the harness prompt, stays the
 // authority boundary. Interactive HITL prompting for an out-of-process agent, budget
 // mapping (#340), and trace integration (#341) wrap this server in their own issues.
+//
+// Two transports serve the same [Server]: [Server.Serve] frames JSON-RPC over stdio, and
+// [Server.HTTPHandler] / [Server.ListenLocal] serve it over loopback HTTP (issue #367). The
+// external Claude Code runtime uses the HTTP transport so the per-run server stays in the Terfyn
+// process — with direct access to the run's dispatcher — rather than a subprocess that would have
+// to re-hydrate the run's authority.
 package mcpserver

@@ -59,6 +59,7 @@ type jsonRPCError struct {
 
 // JSON-RPC error codes used by the server (a subset of the spec's reserved range).
 const (
+	codeParseError     = -32700
 	codeMethodNotFound = -32601
 	codeInvalidParams  = -32602
 )
