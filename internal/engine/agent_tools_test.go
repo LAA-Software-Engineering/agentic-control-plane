@@ -10,19 +10,19 @@ import (
 
 func TestAgentMaxIterations(t *testing.T) {
 	t.Parallel()
-	if got := agentMaxIterations(nil); got != defaultAgentMaxIterations {
+	if got := agentMaxIterations(nil); got != spec.DefaultAgentMaxIterations {
 		t.Fatalf("nil agent = %d", got)
 	}
-	if got := agentMaxIterations(&spec.AgentResource{}); got != defaultAgentMaxIterations {
+	if got := agentMaxIterations(&spec.AgentResource{}); got != spec.DefaultAgentMaxIterations {
 		t.Fatalf("unset = %d", got)
 	}
-	if got := agentMaxIterations(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{MaxIterations: 0}}}); got != defaultAgentMaxIterations {
+	if got := agentMaxIterations(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{MaxIterations: 0}}}); got != spec.DefaultAgentMaxIterations {
 		t.Fatalf("zero = %d", got)
 	}
 	if got := agentMaxIterations(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{MaxIterations: 2}}}); got != 2 {
 		t.Fatalf("explicit = %d", got)
 	}
-	if got := agentMaxIterations(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{MaxIterations: 99}}}); got != hardAgentMaxIterations {
+	if got := agentMaxIterations(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{MaxIterations: 99}}}); got != spec.HardAgentMaxIterations {
 		t.Fatalf("hard cap = %d", got)
 	}
 }
