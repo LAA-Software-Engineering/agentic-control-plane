@@ -2,8 +2,6 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -294,9 +292,8 @@ func (e *Executor) generateAgentTurn(
 		return models.GenerateResponse{}, err
 	}
 	if e.Trace != nil {
-		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventLLMCompletion, trace.ActorAgent, map[string]any{
-			"agent": step.Agent, "model": modelRef, "costUsd": resp.Meta.CostUSD,
-		})
+		_, _ = e.Trace.Append(ctx, runID, step.ID, trace.EventLLMCompletion, trace.ActorAgent,
+			trace.LLMCompletionData(step.Agent, modelRef, resp.Meta.CostUSD))
 	}
 	return resp, nil
 }
@@ -336,16 +333,11 @@ func (e *Executor) appendCostLimitHit(ctx context.Context, runID, stepID string,
 // costLimitHitData is the limit_hit payload for execution.maxTotalCostUsd (issue #163).
 // This is not [trace.LimitHitTraceData], which is byte-oriented (issue #117).
 func costLimitHitData(d *policy.DeniedError, stepID string) map[string]any {
-	data := map[string]any{
-		"kind":   "max_cost",
-		"stepId": stepID,
-	}
+	var extra map[string]any
 	if d != nil {
-		for k, v := range d.Extra {
-			data[k] = v
-		}
+		extra = d.Extra
 	}
-	return data
+	return trace.LimitHitData("max_cost", stepID, extra)
 }
 
 func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {
@@ -380,39 +372,20 @@ func (e *Executor) appendToolExecution(ctx context.Context, runID, stepID, uses 
 	_, _ = e.Trace.Append(ctx, runID, stepID, trace.EventToolExecution, trace.ActorAgent, toolExecutionData(uses, meta, callErr))
 }
 
-// toolSelectionData is the tool_selection payload for workflow uses: steps and agent-loop inner calls.
-// argumentsDigest is SHA-256 over canonical JSON so raw arguments (which may contain secrets) are not stored.
+// toolSelectionData / toolExecutionData / argumentsDigest delegate to the shared trace builders
+// (issue #341) so the internal loop and the external runtime emit structurally identical events.
 func toolSelectionData(uses string, args map[string]any) map[string]any {
-	data := map[string]any{
-		"uses":            uses,
-		"argumentsDigest": argumentsDigest(args),
-	}
-	if name := toolNameFromUses(uses); name != "" {
-		data["tool"] = name
-	}
-	return data
+	return trace.ToolSelectionData(uses, toolNameFromUses(uses), args)
 }
-
-// toolCallFailedReason is the stable tool_execution error value. Raw Error() strings are not
-// persisted: HTTP/native/MCP failures often embed URLs, bodies, or secrets, and
-// PrepareEventData only redacts known *keys*.
-const toolCallFailedReason = "tool_call_failed"
 
 func toolExecutionData(uses string, meta tools.ToolCallMeta, callErr error) map[string]any {
-	data := map[string]any{
-		"uses":       uses,
-		"durationMs": meta.DurationMs,
-		"costUsd":    meta.CostUSD,
-		"success":    callErr == nil,
-	}
-	if name := toolNameFromUses(uses); name != "" {
-		data["tool"] = name
-	}
-	if callErr != nil {
-		data["error"] = toolCallFailedReason
-	}
-	return data
+	return trace.ToolExecutionData(uses, toolNameFromUses(uses), meta.DurationMs, meta.CostUSD, callErr != nil)
 }
+
+func argumentsDigest(args map[string]any) string { return trace.ArgumentsDigest(args) }
+
+// toolCallFailedReason is the redacted tool_execution error value (see trace.ToolCallFailedReason).
+const toolCallFailedReason = trace.ToolCallFailedReason
 
 func toolNameFromUses(uses string) string {
 	name, _, err := tools.ParseUses(uses)
@@ -420,17 +393,4 @@ func toolNameFromUses(uses string) string {
 		return ""
 	}
 	return name
-}
-
-func argumentsDigest(args map[string]any) string {
-	if args == nil {
-		args = map[string]any{}
-	}
-	b, err := json.Marshal(args)
-	if err != nil {
-		sum := sha256.Sum256([]byte(fmt.Sprintf("%v", args)))
-		return hex.EncodeToString(sum[:])
-	}
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
 }
