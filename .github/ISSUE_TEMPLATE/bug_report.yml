@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in Terfyn behaves incorrectly (a crash, wrong output, or a broken command).
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please include enough to reproduce it — a minimal `.agent`/YAML
+        project and the exact command usually does it. If the report involves a security or
+        authority-boundary weakness, please avoid posting a working exploit in a public issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What went wrong, and what you expected instead.
+      placeholder: |
+        `terfyn plan` reported ... but I expected ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands, in order. A minimal project that triggers it is ideal.
+      placeholder: |
+        1. `terfyn validate --project ./repro`
+        2. `terfyn plan --project ./repro --state /tmp/repro.db`
+        3. See the error below.
+    validations:
+      required: true
+  - type: textarea
+    id: project
+    attributes:
+      label: Minimal project / .agent source (if applicable)
+      description: The smallest `.agent` and/or YAML that reproduces it. This will be rendered as code.
+      render: text
+  - type: textarea
+    id: output
+    attributes:
+      label: Command output
+      description: The full output, including the error and any exit code. This will be rendered as code.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Terfyn version
+      description: Output of `terfyn version` (or the commit SHA if built from source).
+      placeholder: "e.g. v0.x.y (or terfyn version -o json)"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other / multiple
+    validations:
+      required: true
+  - type: input
+    id: go-version
+    attributes:
+      label: Go version (if built from source)
+      placeholder: "go version — e.g. go1.25.x"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Logs, `terfyn logs`/`terfyn audit verify` output, screenshots, or context that helps.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I can reproduce this on the latest release or `main`.
+          required: true

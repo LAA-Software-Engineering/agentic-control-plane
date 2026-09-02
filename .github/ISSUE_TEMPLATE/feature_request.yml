@@ -1,0 +1,66 @@
+name: Feature request
+description: Propose a new capability or an improvement to Terfyn.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Terfyn's job is to make the authority of nondeterministic agents statically bounded,
+        reviewable before execution, and invariant across the run. Proposals are weighed against
+        that center and the scope boundary in [ADR 004](https://github.com/Terfyn/terfyn/blob/main/docs/adr/004-scope-and-non-goals.md).
+        Framing your request around the problem (not just the solution) helps a lot.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What can't you do today, and why does it matter? What are you trying to accomplish?
+      placeholder: |
+        When I ... I can't ..., so I have to ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like Terfyn to do. Sketch the CLI, `.agent`/YAML surface, or plan/output if relevant.
+      placeholder: |
+        Add `terfyn ...` / a `spec.…` field that ...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you've tried, or other designs you weighed.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Terfyn does this touch? (Best guess — a maintainer will confirm labels.)
+      multiple: true
+      options:
+        - CLI
+        - .agent language / spec
+        - Policy / authority / effects
+        - Plan / diff
+        - Runtime / engine
+        - Tools (native / HTTP / MCP)
+        - State / audit / trace
+        - Docs / examples
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Prior art, links, or examples of the same idea elsewhere.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This fits Terfyn's scope (authority governance for agents), not an unrelated tool.
+          required: false
