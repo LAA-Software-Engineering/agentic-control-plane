@@ -1,0 +1,8 @@
+name: capability-invariants
+# The reproducible proof of "the model literally cannot select the operation": the Reviewer's
+# authority provably cannot produce workspace.write (what write_file does), regardless of which
+# runtime executes the program. `terfyn test` runs this offline.
+assert:
+  forbidEffect:
+    - agent: Reviewer
+      effect: workspace.write

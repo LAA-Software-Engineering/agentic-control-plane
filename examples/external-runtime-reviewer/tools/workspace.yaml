@@ -1,0 +1,24 @@
+apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: workspace
+spec:
+  type: native
+  safety:
+    trusted: true
+    sideEffects: true
+  # The closed set of operations any agent may be granted on the workspace, each with the
+  # effect class it can produce (issue #204 closed world). The effect bound is computed over
+  # this manifest, and — crucially for the external runtime — the per-run MCP server's
+  # tools/list is compiled from an agent's *grants* against this manifest (issue #338). An
+  # operation that is not granted never appears in tools/list.
+  #
+  # write_file is declared here (it is a real workspace capability) but the Reviewer is not
+  # granted it, so it is unreachable to the Reviewer under any runtime.
+  operations:
+    read_file:
+      effects: [workspace.read]
+    write_file:
+      effects: [workspace.write]
+    run_tests:
+      effects: [process.exec]

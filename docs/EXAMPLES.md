@@ -41,7 +41,7 @@ YAML remains valid ingress and the compilation/interchange format, so a workflow
 
 `spec.imports` lists YAML files relative to the project root. `defaults.model` uses the form **`namespace/model_id`**, where **`namespace`** matches a key under `spec.providers.models`.
 
-Optional **`defaults.runtime`** sets where agents and workflows run in MVP: only **`local`** is valid (or omit for implicit local). Resources that omit **`spec.runtime`** inherit this value when the merged project graph is normalized.
+Optional **`defaults.runtime`** sets where agents and workflows run: the built-in **`local`** engine (or omit for implicit local), or an external agent runtime such as **`claude-code`** (see [`EXTERNAL_RUNTIME.md`](EXTERNAL_RUNTIME.md) and section 9). Resources that omit **`spec.runtime`** inherit this value when the merged project graph is normalized.
 
 ```yaml
 apiVersion: agentic.dev/v0
@@ -412,3 +412,28 @@ terfyn plan     --project examples/implement-review-loop
 
 The example's README walks through the capability boundary and the plan authority-widening output;
 `mock/gpt-4` keeps it reproducible with no API keys.
+
+---
+
+## 9. Same `.agent` under an external runtime (`--runtime claude-code`)
+
+[**`examples/external-runtime-reviewer/`**](../examples/external-runtime-reviewer/README.md) is the
+flagship for the external agent-runtime epic ([#335](https://github.com/Terfyn/terfyn/issues/335)):
+the **same** reviewed `.agent` runs on Terfyn's own engine **or** an external CLI agent
+(`--runtime claude-code`), and the authority is identical either way — *the runtime is replaceable;
+the authority is not.*
+
+A read-only **Reviewer** is granted `read_file` + `run_tests`. The `workspace` tool also declares
+`write_file`, but the Reviewer is not granted it, so under the external runtime the per-run Terfyn
+MCP server's `tools/list` is exactly `{ read_file, run_tests }` — `write_file` is never advertised
+and the external model **cannot select it**.
+
+```bash
+terfyn plan --project examples/external-runtime-reviewer   # effect bound: workspace.write "unreachable"
+terfyn test --project examples/external-runtime-reviewer   # forbidEffect Reviewer → workspace.write: pass
+```
+
+The README reproduces "the model literally cannot select the operation" offline via `plan` + `test`,
+and shows the `--runtime claude-code` run. See [`EXTERNAL_RUNTIME.md`](EXTERNAL_RUNTIME.md) for the
+AgentRuntime boundary and the grant-is-not-a-builtin rule, and
+[ADR 006](adr/006-external-agent-runtimes.md) for the `RuntimeTarget` decision.

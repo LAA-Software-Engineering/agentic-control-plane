@@ -1,0 +1,49 @@
+// Flagship: the SAME reviewed .agent program under an external agent runtime.
+//
+// A read-only Reviewer inspects a change. It is granted exactly two workspace
+// operations — read_file and run_tests — and nothing else. The workspace tool also
+// declares write_file, but the Reviewer is not granted it, so write_file is outside
+// the Reviewer's authority.
+//
+// The point of the epic (#335): this identical program can run on Terfyn's own engine
+// (`--runtime local`) or an external CLI agent (`--runtime claude-code`), and the
+// authority is the same either way. Under claude-code the grant compiles into a per-run
+// Terfyn MCP server whose tools/list is exactly { read_file, run_tests }; write_file —
+// an operation that exists on the tool — is never advertised, so the external model
+// literally cannot select it. The runtime is replaceable; the authority is not.
+//
+// Reproduce the claim offline (mock model, no external process needed):
+//
+//   terfyn validate
+//   terfyn plan                      # effect bound excludes workspace.write; runtime target shown
+//   terfyn test                      # forbidEffect: Reviewer / workspace.write PASSES
+//   terfyn run workflow/review --runtime claude-code   # see README "Running under claude-code"
+
+agent Reviewer {
+    model mock/gpt-4
+    policy reviewer
+
+    instructions """
+    You are an independent, read-only code reviewer.
+
+    Inspect the change described by the input using the capabilities granted to you.
+    You may read files and run tests. You must not modify the workspace — you have no
+    capability to do so, by design.
+
+    Return whether the change is acceptable and, if not, concrete findings.
+    """
+
+    grants {
+        tool.workspace.read_file
+        tool.workspace.run_tests
+    }
+}
+
+workflow review(input: ReviewRequest) -> ReviewResult
+    effects {
+        workspace.read,
+        process.exec
+    }
+{
+    return Reviewer(input)
+}
