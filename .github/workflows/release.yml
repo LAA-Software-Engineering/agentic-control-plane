@@ -127,6 +127,27 @@ jobs:
       - name: Test
         run: go test ./... -count=1 -timeout=10m
 
+      # The VS Code extension .vsix is built and attached here, in the same job that publishes the
+      # release, rather than in a separate workflow keyed on the `release` event: a release created
+      # with GITHUB_TOKEN does not emit an event that can trigger another workflow, so a cross-workflow
+      # attach never fires (issue #403).
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Package VS Code extension (.vsix)
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cd editors/vscode
+          node -e "JSON.parse(require('fs').readFileSync('syntaxes/agent.tmLanguage.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('language-configuration.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
+          npx --yes @vscode/vsce@^3 package --out "${GITHUB_WORKSPACE}/dist/terfyn-agent-${VERSION}.vsix"
+
       - name: Build release binaries
         env:
           CGO_ENABLED: "0"
@@ -149,7 +170,7 @@ jobs:
           (cd work/darwin-arm64 && tar czf "../../dist/terfyn-${VERSION}-darwin-arm64.tar.gz" terfyn)
           (cd work/windows-amd64 && zip -q "../../dist/terfyn-${VERSION}-windows-amd64.zip" terfyn.exe)
 
-          (cd dist && sha256sum *.tar.gz *.zip | tee SHA256SUMS.txt)
+          (cd dist && sha256sum *.tar.gz *.zip *.vsix | tee SHA256SUMS.txt)
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -161,6 +182,7 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.vsix
             dist/SHA256SUMS.txt
           generate_release_notes: true
         env:
