@@ -1,0 +1,37 @@
+name: Question
+description: Ask how something in Terfyn works or how to do something.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before asking, a quick skim of the docs often has the answer:
+        [DESIGN_DOC](https://github.com/Terfyn/terfyn/blob/main/docs/DESIGN_DOC.md) (spec + CLI behavior),
+        [EXAMPLES](https://github.com/Terfyn/terfyn/blob/main/docs/EXAMPLES.md) (runnable patterns),
+        [LANGUAGE](https://github.com/Terfyn/terfyn/blob/main/docs/LANGUAGE.md) (`.agent` grammar), and
+        [SOUNDNESS](https://github.com/Terfyn/terfyn/blob/main/docs/SOUNDNESS.md) (the authority invariants).
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to understand or do?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: What you've tried / context
+      description: Commands you ran, docs you read, and any `.agent`/YAML or output that's relevant.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Terfyn version (if relevant)
+      placeholder: "terfyn version"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the docs and existing issues for an answer first.
+          required: true
