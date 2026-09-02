@@ -59,6 +59,27 @@ grants; no built-in tools.* S9 also carries the live-verification obligation: be
 wired to a live run, an integration check against the pinned CLI version must confirm that the
 emitted flags actually deny built-in tools (a fake-process unit test cannot close that gap).
 
+### Running the S9 live check
+
+`TestS9Live_builtinsAreDeniedByPinnedCLI` (`internal/runtime/claudecode/s9_live_test.go`) is that
+exhibit. It spawns the **real** `claude` with the adapter's real argv, pointed at a per-run server
+granting one benign op, and asserts (1) the CLI advertises only the granted `mcp__*` tool at init —
+no built-in — and (2) an agent instructed to write a sentinel file via a built-in cannot: the file
+never appears. It is fenced out of normal CI (it needs the binary, credentials, and network) behind
+the `s9live` build tag plus an env gate:
+
+```
+TERFYN_S9_LIVE=1 \
+TERFYN_S9_CLAUDE_VERSION="$(claude --version)" \
+  go test -tags s9live -run TestS9Live -v ./internal/runtime/claudecode/
+```
+
+Point `TERFYN_CLAUDE_BIN` at a specific binary to pin the version under test; the resolved version is
+logged so a green run names exactly what it verified. **If this test cannot pass against the pinned
+CLI, the external runtime must not be used for a live run** — the `--tools ""` denial in
+`denyBuiltinToolsArgs` is a contract against a CLI this repo does not own, and this check is what
+turns it from documentation into enforcement.
+
 ## Selecting a runtime
 
 `terfyn run` picks the target from the workflow's `spec.runtime`, else the project
