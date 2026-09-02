@@ -33,6 +33,18 @@ type Plan struct {
 	// bounded `while` or a data-bounded `for` makes some callee reachable more than
 	// once — appear here; a straight-line workflow (every callee ≤ 1) is omitted.
 	InvocationBounds []WorkflowInvocationBounds
+	// RuntimeTargets is the selected execution runtime for each workflow (issue #342):
+	// its `spec.runtime`, else the project default, else the built-in "local" engine.
+	// The runtime is replaceable but the authority is not — the EffectBound and Authority
+	// above are computed from the graph alone and are identical whichever runtime runs it.
+	RuntimeTargets []RuntimeTargetItem
+}
+
+// RuntimeTargetItem is one workflow's resolved runtime target, surfaced by plan so a
+// runtime selection (and any change to it) is visible before a run.
+type RuntimeTargetItem struct {
+	Workflow string `json:"workflow" yaml:"workflow"`
+	Runtime  string `json:"runtime" yaml:"runtime"`
 }
 
 // WorkflowInvocationBounds is one workflow's per-callee invocation upper bounds.
@@ -107,6 +119,7 @@ const (
 	RiskCategoryEffectDelta          RiskCategory = "effect_delta"
 	RiskCategoryCapabilityDelta      RiskCategory = "capability_delta"
 	RiskCategoryAuthorityWidening    RiskCategory = "authority_widening"
+	RiskCategoryRuntimeTargetChange  RiskCategory = "runtime_target_change"
 )
 
 // RiskSeverity is high / medium / low. Approval removal, write-like permission widening,
@@ -128,6 +141,7 @@ const (
 	RiskTargetAgent    RiskTargetKind = "agent"
 	RiskTargetTool     RiskTargetKind = "tool"
 	RiskTargetWorkflow RiskTargetKind = "workflow"
+	RiskTargetProject  RiskTargetKind = "project"
 )
 
 // RiskTarget identifies the changed resource for a [RiskItem].

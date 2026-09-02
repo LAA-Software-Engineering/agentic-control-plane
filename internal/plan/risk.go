@@ -95,6 +95,13 @@ func summarizeRisks(
 ) RiskSummary {
 	sink := newRiskSink()
 
+	// The project's default runtime target (spec.defaults.runtime) applies to every workflow with
+	// no explicit spec.runtime, so a default flip is a runtime-target change that no per-workflow
+	// diff can see (the unset workflows' own spec is byte-unchanged). Resolve the prior and current
+	// defaults once so the workflow detector uses the right side of each, and so a default flip is
+	// surfaced once at project scope rather than N times.
+	oldDef, newDef, projName, hadProject := projectRuntimeDefaults(appliedByID, desiredByID)
+
 	for _, op := range ops {
 		key := resourceMapKey(op.Target.Kind, op.Target.Name)
 		des := desiredByID[key]
@@ -112,10 +119,36 @@ func summarizeRisks(
 			summarizeAgentRisk(sink, g, op, oldJSON, des.json, hadPrev)
 		case spec.KindTool:
 			summarizeToolRisk(sink, g, op, oldJSON, des.json, hadPrev)
+		case spec.KindWorkflow:
+			summarizeWorkflowRisk(sink, op, oldJSON, des.json, hadPrev, oldDef, newDef)
 		}
 	}
 
+	if hadProject {
+		summarizeProjectRuntimeRisk(sink, projName, oldDef, newDef)
+	}
+
 	return finalizeRiskItems(sink.items)
+}
+
+// projectRuntimeDefaults resolves the prior and current spec.defaults.runtime from the Project
+// resource rows. hadProject is true when a prior Project row exists (so a default *change* can be
+// diffed); on a first apply there is no prior and the current default is shown only by the plan's
+// Runtime targets section.
+func projectRuntimeDefaults(appliedByID map[string]state.AppliedResource, desiredByID map[string]desiredRow) (oldDef, newDef, projName string, hadProject bool) {
+	for key, d := range desiredByID {
+		if d.id.Kind != spec.KindProject {
+			continue
+		}
+		projName = d.id.Name
+		newDef = parseDefaultRuntime(d.json)
+		if prev, ok := appliedByID[key]; ok {
+			hadProject = true
+			oldDef = parseDefaultRuntime(prev.NormalizedSpecJSON)
+		}
+		return
+	}
+	return
 }
 
 func mergePolicyLintRisk(g *spec.ProjectGraph, risk RiskSummary) RiskSummary {
@@ -339,6 +372,95 @@ func summarizeAgentRisk(sink *riskSink, g *spec.ProjectGraph, op Operation, oldJ
 		}
 		sink.add(toolSurfaceItem(g, name, toolName, target, wit))
 	}
+}
+
+// summarizeWorkflowRisk surfaces a runtime-target *change* driven by the workflow's own
+// spec.runtime (issue #342). The runtime is replaceable but the authority is not: the effect bound
+// is computed from the graph and is identical whichever runtime runs it, so a runtime change is an
+// execution-substrate change, not an authority widening. It is surfaced rather than hidden, matching
+// the honesty boundary (ADR 004 §5).
+//
+// It fires only when the workflow's own spec.runtime changed, resolving each side against its own
+// project default (oldDef/newDef). A move caused solely by a project-default flip (own field
+// unchanged) is left to summarizeProjectRuntimeRisk, so it is surfaced once at project scope rather
+// than once per unset workflow, and a workflow whose effective target is unchanged emits nothing.
+// The current selection on a fresh create is shown by the plan's Runtime targets section, not a
+// risk item — so plan output for the same program under two runtimes differs only by that line.
+func summarizeWorkflowRisk(sink *riskSink, op Operation, oldJSON, newJSON string, hadPrev bool, oldDef, newDef string) {
+	if op.Action == ActionCreate || !hadPrev {
+		return
+	}
+	newRT, ok := parseWorkflowRuntime(newJSON)
+	if !ok {
+		return
+	}
+	oldRT, ok := parseWorkflowRuntime(oldJSON)
+	if !ok {
+		return
+	}
+	if oldRT == newRT {
+		return // own field unchanged; a default-driven move is reported at project scope
+	}
+	oldEff, newEff := effectiveRuntime(oldRT, oldDef), effectiveRuntime(newRT, newDef)
+	if oldEff == newEff {
+		return
+	}
+	name := op.Target.Name
+	sink.add(RiskItem{
+		Category: RiskCategoryRuntimeTargetChange,
+		Severity: RiskSeverityMedium,
+		Reason:   fmt.Sprintf("Workflow runtime target changed %q → %q (Workflow/%s); same authority bound, different execution substrate.", oldEff, newEff, name),
+		Target:   RiskTarget{Kind: RiskTargetWorkflow, Name: name},
+		Witness:  staticResourceWitness(WitnessKindWorkflow, name),
+	})
+}
+
+// summarizeProjectRuntimeRisk surfaces a project-default runtime flip (issue #342): a change to
+// spec.defaults.runtime moves every workflow with no explicit spec.runtime, which no per-workflow
+// diff can see. It is reported once at project scope. Same authority bound, different substrate.
+func summarizeProjectRuntimeRisk(sink *riskSink, projName, oldDef, newDef string) {
+	oldEff, newEff := effectiveRuntime("", oldDef), effectiveRuntime("", newDef)
+	if oldEff == newEff {
+		return
+	}
+	sink.add(RiskItem{
+		Category: RiskCategoryRuntimeTargetChange,
+		Severity: RiskSeverityMedium,
+		Reason:   fmt.Sprintf("Project default runtime target changed %q → %q (Project/%s); every workflow without an explicit spec.runtime moves accordingly.", oldEff, newEff, projName),
+		Target:   RiskTarget{Kind: RiskTargetProject, Name: projName},
+	})
+}
+
+func parseWorkflowRuntime(resourceJSON string) (string, bool) {
+	var env jsonEnvelope
+	if err := json.Unmarshal([]byte(resourceJSON), &env); err != nil {
+		return "", false
+	}
+	var w struct {
+		Runtime string `json:"runtime"`
+	}
+	if err := json.Unmarshal(env.Spec, &w); err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(w.Runtime), true
+}
+
+// parseDefaultRuntime extracts spec.defaults.runtime from a Project resource's normalized JSON
+// ("" when absent or unparseable).
+func parseDefaultRuntime(resourceJSON string) string {
+	var env jsonEnvelope
+	if err := json.Unmarshal([]byte(resourceJSON), &env); err != nil {
+		return ""
+	}
+	var p struct {
+		Defaults *struct {
+			Runtime string `json:"runtime"`
+		} `json:"defaults"`
+	}
+	if err := json.Unmarshal(env.Spec, &p); err != nil || p.Defaults == nil {
+		return ""
+	}
+	return strings.TrimSpace(p.Defaults.Runtime)
 }
 
 func toolSurfaceItem(g *spec.ProjectGraph, agentName, toolName string, target RiskTarget, wit []WitnessHop) RiskItem {
