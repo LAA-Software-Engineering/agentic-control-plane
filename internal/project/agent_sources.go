@@ -2,17 +2,74 @@ package project
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Terfyn/terfyn/internal/execir"
 	"github.com/Terfyn/terfyn/internal/lang"
 	"github.com/Terfyn/terfyn/internal/lang/check"
 	"github.com/Terfyn/terfyn/internal/spec"
 )
+
+// resolveInstructionFiles reads every `instructions file("path")` reference (#360) in a parsed
+// .agent file and fills its Resolved text, so lowering copies the file contents into
+// AgentSpec.Instructions verbatim. Paths resolve relative to the .agent file's directory and must
+// stay within the project root; the result is pinned into the deployment snapshot like any inline
+// instruction, so a changed prompt file surfaces as a plan diff rather than a silent change.
+func resolveInstructionFiles(f *lang.File, agentPath, rootAbs string) error {
+	if f == nil {
+		return nil
+	}
+	baseDir := filepath.Dir(agentPath)
+	for _, decl := range f.Decls {
+		ad, ok := decl.(*lang.AgentDecl)
+		if !ok || ad.InstructionsFile == nil || ad.InstructionsFile.Path == nil {
+			continue
+		}
+		text, err := readInstructionFile(ad.InstructionsFile.Path.Value, baseDir, rootAbs)
+		if err != nil {
+			return fmt.Errorf("%s: agent instructions file(%q): %w",
+				ad.InstructionsFile.Path.Pos, ad.InstructionsFile.Path.Value, err)
+		}
+		ad.InstructionsFile.Resolved = text
+	}
+	return nil
+}
+
+// readInstructionFile resolves rel (relative to the .agent file's directory) within the project
+// root and returns its UTF-8 contents. An absolute path or one escaping the root is rejected,
+// consistent with the closed-world stance; the read is symlink-safe (os.OpenInRoot), so a symlink
+// inside the project cannot redirect the read outside it.
+func readInstructionFile(rel, baseDir, rootAbs string) (string, error) {
+	if strings.TrimSpace(rel) == "" {
+		return "", fmt.Errorf("empty path")
+	}
+	if filepath.IsAbs(rel) {
+		return "", fmt.Errorf("must be a relative path")
+	}
+	relFromRoot, err := filepath.Rel(rootAbs, filepath.Join(baseDir, rel))
+	if err != nil || relFromRoot == ".." || strings.HasPrefix(relFromRoot, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("escapes the project root")
+	}
+	file, err := os.OpenInRoot(rootAbs, relFromRoot)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return "", err
+	}
+	if !utf8.Valid(data) {
+		return "", fmt.Errorf("not valid UTF-8 text")
+	}
+	return string(data), nil
+}
 
 // agentExt is the authoring-surface source extension (ADR 002 / ADR 003).
 const agentExt = ".agent"
@@ -71,6 +128,9 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 		}
 		f, d := lang.Parse(p, string(src))
 		diags = append(diags, d...)
+		if err := resolveInstructionFiles(f, p, rootAbs); err != nil {
+			return nil, err
+		}
 		parsed = append(parsed, f)
 	}
 

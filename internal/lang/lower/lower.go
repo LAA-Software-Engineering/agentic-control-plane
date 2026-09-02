@@ -210,6 +210,13 @@ func (l *lowerer) agent(d *lang.AgentDecl) *spec.AgentResource {
 	if d.Instructions != nil {
 		ar.Spec.Instructions = d.Instructions.Value
 		l.sm.set(KeyAgentInstructions(name), d.Instructions.Pos)
+	} else if d.InstructionsFile != nil {
+		// instructions file("path") (#360): the file's contents, resolved by the project loader,
+		// lower verbatim exactly as an inline string would. In a bare lower (no loader resolution)
+		// Resolved is empty, which is a benign empty prompt — validate/plan/run always go through
+		// the loader, which fills it or fails loudly on a bad path.
+		ar.Spec.Instructions = d.InstructionsFile.Resolved
+		l.sm.set(KeyAgentInstructions(name), d.InstructionsFile.Pos)
 	}
 	// grants -> AgentSpec.Tools: an autonomous capability bound, not a call list
 	// (ADR 002). Each grant reconstructs the tool.<name>.<operation> uses string.

@@ -59,6 +59,11 @@ func printAgent(b *strings.Builder, a *AgentDecl) {
 	if a.Instructions != nil {
 		printInstructions(b, a.Instructions.Value)
 	}
+	if a.InstructionsFile != nil && a.InstructionsFile.Path != nil {
+		// Re-emit the file("...") form verbatim (never the resolved prompt text), so fmt
+		// round-trips the reference (#360).
+		fmt.Fprintf(b, "    instructions file(%s)\n", strconv.Quote(a.InstructionsFile.Path.Value))
+	}
 	if a.Constraints != nil {
 		printConstraints(b, a.Constraints)
 	}

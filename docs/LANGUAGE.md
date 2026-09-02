@@ -98,7 +98,7 @@ AgentDecl   = "agent" Ident "{" { AgentField } "}" ;
 AgentField  = "model"  ModelRef
             | "policy" Ident
             | "description" StringLiteral
-            | "instructions" StringLiteral
+            | "instructions" ( StringLiteral | FileRef )
             | "constraints" "{" { ConstraintField } "}"
             | "grants" "{" { Grant } "}"
             | "input"  Ident
@@ -106,6 +106,7 @@ AgentField  = "model"  ModelRef
 ConstraintField = "maxIterations" Number | "timeoutSeconds" Number   (* positive ints *)
             | "temperature" Number | "requireStructuredOutput" ( "true" | "false" ) ;
 StringLiteral = String | MultilineString ;      (* both decode to one string value *)
+FileRef     = "file" "(" String ")" ;           (* load-time UTF-8 file reference, #360 *)
 ModelRef    = Ident "/" Ident ;                 (* e.g. openai/gpt-5 *)
 Grant       = "tool" "." Ident "." Operation ;  (* tool.<name>.<operation> *)
 Operation   = Ident { "." Ident } ;             (* name = first Ident, operation = the rest *)
@@ -173,7 +174,15 @@ Notes:
   the body.
 - `instructions` is the agent prompt. It lowers verbatim into `AgentSpec.Instructions`
   (the existing runtime field) — no new prompt abstraction and no new runtime semantics —
-  and is the reason for the multiline string form above.
+  and is the reason for the multiline string form above. It also accepts a **load-time file
+  reference**, `instructions file("prompts/reviewer.md")` (#360): the project loader reads the
+  file (UTF-8) relative to the `.agent` file, within the project root — an absolute path or one
+  escaping the root is rejected — and lowers its contents into `AgentSpec.Instructions` exactly
+  as an inline string would. Resolution is at load time, not runtime, so the prompt is pinned into
+  the deployment snapshot and folded into the spec hash: editing the referenced file surfaces as a
+  `plan` diff, not a silent behavior change. A bare string (`instructions "prompts/reviewer.md"`)
+  always stays the literal text; `file(...)` is the explicit opt-in. `terfyn fmt` round-trips the
+  `file("...")` reference, not the resolved text.
 - Requiredness of agent fields, argument style (all-positional vs. all-named), reference
   resolution, and effect soundness are **not** enforced by the parser — they are
   checking concerns (#198). A field the author omitted is a nil node, not a parse error.
