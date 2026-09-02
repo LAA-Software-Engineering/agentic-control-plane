@@ -1,4 +1,6 @@
-# Build (and, on a release, attach) the Terfyn Agent VS Code extension .vsix (issue #362).
+# Build and validate the Terfyn Agent VS Code extension .vsix on changes to it (issue #362).
+# Releases attach the .vsix from the Release workflow itself (release.yml), not here: a release cut
+# with GITHUB_TOKEN cannot trigger a second workflow, so a `release`-keyed attach never fires (#403).
 name: VS Code extension
 
 on:
@@ -11,8 +13,6 @@ on:
     paths:
       - "editors/vscode/**"
       - ".github/workflows/vscode-extension.yml"
-  release:
-    types: [published]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,19 +46,3 @@ jobs:
           name: terfyn-agent-vsix
           path: editors/vscode/terfyn-agent.vsix
           if-no-files-found: error
-
-  attach-to-release:
-    name: Attach .vsix to the release
-    needs: package
-    if: github.event_name == 'release'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: terfyn-agent-vsix
-      - name: Upload to the GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: terfyn-agent.vsix
