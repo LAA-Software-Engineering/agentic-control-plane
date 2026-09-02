@@ -232,6 +232,29 @@ func TestRedactHitlArgs_masksNestedInArrays(t *testing.T) {
 	}
 }
 
+// Keys match case-insensitively and by substring (mirroring trace redaction), the safe direction
+// for the operator prompt: a `token` redact key also hides `Token`, `authToken`, `X-Auth-Token`.
+func TestRedactHitlArgs_caseInsensitiveSubstring(t *testing.T) {
+	args := map[string]any{
+		"Token":        "SECRET_A",
+		"authToken":    "SECRET_B",
+		"X-Auth-Token": "SECRET_C",
+		"items":        []any{map[string]any{"apiToken": "SECRET_D"}},
+		"unrelated":    "keep-me",
+	}
+	out := RedactHitlArgs(args, []string{"token"})
+	b, _ := json.Marshal(out)
+	s := string(b)
+	for _, leak := range []string{"SECRET_A", "SECRET_B", "SECRET_C", "SECRET_D"} {
+		if strings.Contains(s, leak) {
+			t.Fatalf("variant-named secret %q leaked: %s", leak, s)
+		}
+	}
+	if out["unrelated"] != "keep-me" {
+		t.Fatalf("unrelated value altered: %v", out["unrelated"])
+	}
+}
+
 func testGraphForHitl(t *testing.T) *spec.ProjectGraph {
 	t.Helper()
 	return &spec.ProjectGraph{
