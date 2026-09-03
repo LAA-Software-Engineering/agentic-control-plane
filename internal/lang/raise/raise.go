@@ -48,8 +48,10 @@ func (r *raiser) reject(kind, name, field, detail string) {
 // assembled file plus any Unsupported findings; when findings are present the file is best-effort and
 // must not be written as a faithful migration.
 //
-// Workflows are raised by RaiseWorkflow, which this package adds in a follow-up; until then a graph
-// carrying workflows yields an Unsupported per workflow so callers never silently drop one.
+// Workflows are intentionally not raised: a YAML-authored workflow's step DAG has no lossless .agent
+// form (the surface has no object-literal return for a multi-field output.value, and forward lowering
+// always stamps explicit DAG needs where YAML uses an implicit sequential chain). Each workflow yields
+// an Unsupported so callers never silently drop or mistranslate one; the body is migrated by hand.
 func Graph(g *spec.ProjectGraph) (*lang.File, []Unsupported) {
 	r := &raiser{}
 	f := &lang.File{}
@@ -77,7 +79,7 @@ func Graph(g *spec.ProjectGraph) (*lang.File, []Unsupported) {
 		f.Decls = append(f.Decls, r.agent(g.Agents[name]))
 	}
 	for _, name := range sortedKeys(g.Workflows) {
-		r.reject("Workflow", name, "spec.steps", "workflow raising is not yet implemented in this package")
+		r.reject("Workflow", name, "spec.steps", "a YAML-authored workflow has no lossless .agent form (object-literal returns and implicit-sequential step needs are unrepresentable) — migrate the workflow body by hand")
 	}
 	return f, r.unsupported
 }

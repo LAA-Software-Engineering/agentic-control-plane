@@ -87,6 +87,27 @@ func loadProjectGraph(root string) (*spec.ProjectGraph, map[string]*execir.Progr
 		return loadAgentOnlyProject(rootAbs)
 	}
 
+	g, _, err := loadYAMLGraph(rootAbs, projPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// .agent authoring surface (ADR 003): compile every .agent file under the
+	// project root and merge its checked resource projection. Runs after YAML so
+	// .agent may reference YAML-declared resources.
+	agentExecs, err := compileAgentSources(g, rootAbs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return g, agentExecs, nil
+}
+
+// loadYAMLGraph loads the project's YAML resources (project.yaml plus its expanded imports) into a
+// graph, WITHOUT folding in any .agent sources. It returns the graph and the absolute paths of every
+// YAML file that contributed a resource (project file first), so a migrator can know which YAML to
+// replace. This is the YAML-only half of loadProjectGraph, shared with LoadYAMLResources (#440).
+func loadYAMLGraph(rootAbs, projPath string) (*spec.ProjectGraph, []string, error) {
 	dec, err := spec.LoadResourceFile(projPath)
 	if err != nil {
 		return nil, nil, err
@@ -117,6 +138,7 @@ func loadProjectGraph(root string) (*spec.ProjectGraph, map[string]*execir.Progr
 		return nil, nil, err
 	}
 
+	yamlPaths := []string{projPath}
 	for _, path := range files {
 		if path == projPath {
 			continue
@@ -129,17 +151,26 @@ func loadProjectGraph(root string) (*spec.ProjectGraph, map[string]*execir.Progr
 		if err := mergeDecoded(g, d, path, seen); err != nil {
 			return nil, nil, err
 		}
+		yamlPaths = append(yamlPaths, path)
 	}
 
-	// .agent authoring surface (ADR 003): compile every .agent file under the
-	// project root and merge its checked resource projection. Runs after YAML so
-	// .agent may reference YAML-declared resources.
-	agentExecs, err := compileAgentSources(g, rootAbs)
+	return g, yamlPaths, nil
+}
+
+// LoadYAMLResources loads only the YAML-authored resources of the project at root (project.yaml plus
+// its expanded imports), returning the graph and the absolute paths of the contributing YAML files
+// (project file first). It does NOT fold in .agent sources, so a migrator sees exactly the resources
+// still authored in YAML. An error is returned when there is no project.yaml/project.yml (issue #440).
+func LoadYAMLResources(root string) (*spec.ProjectGraph, []string, error) {
+	rootAbs, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return nil, nil, fmt.Errorf("project root: %w", err)
+	}
+	projPath, err := findProjectFile(rootAbs)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	return g, agentExecs, nil
+	return loadYAMLGraph(rootAbs, projPath)
 }
 
 // loadAgentOnlyProject builds a project graph from .agent source alone, with no project.yaml (issue

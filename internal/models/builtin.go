@@ -28,6 +28,13 @@ var builtinProviders = map[string]builtinProvider{
 	"mock":      {providerType: "mock", apiKeyEnv: ""},
 }
 
+// BuiltinProviderConfig returns the config a built-in namespace resolves to implicitly, or false when
+// ns is not built-in. Exposed so tooling (e.g. `terfyn migrate`) can drop a providers.models entry
+// that merely restates a built-in namespace, which needs no declaration in .agent (issue #440).
+func BuiltinProviderConfig(ns string) (spec.ModelProviderConfig, bool) {
+	return builtinProviderConfig(ns)
+}
+
 // builtinProviderConfig returns the synthesized provider config for a built-in namespace, or false
 // when ns is not a built-in. The credential is referenced (env:VAR), not resolved, so a namespace
 // resolves at validate/plan time while the secret is only required when a live client is built.

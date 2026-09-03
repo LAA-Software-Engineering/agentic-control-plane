@@ -82,9 +82,16 @@ flags, and the softer `defaults.policy` / `workspace` gaps remain for Phase 2c (
 
 1. **Phase 2a — deprecation warning** on hand-authored YAML project *source* (non-breaking; independent
    of the gaps above — can land first).
-2. **Phase 2b — migration path** (`terfyn migrate --to-agent` or extend `terfyn export`).
-3. **Grammar additions** (critical path 1–4) — each its own PR; these are the real work.
+2. ✅ **Phase 2b — migration path** — `terfyn migrate --to-agent` raises YAML declarative resources
+   (providers/tools/policies/environments/agents) to `.agent`, dropping redundant built-in providers,
+   and refuses (reports) any construct with no `.agent` form. YAML-authored **workflows are not
+   raised**: `.agent` has no object-literal return for a multi-field `output.value`, and forward
+   lowering always stamps explicit DAG needs where YAML uses an implicit sequential chain — so a
+   workflow body is migrated by hand. (14/15 examples already author workflows in `.agent`; only
+   `example1` is pure-YAML and hits the object-return gap.)
+3. ✅ **Grammar additions** (critical path 1–4) — each its own PR; the real work, now complete.
 4. **Phase 2c — migrate the 15 examples + docs** (needs 2b and the grammar additions the examples use:
-   environments, hitl, workspace).
+   environments, hitl, workspace). `defaults.policy` handling and `example1`'s object-return workflow
+   are the known residuals.
 5. **Phase 3 — remove YAML as an accepted source** (breaking; only after the deprecation window and
    once 2c proves nothing needs YAML).
