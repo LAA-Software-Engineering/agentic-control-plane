@@ -215,3 +215,67 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+// TestInlineTool_MCPYAMLEquivalence is the ADR 005 §2 golden for the .agent mcp transport block
+// (issue #440): an inline mcp tool and its YAML twin normalize to byte-identical spec JSON, so the
+// two front ends can never diverge on transport config.
+func TestInlineTool_MCPYAMLEquivalence(t *testing.T) {
+	agentSrc := `tool github {
+    type mcp
+    mcp {
+        transport "stdio"
+        command "npx"
+        args { "-y" "@modelcontextprotocol/server-github" }
+        headers { "Authorization" "env:GITHUB_TOKEN" }
+    }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Tool
+metadata: {name: github}
+spec:
+  type: mcp
+  mcp:
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    headers: {Authorization: "env:GITHUB_TOKEN"}
+`
+	inline := lowerToolsOrFatal(t, agentSrc).Tools[0]
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "github.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.ToolResource)
+	if normSpecJSON(t, inline) != normSpecJSON(t, fromYAML) {
+		t.Fatalf("inline mcp tool differs from YAML twin:\n inline: %s\n yaml:   %s", normSpecJSON(t, inline), normSpecJSON(t, fromYAML))
+	}
+}
+
+// TestInlineTool_HTTPYAMLEquivalence is the ADR 005 §2 golden for the .agent http transport block.
+func TestInlineTool_HTTPYAMLEquivalence(t *testing.T) {
+	agentSrc := `tool webhook {
+    type http
+    http {
+        baseUrl "https://api.example.com"
+        headers { "Authorization" "env:API_TOKEN" }
+    }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Tool
+metadata: {name: webhook}
+spec:
+  type: http
+  http:
+    baseUrl: "https://api.example.com"
+    headers: {Authorization: "env:API_TOKEN"}
+`
+	inline := lowerToolsOrFatal(t, agentSrc).Tools[0]
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "webhook.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.ToolResource)
+	if normSpecJSON(t, inline) != normSpecJSON(t, fromYAML) {
+		t.Fatalf("inline http tool differs from YAML twin:\n inline: %s\n yaml:   %s", normSpecJSON(t, inline), normSpecJSON(t, fromYAML))
+	}
+}

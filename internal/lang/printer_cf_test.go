@@ -103,3 +103,53 @@ workflow W(input: X) {
 		t.Fatalf("not idempotent for nested binary")
 	}
 }
+
+// TestPrint_ToolTransportAndPresetRoundTrip proves the .agent tool mcp/http transport blocks and the
+// policy preset field survive `terfyn fmt` (parse -> print -> parse -> print is idempotent and the
+// constructs are retained) — issue #440, plus the #436 preset round-trip gap.
+func TestPrint_ToolTransportAndPresetRoundTrip(t *testing.T) {
+	t.Parallel()
+	src := `tool github {
+    type mcp
+    mcp {
+        transport "stdio"
+        command "npx"
+        args { "-y" "@server" }
+        headers { "Authorization" "env:GITHUB_TOKEN" }
+    }
+}
+
+tool webhook {
+    type http
+    http {
+        baseUrl "https://api.example.com"
+        headers { "Authorization" "env:API_TOKEN" }
+    }
+}
+
+policy p {
+    preset shell_safe
+}
+`
+	f, diags := Parse("t.agent", src)
+	if diags.HasErrors() {
+		t.Fatalf("parse: %v", diags)
+	}
+	once := Print(f)
+	f2, d2 := Parse("t.agent", once)
+	if d2.HasErrors() {
+		t.Fatalf("printed output does not re-parse:\n%s\ndiags: %v", once, d2)
+	}
+	if twice := Print(f2); once != twice {
+		t.Fatalf("Print is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", once, twice)
+	}
+	for _, want := range []string{
+		"mcp {", `transport "stdio"`, `command "npx"`, `args { "-y" "@server" }`,
+		`"Authorization" "env:GITHUB_TOKEN"`, "http {", `baseUrl "https://api.example.com"`,
+		"preset shell_safe",
+	} {
+		if !strings.Contains(once, want) {
+			t.Fatalf("printed output missing %q:\n%s", want, once)
+		}
+	}
+}
