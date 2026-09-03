@@ -1109,3 +1109,34 @@ func TestCLI_AgentControlFlowExample(t *testing.T) {
 		t.Fatalf("control-flow run should succeed:\n%s", out)
 	}
 }
+
+// TestCLI_NoPolicyProjectRuns is issue #438: a .agent-only project that declares NO policy applies
+// and runs (mock model) under the safety-derived default authority, rather than failing "unknown
+// policy default". This is the bare template #430 targets — agent + workflow, no policy block.
+func TestCLI_NoPolicyProjectRuns(t *testing.T) {
+	root := t.TempDir()
+	src := `agent assistant {
+    model mock/default
+    instructions "You are a helpful assistant."
+}
+
+workflow hello(input: any) -> any {
+    return assistant(input)
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "main.agent"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(t.TempDir(), "nopolicy.db")
+
+	if out, err := runCLI(t, "apply", "--project", root, "--state", db, "--auto-approve"); err != nil {
+		t.Fatalf("apply of a no-policy project: %v\n%s", err, out)
+	}
+	out, err := runCLI(t, "run", "workflow/hello", "--project", root, "--state", db, "--input", "topic=x")
+	if err != nil {
+		t.Fatalf("run of a no-policy project must succeed (issue #438): %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Status: succeeded") {
+		t.Fatalf("expected a succeeded run:\n%s", out)
+	}
+}
