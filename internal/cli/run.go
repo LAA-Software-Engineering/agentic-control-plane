@@ -15,6 +15,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/render"
 	"github.com/Terfyn/terfyn/internal/runtime"
 	_ "github.com/Terfyn/terfyn/internal/runtime/claudecode" // register the claude-code runtime target (#336)
+	_ "github.com/Terfyn/terfyn/internal/runtime/gemini"     // register the gemini runtime target (#409)
 	"github.com/Terfyn/terfyn/internal/runtime/local"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
