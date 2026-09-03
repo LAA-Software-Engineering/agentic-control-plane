@@ -31,11 +31,11 @@ Categorized by #430's framework. "Examples" = how many of the 15 example project
 
 | Capability | Spec location | Examples | Notes |
 |---|---|---|---|
-| **Environments** (`kind: Environment`, per-agent/per-policy overrides) | `EnvironmentResource` | 3 | No `.agent` construct at all. |
-| **Tool `mcp` transport** (`command`/`args`/`url`/`headers`) | `ToolSpec.MCP` | 0 | `type mcp` parses but is unconfigurable → MCP tools impossible in `.agent`. |
-| **Tool `http` transport** (`baseURL`/headers/methods) | `ToolSpec.HTTP` | 0 | Same — HTTP tools impossible in `.agent`. |
-| **Policy `hitl`** (interrupt-on, review config) | `PolicySpec.Hitl` | 1 | No `.agent` `hitl` block. |
-| **Custom model providers / aliases** (`type` + `baseURL` + key) | `Providers.models` | 0 | Only built-in namespaces work; `provider corporate-claude { … }` is unspecced. |
+| **Environments** (`kind: Environment`, per-agent/per-policy overrides) | `EnvironmentResource` | 3 | ✅ Closed by #448 — `environment <Name> { overrides { … } }`. |
+| **Tool `mcp` transport** (`command`/`args`/`url`/`headers`) | `ToolSpec.MCP` | 0 | ✅ Closed by #447 — `tool { mcp { … } }`. |
+| **Tool `http` transport** (`baseURL`/headers/methods) | `ToolSpec.HTTP` | 0 | ✅ Closed by #447 — `tool { http { … } }`. |
+| **Policy `hitl`** (interrupt-on, review config) | `PolicySpec.Hitl` | 1 | ✅ Closed by this PR — `policy { hitl { … } }`. |
+| **Custom model providers / aliases** (`type` + `baseURL` + key) | `Providers.models` | 0 | Only built-in namespaces work; `provider corporate-claude { … }` is unspecced. Also needs a `.agent` home for project-scoped provider config. |
 
 ### B. Softer gaps (program semantics, but a workaround exists)
 

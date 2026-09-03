@@ -244,6 +244,13 @@ policy coding {
   overridable exactly like the YAML `spec.preset`, #430), `execution { maxTotalCostUsd /
   maxWallClockSeconds / requireStructuredOutput }`, `approvals { requiredFor { … } / requireAllTools
   / permissive }`, and the full effect model `effects { permit { … } permitWithApproval { … } }`.
+- Policy `hitl` (#106, #440): `hitl { descriptionPrefix "…" redactKeys { "k" … } toolSwitchMap { <src-op>
+  { <target-op> … } … } interruptOn { <tool> | <tool> { allowedDecisions { approve reject edit switch }
+  description "…" allowedEditArgs/deniedEditArgs/allowedEditPaths/deniedEditPaths/allowedEditTools { "…" … }
+  switchMap { <src> { <target> … } } redactKeys { "…" } } … } }` — an interruptOn entry that is a bare
+  tool name is enabled with defaults (YAML `true`); a block supplies per-tool review config. Lowers
+  identically to the YAML `spec.hitl` (ADR 005 §2). interruptOn keys configure review at a gate — they
+  do not gate a tool by themselves (see `internal/spec` `HitlPolicy`).
 - Environment: `environment <Name> { overrides { agents { <agent> { model … constraints { … } } }
   policies { <policy> { execution { … } approvals { requiredFor { … } } } } } }` (#440) — per-environment
   agent/policy overrides applied by `--env`, lowering identically to the YAML `Environment` resource
@@ -251,10 +258,8 @@ policy coding {
   and/or `approvals` (its `requiredFor` entries union onto the base policy).
 - `tool`, `policy`, and `environment` are **contextual**: only a top-level `tool <Name> {` /
   `policy <Name> {` / `environment <Name> {` opens a declaration; the grant path `tool.<name>.<op>` and
-  the agent field `policy <name>` are
-  opens a declaration; the grant path `tool.<name>.<op>` and the agent field `policy <name>` are
-  unchanged. The native `workspace { … }` block and policy `hitl` are follow-on fields (ADR 005 §4);
-  until a field exists in the grammar, author that resource in YAML and import it.
+  the agent field `policy <name>` are unchanged. The native `workspace { … }` block is a follow-on field
+  (ADR 005 §4); until a field exists in the grammar, author that resource in YAML and import it.
 
 ## The normative program
 
