@@ -87,6 +87,40 @@ func TestInvoke_endToEnd(t *testing.T) {
 	}
 }
 
+// TestInvoke_passesPolicyBudgetToArgv is the regression for issue #389: the governing policy's
+// execution.maxTotalCostUsd must reach the spawned `claude` as --max-budget-usd (the harness belt),
+// not only be discovered after the session ends. The flagship reviewer policy sets maxTotalCostUsd: 5;
+// with the fix the argv carries "--max-budget-usd 5", where before Invoke fed MapLimits a nil policy
+// and the flag was always omitted.
+func TestInvoke_passesPolicyBudgetToArgv(t *testing.T) {
+	ctx := context.Background()
+	root, err := filepath.Abs(filepath.Join("..", "..", "..", "examples", "external-runtime-reviewer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Resolve(config.ResolveOptions{ProjectRoot: root, Env: ""})
+	if err != nil {
+		t.Fatalf("resolve flagship project: %v", err)
+	}
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "budget.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	var argv []string
+	rt := agentcli.NewRuntimeAdapter(Name, ClaudeCodeRuntime{Run: fakeRunner(successStream, nil, &argv)}, runtime.Deps{Store: st})
+	if _, err := rt.Invoke(ctx, cfg, runtime.InvokeOptions{
+		WorkflowName: "review",
+		InputJSON:    []byte(`{"change":"add a null check"}`),
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if !containsPair(argv, "--max-budget-usd", "5") {
+		t.Fatalf("argv must carry the policy budget as --max-budget-usd 5, got %v", argv)
+	}
+}
+
 // A workflow whose name is unknown is a clear error, not a silent no-op.
 func TestInvoke_unknownWorkflow(t *testing.T) {
 	ctx := context.Background()

@@ -145,7 +145,7 @@ func (a *RuntimeAdapter) Invoke(ctx context.Context, cfg *config.ResolvedConfig,
 		RunID:     runID,
 		Prompt:    string(inputBytes),
 		Run:       policy.RunContext{StartedAt: started, ApprovedActions: opts.ApprovedActions},
-		Limits:    MapLimits(agent.Spec.Constraints, nil),
+		Limits:    MapLimits(agent.Spec.Constraints, policyExecution(eval)),
 		ConfigDir: cfgDir,
 	})
 
@@ -211,6 +211,25 @@ func resolveDrivenAgent(graph *spec.ProjectGraph, wf *spec.WorkflowResource, exe
 		return ar, nil
 	}
 	return nil, fmt.Errorf("agentcli: workflow %q references unknown agent %q", name, agentName)
+}
+
+// policyExecution returns the compiled policy's execution block (maxTotalCostUsd, maxWallClockSeconds)
+// so [MapLimits] can derive the external run's --max-budget-usd belt from the governing policy, not
+// only the agent constraints (issue #389). Every evaluator in this codebase exposes PolicySpec(),
+// but it is not part of the [policy.PolicyEvaluator] interface, so this reads it structurally and
+// falls back to nil (no policy-derived budget) when unavailable.
+func policyExecution(eval policy.PolicyEvaluator) *spec.PolicyExecution {
+	ps, ok := eval.(interface {
+		PolicySpec() *spec.PolicySpec
+	})
+	if !ok {
+		return nil
+	}
+	polSpec := ps.PolicySpec()
+	if polSpec == nil {
+		return nil
+	}
+	return polSpec.Execution
 }
 
 // workflowEvaluator builds the policy evaluator that governs the run's tool calls, mirroring the
