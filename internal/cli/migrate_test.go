@@ -7,7 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"encoding/json"
+
 	"github.com/Terfyn/terfyn/internal/project"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // runMigrate executes `terfyn migrate ...`, returning combined stdout, stderr, and the error.
@@ -284,4 +287,268 @@ func TestMigrate_legacyRemovedFields_warnAndOmit(t *testing.T) {
 	if _, err := project.LoadProject(dir); err != nil {
 		t.Fatalf("migrated .agent did not re-load: %v\n%s", err, out)
 	}
+}
+
+// writeComprehensiveYAMLProject writes a YAML project exercising the full now-supported declarative
+// resource model (custom provider; mcp/http/native tools with retry, per-op schema, workspace, limits;
+// a policy with execution/approvals/effects/hitl/tools.forbidUnknownTools; an environment overlay; an
+// agent). No YAML workflow (workflows are the documented unraiseable residual) and no legacy fields.
+func writeComprehensiveYAMLProject(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	w := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w("project.yaml", `apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: comprehensive
+spec:
+  imports:
+    - ./policies/guarded.yaml
+    - ./tools/github.yaml
+    - ./tools/api.yaml
+    - ./tools/workspace.yaml
+    - ./environments/prod.yaml
+    - ./agents/assistant.yaml
+  providers:
+    models:
+      corporate-claude:
+        type: anthropic
+        apiKeyFrom: env:CORP_ANTHROPIC_KEY
+        workspaceIdFrom: env:CORP_WS
+`)
+	w("policies/guarded.yaml", `apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: guarded
+spec:
+  execution:
+    maxTotalCostUsd: 5
+    maxWallClockSeconds: 300
+    requireStructuredOutput: true
+  approvals:
+    requiredFor:
+      - tool.github.create_issue
+  effects:
+    permit: [workspace.read]
+    permitWithApproval: [workspace.write]
+  tools:
+    forbidUnknownTools: true
+  hitl:
+    descriptionPrefix: review
+    interruptOn:
+      github:
+        allowedDecisions: [approve, reject]
+        description: "gate (${uses})"
+`)
+	w("tools/github.yaml", `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: github
+spec:
+  type: mcp
+  mcp:
+    transport: stdio
+    command: npx
+    args: ["-y", "server-github"]
+    headers: {Authorization: "env:GH_TOKEN"}
+  retry: {maxAttempts: 3, backoff: exponential}
+  operations:
+    create_issue: {schema: schemas/CreateIssue.json, effects: [github.write]}
+`)
+	w("tools/api.yaml", `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: api
+spec:
+  type: http
+  http:
+    baseUrl: https://api.example.com
+    headers: {Authorization: "env:API_TOKEN"}
+`)
+	w("tools/workspace.yaml", `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: workspace
+spec:
+  type: native
+  workspace: {root: sandbox, testCommand: "go test ./..."}
+  limits:
+    maxToolInputBytes: 1024
+    toolInputExceedPolicy: truncate
+  safety:
+    trusted: true
+    sideEffects: true
+  operations:
+    read_file: {effects: [workspace.read]}
+    write_file: {effects: [workspace.write]}
+`)
+	w("environments/prod.yaml", `apiVersion: agentic.dev/v0
+kind: Environment
+metadata:
+  name: prod
+spec:
+  overrides:
+    agents:
+      assistant:
+        model: corporate-claude/claude-sonnet-5
+        constraints: {timeoutSeconds: 30}
+    policies:
+      guarded:
+        execution: {maxTotalCostUsd: 1}
+        approvals:
+          requiredFor: [tool.workspace.write_file]
+`)
+	w("agents/assistant.yaml", `apiVersion: agentic.dev/v0
+kind: Agent
+metadata:
+  name: assistant
+spec:
+  model: mock/default
+  policy: guarded
+  constraints: {timeoutSeconds: 60, maxIterations: 8}
+  instructions: |
+    You are a helpful assistant.
+  tools:
+    - tool.github.create_issue
+    - tool.workspace.read_file
+`)
+	return root
+}
+
+// normResourceSpecJSON normalizes g and returns per-resource normalized spec JSON keyed by "Kind/name"
+// plus the project providers — the canonical projection to compare a YAML load against a .agent load.
+func normResourceSpecJSON(t *testing.T, g *spec.ProjectGraph) map[string]string {
+	t.Helper()
+	spec.NormalizeProjectGraph(g)
+	out := map[string]string{}
+	marshal := func(key string, v any) {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[key] = string(b)
+	}
+	for n, r := range g.Tools {
+		marshal("Tool/"+n, r.Spec)
+	}
+	for n, r := range g.Policies {
+		marshal("Policy/"+n, r.Spec)
+	}
+	for n, r := range g.Environments {
+		marshal("Environment/"+n, r.Spec)
+	}
+	for n, r := range g.Agents {
+		marshal("Agent/"+n, r.Spec)
+	}
+	marshal("__providers__", g.Spec.Providers)
+	return out
+}
+
+// TestMigrate_lossless_supportedModel is the ADR 007 step-1 lossless-migration proof: a comprehensive
+// declarative YAML project migrates to .agent, re-loads, and yields a graph whose per-resource
+// normalized spec JSON is byte-identical to the original YAML graph — no Unsupported findings.
+func TestMigrate_lossless_supportedModel(t *testing.T) {
+	root := writeComprehensiveYAMLProject(t)
+
+	yamlGraph, err := project.LoadProject(root)
+	if err != nil {
+		t.Fatalf("load YAML project: %v", err)
+	}
+	want := normResourceSpecJSON(t, yamlGraph)
+
+	out, errOut, err := runMigrate(t, "migrate", "--to-agent", "--project", root)
+	if err != nil {
+		t.Fatalf("migrate failed: %v\nstderr:\n%s", err, errOut)
+	}
+	if strings.Contains(errOut, "need manual migration") {
+		t.Fatalf("comprehensive declarative project must migrate without Unsupported findings:\n%s", errOut)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.agent"), []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agentGraph, err := project.LoadProject(dir)
+	if err != nil {
+		t.Fatalf("migrated .agent did not re-load: %v\n%s", err, out)
+	}
+	got := normResourceSpecJSON(t, agentGraph)
+
+	if len(got) != len(want) {
+		t.Fatalf("resource count differs: yaml=%d agent=%d\nyaml keys=%v\nagent keys=%v", len(want), len(got), keysOfStrMap(want), keysOfStrMap(got))
+	}
+	for k, wv := range want {
+		gv, ok := got[k]
+		if !ok {
+			t.Fatalf("resource %s missing after migration", k)
+		}
+		if gv != wv {
+			t.Fatalf("resource %s not lossless:\n yaml:  %s\n agent: %s", k, wv, gv)
+		}
+	}
+}
+
+// TestMigrate_lossless_moduloLegacyFields: the comprehensive project PLUS the four removed legacy fields
+// migrates to the SAME graph as the legacy-free version — the legacy fields are the only difference and
+// are omitted (with warnings). Proves "lossless modulo the intentionally-omitted legacy fields".
+func TestMigrate_lossless_moduloLegacyFields(t *testing.T) {
+	clean := writeComprehensiveYAMLProject(t)
+	cleanGraph, err := project.LoadProject(clean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := normResourceSpecJSON(t, cleanGraph)
+
+	// A second copy with legacy fields injected into three resources.
+	legacy := writeComprehensiveYAMLProject(t)
+	inject := func(rel, anchor, add string) {
+		p := filepath.Join(legacy, rel)
+		b, _ := os.ReadFile(p)
+		if err := os.WriteFile(p, []byte(strings.Replace(string(b), anchor, anchor+add, 1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inject("tools/api.yaml", "    headers: {Authorization: \"env:API_TOKEN\"}\n", "  permissions:\n    allow: [request.send]\n")
+	inject("policies/guarded.yaml", "spec:\n", "  security: {networkAccess: restricted}\n")
+	inject("agents/assistant.yaml", "  policy: guarded\n", "  runtime: local\n  memory: {type: session, maxMessages: 20}\n")
+
+	out, errOut, err := runMigrate(t, "migrate", "--to-agent", "--project", legacy)
+	if err != nil {
+		t.Fatalf("migrate (legacy) failed: %v\nstderr:\n%s", err, errOut)
+	}
+	for _, warn := range []string{"spec.permissions is deprecated", "spec.security is no longer", "spec.runtime is no longer", "spec.memory is no longer"} {
+		if !strings.Contains(errOut, warn) {
+			t.Fatalf("missing legacy warning %q in:\n%s", warn, errOut)
+		}
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.agent"), []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacyGraph, err := project.LoadProject(dir)
+	if err != nil {
+		t.Fatalf("migrated legacy .agent did not re-load: %v\n%s", err, out)
+	}
+	got := normResourceSpecJSON(t, legacyGraph)
+	for k, wv := range want {
+		if got[k] != wv {
+			t.Fatalf("resource %s diverged after legacy migration (should equal legacy-free):\n clean: %s\n legacy:%s", k, wv, got[k])
+		}
+	}
+}
+
+func keysOfStrMap(m map[string]string) []string {
+	var k []string
+	for key := range m {
+		k = append(k, key)
+	}
+	return k
 }

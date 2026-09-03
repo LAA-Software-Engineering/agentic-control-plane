@@ -246,3 +246,32 @@ func TestRaise_ToolWorkspace(t *testing.T) {
 	g2 := lowerToGraph(t, out)
 	assertSpecEqual(t, "tool workspace", g1.Tools["workspace"].Spec, g2.Tools["workspace"].Spec, out)
 }
+
+// TestRaise_ResidualsAreGenuine characterizes the complete residual set (ADR 007 step 1): after closing
+// the field gaps, the ONLY constructs raise refuses are genuinely-unraiseable ones — a YAML-authored
+// workflow (no lossless .agent step-DAG form) and a non-convention agent schema ref. Nothing in the
+// supported declarative model is refused, so migration is lossless for the supported model.
+func TestRaise_ResidualsAreGenuine(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Workflows: map[string]*spec.WorkflowResource{
+			"flow": {Metadata: spec.Metadata{Name: "flow"}, Spec: spec.WorkflowSpec{Steps: []spec.WorkflowStep{{ID: "s"}}}},
+		},
+		Agents: map[string]*spec.AgentResource{
+			"a": {Metadata: spec.Metadata{Name: "a"}, Spec: spec.AgentSpec{Output: &spec.AgentIO{Schema: "weird/path.json"}}},
+		},
+	}
+	_, unsup := Graph(g)
+	if len(unsup) == 0 {
+		t.Fatal("expected residual Unsupported findings for the workflow + bad schema ref")
+	}
+	allowed := map[string]bool{
+		"spec.steps":         true, // YAML workflow
+		"spec.output.schema": true, // non-convention schema ref
+		"spec.input.schema":  true,
+	}
+	for _, u := range unsup {
+		if !allowed[u.Field] {
+			t.Fatalf("unexpected residual: %s (%s) — only genuinely-unraiseable constructs should remain, got %+v", u.Field, u.Kind, unsup)
+		}
+	}
+}
