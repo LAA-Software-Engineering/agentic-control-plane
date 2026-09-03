@@ -46,6 +46,12 @@ concrete and bound its cost.
 
 ### 1. Additive, never mandatory — YAML remains a first-class ingress
 
+> **Superseded by [ADR 007](007-remove-yaml-ingestion.md) (2026-09-03)** on the "YAML remains a
+> first-class ingress" point. ADR 007 makes `.agent` the only executable source and moves machine
+> ingress to a typed ResourceGraph API; YAML is retained only as output serialization. The rest of this
+> ADR — inline `tool`/`policy` (and later environment/provider/workspace) declarations lowering to the
+> same resources the YAML loader produced — stands and is in fact what makes ADR 007 possible.
+
 The blocks are one *more* way to author a tool or policy, not a replacement. The YAML loader
 (`internal/spec`, `internal/project`) stays exactly as ADR 003 §2 committed: 58 YAML fixtures keep
 working, machine-generated resources keep an ingress that is not a parser, and YAML remains the
