@@ -124,6 +124,67 @@ spec:
 	}
 }
 
+// TestInlinePolicy_HitlYAMLEquivalence is the ADR 005 §2 golden for the .agent hitl block (issues
+// #106, #440): an inline policy with a rich hitl config and its YAML twin normalize to byte-identical
+// spec JSON, so the two front ends can never diverge on human-in-the-loop review config.
+func TestInlinePolicy_HitlYAMLEquivalence(t *testing.T) {
+	agentSrc := `policy gated-publish {
+    approvals { requiredFor { tool.publish.default } }
+    hitl {
+        descriptionPrefix "Publishing requires operator approval"
+        redactKeys { "token" "password" }
+        toolSwitchMap {
+            deploy_to_production { missing_operation staging }
+        }
+        interruptOn {
+            deploy
+            publish {
+                allowedDecisions { approve reject edit }
+                description "Review publish (${uses})"
+                allowedEditArgs { "topic" }
+                deniedEditArgs { "secret" }
+                switchMap {
+                    a.b { c.d }
+                }
+                redactKeys { "apiKey" }
+            }
+        }
+    }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Policy
+metadata: {name: gated-publish}
+spec:
+  approvals: {requiredFor: [tool.publish.default]}
+  hitl:
+    descriptionPrefix: Publishing requires operator approval
+    redactKeys: [token, password]
+    toolSwitchMap:
+      deploy_to_production: [missing_operation, staging]
+    interruptOn:
+      deploy: true
+      publish:
+        allowedDecisions: [approve, reject, edit]
+        description: "Review publish (${uses})"
+        allowedEditArgs: [topic]
+        deniedEditArgs: [secret]
+        switchMap:
+          a.b: [c.d]
+        redactKeys: [apiKey]
+`
+	inline := lowerToolsOrFatal(t, agentSrc).Policies[0]
+
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "gated-publish.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.PolicyResource)
+
+	if normPolicySpecJSON(t, inline) != normPolicySpecJSON(t, fromYAML) {
+		t.Fatalf("inline hitl policy spec differs from YAML twin:\n inline: %s\n yaml:   %s", normPolicySpecJSON(t, inline), normPolicySpecJSON(t, fromYAML))
+	}
+}
+
 func normPolicySpecJSON(t *testing.T, pr *spec.PolicyResource) string {
 	t.Helper()
 	g := &spec.ProjectGraph{Policies: map[string]*spec.PolicyResource{pr.Metadata.Name: pr}}
