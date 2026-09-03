@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/Terfyn/terfyn/internal/policy"
+	"github.com/Terfyn/terfyn/internal/runtime/agentcli"
 )
 
 // requireLiveClaude gates the test on the env flag and a resolvable binary, returning the binary to
@@ -89,7 +90,7 @@ func TestS9Live_builtinsAreDeniedByPinnedCLI(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	session, _, err := ClaudeCodeRuntime{Bin: bin}.RunExternalAgent(ctx, ExternalAgentRun{
+	session, _, err := agentcli.RunExternalAgent(ctx, ClaudeCodeRuntime{Bin: bin}, agentcli.ExternalAgentRun{
 		Graph:     graph,
 		Agent:     graph.Agents["Reviewer"],
 		Eval:      policy.NewEvaluator(graph, nil),
@@ -97,7 +98,7 @@ func TestS9Live_builtinsAreDeniedByPinnedCLI(t *testing.T) {
 		RunID:     "s9-live",
 		Prompt:    prompt,
 		Run:       policy.RunContext{},
-		Limits:    Limits{MaxTurns: 4, Timeout: 2 * time.Minute},
+		Limits:    agentcli.Limits{MaxTurns: 4, Timeout: 2 * time.Minute},
 		ConfigDir: t.TempDir(),
 	})
 	// A benign end-in-error (the model giving up because it has no write tool) is acceptable — the

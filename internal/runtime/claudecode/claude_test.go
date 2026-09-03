@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/Terfyn/terfyn/internal/runtime/agentcli"
 )
 
 // fakeRunner returns canned stdout (and optional error) and records the argv it was given.
@@ -35,7 +37,7 @@ func TestParseStreamJSON_Success(t *testing.T) {
 	if len(s.Turns) != 2 || len(s.ToolUses) != 1 || s.ToolUses[0].Name != "workspace_read_file" {
 		t.Fatalf("turns/tooluses: %+v", s)
 	}
-	if s.FinalText != "All good." || s.NumTurns != 2 || s.CostUSD != 0.0123 || s.StopReason != StopSuccess {
+	if s.FinalText != "All good." || s.NumTurns != 2 || s.CostUSD != 0.0123 || s.StopReason != agentcli.StopSuccess {
 		t.Fatalf("result fields: %+v", s)
 	}
 }
@@ -46,7 +48,7 @@ func TestParseStreamJSON_TolerantOfNoise(t *testing.T) {
 	if err != nil {
 		t.Fatalf("noise/unknown events must be skipped, got %v", err)
 	}
-	if s.StopReason != StopSuccess {
+	if s.StopReason != agentcli.StopSuccess {
 		t.Fatalf("stop: %+v", s)
 	}
 }
@@ -61,11 +63,11 @@ func TestParseStreamJSON_MissingResultIsError(t *testing.T) {
 func TestRunSession_Success(t *testing.T) {
 	var argv []string
 	c := ClaudeCodeRuntime{Bin: "claude", Run: fakeRunner(successStream, nil, &argv)}
-	s, err := c.RunSession(context.Background(), RunSpec{Prompt: "fix it", SystemPrompt: "you are a fixer", MaxTurns: 3, MCPConfig: "/tmp/run.json"})
+	s, err := c.RunSession(context.Background(), agentcli.RunSpec{Prompt: "fix it", SystemPrompt: "you are a fixer", MaxTurns: 3, MCPConfig: "/tmp/run.json"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.FinalText != "All good." || s.StopReason != StopSuccess {
+	if s.FinalText != "All good." || s.StopReason != agentcli.StopSuccess {
 		t.Fatalf("session: %+v", s)
 	}
 	// argv carries the non-interactive contract + the spec-derived flags.
@@ -84,19 +86,19 @@ func TestRunSession_Success(t *testing.T) {
 func TestRunSession_MaxTurns(t *testing.T) {
 	stream := `{"type":"result","subtype":"error_max_turns","num_turns":3,"total_cost_usd":0.05,"is_error":true}`
 	c := ClaudeCodeRuntime{Run: fakeRunner(stream, nil, nil)}
-	s, err := c.RunSession(context.Background(), RunSpec{Prompt: "x"})
+	s, err := c.RunSession(context.Background(), agentcli.RunSpec{Prompt: "x"})
 	var mt *MaxTurnsError
 	if !errors.As(err, &mt) || mt.NumTurns != 3 {
 		t.Fatalf("expected *MaxTurnsError{3}, got %v", err)
 	}
-	if s.StopReason != StopMaxTurns { // session is still returned
+	if s.StopReason != agentcli.StopMaxTurns { // session is still returned
 		t.Fatalf("session should carry max_turns: %+v", s)
 	}
 }
 
 func TestRunSession_ProcessErrorNoStream(t *testing.T) {
 	c := ClaudeCodeRuntime{Run: fakeRunner("", errors.New("exec: \"claude\": not found"), nil)}
-	if _, err := c.RunSession(context.Background(), RunSpec{Prompt: "x"}); err == nil || !strings.Contains(err.Error(), "run agent") {
+	if _, err := c.RunSession(context.Background(), agentcli.RunSpec{Prompt: "x"}); err == nil || !strings.Contains(err.Error(), "run agent") {
 		t.Fatalf("a failed spawn with no stream must surface a run error, got %v", err)
 	}
 }
@@ -104,7 +106,7 @@ func TestRunSession_ProcessErrorNoStream(t *testing.T) {
 func TestRunSession_ErrorResult(t *testing.T) {
 	stream := `{"type":"result","subtype":"error_during_execution","num_turns":1,"is_error":true}`
 	c := ClaudeCodeRuntime{Run: fakeRunner(stream, nil, nil)}
-	if _, err := c.RunSession(context.Background(), RunSpec{Prompt: "x"}); err == nil || !strings.Contains(err.Error(), "ended in error") {
+	if _, err := c.RunSession(context.Background(), agentcli.RunSpec{Prompt: "x"}); err == nil || !strings.Contains(err.Error(), "ended in error") {
 		t.Fatalf("an error result must be an error, got %v", err)
 	}
 }
@@ -112,13 +114,13 @@ func TestRunSession_ErrorResult(t *testing.T) {
 // A result event with an empty/missing subtype and is_error:false must fail closed as
 // StopError rather than being silently taken as success (the enforcer-of-record boundary).
 func TestNormalizeStop_EmptySubtypeFailsClosed(t *testing.T) {
-	if got := normalizeStop("", false); got != StopError {
+	if got := normalizeStop("", false); got != agentcli.StopError {
 		t.Fatalf("empty subtype must be StopError, got %v", got)
 	}
-	if got := normalizeStop("something_new", false); got != StopError {
+	if got := normalizeStop("something_new", false); got != agentcli.StopError {
 		t.Fatalf("unknown subtype must be StopError, got %v", got)
 	}
-	if got := normalizeStop("success", true); got != StopError {
+	if got := normalizeStop("success", true); got != agentcli.StopError {
 		t.Fatalf("success subtype with is_error must be StopError, got %v", got)
 	}
 }
@@ -126,11 +128,11 @@ func TestNormalizeStop_EmptySubtypeFailsClosed(t *testing.T) {
 func TestRunSession_EmptySubtypeIsError(t *testing.T) {
 	stream := `{"type":"result","subtype":"","num_turns":1,"result":"partial","is_error":false}`
 	c := ClaudeCodeRuntime{Run: fakeRunner(stream, nil, nil)}
-	s, err := c.RunSession(context.Background(), RunSpec{Prompt: "x"})
+	s, err := c.RunSession(context.Background(), agentcli.RunSpec{Prompt: "x"})
 	if err == nil || !strings.Contains(err.Error(), "ended in error") {
 		t.Fatalf("a result with no subtype must fail closed, got %v", err)
 	}
-	if s.StopReason != StopError {
+	if s.StopReason != agentcli.StopError {
 		t.Fatalf("stop: %+v", s)
 	}
 }
@@ -139,11 +141,11 @@ func TestRunSession_EmptySubtypeIsError(t *testing.T) {
 // a good result), the result stays authoritative but the exit error must be kept for audit.
 func TestRunSession_PostResultExitErrorPreserved(t *testing.T) {
 	c := ClaudeCodeRuntime{Run: fakeRunner(successStream, errors.New("signal: killed"), nil)}
-	s, err := c.RunSession(context.Background(), RunSpec{Prompt: "x"})
+	s, err := c.RunSession(context.Background(), agentcli.RunSpec{Prompt: "x"})
 	if err != nil {
 		t.Fatalf("result event is authoritative for a success, got %v", err)
 	}
-	if s.StopReason != StopSuccess {
+	if s.StopReason != agentcli.StopSuccess {
 		t.Fatalf("stop: %+v", s)
 	}
 	if !strings.Contains(s.ProcessError, "signal: killed") {

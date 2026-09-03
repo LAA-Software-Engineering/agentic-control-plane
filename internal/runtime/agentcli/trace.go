@@ -1,4 +1,4 @@
-package claudecode
+package agentcli
 
 import (
 	"context"
@@ -31,7 +31,7 @@ func EmitSessionTurns(ctx context.Context, rec *trace.Recorder, runID, agent str
 		stepID := fmt.Sprintf("turn-%d", i+1)
 		if _, err := rec.Append(ctx, runID, stepID, trace.EventLLMCompletion, trace.ActorAgent,
 			trace.LLMCompletionData(agent, session.Model, cost)); err != nil {
-			return fmt.Errorf("claudecode: emit turn trace: %w", err)
+			return fmt.Errorf("agentcli: emit turn trace: %w", err)
 		}
 	}
 	return nil
@@ -61,7 +61,7 @@ func EmitLimitHit(ctx context.Context, rec *trace.Recorder, runID, stepID string
 	}
 	if _, aerr := rec.Append(ctx, runID, stepID, trace.EventLimitHit, trace.ActorSystem,
 		trace.LimitHitData(kind, stepID, d.Extra)); aerr != nil {
-		return fmt.Errorf("claudecode: emit limit_hit trace: %w", aerr)
+		return fmt.Errorf("agentcli: emit limit_hit trace: %w", aerr)
 	}
 	return nil
 }

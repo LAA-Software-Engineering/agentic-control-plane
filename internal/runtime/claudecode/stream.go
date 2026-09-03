@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/Terfyn/terfyn/internal/runtime/agentcli"
 )
 
 // parseStreamJSON parses Claude Code's `--output-format stream-json` output: newline-delimited JSON
@@ -17,8 +19,8 @@ import (
 //	{"type":"result","subtype":"success"|"error_max_turns"|..,"total_cost_usd":..,"num_turns":..,"result":"..","is_error":bool}
 //
 // The result event is authoritative for cost / turn count / stop reason / final text.
-func parseStreamJSON(r io.Reader) (Session, error) {
-	var s Session
+func parseStreamJSON(r io.Reader) (agentcli.Session, error) {
+	var s agentcli.Session
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // allow long lines (tool inputs, final text)
 
@@ -62,8 +64,8 @@ func parseStreamJSON(r io.Reader) (Session, error) {
 	return s, nil
 }
 
-func assistantTurn(m *streamMessage) Turn {
-	var t Turn
+func assistantTurn(m *streamMessage) agentcli.Turn {
+	var t agentcli.Turn
 	if m == nil {
 		return t
 	}
@@ -73,7 +75,7 @@ func assistantTurn(m *streamMessage) Turn {
 		case "text":
 			text.WriteString(block.Text)
 		case "tool_use":
-			t.ToolUses = append(t.ToolUses, ToolUse{ID: block.ID, Name: block.Name, Input: block.Input})
+			t.ToolUses = append(t.ToolUses, agentcli.ToolUse{ID: block.ID, Name: block.Name, Input: block.Input})
 		}
 	}
 	t.Text = text.String()
@@ -85,19 +87,19 @@ func assistantTurn(m *streamMessage) Turn {
 // other shape, including an empty/missing subtype or an unrecognized one, normalizes
 // to StopError. For a boundary whose job is to be the enforcer of record, an
 // unparseable result reason is safer treated as an error than silently as success.
-func normalizeStop(subtype string, isError bool) StopReason {
+func normalizeStop(subtype string, isError bool) agentcli.StopReason {
 	switch strings.TrimSpace(subtype) {
 	case "success":
 		if isError { // an explicit error flag overrides a "success" subtype
-			return StopError
+			return agentcli.StopError
 		}
-		return StopSuccess
+		return agentcli.StopSuccess
 	case "error_max_turns":
-		return StopMaxTurns
+		return agentcli.StopMaxTurns
 	default:
 		// Any other shape — an unrecognized subtype, or an empty/missing one — is
 		// fail-closed. (Previously an empty subtype normalized to StopSuccess.)
-		return StopError
+		return agentcli.StopError
 	}
 }
 

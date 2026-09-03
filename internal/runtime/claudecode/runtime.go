@@ -25,6 +25,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/execir"
 	"github.com/Terfyn/terfyn/internal/policy"
 	"github.com/Terfyn/terfyn/internal/runtime"
+	"github.com/Terfyn/terfyn/internal/runtime/agentcli"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/tools"
@@ -148,7 +149,7 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	}
 	defer os.RemoveAll(cfgDir)
 
-	session, runCtx, runErr := r.driver.RunExternalAgent(ctx, ExternalAgentRun{
+	session, runCtx, runErr := agentcli.RunExternalAgent(ctx, r.driver, agentcli.ExternalAgentRun{
 		Graph:     graph,
 		Agent:     agent,
 		Eval:      eval,
@@ -157,7 +158,7 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		RunID:     runID,
 		Prompt:    string(inputBytes),
 		Run:       policy.RunContext{StartedAt: started, ApprovedActions: opts.ApprovedActions},
-		Limits:    MapLimits(agent.Spec.Constraints, nil),
+		Limits:    agentcli.MapLimits(agent.Spec.Constraints, nil),
 		ConfigDir: cfgDir,
 	})
 

@@ -1,4 +1,4 @@
-package claudecode
+package agentcli
 
 import (
 	"context"
@@ -30,12 +30,16 @@ type ExternalAgentRun struct {
 	ExtraArgs []string
 }
 
-// RunExternalAgent drives one agent through the external CLI, constrained to its grants:
+// RunExternalAgent drives one agent through the given external CLI driver, constrained to its
+// grants. It is the CLI-agnostic composition shared by every runtime target: the driver
+// (AgentRuntime) is the only per-CLI seam — everything around it is identical whichever CLI runs
+// the program.
 //
 //   - compile the agent's grants into a per-run MCP server (closed-world tools/list, #338),
 //   - serve it over an authenticated loopback endpoint bound to a per-run bearer token (#367),
-//   - spawn the external agent with --mcp-config + --strict-mcp-config so those grants are the ONLY
-//     tools it sees, and every tools/call routes through policy CheckToolCall -> Tools.Call,
+//   - spawn the external agent (driver.RunSession) constrained to the per-run MCP server so those
+//     grants are the ONLY tools it sees, and every tools/call routes through policy CheckToolCall ->
+//     Tools.Call,
 //   - fold the agent's turns into the run's hash-linked trace (#341), and
 //   - keep Terfyn the enforcer of record: fold the session cost and re-check the budget (#340), so a
 //     breach fails closed with limit_hit rather than trusting the harness's own accounting.
@@ -43,9 +47,9 @@ type ExternalAgentRun struct {
 // It returns the parsed Session, the run context with the session cost folded in, and an error: a
 // spawn/stream failure, a session that ended in error or max-turns, or a budget breach. The per-run
 // MCP server is torn down before it returns.
-func (c ClaudeCodeRuntime) RunExternalAgent(ctx context.Context, in ExternalAgentRun) (Session, policy.RunContext, error) {
+func RunExternalAgent(ctx context.Context, driver AgentRuntime, in ExternalAgentRun) (Session, policy.RunContext, error) {
 	if in.Agent == nil {
-		return Session{}, in.Run, fmt.Errorf("claudecode: nil agent")
+		return Session{}, in.Run, fmt.Errorf("agentcli: nil agent")
 	}
 	agentName := in.Agent.Metadata.Name
 
@@ -58,7 +62,7 @@ func (c ClaudeCodeRuntime) RunExternalAgent(ctx context.Context, in ExternalAgen
 
 	transport, stop, err := srv.ListenLocal()
 	if err != nil {
-		return Session{}, in.Run, fmt.Errorf("claudecode: start per-run MCP server: %w", err)
+		return Session{}, in.Run, fmt.Errorf("agentcli: start per-run MCP server: %w", err)
 	}
 	defer stop()
 
@@ -78,7 +82,7 @@ func (c ClaudeCodeRuntime) RunExternalAgent(ctx context.Context, in ExternalAgen
 	ctx2, cancel := in.Limits.WithTimeout(ctx)
 	defer cancel()
 
-	session, runErr := c.RunSession(ctx2, rs)
+	session, runErr := driver.RunSession(ctx2, rs)
 
 	// Fold the agent's turns into the audit chain. Best-effort: a trace-store error never masks the
 	// run outcome (the tool-call events were already emitted by the dispatcher during the run).

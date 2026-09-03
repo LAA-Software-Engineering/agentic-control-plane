@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Terfyn/terfyn/internal/runtime/agentcli"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -43,7 +44,7 @@ func (c ClaudeCodeRuntime) runner() processRunner {
 // argv builds the non-interactive command line: print mode, stream-json output, the
 // built-in-tool denial (see denyBuiltinToolsArgs), and strict MCP config so the only
 // reachable tools are the granted ones served by Terfyn's per-run MCP server.
-func (c ClaudeCodeRuntime) argv(spec RunSpec) []string {
+func (c ClaudeCodeRuntime) argv(spec agentcli.RunSpec) []string {
 	args := []string{
 		c.bin(),
 		"-p", spec.Prompt,
@@ -106,17 +107,17 @@ func (e *MaxTurnsError) Error() string {
 // a process that cannot be started/streamed is an error with no session; a parsed session that ended
 // in max-turns is returned with a *MaxTurnsError; any other error result is returned with an error;
 // a success returns (session, nil).
-func (c ClaudeCodeRuntime) RunSession(ctx context.Context, spec RunSpec) (Session, error) {
+func (c ClaudeCodeRuntime) RunSession(ctx context.Context, spec agentcli.RunSpec) (agentcli.Session, error) {
 	args := c.argv(spec)
 	// S9 soundness fence: never spawn an agent whose argv would expose a built-in tool or
 	// bypass the permission boundary (e.g. an ExtraArgs that smuggles --allowedTools Bash), and
 	// never let ExtraArgs carry the transport/scope flags that alter the callable set out of band
 	// (a second --mcp-config whose tools bypass CheckToolCall, or --add-dir).
 	if err := checkNoBuiltinToolExposure(args); err != nil {
-		return Session{}, err
+		return agentcli.Session{}, err
 	}
 	if err := checkExtraArgsNoAuthoritySurface(spec.ExtraArgs); err != nil {
-		return Session{}, err
+		return agentcli.Session{}, err
 	}
 	stdout, runErr := c.runner()(ctx, args, "")
 
@@ -124,9 +125,9 @@ func (c ClaudeCodeRuntime) RunSession(ctx context.Context, spec RunSpec) (Sessio
 	if parseErr != nil {
 		if runErr != nil {
 			// The process failed and produced no usable stream — surface the process error.
-			return Session{}, fmt.Errorf("claudecode: run agent: %w", runErr)
+			return agentcli.Session{}, fmt.Errorf("claudecode: run agent: %w", runErr)
 		}
-		return Session{}, parseErr
+		return agentcli.Session{}, parseErr
 	}
 	if runErr != nil {
 		// The stream parsed, so the result event is authoritative for the outcome, but the
@@ -136,9 +137,9 @@ func (c ClaudeCodeRuntime) RunSession(ctx context.Context, spec RunSpec) (Sessio
 	}
 
 	switch {
-	case session.StopReason == StopMaxTurns:
+	case session.StopReason == agentcli.StopMaxTurns:
 		return session, &MaxTurnsError{NumTurns: session.NumTurns}
-	case session.IsError || session.StopReason == StopError:
+	case session.IsError || session.StopReason == agentcli.StopError:
 		return session, fmt.Errorf("claudecode: external agent ended in error (%s)", session.StopReason)
 	}
 	return session, nil
