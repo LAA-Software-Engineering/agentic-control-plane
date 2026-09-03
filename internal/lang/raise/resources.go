@@ -260,6 +260,16 @@ func (r *raiser) defaults(d *spec.ProjectDefaults) *lang.DefaultsDecl {
 	return out
 }
 
+// projectLimits raises spec.ProjectSpec.Limits to the top-level singleton lang.LimitsDecl (issue #440,
+// ADR 007), reusing raiseToolLimits for the shared body. Returns nil when the spec is nil or every
+// field is zero/empty, so an empty block is never emitted.
+func (r *raiser) projectLimits(l *spec.ExecutionLimits) *lang.LimitsDecl {
+	if l == nil || (*l == spec.ExecutionLimits{}) {
+		return nil
+	}
+	return &lang.LimitsDecl{Block: raiseToolLimits(l)}
+}
+
 // provider raises one ProjectSpec.Providers.Models entry to a lang.ProviderDecl (issue #440).
 func (r *raiser) provider(alias string, cfg spec.ModelProviderConfig) *lang.ProviderDecl {
 	return &lang.ProviderDecl{

@@ -35,6 +35,8 @@ func Print(f *File) string {
 			printProvider(&b, n)
 		case *DefaultsDecl:
 			printDefaults(&b, n)
+		case *LimitsDecl:
+			printLimitsDecl(&b, n)
 		default:
 			fmt.Fprintf(&b, "/* unknown decl %T */\n", d)
 		}

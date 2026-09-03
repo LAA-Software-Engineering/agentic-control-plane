@@ -566,6 +566,95 @@ func TestMergeLowered_DefaultsCollision(t *testing.T) {
 	}
 }
 
+// TestInlineProjectLimits_YAMLEquivalence is the ADR 005 §2 golden for the top-level `limits` block
+// (issue #440, ADR 007): an inline project limits block and its YAML twin normalize to byte-identical
+// spec JSON, so the two front ends never diverge on the project-wide execution-limit baseline.
+func TestInlineProjectLimits_YAMLEquivalence(t *testing.T) {
+	agentSrc := `limits {
+    maxToolInputBytes 4096
+    maxToolOutputBytes 8192
+    maxWorkflowNesting 4
+    maxLoopIterations 100
+    toolInputExceedPolicy fail
+    checkpointExceedPolicy truncate
+}`
+	f, diags := lang.Parse("t.agent", agentSrc)
+	if diags.HasErrors() {
+		t.Fatalf("parse: %v", diags)
+	}
+	res, ld := LowerFile(f, Options{})
+	if ld.HasErrors() {
+		t.Fatalf("lower: %v", ld)
+	}
+	if res.Limits == nil {
+		t.Fatal("expected a lowered project limits block")
+	}
+	inline := res.ToGraph().Spec.Limits
+
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Project
+metadata: {name: demo}
+spec:
+  limits:
+    maxToolInputBytes: 4096
+    maxToolOutputBytes: 8192
+    maxWorkflowNesting: 4
+    maxLoopIterations: 100
+    toolInputExceedPolicy: fail
+    checkpointExceedPolicy: truncate
+`
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "project.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.ProjectResource).Spec.Limits
+
+	inJSON, err := json.Marshal(inline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yJSON, err := json.Marshal(fromYAML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(inJSON) != string(yJSON) {
+		t.Fatalf("inline project limits differs from YAML twin:\n inline: %s\n yaml:   %s", inJSON, yJSON)
+	}
+}
+
+// TestLowerProjectLimits_DuplicateBlockDiag: a project may declare a top-level `limits` block at most
+// once; a second block in the same file is a lowering error, never a silent last-wins baseline swap.
+func TestLowerProjectLimits_DuplicateBlockDiag(t *testing.T) {
+	f, diags := lang.Parse("t.agent", "limits {\n    maxToolInputBytes 1\n}\nlimits {\n    maxToolInputBytes 2\n}")
+	if diags.HasErrors() {
+		t.Fatalf("unexpected parse errors: %v", diags)
+	}
+	_, ld := LowerFile(f, Options{})
+	if !ld.HasErrors() {
+		t.Fatal("two top-level `limits` blocks must be a lowering error")
+	}
+}
+
+// TestMergeLowered_ProjectLimitsCollision: a lowered top-level `limits` block colliding with an
+// existing spec.limits (from YAML or another .agent block) is a load error (ADR 005 §3), never a
+// silent swap of the enforced execution-limit ceiling.
+func TestMergeLowered_ProjectLimitsCollision(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Spec: spec.ProjectSpec{Limits: &spec.ExecutionLimits{MaxToolInputBytes: 1}},
+	}
+	res := &Result{Limits: &spec.ExecutionLimits{MaxToolInputBytes: 2}}
+	err := MergeLowered(g, res)
+	if err == nil {
+		t.Fatal("a duplicate project limits block across ingress must be an error")
+	}
+	if !containsStr(err.Error(), "limits") {
+		t.Fatalf("collision error should name `limits`: %v", err)
+	}
+	if g.Spec.Limits.MaxToolInputBytes != 1 {
+		t.Fatalf("failed merge mutated the existing limits: %+v", g.Spec.Limits)
+	}
+}
+
 // TestInlineTool_WorkspaceYAMLEquivalence is the ADR 005 §2 golden for the .agent workspace tool
 // sub-block (issue #440): an inline workspace tool and its YAML twin normalize to byte-identical spec
 // JSON, so the two front ends never diverge on native workspace config.

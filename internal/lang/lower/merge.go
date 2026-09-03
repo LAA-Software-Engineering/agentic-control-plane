@@ -104,6 +104,12 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 	if r.Defaults != nil && g.Spec.Defaults != nil {
 		errs = append(errs, fmt.Errorf("project: duplicate `defaults` block from lowered .agent source (also declared in YAML spec.defaults or another .agent block)"))
 	}
+	// The singleton top-level `limits { … }` block lowers into g.Spec.Limits (the project-wide baseline).
+	// Like defaults, a collision with a YAML `spec.limits` or another .agent `limits` block is an error
+	// with no precedence — silently choosing one baseline over another would change the enforced ceiling.
+	if r.Limits != nil && g.Spec.Limits != nil {
+		errs = append(errs, fmt.Errorf("project: duplicate `limits` block from lowered .agent source (also declared in YAML spec.limits or another .agent block)"))
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -128,6 +134,9 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 	}
 	if r.Defaults != nil {
 		g.Spec.Defaults = r.Defaults
+	}
+	if r.Limits != nil {
+		g.Spec.Limits = r.Limits
 	}
 	return nil
 }

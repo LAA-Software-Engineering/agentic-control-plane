@@ -338,6 +338,16 @@ func (l *lowerer) defaults(d *lang.DefaultsDecl) *spec.ProjectDefaults {
 	return out
 }
 
+// projectLimits lowers the singleton top-level `limits { … }` block to spec.ProjectSpec.Limits (issue
+// #440, ADR 007), reusing lowerToolLimits for the shared nine-field body. Returns nil only for a nil
+// decl or nil body.
+func (l *lowerer) projectLimits(d *lang.LimitsDecl) *spec.ExecutionLimits {
+	if d == nil || d.Block == nil {
+		return nil
+	}
+	return lowerToolLimits(d.Block)
+}
+
 // environment lowers an `environment <Name> { overrides { … } }` declaration to the same
 // spec.EnvironmentResource the YAML loader produces (issue #440), applied by spec.ApplyEnvironment.
 func (l *lowerer) environment(d *lang.EnvironmentDecl) *spec.EnvironmentResource {
