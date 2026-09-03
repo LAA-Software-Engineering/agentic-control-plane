@@ -27,6 +27,24 @@ func TestAgentMaxIterations(t *testing.T) {
 	}
 }
 
+func TestAgentTemperature(t *testing.T) {
+	t.Parallel()
+	if got := agentTemperature(nil); got != nil {
+		t.Fatalf("nil agent = %v, want nil", *got)
+	}
+	if got := agentTemperature(&spec.AgentResource{}); got != nil {
+		t.Fatalf("nil constraints = %v, want nil", *got)
+	}
+	// 0 means "provider default" (spec omitempty / env-merge semantics), so it is not sent.
+	if got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{Temperature: 0}}}); got != nil {
+		t.Fatalf("zero temperature = %v, want nil", *got)
+	}
+	got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{Temperature: 0.2}}})
+	if got == nil || *got != 0.2 {
+		t.Fatalf("explicit temperature = %v, want 0.2", got)
+	}
+}
+
 func TestResolveAgentToolCall(t *testing.T) {
 	t.Parallel()
 	advertised := map[string]string{

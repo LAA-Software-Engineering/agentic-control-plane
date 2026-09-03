@@ -19,9 +19,10 @@ func mapToAnthropicRequest(req GenerateRequest) (anthropic.Request, error) {
 		return anthropic.Request{}, err
 	}
 	out := anthropic.Request{
-		Model:    req.Model,
-		System:   system,
-		Messages: msgs,
+		Model:       req.Model,
+		System:      system,
+		Messages:    msgs,
+		Temperature: req.Temperature,
 	}
 	// tool_choice is only valid alongside tools; a stray ToolChoice on a
 	// plain completion is ignored so existing two-field call sites stay valid.

@@ -48,6 +48,44 @@ func TestValidateProjectGraph_negativePolicyBudgets(t *testing.T) {
 	}
 }
 
+func TestValidateProjectGraph_temperatureOutOfRange(t *testing.T) {
+	for _, temp := range []float64{-0.1, 2.5} {
+		g := &ProjectGraph{
+			Agents: map[string]*AgentResource{
+				"a": {
+					Kind:     KindAgent,
+					Metadata: Metadata{Name: "a"},
+					Spec: AgentSpec{
+						Constraints: &AgentConstraints{Temperature: temp},
+					},
+				},
+			},
+		}
+		err := ValidateProjectGraph(g, t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "constraints.temperature must be between 0 and 2") {
+			t.Fatalf("temperature %v: expected range error, got %v", temp, err)
+		}
+	}
+
+	// In-range temperatures (including 0 and 2) are accepted.
+	for _, temp := range []float64{0, 0.7, 2} {
+		g := &ProjectGraph{
+			Agents: map[string]*AgentResource{
+				"a": {
+					Kind:     KindAgent,
+					Metadata: Metadata{Name: "a"},
+					Spec: AgentSpec{
+						Constraints: &AgentConstraints{Temperature: temp},
+					},
+				},
+			},
+		}
+		if err := ValidateProjectGraph(g, t.TempDir()); err != nil {
+			t.Fatalf("temperature %v: unexpected error %v", temp, err)
+		}
+	}
+}
+
 func TestValidateProjectGraph_workflowStepBothAgentAndUses(t *testing.T) {
 	g := &ProjectGraph{
 		Agents: map[string]*AgentResource{

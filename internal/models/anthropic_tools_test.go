@@ -72,6 +72,33 @@ func TestMapToAnthropicRequest_toolsAndChoice(t *testing.T) {
 	}
 }
 
+func TestMapToAnthropicRequest_temperature(t *testing.T) {
+	t.Parallel()
+	temp := 0.3
+	got, err := mapToAnthropicRequest(GenerateRequest{
+		Model:       "claude-sonnet-4-20250514",
+		Messages:    []ChatMessage{{Role: "user", Content: "hi"}},
+		Temperature: &temp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Temperature == nil || *got.Temperature != 0.3 {
+		t.Fatalf("temperature = %v, want 0.3", got.Temperature)
+	}
+
+	got, err = mapToAnthropicRequest(GenerateRequest{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Temperature != nil {
+		t.Fatalf("temperature should be nil when unset, got %v", *got.Temperature)
+	}
+}
+
 func TestMapToAnthropicRequest_omitsToolsWhenEmpty(t *testing.T) {
 	t.Parallel()
 	got, err := mapToAnthropicRequest(GenerateRequest{

@@ -36,6 +36,45 @@ func TestMapStopReason(t *testing.T) {
 	}
 }
 
+func TestMarshalRequest_temperature(t *testing.T) {
+	t.Parallel()
+	temp := 0.0
+	body, err := marshalRequest(Request{
+		Model:       "claude-sonnet-4-20250514",
+		Messages:    []ChatMessage{{Role: "user", Content: "hi"}},
+		Temperature: &temp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	v, ok := got["temperature"]
+	if !ok {
+		t.Fatalf("temperature missing: %s", body)
+	}
+	if v.(float64) != 0 {
+		t.Fatalf("temperature = %v, want 0", v)
+	}
+
+	body, err = marshalRequest(Request{
+		Model:    "claude-sonnet-4-20250514",
+		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unset map[string]any
+	if err := json.Unmarshal(body, &unset); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := unset["temperature"]; ok {
+		t.Fatalf("temperature present when unset: %v", unset["temperature"])
+	}
+}
+
 func TestParseResponse_toolUse(t *testing.T) {
 	t.Parallel()
 	body := []byte(`{"content":[{"type":"tool_use","id":"toolu_1","name":"search","input":{"q":"go"}}],"stop_reason":"tool_use","usage":{"input_tokens":2,"output_tokens":3}}`)

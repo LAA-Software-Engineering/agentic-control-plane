@@ -463,6 +463,12 @@ func validateAgentSpecs(g *ProjectGraph) []error {
 			if c.TimeoutSeconds < 0 {
 				errs = append(errs, ar.Pos.Errorf("Agent/%s: constraints.timeoutSeconds must be non-negative", name))
 			}
+			// Temperature is sent to the provider (issue #388); reject values outside the broadest
+			// accepted range so an obviously invalid knob fails at validate rather than at request
+			// time. Providers enforce their own (narrower) ceilings; 0 means "provider default".
+			if c.Temperature < 0 || c.Temperature > 2 {
+				errs = append(errs, ar.Pos.Errorf("Agent/%s: constraints.temperature must be between 0 and 2", name))
+			}
 		}
 		if _, err := ResolveAgentAdvertisedTools(ar, g.Tools); err != nil {
 			errs = append(errs, err)

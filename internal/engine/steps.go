@@ -123,13 +123,31 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 	if err != nil {
 		return nil, models.GenerateMeta{}, err
 	}
+	temperature := agentTemperature(agent)
 	if len(toolDefs) == 0 {
 		return e.finishAgentTurn(ctx, ctx2, runHandle, pol, cli, modelRef, modelID, runID, step, pctx, agent, models.GenerateRequest{
-			Model:    modelID,
-			Messages: messages,
+			Model:       modelID,
+			Messages:    messages,
+			Temperature: temperature,
 		})
 	}
-	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName)
+	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName, temperature)
+}
+
+// agentTemperature returns the sampling temperature to send for agent, or nil to leave the provider
+// default. The spec models constraints.temperature as a float64 with omitempty, and environment
+// overlays treat 0 as "unset" (spec.mergeAgentOverride), so a zero value means "provider default"
+// here too; every non-zero value — already folded into the spec hash and plan diffs — is now sent
+// (issue #388).
+func agentTemperature(agent *spec.AgentResource) *float64 {
+	if agent == nil || agent.Spec.Constraints == nil {
+		return nil
+	}
+	t := agent.Spec.Constraints.Temperature
+	if t == 0 {
+		return nil
+	}
+	return &t
 }
 
 func (e *Executor) runAgentToolLoop(
@@ -145,6 +163,7 @@ func (e *Executor) runAgentToolLoop(
 	messages []models.ChatMessage,
 	toolDefs []models.ToolDef,
 	advertised map[string]string,
+	temperature *float64,
 ) (map[string]any, models.GenerateMeta, error) {
 	// maxIter counts Generate turns. tool_use on the last turn fails without executing those calls
 	// (maxIterations: 1 is a single completion; tools never run). HITL interrupt is not consulted
@@ -160,10 +179,11 @@ func (e *Executor) runAgentToolLoop(
 			return nil, acc, err
 		}
 		req := models.GenerateRequest{
-			Model:      modelID,
-			Messages:   messages,
-			Tools:      toolDefs,
-			ToolChoice: models.ToolChoiceAuto,
+			Model:       modelID,
+			Messages:    messages,
+			Tools:       toolDefs,
+			ToolChoice:  models.ToolChoiceAuto,
+			Temperature: temperature,
 		}
 		resp, err := e.generateAgentTurn(ctx, ctx2, runHandle, cli, modelRef, runID, step, req)
 		if err != nil {

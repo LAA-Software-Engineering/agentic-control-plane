@@ -63,6 +63,10 @@ type GenerateRequest struct {
 	Messages   []ChatMessage `json:"messages"`
 	Tools      []ToolDef     `json:"tools,omitempty"`
 	ToolChoice string        `json:"tool_choice,omitempty"`
+	// Temperature is the sampling temperature to send to the provider. Nil leaves it unset so the
+	// provider default applies; a non-nil value (including 0 for deterministic output) is sent
+	// verbatim. Adapters translate it to the provider's request field (issue #388).
+	Temperature *float64 `json:"temperature,omitempty"`
 }
 
 // ToolChoiceOrDefault returns [ToolChoiceAuto] when ToolChoice is unset.
