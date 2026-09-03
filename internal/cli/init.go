@@ -21,12 +21,14 @@ func newInitCmd() *cobra.Command {
 	var parentDir string
 	cmd := &cobra.Command{
 		Use:          "init <name>",
-		Short:        "Create a starter project with project.yaml and a .agent workflow",
+		Short:        "Create a starter .agent-only project",
 		SilenceUsage: true,
 		Long: `Scaffold a minimal valid project under <name> in the parent directory (design doc section 10.2).
 
-Creates project.yaml (apiVersion agentic.dev/v0), YAML policies/ and tools/, and main.agent —
-the authoring surface (ADR 003) — with a tiny native echo workflow you can run after plan/apply.
+Creates a single main.agent — the sole authoring surface (ADR 003, issue #430) — with a starter
+agent and workflow. No project.yaml is required: the project name is the directory name, built-in
+model providers need no configuration, and the generated project validates, plans, applies, and
+runs (on the built-in mock model) with no YAML at all.
 
 Use --parent-dir to choose where <name> is created (default: current directory).`,
 		Args: cobra.ExactArgs(1),

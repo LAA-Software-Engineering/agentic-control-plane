@@ -1,10 +1,20 @@
-// This is the .agent authoring surface (ADR 003): agents and workflows are
-// written here. Tools, policies, and project.yaml stay YAML — the interchange
-// format and where machine-generated or config-shaped resources live.
+// A Terfyn program is written entirely in .agent source (ADR 003, issue #430):
+// agents, workflows, tools, and policies all live here. No project.yaml is
+// required — the project name is the directory name, built-in model providers
+// (anthropic/*, openai/*, gemini/*, grok/*, mock/*) need no configuration, and
+// their credentials come from the environment at run time.
 //
 // `terfyn export --format yaml` materializes the compiled resource graph as
 // YAML on demand; nothing is written to disk by default.
 
-workflow hello() {
-    helper.echo(message: "hello")
+agent assistant {
+    model mock/default
+
+    instructions """
+    You are a helpful assistant.
+    """
+}
+
+workflow hello(input: string) -> string {
+    return assistant(input)
 }
