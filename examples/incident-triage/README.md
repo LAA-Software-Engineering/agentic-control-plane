@@ -5,7 +5,7 @@ This flagship example shows **why a declarative control plane beats ad-hoc glue 
 ## What it demonstrates
 
 - **Agent-owned tools (Epic A)** — `main.agent`'s `responder` agent grants `tool.pager.default`, `tool.logs.default`, `tool.tracker.default`, and the pinned `tool.restart.restart`. The model may only call those advertised operations.
-- **Fail-closed writes** — `policies/gated-remediation.yaml` requires `--approve` for `tool.restart.restart`. Inner agent-loop tools **do not HITL**; `CheckToolCall` denies with **exit 5** (`approval_required`) unless that exact uses string is pre-approved.
+- **Fail-closed writes** — the `gated-remediation` policy (in `main.agent`) requires `--approve` for `tool.restart.restart`. Inner agent-loop tools **do not HITL**; `CheckToolCall` denies with **exit 5** (`approval_required`) unless that exact uses string is pre-approved.
 - **Offline mock** — no API keys. The mock model requests a restart on the first Generate when a restart-like tool is advertised, then returns structured status JSON.
 - **Traceable behavior** — `terfyn logs` shows `system_error` / `approval_required` on the denied path, or `tool_selection` then `tool_execution` when approved. `terfyn audit verify` checks the hash chain.
 
@@ -17,11 +17,7 @@ In a typical script, “page the on-call, maybe bounce the box” is an `if` tha
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports resources; defaults to `mock` model (no API keys). |
-| `main.agent` | The `responder` agent (instructions, constraints, tool grants, typed output) and the `incident-triage` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
-| `tools/pager.yaml` / `logs.yaml` / `tracker.yaml` | Read-only `mock` tools (`sideEffects: false`). |
-| `tools/restart.yaml` | Untrusted mutating `mock` tool (`sideEffects: true`). |
-| `policies/gated-remediation.yaml` | Requires `--approve` for `tool.restart.restart`. |
+| `main.agent` | Everything, authored in [`.agent`](../../docs/LANGUAGE.md): the `pager`/`logs`/`tracker` read-only `mock` tools (`sideEffects: false`), the `restart` untrusted mutating `mock` tool (`sideEffects: true`), the `gated-remediation` policy (requires `--approve` for `tool.restart.restart`), the `responder` agent (instructions, constraints, tool grants, typed output), and the `incident-triage` workflow. No `project.yaml`; the built-in `mock` model needs no API keys. |
 | `schemas/*.json` | JSON Schema for workflow input and agent output. |
 | `fixtures/sample-alert.json` | Sample pager alert (no network). |
 

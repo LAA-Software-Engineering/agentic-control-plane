@@ -12,7 +12,7 @@ This example wires **Phase B + C** of the GitHub integration:
   Without repo context it stays **simulated** (as in `examples/pr-review-demo`). The step is **policy-gated**
   unless you pass `--approve tool.github.pull_request.post_comment`.
 
-The reviewer agent and the four-statement workflow are authored in [`main.agent`](main.agent) ([`.agent`](../../docs/LANGUAGE.md)); the comment `body` is templated from the review's structured output via `${review_diff.summary}` / `${review_diff.findings}`. Tools, policy, and JSON Schemas stay YAML.
+The `guarded-writes` policy, the `github` tool, the reviewer agent, and the four-statement workflow are all authored in [`main.agent`](main.agent) ([`.agent`](../../docs/LANGUAGE.md)) — no `project.yaml`; the comment `body` is templated from the review's structured output via `${review_diff.summary}` / `${review_diff.findings}`. JSON Schemas stay JSON (referenced by type).
 
 ## Prerequisites
 

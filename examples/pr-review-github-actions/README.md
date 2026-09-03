@@ -2,7 +2,7 @@
 
 This directory is a **complete example** you can copy or run from the monorepo root:
 
-1. **Declarative project** (`project.yaml`, policies, tools, **`workflow/pr-review-github`**, agent **`reviewer`**) that uses **OpenAI `gpt-4o-mini`** for the review step (not the mock model).
+1. **Declarative project** (`main.agent`: policy, tool, **`workflow/pr-review-github`**, agent **`reviewer`**) that uses **OpenAI `gpt-4o-mini`** for the review step (not the mock model).
 2. **GitHub Actions** — in **this** repository the workflow is **[`.github/workflows/terfyn-pr-review.yml`](../../.github/workflows/terfyn-pr-review.yml)** at the repo root (GitHub only runs workflows from there). It runs on **`pull_request`** (same **`paths-ignore`** as CI: `Makefile`, `**/*.md`). For **your** fork or another repo, copy that file into **`.github/workflows/`**.
 
 For the **mock-only** live GitHub path (no OpenAI key, good for CI and integration tests in this repo), see **[`examples/pr-review-github/`](../pr-review-github/README.md)**.
@@ -11,8 +11,7 @@ For the **mock-only** live GitHub path (no OpenAI key, good for CI and integrati
 
 | Path | Purpose |
 |------|---------|
-| `project.yaml` | Imports policies + tools; **`defaults.model: openai/gpt-4o-mini`**; **`OPENAI_API_KEY`** via `apiKeyFrom` |
-| `main.agent` | The `reviewer` agent (**`openai/gpt-4o-mini`**, structured JSON output) and the `pr-review-github` workflow (GitHub REST read → reviewer → `post_comment` with **`comment_strategy: replace`**), authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. The comment `body` is templated from the review via `${review_diff.findings_markdown}`. |
+| `main.agent` | Everything, authored in [`.agent`](../../docs/LANGUAGE.md): the `guarded-writes` policy, the `github` tool, the `reviewer` agent (**`openai/gpt-4o-mini`**, structured JSON output — the built-in `openai` provider reads **`OPENAI_API_KEY`**), and the `pr-review-github` workflow (GitHub REST read → reviewer → `post_comment` with **`comment_strategy: replace`**). No `project.yaml`. The comment `body` is templated from the review via `${review_diff.findings_markdown}`. |
 | `schemas/GitHubPRInput.json`, `schemas/ReviewOutput.json` | JSON Schema for workflow input and agent output (type names match the `.agent` references) |
 | [`.github/workflows/terfyn-pr-review.yml`](../../.github/workflows/terfyn-pr-review.yml) | Runs on PRs; **`AGENTIC_PROJECT`** = **`examples/pr-review-github-actions`** |
 | [`.github/workflows/terfyn-pr-review-publish.yml`](../../.github/workflows/terfyn-pr-review-publish.yml) | Optional manual **`workflow_dispatch`** to post an approved PR comment |

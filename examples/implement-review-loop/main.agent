@@ -14,6 +14,44 @@
 // model plus a sandbox for the workspace tool (TERFYN_WORKSPACE_ROOT +
 // TERFYN_WORKSPACE_TEST_COMMAND) — see "Run it for real" in README.md, which also
 // covers the capability boundary and the plan authority-widening walkthrough.
+//
+// Authored entirely in .agent (issue #430): the workspace tool, the two policies,
+// both agents, and the workflow — no project.yaml. The `tests/capabilities.yaml`
+// assertion (run by `terfyn test`) stays; the built-in `mock` provider and default
+// `local` runtime are implicit.
+
+tool workspace {
+    type native
+    safety {
+        trusted true
+        sideEffects true
+    }
+    operations {
+        read_file { effects { workspace.read } }
+        run_tests { effects { process.exec } }
+        write_file { effects { workspace.write } }
+    }
+}
+
+policy coding-agent {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    effects {
+        permit { workspace.read, workspace.write, process.exec }
+    }
+}
+
+policy reviewer {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    effects {
+        permit { workspace.read, process.exec }
+    }
+}
 
 agent Implementer {
     model mock/gpt-4
@@ -81,6 +119,7 @@ workflow ImplementAndReview(input: CodingState) -> CodingState
         workspace.write,
         process.exec
     }
+    policy coding-agent
 {
     state = input
 
