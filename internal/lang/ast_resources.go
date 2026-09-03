@@ -13,6 +13,7 @@ type ToolDecl struct {
 	MCP       *ToolMCPBlock       // mcp { … } transport config (issue #440)
 	HTTP      *ToolHTTPBlock      // http { … } transport config (issue #440)
 	Workspace *ToolWorkspaceBlock // workspace { … } native workspace config (issue #440)
+	Retry     *ToolRetryBlock     // retry { … } mcp/http call retry config (issue #440)
 	Safety    *ToolSafetyBlock    // safety { … }
 	// Operations is nil when the block is omitted (open callable set) and non-nil when present,
 	// including an empty `operations {}` (a closed, deny-all manifest). This distinction is the
@@ -45,6 +46,13 @@ type ToolWorkspaceBlock struct {
 	TestCommand *StringLit
 }
 
+// ToolRetryBlock is `retry { maxAttempts N backoff "…" }` (issue #440): mcp/http call retry config.
+type ToolRetryBlock struct {
+	Pos         Pos
+	MaxAttempts *int
+	Backoff     *StringLit
+}
+
 // HeaderPair is one `"<key>" "<value>"` entry in a headers { … } block.
 type HeaderPair struct {
 	Pos   Pos
@@ -69,10 +77,11 @@ type ToolOperations struct {
 	Ops []*ToolOperationDecl
 }
 
-// ToolOperationDecl is one `"<op>" { effects { … } }` entry in the operations block.
+// ToolOperationDecl is one `"<op>" { schema "…" effects { … } }` entry in the operations block.
 type ToolOperationDecl struct {
 	Pos     Pos
 	Name    *Ident
+	Schema  *StringLit   // schema "…" per-operation input schema ref (issue #440); nil when omitted
 	Effects []*EffectRef // effects { … } (bare dotted idents); nil when omitted
 }
 
@@ -84,7 +93,15 @@ type PolicyDecl struct {
 	Execution *PolicyExecutionBlock
 	Approvals *PolicyApprovalsBlock
 	Effects   *PolicyEffectsBlock
-	Hitl      *HitlBlock // hitl { … } human-in-the-loop review config (issue #106, #440)
+	Hitl      *HitlBlock        // hitl { … } human-in-the-loop review config (issue #106, #440)
+	Tools     *PolicyToolsBlock // tools { forbidUnknownTools … } (issue #440)
+}
+
+// PolicyToolsBlock is `tools { forbidUnknownTools <bool> }` (issue #440): when true, every tool call not
+// explicitly permitted is denied (the strict-preset closed world). Field nil when omitted.
+type PolicyToolsBlock struct {
+	Pos                Pos
+	ForbidUnknownTools *bool
 }
 
 // HitlBlock is the parsed `hitl { … }` policy sub-block (issues #106, #440). It lowers to

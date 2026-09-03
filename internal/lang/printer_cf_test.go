@@ -342,3 +342,43 @@ func TestPrint_ObjectReturnRoundTrip(t *testing.T) {
 		t.Fatalf("printed output missing the object return:\n%s", once)
 	}
 }
+
+// TestPrint_ToolRetryOpSchemaPolicyToolsRoundTrip proves the #440 retry/op-schema/policy-tools grammar
+// survives `terfyn fmt`.
+func TestPrint_ToolRetryOpSchemaPolicyToolsRoundTrip(t *testing.T) {
+	t.Parallel()
+	src := `tool github {
+    type mcp
+    retry {
+        maxAttempts 3
+        backoff "exponential"
+    }
+    operations {
+        create_issue { schema "schemas/CreateIssue.json" effects { github.write } }
+    }
+}
+
+policy strict {
+    tools {
+        forbidUnknownTools true
+    }
+}
+`
+	f, diags := Parse("t.agent", src)
+	if diags.HasErrors() {
+		t.Fatalf("parse: %v", diags)
+	}
+	once := Print(f)
+	f2, d2 := Parse("t.agent", once)
+	if d2.HasErrors() {
+		t.Fatalf("printed output does not re-parse:\n%s\ndiags: %v", once, d2)
+	}
+	if twice := Print(f2); once != twice {
+		t.Fatalf("Print is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", once, twice)
+	}
+	for _, want := range []string{"retry {", "maxAttempts 3", "backoff \"exponential\"", "schema \"schemas/CreateIssue.json\"", "forbidUnknownTools true"} {
+		if !strings.Contains(once, want) {
+			t.Fatalf("printed output missing %q:\n%s", want, once)
+		}
+	}
+}

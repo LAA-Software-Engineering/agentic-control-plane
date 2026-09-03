@@ -580,3 +580,58 @@ func TestScalarReturn_StillWrapsValue(t *testing.T) {
 		t.Fatalf("scalar return must use the {value: …} envelope, got %v", v)
 	}
 }
+
+// TestInlineTool_RetryAndOpSchemaYAMLEquivalence is the ADR 005 §2 golden for the .agent tool `retry`
+// block and per-operation `schema` (issue #440): they lower byte-identically to the YAML twin.
+func TestInlineTool_RetryAndOpSchemaYAMLEquivalence(t *testing.T) {
+	agentSrc := `tool github {
+    type mcp
+    retry {
+        maxAttempts 3
+        backoff "exponential"
+    }
+    operations {
+        create_issue { schema "schemas/CreateIssue.json"  effects { github.write } }
+    }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Tool
+metadata: {name: github}
+spec:
+  type: mcp
+  retry: {maxAttempts: 3, backoff: exponential}
+  operations:
+    create_issue: {schema: schemas/CreateIssue.json, effects: [github.write]}
+`
+	inline := lowerToolsOrFatal(t, agentSrc).Tools[0]
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "github.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.ToolResource)
+	if normSpecJSON(t, inline) != normSpecJSON(t, fromYAML) {
+		t.Fatalf("inline retry/op-schema tool differs from YAML twin:\n inline: %s\n yaml:   %s", normSpecJSON(t, inline), normSpecJSON(t, fromYAML))
+	}
+}
+
+// TestInlinePolicy_ToolsYAMLEquivalence is the golden for policy `tools { forbidUnknownTools }` (#440).
+func TestInlinePolicy_ToolsYAMLEquivalence(t *testing.T) {
+	agentSrc := `policy strict {
+    tools { forbidUnknownTools true }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Policy
+metadata: {name: strict}
+spec:
+  tools: {forbidUnknownTools: true}
+`
+	inline := lowerToolsOrFatal(t, agentSrc).Policies[0]
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "strict.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.PolicyResource)
+	if normPolicySpecJSON(t, inline) != normPolicySpecJSON(t, fromYAML) {
+		t.Fatalf("inline policy tools differs from YAML twin:\n inline: %s\n yaml:   %s", normPolicySpecJSON(t, inline), normPolicySpecJSON(t, fromYAML))
+	}
+}
