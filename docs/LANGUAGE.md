@@ -256,10 +256,17 @@ policy coding {
   agent/policy overrides applied by `--env`, lowering identically to the YAML `Environment` resource
   (ADR 005 §2). An agent override sets `model` and/or `constraints`; a policy override sets `execution`
   and/or `approvals` (its `requiredFor` entries union onto the base policy).
-- `tool`, `policy`, and `environment` are **contextual**: only a top-level `tool <Name> {` /
-  `policy <Name> {` / `environment <Name> {` opens a declaration; the grant path `tool.<name>.<op>` and
-  the agent field `policy <name>` are unchanged. The native `workspace { … }` block is a follow-on field
-  (ADR 005 §4); until a field exists in the grammar, author that resource in YAML and import it.
+- Provider: `provider <alias> { type <ident> apiKeyFrom "env:VAR" workspaceIdFrom "env:VAR" }` (#440) —
+  a custom/aliased model provider lowering into the project's `providers.models[<alias>]`. `type` is
+  required (the underlying provider — `anthropic` / `openai` / `mock` / …); the two credential
+  references are optional `env:VAR` strings. Built-in namespaces (`anthropic`, `openai`, `gemini`,
+  `grok`, `kimi`, `mock`) resolve implicitly and need **no** declaration — `provider` is only for
+  aliases, custom endpoints, and credentials. An agent then selects it as `model <alias>/<model-name>`.
+- `tool`, `policy`, `environment`, and `provider` are **contextual**: only a top-level `tool <Name> {` /
+  `policy <Name> {` / `environment <Name> {` / `provider <alias> {` opens a declaration; the grant path
+  `tool.<name>.<op>` and the agent field `policy <name>` are unchanged. The native `workspace { … }`
+  block is a follow-on field (ADR 005 §4); until a field exists in the grammar, author that resource in
+  YAML and import it.
 
 ## The normative program
 
