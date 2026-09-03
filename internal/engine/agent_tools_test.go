@@ -244,3 +244,39 @@ func TestAgentToolCapabilityBoundary(t *testing.T) {
 		t.Fatalf("an unadvertised operation must be denied")
 	}
 }
+
+func TestAdvertisedAgentTools_NativeInputSchema(t *testing.T) {
+	t.Parallel()
+	e := &Executor{Graph: &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
+		"workspace": {Metadata: spec.Metadata{Name: "workspace"}, Spec: spec.ToolSpec{Type: "native"}},
+		"local":     {Metadata: spec.Metadata{Name: "local"}, Spec: spec.ToolSpec{Type: "mock"}},
+	}}}
+
+	// A native operation advertises its declared input schema (read_file → path), so
+	// the model is told the required argument rather than an empty object.
+	defs, _, err := e.advertisedAgentTools(&spec.AgentResource{
+		Metadata: spec.Metadata{Name: "impl"},
+		Spec:     spec.AgentSpec{Tools: []string{"tool.workspace.read_file"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) != 1 {
+		t.Fatalf("defs = %+v", defs)
+	}
+	if !strings.Contains(string(defs[0].Parameters), `"path"`) || !strings.Contains(string(defs[0].Parameters), `"required"`) {
+		t.Fatalf("native read_file params did not advertise the input schema: %s", defs[0].Parameters)
+	}
+
+	// A non-native tool (no built-in schema) keeps the permissive default.
+	defs, _, err = e.advertisedAgentTools(&spec.AgentResource{
+		Metadata: spec.Metadata{Name: "other"},
+		Spec:     spec.AgentSpec{Tools: []string{"local"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) != 1 || string(defs[0].Parameters) != string(defaultAgentToolParameters) {
+		t.Fatalf("non-native tool should keep the default params, got %s", defs[0].Parameters)
+	}
+}

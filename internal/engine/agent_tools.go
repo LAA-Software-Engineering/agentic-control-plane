@@ -8,6 +8,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/models"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/tools/native"
 )
 
 var defaultAgentToolParameters = json.RawMessage(`{"type":"object","properties":{}}`)
@@ -30,21 +31,29 @@ func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []model
 		// so this map cannot silently replace one granted operation with another.
 		usesByName[item.Name] = item.Uses
 		desc := "Project tool " + item.Name
-		// Resolve the backing Tool by the name parsed from the uses string rather than
-		// by the tool-def name, to keep the type in the description.
-		toolName := item.Name
-		if tn, _, err := tools.ParseUses(item.Uses); err == nil {
-			toolName = tn
-		}
-		if tr := e.Graph.Tools[toolName]; tr != nil {
-			if typ := strings.TrimSpace(tr.Spec.Type); typ != "" {
-				desc = "Project tool " + item.Name + " (" + typ + ")"
+		params := defaultAgentToolParameters
+		// Resolve the backing Tool by the name parsed from the uses string (not the
+		// tool-def name) to keep the type in the description, and — for native tools,
+		// which have fixed argument shapes — to advertise the operation's input schema
+		// so the model passes required arguments. Without it the model gets an empty
+		// parameter schema and cannot supply e.g. `owner` / `path`, so native tool
+		// calls fail on real providers.
+		if toolName, operation, perr := tools.ParseUses(item.Uses); perr == nil {
+			if tr := e.Graph.Tools[toolName]; tr != nil {
+				if typ := strings.TrimSpace(tr.Spec.Type); typ != "" {
+					desc = "Project tool " + item.Name + " (" + typ + ")"
+					if strings.EqualFold(typ, "native") {
+						if schema, ok := native.OperationInputSchema(operation); ok {
+							params = schema
+						}
+					}
+				}
 			}
 		}
 		defs = append(defs, models.ToolDef{
 			Name:        item.Name,
 			Description: desc,
-			Parameters:  defaultAgentToolParameters,
+			Parameters:  params,
 		})
 	}
 	return defs, usesByName, nil
