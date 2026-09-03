@@ -199,7 +199,7 @@ func TestRaise_Unsupported(t *testing.T) {
 			"a": {Metadata: spec.Metadata{Name: "a"}, Spec: spec.AgentSpec{Runtime: "local"}},
 		},
 		Tools: map[string]*spec.ToolResource{
-			"t": {Metadata: spec.Metadata{Name: "t"}, Spec: spec.ToolSpec{Retry: &spec.ToolRetry{}}},
+			"t": {Metadata: spec.Metadata{Name: "t"}, Spec: spec.ToolSpec{Permissions: &spec.ToolPermissions{Allow: []string{"x"}}}},
 		},
 		Policies: map[string]*spec.PolicyResource{
 			"p": {Metadata: spec.Metadata{Name: "p"}, Spec: spec.PolicySpec{Security: &spec.PolicySecurity{NetworkAccess: "none"}}},
@@ -210,7 +210,7 @@ func TestRaise_Unsupported(t *testing.T) {
 	for _, u := range unsup {
 		got[u.Field] = true
 	}
-	for _, want := range []string{"spec.runtime", "spec.retry", "spec.security"} {
+	for _, want := range []string{"spec.runtime", "spec.permissions", "spec.security"} {
 		if !got[want] {
 			t.Fatalf("expected an Unsupported for %q, got %v", want, unsup)
 		}

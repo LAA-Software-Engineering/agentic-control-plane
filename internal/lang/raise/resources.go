@@ -1,7 +1,6 @@
 package raise
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/Terfyn/terfyn/internal/lang"
@@ -37,6 +36,14 @@ func (r *raiser) tool(t *spec.ToolResource) *lang.ToolDecl {
 			TestCommand: strLitOrNil(w.TestCommand),
 		}
 	}
+	if r := s.Retry; r != nil {
+		rb := &lang.ToolRetryBlock{Backoff: strLitOrNil(r.Backoff)}
+		if r.MaxAttempts != 0 {
+			v := r.MaxAttempts
+			rb.MaxAttempts = &v
+		}
+		d.Retry = rb
+	}
 	if sf := s.Safety; sf != nil {
 		d.Safety = &lang.ToolSafetyBlock{Trusted: sf.Trusted, SideEffects: sf.SideEffects, RequiresApproval: sf.RequiresApproval}
 	}
@@ -44,10 +51,7 @@ func (r *raiser) tool(t *spec.ToolResource) *lang.ToolDecl {
 		ops := &lang.ToolOperations{}
 		for _, name := range sortedKeys(s.Operations) {
 			op := s.Operations[name]
-			if op.Schema != "" {
-				r.reject("Tool", t.Metadata.Name, fmt.Sprintf("spec.operations.%s.schema", name), "per-operation input schema")
-			}
-			decl := &lang.ToolOperationDecl{Name: ident(name)}
+			decl := &lang.ToolOperationDecl{Name: ident(name), Schema: strLitOrNil(op.Schema)}
 			for _, e := range op.Effects {
 				decl.Effects = append(decl.Effects, &lang.EffectRef{Name: e})
 			}
@@ -56,10 +60,8 @@ func (r *raiser) tool(t *spec.ToolResource) *lang.ToolDecl {
 		d.Operations = ops
 	}
 	if s.Permissions != nil {
+		// Removed from the canonical model in a follow-up (ADR 007 step 1); still refused here until then.
 		r.reject("Tool", t.Metadata.Name, "spec.permissions", "tool permissions")
-	}
-	if s.Retry != nil {
-		r.reject("Tool", t.Metadata.Name, "spec.retry", "tool retry config")
 	}
 	if s.Limits != nil {
 		r.reject("Tool", t.Metadata.Name, "spec.limits", "per-tool execution limits")
@@ -87,10 +89,12 @@ func (r *raiser) policy(p *spec.PolicyResource) *lang.PolicyDecl {
 	if s.Hitl != nil {
 		d.Hitl = r.hitl(p.Metadata.Name, s.Hitl)
 	}
-	if s.Tools != nil {
-		r.reject("Policy", p.Metadata.Name, "spec.tools", "forbidUnknownTools")
+	if t := s.Tools; t != nil {
+		v := t.ForbidUnknownTools
+		d.Tools = &lang.PolicyToolsBlock{ForbidUnknownTools: &v}
 	}
 	if s.Security != nil {
+		// Removed from the canonical model in a follow-up (ADR 007 step 1); still refused here until then.
 		r.reject("Policy", p.Metadata.Name, "spec.security", "network/secret access controls")
 	}
 	return d

@@ -41,6 +41,14 @@ func printTool(b *strings.Builder, d *ToolDecl) {
 		printStringLitField(b, "        ", "testCommand", w.TestCommand)
 		b.WriteString("    }\n")
 	}
+	if r := d.Retry; r != nil {
+		b.WriteString("    retry {\n")
+		if r.MaxAttempts != nil {
+			fmt.Fprintf(b, "        maxAttempts %d\n", *r.MaxAttempts)
+		}
+		printStringLitField(b, "        ", "backoff", r.Backoff)
+		b.WriteString("    }\n")
+	}
 	if s := d.Safety; s != nil {
 		b.WriteString("    safety {\n")
 		printBoolField(b, "        ", "trusted", s.Trusted)
@@ -55,6 +63,9 @@ func printTool(b *strings.Builder, d *ToolDecl) {
 			b.WriteString("    operations {\n")
 			for _, op := range d.Operations.Ops {
 				fmt.Fprintf(b, "        %s {", identName(op.Name))
+				if op.Schema != nil {
+					fmt.Fprintf(b, " schema %s", strconv.Quote(op.Schema.Value))
+				}
 				if len(op.Effects) > 0 {
 					fmt.Fprintf(b, " effects { %s }", joinEffects(op.Effects))
 				}
@@ -138,6 +149,11 @@ func printPolicy(b *strings.Builder, d *PolicyDecl) {
 	}
 	if h := d.Hitl; h != nil {
 		printHitlAt(b, "    ", h)
+	}
+	if t := d.Tools; t != nil {
+		b.WriteString("    tools {\n")
+		printBoolField(b, "        ", "forbidUnknownTools", t.ForbidUnknownTools)
+		b.WriteString("    }\n")
 	}
 	b.WriteString("}\n")
 }

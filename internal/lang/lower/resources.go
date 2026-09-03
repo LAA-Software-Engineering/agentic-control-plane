@@ -86,6 +86,12 @@ func (l *lowerer) tool(d *lang.ToolDecl) *spec.ToolResource {
 			TestCommand: stringLitValue(w.TestCommand),
 		}
 	}
+	if r := d.Retry; r != nil {
+		tr.Spec.Retry = &spec.ToolRetry{Backoff: stringLitValue(r.Backoff)}
+		if r.MaxAttempts != nil {
+			tr.Spec.Retry.MaxAttempts = *r.MaxAttempts
+		}
+	}
 	if d.Safety != nil {
 		tr.Spec.Safety = &spec.ToolSafety{
 			Trusted:          d.Safety.Trusted,
@@ -109,7 +115,7 @@ func (l *lowerer) tool(d *lang.ToolDecl) *spec.ToolResource {
 					effs = append(effs, e.Name)
 				}
 			}
-			tr.Spec.Operations[opName] = spec.ToolOperation{Effects: effs}
+			tr.Spec.Operations[opName] = spec.ToolOperation{Effects: effs, Schema: stringLitValue(op.Schema)}
 		}
 	}
 	return tr
@@ -133,6 +139,9 @@ func (l *lowerer) policy(d *lang.PolicyDecl) *spec.PolicyResource {
 	pr.Spec.Execution = lowerPolicyExecution(d.Execution)
 	pr.Spec.Approvals = lowerPolicyApprovals(d.Approvals)
 	pr.Spec.Hitl = lowerHitl(d.Hitl)
+	if t := d.Tools; t != nil && t.ForbidUnknownTools != nil {
+		pr.Spec.Tools = &spec.PolicyTools{ForbidUnknownTools: *t.ForbidUnknownTools}
+	}
 	if e := d.Effects; e != nil {
 		ef := &spec.PolicyEffects{}
 		for _, r := range e.Permit {

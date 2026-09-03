@@ -54,6 +54,11 @@ func (p *parser) parseTool() *ToolDecl {
 			if b := p.parseToolWorkspace(); !dup(field, fpos) {
 				d.Workspace = b
 			}
+		case "retry":
+			p.advance()
+			if b := p.parseToolRetry(); !dup(field, fpos) {
+				d.Retry = b
+			}
 		case "safety":
 			p.advance()
 			if b := p.parseToolSafety(); !dup(field, fpos) {
@@ -65,12 +70,47 @@ func (p *parser) parseTool() *ToolDecl {
 				d.Operations = ops
 			}
 		default:
-			p.errorf(fpos, "unknown tool field %q (want type, mcp, http, workspace, safety, or operations)", field)
+			p.errorf(fpos, "unknown tool field %q (want type, mcp, http, workspace, retry, safety, or operations)", field)
 			p.syncLine()
 		}
 	}
 	p.expect(KindRBrace, "to close tool body")
 	return d
+}
+
+// parseToolRetry parses `retry { maxAttempts N backoff "…" }` (issue #440). Both fields optional.
+func (p *parser) parseToolRetry() *ToolRetryBlock {
+	b := &ToolRetryBlock{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open retry block"); !ok {
+		return b
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a retry field (maxAttempts, backoff), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate retry field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "maxAttempts":
+			if v, ok := p.constraintInt(field); ok {
+				b.MaxAttempts = &v
+			}
+		case "backoff":
+			b.Backoff = p.parseStringLit("for backoff")
+		default:
+			p.errorf(fpos, "unknown retry field %q (want maxAttempts or backoff)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close retry block")
+	return b
 }
 
 // parseToolWorkspace parses `workspace { root "…" testCommand "…" }` — declarative native workspace
@@ -314,7 +354,12 @@ func (p *parser) parseToolOperation() *ToolOperationDecl {
 			op.Effects = p.parseEffects()
 			continue
 		}
-		p.errorf(p.cur.Pos, "expected 'effects' in operation body, got %s", p.cur)
+		if p.cur.Kind == KindIdent && p.cur.Lit == "schema" {
+			p.advance()
+			op.Schema = p.parseStringLit("for operation schema")
+			continue
+		}
+		p.errorf(p.cur.Pos, "expected 'schema' or 'effects' in operation body, got %s", p.cur)
 		p.syncLine()
 	}
 	p.expect(KindRBrace, "to close operation body")
@@ -371,8 +416,13 @@ func (p *parser) parsePolicy() *PolicyDecl {
 			if b := p.parsePolicyHitl(); !dup(field, fpos) {
 				d.Hitl = b
 			}
+		case "tools":
+			p.advance()
+			if b := p.parsePolicyTools(); !dup(field, fpos) {
+				d.Tools = b
+			}
 		default:
-			p.errorf(fpos, "unknown policy field %q (want preset, execution, approvals, effects, or hitl)", field)
+			p.errorf(fpos, "unknown policy field %q (want preset, execution, approvals, effects, hitl, or tools)", field)
 			p.syncLine()
 		}
 	}
@@ -483,6 +533,39 @@ func (p *parser) parsePolicyEffects() *PolicyEffectsBlock {
 		}
 	}
 	p.expect(KindRBrace, "to close effects block")
+	return b
+}
+
+// parsePolicyTools parses `tools { forbidUnknownTools <bool> }` (issue #440).
+func (p *parser) parsePolicyTools() *PolicyToolsBlock {
+	b := &PolicyToolsBlock{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open tools block"); !ok {
+		return b
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a tools field (forbidUnknownTools), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate tools field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "forbidUnknownTools":
+			if v, ok := p.constraintBool(field); ok {
+				b.ForbidUnknownTools = &v
+			}
+		default:
+			p.errorf(fpos, "unknown tools field %q (want forbidUnknownTools)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close tools block")
 	return b
 }
 
