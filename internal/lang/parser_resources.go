@@ -59,6 +59,11 @@ func (p *parser) parseTool() *ToolDecl {
 			if b := p.parseToolRetry(); !dup(field, fpos) {
 				d.Retry = b
 			}
+		case "limits":
+			p.advance()
+			if b := p.parseToolLimits(); !dup(field, fpos) {
+				d.Limits = b
+			}
 		case "safety":
 			p.advance()
 			if b := p.parseToolSafety(); !dup(field, fpos) {
@@ -70,12 +75,83 @@ func (p *parser) parseTool() *ToolDecl {
 				d.Operations = ops
 			}
 		default:
-			p.errorf(fpos, "unknown tool field %q (want type, mcp, http, workspace, retry, safety, or operations)", field)
+			p.errorf(fpos, "unknown tool field %q (want type, mcp, http, workspace, retry, limits, safety, or operations)", field)
 			p.syncLine()
 		}
 	}
 	p.expect(KindRBrace, "to close tool body")
 	return d
+}
+
+// parseToolLimits parses `limits { maxToolInputBytes N … toolInputExceedPolicy <truncate|fail> … }`
+// (issue #440) — per-tool execution-limit overrides. Byte/count fields are ints; the three
+// *ExceedPolicy fields are the `truncate` / `fail` enum.
+func (p *parser) parseToolLimits() *ToolLimitsBlock {
+	b := &ToolLimitsBlock{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open limits block"); !ok {
+		return b
+	}
+	seen := map[string]bool{}
+	intField := func() *int {
+		if v, ok := p.constraintInt("limit"); ok {
+			return &v
+		}
+		return nil
+	}
+	policyField := func() *Ident {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected an exceed policy (truncate or fail), got %s", p.cur)
+			return nil
+		}
+		switch p.cur.Lit {
+		case "truncate", "fail":
+			id := &Ident{Pos: p.cur.Pos, Name: p.cur.Lit}
+			p.advance()
+			return id
+		default:
+			p.errorf(p.cur.Pos, "unknown exceed policy %q (want truncate or fail)", p.cur.Lit)
+			p.advance()
+			return nil
+		}
+	}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a limits field, got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate limits field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "maxToolInputBytes":
+			b.MaxToolInputBytes = intField()
+		case "maxToolOutputBytes":
+			b.MaxToolOutputBytes = intField()
+		case "maxCheckpointBytes":
+			b.MaxCheckpointBytes = intField()
+		case "maxStateBytes":
+			b.MaxStateBytes = intField()
+		case "maxWorkflowNesting":
+			b.MaxWorkflowNesting = intField()
+		case "maxLoopIterations":
+			b.MaxLoopIterations = intField()
+		case "toolInputExceedPolicy":
+			b.ToolInputExceedPolicy = policyField()
+		case "toolOutputExceedPolicy":
+			b.ToolOutputExceedPolicy = policyField()
+		case "checkpointExceedPolicy":
+			b.CheckpointExceedPolicy = policyField()
+		default:
+			p.errorf(fpos, "unknown limits field %q", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close limits block")
+	return b
 }
 
 // parseToolRetry parses `retry { maxAttempts N backoff "…" }` (issue #440). Both fields optional.
