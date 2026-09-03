@@ -118,6 +118,12 @@ func TestRegistry_builtinMissingCredential(t *testing.T) {
 // TestRegistry_explicitProviderOverridesBuiltin: an explicit providers.models entry wins over the
 // built-in for the same namespace (issue #430) — the escape hatch for custom base URLs / creds.
 func TestRegistry_explicitProviderOverridesBuiltin(t *testing.T) {
+	// Clear the built-in's conventional credential so it CANNOT resolve, and provide only the
+	// explicit config's non-conventional one. This makes the test guard the precedence contract
+	// under the condition where it matters: if the built-in were (wrongly) consulted before the
+	// explicit entry, resolution would fail on the missing ANTHROPIC_API_KEY. With the env var left
+	// set (the common case on a dev/CI machine), the test would pass even under inverted precedence.
+	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("CUSTOM_ANTHROPIC_KEY", "sk-custom")
 	g := &spec.ProjectGraph{
 		Spec: spec.ProjectSpec{
@@ -129,7 +135,7 @@ func TestRegistry_explicitProviderOverridesBuiltin(t *testing.T) {
 		},
 	}
 	reg := NewRegistry(g)
-	// Resolves via the explicit (non-conventional) credential; the built-in ANTHROPIC_API_KEY is unset.
+	// Resolves only via the explicit (non-conventional) credential; the built-in ANTHROPIC_API_KEY is unset.
 	if _, _, err := reg.ClientFor("anthropic/claude-sonnet-5"); err != nil {
 		t.Fatalf("explicit provider config should win: %v", err)
 	}
