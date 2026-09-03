@@ -13,10 +13,7 @@ This minimal example shows a **real agent tool loop** hitting `execution.maxTota
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports resources; `mock` model (no API keys). |
-| `main.agent` | The `burner` agent (grants `tool.helper.default`, enters the tool loop) and the `burn` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
-| `tools/helper.yaml` | Read-only `mock` tool (`sideEffects: false`). |
-| `policies/tight-budget.yaml` | `maxTotalCostUsd: 0.03` (between one and two mock turns). |
+| `main.agent` | Everything: the `tight-budget` policy (`maxTotalCostUsd: 0.03`, between one and two mock turns), the read-only `helper` `mock` tool (`sideEffects: false`), the `burner` agent (grants `tool.helper.default`, enters the tool loop), and the `burn` workflow — authored in [`.agent`](../../docs/LANGUAGE.md). No `project.yaml`; the built-in `mock` model needs no API keys. |
 | `schemas/*.json` | Workflow input and agent output. |
 | `fixtures/sample-input.json` | Tiny `{topic}` payload. |
 

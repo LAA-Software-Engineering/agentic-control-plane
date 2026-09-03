@@ -7,8 +7,8 @@ This example shows **why a declarative control plane beats ad-hoc glue code** fo
 - **Workflow as code** — `main.agent` reads like a runbook: fetch PR context → review → post a comment. Authored in [`.agent`](../../docs/LANGUAGE.md), discovered (not imported).
 - **Structured agent output** — the reviewer must return JSON validated by `schemas/ReviewOutput.json` (summary + findings), not an unparseable blob.
 - **`${...}` argument templates** — the comment `body` is templated directly from the review's structured output (`${review_diff.summary}`, `${review_diff.findings}`), resolved through the workflow's binding environment.
-- **First-class policy** — `policies/guarded-writes.yaml` lists which tool `uses` strings require explicit approval.
-- **Human-in-the-loop writes** — the `post_comment` step calls a **simulated** native GitHub tool (`tools/github.yaml`). As a workflow `uses:` step gated by policy, an unapproved run **pauses for approval** (HITL interrupt) before any side effect — it does not silently proceed.
+- **First-class policy** — the `guarded-writes` policy (in `main.agent`) lists which tool `uses` strings require explicit approval.
+- **Human-in-the-loop writes** — the `post_comment` step calls a **simulated** native GitHub tool (the `github` tool in `main.agent`). As a workflow `uses:` step gated by policy, an unapproved run **pauses for approval** (HITL interrupt) before any side effect — it does not silently proceed.
 - **Traceable behavior** — `terfyn logs` shows normal step progress plus the **approval interrupt** on the gated step.
 
 ## Why this matters
@@ -19,10 +19,7 @@ In a typical script, “call the model, then maybe post to GitHub” is buried i
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports the tool + policy; defaults to `mock` model (no API keys). |
-| `main.agent` | The `reviewer` agent and the three-statement `pr-review` workflow (`fetch_pr`, `review_diff`, `post_comment`), authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
-| `tools/github.yaml` | `native` tool; operations are implemented offline in the binary. |
-| `policies/guarded-writes.yaml` | Requires approval for `tool.github.pull_request.post_comment`. |
+| `main.agent` | Everything: the `guarded-writes` policy, the `native` `github` tool, the `reviewer` agent, and the three-statement `pr-review` workflow (`fetch_pr`, `review_diff`, `post_comment`) — authored in [`.agent`](../../docs/LANGUAGE.md). No `project.yaml`; the built-in `mock` model needs no API keys. |
 | `schemas/PRReviewInput.json`, `schemas/ReviewOutput.json` | JSON Schema for workflow input and agent output (type names match the `.agent` `input:` / `output` references). |
 | `fixtures/sample-pr.json` | Sample input (no GitHub network or tokens). |
 

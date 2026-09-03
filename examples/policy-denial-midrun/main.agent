@@ -1,5 +1,22 @@
-// Authored in .agent: the burner agent and the burn workflow. The tool, policy,
-// project config, and JSON Schemas stay YAML.
+// Authored entirely in .agent (ADR 003, issue #430): the burner agent, the burn
+// workflow, and the tool and policy they use — no project.yaml, no YAML resources.
+// JSON Schemas stay JSON (referenced by type). The built-in `mock` provider and
+// the default `local` runtime are implicit.
+
+policy tight-budget {
+    execution {
+        maxTotalCostUsd 0.03
+        maxWallClockSeconds 300
+    }
+}
+
+tool helper {
+    type mock
+    safety {
+        trusted true
+        sideEffects false
+    }
+}
 
 agent burner {
     model mock/gpt-4

@@ -1,5 +1,7 @@
-// The .agent authoring surface (ADR 003). Agents and workflows are authored
-// here; tools, policies, and project.yaml stay YAML (the interchange format).
+// agent-quickstart, authored entirely in .agent (ADR 003, issue #430): agents,
+// workflows, tools, and policies are all .agent declarations — no project.yaml,
+// no YAML resources. The built-in `mock` provider needs no declaration, and the
+// default `local` runtime is implicit.
 //
 // Run:  terfyn validate
 //       terfyn export --format yaml     # materialize the compiled graph
@@ -9,11 +11,27 @@
 // end-to-end too (issue #259) — see examples/agent-control-flow. See
 // docs/LANGUAGE.md.
 
-agent Summarizer {
-    model mock/gpt-4
+policy default {
+    preset shell_safe
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
 }
 
-workflow triage(input: Alert) -> Summary {
+tool notes {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+agent Summarizer {
+    model mock/gpt-4
+    policy default
+}
+
+workflow triage(input: Alert) -> Summary policy default {
     enriched = notes.lookup(id: input.id)
     summary = Summarizer(enriched)
     return summary
