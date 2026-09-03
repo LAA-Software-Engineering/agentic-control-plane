@@ -345,3 +345,32 @@ workflow W(input: PR) {
 		t.Fatalf("expected a call-in-condition diagnostic")
 	}
 }
+
+// TestExec_ObjectReturn covers object-literal returns (#440): `return { a: …, b: … }` executes to the
+// flat multi-field map, and scalar-value fields (literals, input refs) resolve.
+func TestExec_ObjectReturn(t *testing.T) {
+	t.Parallel()
+	prog, diags := lowerExecOrFatal(t, `
+workflow W(input: any) {
+    return { product: input.x, subject: "hello", count: 3 }
+}
+`, nil)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	interp := &execir.Interp{Invoker: &endToEndInvoker{}}
+	out, err := interp.Run(context.Background(), prog, map[string]any{"x": "USB-C hub"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	m, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object output, got %T: %v", out, out)
+	}
+	if m["product"] != "USB-C hub" || m["subject"] != "hello" {
+		t.Fatalf("object output fields wrong: %v", m)
+	}
+	if len(m) != 3 {
+		t.Fatalf("expected 3 fields, got %d: %v", len(m), m)
+	}
+}

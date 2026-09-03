@@ -101,8 +101,9 @@ flags, and the softer `defaults.policy` / `workspace` gaps remain for Phase 2c (
    remains a general `.agent` grammar limitation for hand-authored multi-field workflow outputs.
    The `spec.workspace` tool sub-block (root/testCommand) was subsequently given a `.agent` grammar
    too (#440), so it is no longer a gap; `implement-review-loop` keeps the env-var path but could now
-   declare it inline. The only remaining grammar limitation is object-literal returns (above), which no
-   example needs.
+   declare it inline. Object-literal returns — `return { a: x, b: y }` — were **also added** (#440),
+   closing the multi-field-output gap that had forced `example1`'s hand-restructure. **The `.agent`
+   grammar now expresses the entire resource model** with no known authoring gaps.
 5. **Phase 3 — make `.agent` the sole *authoring* surface** (non-breaking, per ADR 003 §2 / ADR 005 §1).
    "Remove YAML as a project source" is a **documentation and positioning** change, **not** a loader
    change: the YAML codec/loader is *retained* as non-authoring infrastructure (interchange, `terfyn

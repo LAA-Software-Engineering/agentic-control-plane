@@ -254,6 +254,15 @@ func (el *execLowerer) lowerValue(e lang.Expr, pre *[]execir.Node) execir.Value 
 		node := el.lowerCallNode(temp, v, pre)
 		*pre = append(*pre, node)
 		return execir.Ref{Pos: v.Pos, Path: []string{temp}}
+	case *lang.ObjectExpr:
+		fields := make([]execir.Field, 0, len(v.Fields))
+		for _, f := range v.Fields {
+			if f == nil || f.Key == nil {
+				continue
+			}
+			fields = append(fields, execir.Field{Key: f.Key.Name, Val: el.lowerValue(f.Value, pre)})
+		}
+		return execir.Object{Pos: v.Pos, Fields: fields}
 	default:
 		if e != nil {
 			el.diag(e.Position(), "unsupported expression")

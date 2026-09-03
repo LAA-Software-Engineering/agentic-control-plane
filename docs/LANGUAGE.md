@@ -130,11 +130,13 @@ Block       = "{" { Statement } "}" ;
 Return      = "return" Expr ;
 ExprStmt    = Expr ;                            (* a call for its effect *)
 
-Expr        = Ref [ "(" [ Args ] ")" ] | Literal ;
+Expr        = Ref [ "(" [ Args ] ")" ] | Literal | Object ;
 Args        = Arg { "," Arg } ;
 Arg         = [ Ident ":" ] Expr ;              (* named or positional *)
 Ref         = Ident { "." Ident } ;             (* pr, input.repo, github.get_pr *)
 Literal     = String | Number | "true" | "false" ;
+Object      = "{" [ Field { ("," | newline) Field } [ "," ] ] "}" ;  (* object literal, #440 *)
+Field       = Ident ":" Expr ;
 
 (* Boolean expression language for conditions, #199. No arithmetic. *)
 Cond        = Or ;
@@ -339,7 +341,10 @@ Lowering rules:
   arguments against a known input type) rather than silently guessing a field mapping, but
   does not resolve it.
 - **References.** A workflow parameter field lowers to `${input.…}`; a binding lowers to
-  `${steps.<id>.output.…}`. `return <expr>` lowers to `output.value.value`. A **bare**
+  `${steps.<id>.output.…}`. A scalar `return <expr>` lowers to `output.value.value` (the single-`value`
+  envelope), while an **object-literal** `return { a: x, b: y }` (#440) lowers to `output.value` = `{a, b}`
+  directly — the multi-field form, byte-identical to a YAML `output.value: {a, b}`. Object literals may
+  also appear as call arguments and binding values. A **bare**
   reference to a single-parameter workflow's input (the whole input object, e.g.
   `return input` or `Implementer(state)` where `state = input`) lowers to `${input}` and is
   **not** a diagnostic (#303): the execir path binds the whole input document to the parameter

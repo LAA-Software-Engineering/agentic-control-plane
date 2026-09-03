@@ -397,3 +397,24 @@ type Arg struct {
 }
 
 func (a *Arg) Position() Pos { return a.Pos }
+
+// ObjectExpr is a `{ key: expr, key: expr }` object literal (issue #440). It is the multi-field
+// counterpart to a scalar `return <expr>`: `return { a: x, b: y }` produces a workflow output whose
+// value map is `{a: …, b: …}` directly (matching a YAML `output.value: {a, b}`), rather than the
+// single-`value` envelope a scalar return uses. Field values are arbitrary expressions.
+type ObjectExpr struct {
+	Pos    Pos
+	Fields []*ObjectField
+}
+
+func (e *ObjectExpr) Position() Pos { return e.Pos }
+func (e *ObjectExpr) exprNode()     {}
+
+// ObjectField is one `key: value` entry in an ObjectExpr. Key is a bare identifier.
+type ObjectField struct {
+	Pos   Pos
+	Key   *Ident
+	Value Expr
+}
+
+func (f *ObjectField) Position() Pos { return f.Pos }

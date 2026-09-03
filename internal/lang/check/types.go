@@ -449,6 +449,18 @@ func (wc *wfChecker) checkExpr(e lang.Expr) (typeRef, lang.Diagnostics) {
 		return typeRef{}, d
 	case *lang.LitExpr:
 		return typeRef{}, nil
+	case *lang.ObjectExpr:
+		// An object literal (issue #440): each field value is checked for reference well-formedness;
+		// the object itself is untyped (its shape is gradual, like any other structured value).
+		var diags lang.Diagnostics
+		for _, f := range v.Fields {
+			if f == nil {
+				continue
+			}
+			_, d := wc.checkExpr(f.Value)
+			diags = append(diags, d...)
+		}
+		return typeRef{}, diags
 	}
 	return typeRef{}, nil
 }
