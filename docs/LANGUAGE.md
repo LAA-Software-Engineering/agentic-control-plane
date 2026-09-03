@@ -237,6 +237,9 @@ policy coding {
   url "…"  headers { "<key>" "<value>" } }`, and a `type http` tool with `http { baseUrl "…"
   headers { "<key>" "<value>" } }` (#440). `args` is a whitespace-separated string list; `headers` is
   string key/value pairs. Both lower identically to the YAML `spec.mcp` / `spec.http` (ADR 005 §2).
+  Header values that hold a secret (e.g. `Authorization`) should be an `env:VAR` reference, not an
+  inline literal — the same rule as elsewhere; a literal secret in a snapshot-persisted header is
+  flagged at apply/run (#207) and never resolved to a stored value.
 - Policy: `preset <name>` (a built-in preset — `strict` / `permissive` / `shell_safe` — resolved and
   overridable exactly like the YAML `spec.preset`, #430), `execution { maxTotalCostUsd /
   maxWallClockSeconds / requireStructuredOutput }`, `approvals { requiredFor { … } / requireAllTools
