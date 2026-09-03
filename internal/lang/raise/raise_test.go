@@ -192,25 +192,6 @@ func TestRaise_AgentIO(t *testing.T) {
 	}
 }
 
-// TestRaise_Unsupported: fields with no .agent form are refused (named), never silently dropped.
-func TestRaise_Unsupported(t *testing.T) {
-	g := &spec.ProjectGraph{
-		Tools: map[string]*spec.ToolResource{
-			"t": {Metadata: spec.Metadata{Name: "t"}, Spec: spec.ToolSpec{Permissions: &spec.ToolPermissions{Allow: []string{"x"}}}},
-		},
-	}
-	_, unsup := Graph(g)
-	got := map[string]bool{}
-	for _, u := range unsup {
-		got[u.Field] = true
-	}
-	for _, want := range []string{"spec.permissions"} {
-		if !got[want] {
-			t.Fatalf("expected an Unsupported for %q, got %v", want, unsup)
-		}
-	}
-}
-
 // TestRaise_WorkflowRefused: until workflow raising lands, a workflow yields an Unsupported so the
 // migrate tool never silently drops one.
 func TestRaise_WorkflowRefused(t *testing.T) {

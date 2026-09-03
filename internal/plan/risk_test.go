@@ -9,24 +9,6 @@ import (
 	"github.com/Terfyn/terfyn/internal/spec"
 )
 
-func TestActionSuggestsWriteSideEffects(t *testing.T) {
-	tests := []struct {
-		action string
-		want   bool
-	}{
-		{"issues.write", true},
-		{"pull_requests.read", false},
-		{"tool.github.pull_request.merge", true},
-		{"tool.slack.message.send", true},
-		{"contents.read", false},
-	}
-	for _, tt := range tests {
-		if got := ActionSuggestsWriteSideEffects(tt.action); got != tt.want {
-			t.Errorf("%q: got %v want %v", tt.action, got, tt.want)
-		}
-	}
-}
-
 func graphWithPolicy(cost float64) *spec.ProjectGraph {
 	return graphWithPolicyBudget(cost, 0, nil)
 }
@@ -49,22 +31,6 @@ func graphWithPolicyBudget(cost float64, wall int, requiredFor []string) *spec.P
 	return g
 }
 
-func graphWithTool(allow []string) *spec.ProjectGraph {
-	g := minimalGraph()
-	g.Tools["github"] = &spec.ToolResource{
-		APIVersion: spec.APIVersionV0,
-		Kind:       spec.KindTool,
-		Metadata:   spec.Metadata{Name: "github"},
-		Spec: spec.ToolSpec{
-			Type: "mcp",
-			Permissions: &spec.ToolPermissions{
-				Allow: allow,
-			},
-		},
-	}
-	return g
-}
-
 func TestRiskSummary_costCeilingIncreased(t *testing.T) {
 	oldG := graphWithPolicy(3.0)
 	applied := appliedFromDesired(t, "dev", oldG)
@@ -78,25 +44,6 @@ func TestRiskSummary_costCeilingIncreased(t *testing.T) {
 	joined := strings.Join(pl.Risk.Messages, " ")
 	if !strings.Contains(strings.ToLower(joined), "cost ceiling increased") {
 		t.Fatalf("expected cost ceiling risk, got %#v", pl.Risk.Messages)
-	}
-}
-
-func TestRiskSummary_newToolCreate_flagsWriteLikeWhenNoPriorState(t *testing.T) {
-	g := graphWithTool([]string{"issues.write"})
-	p := NewPlanner(&fakeDeploy{list: nil})
-	pl, err := p.ComputePlan(context.Background(), "dev", g, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var found bool
-	for _, m := range pl.Risk.Messages {
-		if strings.Contains(strings.ToLower(m), "write") && strings.Contains(strings.ToLower(m), "permission") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected baseline tool permission risk, got %#v", pl.Risk.Messages)
 	}
 }
 
@@ -192,31 +139,6 @@ func TestRiskSummary_effectPermitWidening_unattendedPromotion(t *testing.T) {
 	}
 	if hasRiskCategory(plDual, RiskCategoryEffectPermitWidening) {
 		t.Fatalf("dual-list stays approval-gated, not unattended widening: %#v", plDual.Risk.Items)
-	}
-}
-
-func TestRiskSummary_newWriteLikeToolPermissions(t *testing.T) {
-	oldG := graphWithTool([]string{"contents.read"})
-	applied := appliedFromDesired(t, "dev", oldG)
-	newG := graphWithTool([]string{"contents.read", "issues.write"})
-
-	p := NewPlanner(&fakeDeploy{list: applied})
-	pl, err := p.ComputePlan(context.Background(), "dev", newG, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var found bool
-	for _, m := range pl.Risk.Messages {
-		if strings.Contains(strings.ToLower(m), "write") && strings.Contains(strings.ToLower(m), "permission") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected write-permission risk, got %#v", pl.Risk.Messages)
-	}
-	if !hasRiskCategory(pl, RiskCategoryPermissionWidening) {
-		t.Fatalf("expected permission_widening item, got %#v", pl.Risk.Items)
 	}
 }
 
@@ -321,10 +243,14 @@ func TestRiskSummary_agentModelChanged(t *testing.T) {
 	}
 }
 
+// TestRiskSummary_agentToolsListGained is the ADR 007 step-1 regression: after removing the
+// spec.permissions write-name heuristic, an agent that gains a side-effecting (write-capable) tool
+// must STILL produce a HIGH tool_surface_change authority finding — now derived from the declared
+// safety.sideEffects signal, proving we deleted a redundant heuristic, not the coverage.
 func TestRiskSummary_agentToolsListGained(t *testing.T) {
-	oldG := graphWithAgentTools([]string{"helper"}, []string{})
+	oldG := graphWithAgentTools(false, false)
 	applied := appliedFromDesired(t, "dev", oldG)
-	newG := graphWithAgentTools([]string{"helper"}, []string{"issues.write"})
+	newG := graphWithAgentTools(true, true) // agent gains a side-effecting github tool
 
 	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
 	if err != nil {
@@ -335,7 +261,7 @@ func TestRiskSummary_agentToolsListGained(t *testing.T) {
 		if it.Category == RiskCategoryToolSurfaceChange {
 			found = true
 			if it.Severity != RiskSeverityHigh {
-				t.Fatalf("write-like tool surface should be high, got %s", it.Severity)
+				t.Fatalf("write-capable tool surface should be high, got %s", it.Severity)
 			}
 			if !strings.Contains(it.Reason, "github") {
 				t.Fatalf("reason %#v", it.Reason)
@@ -349,7 +275,7 @@ func TestRiskSummary_agentToolsListGained(t *testing.T) {
 
 func TestRiskItem_witnessPathReadyForEffectDelta(t *testing.T) {
 	item := RiskItem{
-		Category: RiskCategoryPermissionWidening,
+		Category: RiskCategorySafety,
 		Severity: RiskSeverityHigh,
 		Reason:   "effect-delta placeholder",
 		Target:   RiskTarget{Kind: RiskTargetTool, Name: "github"},
@@ -379,31 +305,26 @@ func TestRiskItem_witnessPathReadyForEffectDelta(t *testing.T) {
 	}
 }
 
-func graphWithAgentTools(helperAllow, githubAllow []string) *spec.ProjectGraph {
+// graphWithAgentTools builds a reviewer agent granted a read-only `helper` and, when includeGithub is
+// set, a `github` tool whose declared side effects are githubSideEffects. Write-capability risk is
+// derived from safety.sideEffects (ADR 007 step 1), not a permission allow list.
+func graphWithAgentTools(includeGithub, githubSideEffects bool) *spec.ProjectGraph {
 	g := graphWithAgent("mock/gpt-4")
+	no := false
 	g.Tools["helper"] = &spec.ToolResource{
 		APIVersion: spec.APIVersionV0,
 		Kind:       spec.KindTool,
 		Metadata:   spec.Metadata{Name: "helper"},
-		Spec: spec.ToolSpec{
-			Type: "native",
-			Permissions: &spec.ToolPermissions{
-				Allow: helperAllow,
-			},
-		},
+		Spec:       spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: &no}},
 	}
+	se := githubSideEffects
 	g.Tools["github"] = &spec.ToolResource{
 		APIVersion: spec.APIVersionV0,
 		Kind:       spec.KindTool,
 		Metadata:   spec.Metadata{Name: "github"},
-		Spec: spec.ToolSpec{
-			Type: "native",
-			Permissions: &spec.ToolPermissions{
-				Allow: githubAllow,
-			},
-		},
+		Spec:       spec.ToolSpec{Type: "native", Safety: &spec.ToolSafety{SideEffects: &se}},
 	}
-	if len(githubAllow) > 0 {
+	if includeGithub {
 		g.Agents["rev"].Spec.Tools = []string{"helper", "github"}
 	} else {
 		g.Agents["rev"].Spec.Tools = []string{"helper"}

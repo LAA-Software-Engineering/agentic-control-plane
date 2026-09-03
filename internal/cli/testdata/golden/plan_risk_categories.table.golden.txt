@@ -11,7 +11,7 @@ Plan: 0 to add, 3 to change, 0 to delete
     spec.execution.maxTotalCostUsd: 3 -> 10
     spec.execution.maxWallClockSeconds: 60 -> 120
 ~ update Tool/github
-    spec.permissions.allow.1:  -> "issues.write"
+    spec.safety.sideEffects: false -> true
 
 Effect bound (Agent/reviewer):
 high:
@@ -35,8 +35,7 @@ high:
 - [high] authority_widening: AUTONOMOUS authority WIDENED.
 - [high] budget_relaxation: Cost ceiling increased (Policy/default).
 - [high] budget_relaxation: Wall-clock ceiling increased (Policy/default).
-- [high] permission_widening: New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
-- [high] tool_surface_change: Agent tools list gained write-like tool "github" (Agent/reviewer).
+- [high] tool_surface_change: Agent tools list gained write-capable tool "github" (Agent/reviewer; declares side effects).
 medium:
 - [medium] model_change: Agent model changed (Agent/reviewer).
 Effective policy (default):

@@ -171,10 +171,6 @@ func sampleToolMCP() *ToolResource {
 				Command:   "npx",
 				Args:      []string{"-y", "@modelcontextprotocol/server-github"},
 			},
-			Permissions: &ToolPermissions{
-				Allow: []string{"pull_requests.read", "issues.read", "contents.read"},
-				// Omit Deny: yaml empty sequences round-trip as nil; []string{} != nil for DeepEqual.
-			},
 			Retry: &ToolRetry{MaxAttempts: 3, Backoff: "exponential"},
 		},
 	}
@@ -190,9 +186,6 @@ func sampleToolHTTP() *ToolResource {
 			HTTP: &ToolHTTP{
 				BaseURL: "https://api.example.com",
 				Headers: map[string]string{"Authorization": "env:API_TOKEN"},
-			},
-			Permissions: &ToolPermissions{
-				Allow: []string{"request.send"},
 			},
 			Retry: &ToolRetry{MaxAttempts: 2, Backoff: "fixed"},
 		},

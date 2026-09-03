@@ -107,7 +107,8 @@ type FieldChange struct {
 type RiskCategory string
 
 const (
-	RiskCategoryPermissionWidening   RiskCategory = "permission_widening"
+	// RiskCategoryPermissionWidening was removed with spec.permissions (ADR 007 step 1); write-capability
+	// risk is now derived from the effects/safety model (RiskCategoryToolSurfaceChange / RiskCategorySafety).
 	RiskCategoryApprovalRemoval      RiskCategory = "approval_removal"
 	RiskCategoryBudgetRelaxation     RiskCategory = "budget_relaxation"
 	RiskCategoryModelChange          RiskCategory = "model_change"

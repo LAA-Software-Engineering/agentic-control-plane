@@ -4,9 +4,6 @@ metadata:
   name: github
 spec:
   type: native
-  permissions:
-    allow:
-      - contents.read
   safety:
     trusted: true
     sideEffects: false

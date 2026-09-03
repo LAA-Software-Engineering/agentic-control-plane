@@ -35,9 +35,9 @@ func TestFormatPlan_groupsRiskItemsBySeverity(t *testing.T) {
 
 func TestFormatPlanSection_effectBoundReuse(t *testing.T) {
 	got := FormatPlanSection("Effect bound", []RiskItem{
-		{Category: RiskCategoryPermissionWidening, Severity: RiskSeverityHigh, Reason: "write-like", Target: RiskTarget{Kind: RiskTargetTool, Name: "github"}},
+		{Category: RiskCategorySafety, Severity: RiskSeverityHigh, Reason: "write-like", Target: RiskTarget{Kind: RiskTargetTool, Name: "github"}},
 	})
-	if !strings.HasPrefix(got, "Effect bound:\nhigh:\n- [high] permission_widening:") {
+	if !strings.HasPrefix(got, "Effect bound:\nhigh:\n- [high] safety:") {
 		t.Fatalf("section render:\n%s", got)
 	}
 }

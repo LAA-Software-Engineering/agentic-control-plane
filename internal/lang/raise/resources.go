@@ -62,10 +62,7 @@ func (r *raiser) tool(t *spec.ToolResource) *lang.ToolDecl {
 		}
 		d.Operations = ops
 	}
-	if s.Permissions != nil {
-		// Removed from the canonical model in a follow-up (ADR 007 step 1); still refused here until then.
-		r.reject("Tool", t.Metadata.Name, "spec.permissions", "tool permissions")
-	}
+	// spec.permissions was removed from the canonical model (ADR 007 step 1); nothing to refuse or raise.
 	return d
 }
 
