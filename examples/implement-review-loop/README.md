@@ -145,9 +145,9 @@ escape is rejected — and `run_tests` runs only the configured command, never a
 chooses, so the capability boundary holds at the filesystem too.
 
 This example configures the sandbox via the env vars above. The root and test command can also be
-declared on the tool itself (`spec.workspace.root` / `testCommand`) — a relative root resolves against
-the project root and declared config takes precedence over the env — but that tool sub-block is a
-YAML-authored resource field with no `.agent` form yet (issue #440), so it is not shown here.
+declared on the tool itself in `.agent` — `tool workspace { … workspace { root "…" testCommand "…" } }`
+(#440) — where a relative root resolves against the project root and declared config takes precedence
+over the env.
 
 > The deterministic `mock/gpt-4` model drives `validate` / `plan` / `apply`, but it cannot
 > execute the tool loop — it emits empty-argument tool calls — so `run` needs a real model.

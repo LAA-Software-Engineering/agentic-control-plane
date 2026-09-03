@@ -42,7 +42,7 @@ Categorized by #430's framework. "Examples" = how many of the 15 example project
 | Capability | Spec location | Examples | Workaround |
 |---|---|---|---|
 | **`defaults.policy`** (project-wide default policy) | `ProjectDefaults.Policy` | 15 | Reference the policy per-workflow, or declare a policy named `default` (+ the #438 no-policy fallback). |
-| **Tool `workspace {}`** (native adapter root / test command) | `ToolSpec.Workspace` | 1 | `TERFYN_WORKSPACE_ROOT` / `TERFYN_WORKSPACE_TEST_COMMAND` env fallback. |
+| **Tool `workspace {}`** (native adapter root / test command) | `ToolSpec.Workspace` | 1 | ✅ Closed (#440) — `tool { workspace { root "…" testCommand "…" } }`; `TERFYN_WORKSPACE_*` env fallback still applies. |
 | **`runtime`** on agent/workflow (`claude-code`/`gemini`) | `AgentSpec.Runtime` / `WorkflowSpec.Runtime` | 14 (all `local`) | `--runtime` flag; `local` is the default, so the declaration is usually droppable. |
 | **Agent `memory`** | `AgentSpec.Memory` | 0 | none yet |
 | **Policy `tools.forbidUnknownTools`**, **Policy `security`** | `PolicySpec.Tools` / `.Security` | 0 | some reduce to built-in defaults |
@@ -99,8 +99,10 @@ flags, and the softer `defaults.policy` / `workspace` gaps remain for Phase 2c (
    and the workflow returns it (the standard `.agent` `value` envelope), preserving the data flow and
    fields. **No example depends on the object-literal-return gap**, so it does not block Phase 3; it
    remains a general `.agent` grammar limitation for hand-authored multi-field workflow outputs.
-   Remaining softer gap: the `spec.workspace` tool sub-block (root/testCommand) still has no `.agent`
-   form (implement-review-loop documents this; it uses the env-var path).
+   The `spec.workspace` tool sub-block (root/testCommand) was subsequently given a `.agent` grammar
+   too (#440), so it is no longer a gap; `implement-review-loop` keeps the env-var path but could now
+   declare it inline. The only remaining grammar limitation is object-literal returns (above), which no
+   example needs.
 5. **Phase 3 — make `.agent` the sole *authoring* surface** (non-breaking, per ADR 003 §2 / ADR 005 §1).
    "Remove YAML as a project source" is a **documentation and positioning** change, **not** a loader
    change: the YAML codec/loader is *retained* as non-authoring infrastructure (interchange, `terfyn

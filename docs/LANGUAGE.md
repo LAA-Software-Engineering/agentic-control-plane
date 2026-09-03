@@ -265,10 +265,12 @@ policy coding {
   aliases, custom endpoints, and credentials. An agent then selects it as `model <alias>/<model-name>`.
 - `tool`, `policy`, `environment`, and `provider` are **contextual**: only a top-level `tool <Name> {` /
   `policy <Name> {` / `environment <Name> {` / `provider <alias> {` opens a declaration; the grant path
-  `tool.<name>.<op>` and the agent field `policy <name>` are unchanged. The native `workspace { … }`
-  tool sub-block (root / test command) is a follow-on field with no `.agent` grammar yet (ADR 005 §4,
-  issue #440); until it lands, configure the native workspace via the `TERFYN_WORKSPACE_ROOT` /
-  `TERFYN_WORKSPACE_TEST_COMMAND` environment variables (see `examples/implement-review-loop`).
+  `tool.<name>.<op>` and the agent field `policy <name>` are unchanged.
+- Tool `workspace` (#440): `tool <Name> { … workspace { root "…" testCommand "…" } }` — declarative
+  config for the native workspace adapter (the sandbox `root` that `read_file`/`write_file` resolve
+  within, and the `testCommand` `run_tests` executes). Both fields are optional; when omitted, the
+  `TERFYN_WORKSPACE_ROOT` / `TERFYN_WORKSPACE_TEST_COMMAND` environment variables apply, and a declared
+  value takes precedence over the env. Lowers to `spec.ToolWorkspace` identically to the YAML twin.
 
 ## The normative program
 
