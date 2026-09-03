@@ -37,6 +37,9 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 	if g.Policies == nil {
 		g.Policies = map[string]*spec.PolicyResource{}
 	}
+	if g.Environments == nil {
+		g.Environments = map[string]*spec.EnvironmentResource{}
+	}
 
 	// A duplicate (kind, name) across any ingress — an inline resource colliding with an imported
 	// YAML one, or two inline declarations — is an error with no precedence (ADR 005 §3): neither
@@ -74,6 +77,14 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 		}
 		seenPolicy[n] = true
 	}
+	seenEnv := make(map[string]bool, len(r.Environments))
+	for _, e := range r.Environments {
+		n := e.Metadata.Name
+		if _, dup := g.Environments[n]; dup || seenEnv[n] {
+			errs = append(errs, fmt.Errorf("project: duplicate Environment %q from lowered .agent source (also declared in YAML or another .agent block)", n))
+		}
+		seenEnv[n] = true
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -89,6 +100,9 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 	}
 	for _, pol := range r.Policies {
 		g.Policies[pol.Metadata.Name] = pol
+	}
+	for _, e := range r.Environments {
+		g.Environments[e.Metadata.Name] = e
 	}
 	return nil
 }

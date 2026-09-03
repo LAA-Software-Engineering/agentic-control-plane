@@ -34,11 +34,12 @@ type Options struct {
 // name declared as both — so ToGraph and project.MergeLowered may assume unique
 // names on a diagnostic-free Result.
 type Result struct {
-	Agents    []*spec.AgentResource
-	Workflows []*spec.WorkflowResource
-	Tools     []*spec.ToolResource
-	Policies  []*spec.PolicyResource
-	SourceMap *SourceMap
+	Agents       []*spec.AgentResource
+	Workflows    []*spec.WorkflowResource
+	Tools        []*spec.ToolResource
+	Policies     []*spec.PolicyResource
+	Environments []*spec.EnvironmentResource
+	SourceMap    *SourceMap
 }
 
 // ToGraph folds the lowered resources into a fresh spec.ProjectGraph keyed by
@@ -68,6 +69,9 @@ func (r *Result) ToGraph() *spec.ProjectGraph {
 	}
 	for _, pol := range r.Policies {
 		g.Policies[pol.Metadata.Name] = pol
+	}
+	for _, e := range r.Environments {
+		g.Environments[e.Metadata.Name] = e
 	}
 	return g
 }
@@ -104,6 +108,10 @@ func LowerFile(f *lang.File, opts Options) (*Result, lang.Diagnostics) {
 		case *lang.PolicyDecl:
 			if pol := l.policy(decl); pol != nil {
 				res.Policies = append(res.Policies, pol)
+			}
+		case *lang.EnvironmentDecl:
+			if e := l.environment(decl); e != nil {
+				res.Environments = append(res.Environments, e)
 			}
 		}
 	}
