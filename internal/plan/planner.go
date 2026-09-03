@@ -15,6 +15,11 @@ type desiredRow struct {
 	id   spec.ResourceID
 	json string
 	hash string
+	// execDigest is the workflow's execution-IR digest folded into hash (issue #260), or "" when
+	// the row's hash is a pure function of its canonical JSON (non-workflows, or a workflow with no
+	// lowered program). When set, a hash mismatch against an identical canonical body means the
+	// executable IR changed — a real change, not a legacy-row artifact (issue #377).
+	execDigest string
 }
 
 // ComputePlan compares the normalized desired graph to deployment rows for env (§12.2, issue #12).
@@ -80,8 +85,12 @@ func (p *Planner) ComputePlan(ctx context.Context, env string, g *spec.ProjectGr
 		if prev.SpecHash == d.hash {
 			continue
 		}
-		if prev.NormalizedSpecJSON == d.json {
-			// Hash mismatch with identical canonical body — treat as no change (e.g. legacy rows).
+		if prev.NormalizedSpecJSON == d.json && d.execDigest == "" {
+			// Identical canonical body and the hash is a pure function of that body — a hash mismatch
+			// can only be a legacy row whose stored hash predates a hashing-scheme change, so treat as
+			// no change. When the row folds in a program digest (#260), identical JSON with a different
+			// hash means the executable IR changed (a lowering-only .agent edit: an if condition, an
+			// if→while rewrite, a while limit) — a real change that must not be swallowed (#377).
 			continue
 		}
 		diff, err := jsonDiff(prev.NormalizedSpecJSON, d.json)
@@ -259,7 +268,7 @@ func appendDesiredWorkflow(rows *[]desiredRow, id spec.ResourceID, w *spec.Workf
 	if err != nil {
 		return fmt.Errorf("plan: hash for %s: %w", id.String(), err)
 	}
-	*rows = append(*rows, desiredRow{id: id, json: string(raw), hash: h})
+	*rows = append(*rows, desiredRow{id: id, json: string(raw), hash: h, execDigest: execDigest})
 	return nil
 }
 
