@@ -130,7 +130,94 @@ func printPolicy(b *strings.Builder, d *PolicyDecl) {
 		}
 		b.WriteString("    }\n")
 	}
+	if h := d.Hitl; h != nil {
+		printHitlAt(b, "    ", h)
+	}
 	b.WriteString("}\n")
+}
+
+// printHitlAt renders a `hitl { … }` block at the given indent (issues #106, #440). interruptOn
+// entries and switch-map entries print in author order (they are stored as slices), so a formatted
+// file round-trips; the fixed-name config fields print in a stable order.
+func printHitlAt(b *strings.Builder, indent string, h *HitlBlock) {
+	inner := indent + "    "
+	fmt.Fprintf(b, "%shitl {\n", indent)
+	printStringLitField(b, inner, "descriptionPrefix", h.DescriptionPrefix)
+	printStringListInline(b, inner, "redactKeys", h.RedactKeys)
+	printSwitchMapBlock(b, inner, "toolSwitchMap", h.ToolSwitchMap)
+	if len(h.InterruptOn) > 0 {
+		fmt.Fprintf(b, "%sinterruptOn {\n", inner)
+		entryIndent := inner + "    "
+		for _, e := range h.InterruptOn {
+			if e == nil || e.Name == nil {
+				continue
+			}
+			if e.Config == nil {
+				fmt.Fprintf(b, "%s%s\n", entryIndent, identName(e.Name))
+				continue
+			}
+			fmt.Fprintf(b, "%s%s {\n", entryIndent, identName(e.Name))
+			printInterruptConfig(b, entryIndent+"    ", e.Config)
+			fmt.Fprintf(b, "%s}\n", entryIndent)
+		}
+		fmt.Fprintf(b, "%s}\n", inner)
+	}
+	fmt.Fprintf(b, "%s}\n", indent)
+}
+
+// printInterruptConfig renders a per-tool interruptOn config block's fields in a stable order.
+func printInterruptConfig(b *strings.Builder, indent string, c *InterruptConfig) {
+	if len(c.AllowedDecisions) > 0 {
+		names := make([]string, 0, len(c.AllowedDecisions))
+		for _, d := range c.AllowedDecisions {
+			if d != nil {
+				names = append(names, d.Name)
+			}
+		}
+		fmt.Fprintf(b, "%sallowedDecisions { %s }\n", indent, strings.Join(names, " "))
+	}
+	printStringLitField(b, indent, "description", c.Description)
+	printStringListInline(b, indent, "allowedEditArgs", c.AllowedEditArgs)
+	printStringListInline(b, indent, "deniedEditArgs", c.DeniedEditArgs)
+	printStringListInline(b, indent, "allowedEditPaths", c.AllowedEditPaths)
+	printStringListInline(b, indent, "deniedEditPaths", c.DeniedEditPaths)
+	printStringListInline(b, indent, "allowedEditTools", c.AllowedEditTools)
+	printSwitchMapBlock(b, indent, "switchMap", c.SwitchMap)
+	printStringListInline(b, indent, "redactKeys", c.RedactKeys)
+}
+
+// printStringListInline renders `<name> { "a" "b" … }` on one line, skipping an empty list.
+func printStringListInline(b *strings.Builder, indent, name string, items []*StringLit) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "%s%s {", indent, name)
+	for _, s := range items {
+		fmt.Fprintf(b, " %s", strconv.Quote(stringLitOrEmpty(s)))
+	}
+	b.WriteString(" }\n")
+}
+
+// printSwitchMapBlock renders `<name> { <source> { <target> … } … }`, skipping an empty map.
+func printSwitchMapBlock(b *strings.Builder, indent, name string, entries []*SwitchMapEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "%s%s {\n", indent, name)
+	inner := indent + "    "
+	for _, e := range entries {
+		if e == nil || e.Source == nil {
+			continue
+		}
+		fmt.Fprintf(b, "%s%s {", inner, identName(e.Source))
+		for _, t := range e.Targets {
+			if t != nil {
+				fmt.Fprintf(b, " %s", identName(t))
+			}
+		}
+		b.WriteString(" }\n")
+	}
+	fmt.Fprintf(b, "%s}\n", indent)
 }
 
 func printBoolField(b *strings.Builder, indent, name string, v *bool) {
