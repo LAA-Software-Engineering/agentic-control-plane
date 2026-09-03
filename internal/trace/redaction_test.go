@@ -77,6 +77,59 @@ func TestPrepareEventData_unknownTypeSafe(t *testing.T) {
 	}
 }
 
+// TestPrepareEventData_typedScalarsAndSlices is the regression for issue #376: named string types
+// (spec.HitlDecisionKind), typed slices ([]string, []spec.HitlDecisionKind), and string-keyed maps
+// (map[string]string) must serialize to their values, not a "<type: unserialized>" placeholder, so
+// the audit chain records which HITL decision the operator submitted and which were offered.
+func TestPrepareEventData_typedScalarsAndSlices(t *testing.T) {
+	t.Parallel()
+	out := PrepareEventData(map[string]any{
+		"decision":         spec.HitlDecisionApprove,
+		"allowedDecisions": []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionReject},
+		"allowedSwitchTo":  []string{"tool.publish.default"},
+		"toolCallIds":      []string{"call_1"},
+		"labels":           map[string]string{"env": "prod"},
+	}, nil, DefaultRedactionOptions())
+
+	if out["decision"] != string(spec.HitlDecisionApprove) {
+		t.Fatalf("decision = %v, want %q", out["decision"], spec.HitlDecisionApprove)
+	}
+	ad, ok := out["allowedDecisions"].([]any)
+	if !ok || len(ad) != 2 || ad[0] != string(spec.HitlDecisionApprove) || ad[1] != string(spec.HitlDecisionReject) {
+		t.Fatalf("allowedDecisions = %#v", out["allowedDecisions"])
+	}
+	sw, ok := out["allowedSwitchTo"].([]any)
+	if !ok || len(sw) != 1 || sw[0] != "tool.publish.default" {
+		t.Fatalf("allowedSwitchTo = %#v", out["allowedSwitchTo"])
+	}
+	ids, ok := out["toolCallIds"].([]any)
+	if !ok || len(ids) != 1 || ids[0] != "call_1" {
+		t.Fatalf("toolCallIds = %#v", out["toolCallIds"])
+	}
+	labels, ok := out["labels"].(map[string]any)
+	if !ok || labels["env"] != "prod" {
+		t.Fatalf("labels = %#v", out["labels"])
+	}
+
+	b, _ := json.Marshal(out)
+	if strings.Contains(string(b), "unserialized") {
+		t.Fatalf("typed payload fields must serialize by value, got %s", b)
+	}
+}
+
+// A redact key nested inside a typed (map[string]string) value is still masked: sanitizeReflect
+// normalizes the map to map[string]any so the redaction pass reaches its keys (issue #376).
+func TestPrepareEventData_redactsInsideTypedMap(t *testing.T) {
+	t.Parallel()
+	out := PrepareEventData(map[string]any{
+		"headers": map[string]string{"Authorization": "Bearer sk-live"},
+	}, nil, DefaultRedactionOptions())
+	headers, ok := out["headers"].(map[string]any)
+	if !ok || headers["Authorization"] != RedactedPlaceholder {
+		t.Fatalf("Authorization not redacted through typed map: %#v", out["headers"])
+	}
+}
+
 func TestPrepareEventData_mergesExtraRedactKeys(t *testing.T) {
 	t.Parallel()
 	data := map[string]any{"custom_secret_field": "x"}
