@@ -42,6 +42,14 @@ defaults {
     runtime container
 }
 
+limits {
+    maxToolInputBytes 4096
+    maxToolOutputBytes 8192
+    maxWorkflowNesting 4
+    toolInputExceedPolicy fail
+    checkpointExceedPolicy fail
+}
+
 tool github {
     type mcp
     mcp {
@@ -119,6 +127,7 @@ agent assistant {
 	// Compare each resource kind's spec JSON.
 	assertSpecEqual(t, "providers", g1.Spec.Providers, g2.Spec.Providers, out)
 	assertSpecEqual(t, "defaults", g1.Spec.Defaults, g2.Spec.Defaults, out)
+	assertSpecEqual(t, "limits", g1.Spec.Limits, g2.Spec.Limits, out)
 	for _, name := range sortedKeys(g1.Tools) {
 		assertSpecEqual(t, "tool "+name, g1.Tools[name].Spec, g2.Tools[name].Spec, out)
 	}

@@ -246,7 +246,7 @@ func TestParseErrors(t *testing.T) {
 		{
 			name:     "top-level junk before declaration",
 			src:      "banana\nagent A {\n    input X\n}\n",
-			wantDiag: []wantDiag{{line: 1, col: 1, msg: "expected 'agent', 'workflow', 'tool', 'policy', 'environment', 'provider', or 'defaults'"}},
+			wantDiag: []wantDiag{{line: 1, col: 1, msg: "expected 'agent', 'workflow', 'tool', 'policy', 'environment', 'provider', 'defaults', or 'limits'"}},
 			minCount: 1,
 		},
 		{

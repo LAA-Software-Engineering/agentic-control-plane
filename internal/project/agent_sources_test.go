@@ -185,6 +185,43 @@ workflow hello(input: string) -> string policy default {
 	}
 }
 
+// TestLoadProject_ingestsAgentProjectLimits is the end-to-end load test for the #440/ADR-007 top-level
+// `limits` block: a `.agent`-declared project baseline lowers into ProjectSpec.Limits and must be
+// folded back into the returned graph, so ResolveExecutionLimits sees it.
+func TestLoadProject_ingestsAgentProjectLimits(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "main.agent", `
+limits {
+    maxToolInputBytes 4096
+    maxLoopIterations 100
+    toolInputExceedPolicy fail
+}
+
+agent assistant {
+    model mock/default
+}
+
+policy default {
+    preset shell_safe
+}
+
+workflow hello(input: string) -> string policy default {
+    return assistant(input)
+}
+`)
+
+	g, err := LoadProject(root)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if g.Spec.Limits == nil {
+		t.Fatalf("project limits from .agent source missing from loaded graph spec")
+	}
+	if g.Spec.Limits.MaxToolInputBytes != 4096 || g.Spec.Limits.MaxLoopIterations != 100 || g.Spec.Limits.ToolInputExceedPolicy != "fail" {
+		t.Fatalf("project limits not preserved through load: %+v", g.Spec.Limits)
+	}
+}
+
 func providerKeys(g *spec.ProjectGraph) []string {
 	if g.Spec.Providers == nil {
 		return nil

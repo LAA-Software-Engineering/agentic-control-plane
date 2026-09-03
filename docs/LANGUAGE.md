@@ -94,6 +94,7 @@ The reference implementation is [`internal/lang`](../internal/lang):
 File        = { Declaration } ;
 Declaration = AgentDecl | WorkflowDecl | ToolDecl | PolicyDecl | EnvironmentDecl | ProviderDecl | DefaultsDecl ;   (* ToolDecl/PolicyDecl: ADR 005, #333; EnvironmentDecl/ProviderDecl/DefaultsDecl: #440 *)
 DefaultsDecl = "defaults" "{" [ "policy" Ident ] [ "model" ModelRef ] [ "runtime" Ident ] "}" ;   (* singleton, #440/ADR 007 *)
+LimitsDecl  = "limits" LimitsBody ;   (* top-level singleton project baseline; LimitsBody shared with the per-tool override, #440/ADR 007 *)
 
 AgentDecl   = "agent" Ident "{" { AgentField } "}" ;
 AgentField  = "model"  ModelRef
@@ -273,9 +274,22 @@ policy coding {
   home for what YAML expressed as `spec.defaults`; machine/operator-local runtime configuration
   (`state`, `traces`, `telemetry`, credentials) is not a source concern and lives in CLI/env/user-local
   config instead.
-- `tool`, `policy`, `environment`, `provider`, and `defaults` are **contextual**: only a top-level
-  `tool <Name> {` / `policy <Name> {` / `environment <Name> {` / `provider <alias> {` / `defaults {`
-  opens a declaration; the grant path `tool.<name>.<op>` and the agent field `policy <name>` are unchanged.
+- Limits (project baseline): a top-level singleton `limits { maxToolInputBytes N maxToolOutputBytes N
+  maxCheckpointBytes N maxStateBytes N maxWorkflowNesting N maxLoopIterations N toolInputExceedPolicy
+  <truncate|fail> toolOutputExceedPolicy <…> checkpointExceedPolicy <…> }` (#440,
+  [ADR 007](adr/007-remove-yaml-ingestion.md)) — the **project-wide** execution-limit baseline, lowering
+  into the project's `spec.limits`. It shares the nine-field body of the per-tool `limits { … }`
+  override above; the difference is only where it lowers (project baseline vs the per-tool
+  top-precedence override merged by `spec.ResolveExecutionLimits`). A project may declare the top-level
+  block **at most once** (a second block, or a collision with a YAML `spec.limits`, is a load error with
+  no precedence, ADR 005 §3). `toolInputExceedPolicy` / `toolOutputExceedPolicy` accept `truncate` or
+  `fail`, but **`checkpointExceedPolicy` must be `fail`** — truncating a checkpoint would silently drop
+  durable state, so `truncate` there is rejected by `terfyn validate`/`plan` (the grammar accepts the
+  enum; graph validation enforces the narrower envelope). This applies to the per-tool override too.
+- `tool`, `policy`, `environment`, `provider`, `defaults`, and top-level `limits` are **contextual**:
+  only a top-level `tool <Name> {` / `policy <Name> {` / `environment <Name> {` / `provider <alias> {` /
+  `defaults {` / `limits {` opens a declaration; the grant path `tool.<name>.<op>`, the agent field
+  `policy <name>`, and the per-tool `limits { … }` field inside a `tool` block are unchanged.
 - Tool `workspace` (#440): `tool <Name> { … workspace { root "…" testCommand "…" } }` — declarative
   config for the native workspace adapter (the sandbox `root` that `read_file`/`write_file` resolve
   within, and the `testCommand` `run_tests` executes). Both fields are optional; when omitted, the
@@ -285,7 +299,7 @@ policy coding {
   `mcp` / `http` tool calls; both fields optional.
 - Tool per-operation `schema` (#440): `operations { <op> { schema "…" effects { … } } }` — a JSON Schema
   ref validating that operation's input before dispatch (part of the closed-world capability manifest).
-- Tool `limits` (#440): `tool <Name> { … limits { maxToolInputBytes N maxToolOutputBytes N maxCheckpointBytes N maxStateBytes N maxWorkflowNesting N maxLoopIterations N toolInputExceedPolicy <truncate|fail> toolOutputExceedPolicy <…> checkpointExceedPolicy <…> } }` — per-tool overrides of the project/workflow execution limits, merged at **top precedence** by `spec.ResolveExecutionLimits` for that tool's calls. All fields optional.
+- Tool `limits` (#440): `tool <Name> { … limits { maxToolInputBytes N maxToolOutputBytes N maxCheckpointBytes N maxStateBytes N maxWorkflowNesting N maxLoopIterations N toolInputExceedPolicy <truncate|fail> toolOutputExceedPolicy <…> checkpointExceedPolicy <fail> } }` — per-tool overrides of the project/workflow execution limits, merged at **top precedence** by `spec.ResolveExecutionLimits` for that tool's calls. All fields optional. `checkpointExceedPolicy` must be `fail` (truncating durable checkpoint state is rejected by validation); the other two exceed policies accept `truncate` or `fail`.
 - Policy `tools` (#440): `policy <Name> { … tools { forbidUnknownTools <bool> } }` — when true, any tool
   call not explicitly permitted is denied (the strict-preset closed world); enforced by the evaluator.
 

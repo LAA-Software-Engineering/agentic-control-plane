@@ -213,6 +213,14 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 		if g.Spec.Defaults == nil && prog.Graph.Spec.Defaults != nil {
 			g.Spec.Defaults = prog.Graph.Spec.Defaults
 		}
+		// The singleton top-level `limits` block (issue #440, ADR 007) lowers into ProjectSpec.Limits (the
+		// project-wide execution-limit baseline), folding back through the spec like defaults. A collision
+		// with a YAML spec.limits was already reported by MergeLowered inside Check; without this fold-back
+		// a .agent-declared baseline reaches prog.Graph but is dropped from the returned graph, so
+		// ResolveExecutionLimits never sees it.
+		if g.Spec.Limits == nil && prog.Graph.Spec.Limits != nil {
+			g.Spec.Limits = prog.Graph.Spec.Limits
+		}
 	}
 	// The checked execution IR (positional-arg rebinds included) is the pinned
 	// program for every .agent workflow (issue #260); the loader previously

@@ -220,6 +220,19 @@ type DefaultsDecl struct {
 func (d *DefaultsDecl) Position() Pos { return d.Pos }
 func (d *DefaultsDecl) declNode()     {}
 
+// LimitsDecl is the top-level singleton `limits { … }` declaration (issue #440, ADR 007): the
+// project-wide execution-limit baseline that lowers into spec.ProjectSpec.Limits. Its body reuses the
+// same nine-field ToolLimitsBlock the per-tool `limits { … }` override uses; the difference is only
+// where it lowers (project baseline vs per-tool top-precedence override in ResolveExecutionLimits). A
+// project may declare it at most once.
+type LimitsDecl struct {
+	Pos   Pos
+	Block *ToolLimitsBlock
+}
+
+func (d *LimitsDecl) Position() Pos { return d.Pos }
+func (d *LimitsDecl) declNode()     {}
+
 // EnvironmentDecl is a top-level `environment <Name> { overrides { … } }` declaration (issue #440):
 // per-environment agent/policy overrides that lower to spec.EnvironmentResource, applied by
 // spec.ApplyEnvironment exactly like the YAML Environment resource.

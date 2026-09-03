@@ -90,8 +90,10 @@ func (p *parser) parseFile() *File {
 			f.Decls = append(f.Decls, p.parseProvider())
 		case p.cur.Kind == KindIdent && p.cur.Lit == "defaults":
 			f.Decls = append(f.Decls, p.parseDefaults())
+		case p.cur.Kind == KindIdent && p.cur.Lit == "limits":
+			f.Decls = append(f.Decls, p.parseLimitsDecl())
 		default:
-			p.errorf(p.cur.Pos, "expected 'agent', 'workflow', 'tool', 'policy', 'environment', 'provider', or 'defaults' declaration, got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected 'agent', 'workflow', 'tool', 'policy', 'environment', 'provider', 'defaults', or 'limits' declaration, got %s", p.cur)
 			p.syncTopLevel()
 		}
 	}

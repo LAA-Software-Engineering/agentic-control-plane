@@ -45,7 +45,10 @@ type Result struct {
 	Providers []LoweredProvider
 	// Defaults is the singleton `defaults { … }` block lowered into spec.ProjectSpec.Defaults (project
 	// config, not a resource). Nil when the file declares no `defaults` block (issue #440, ADR 007).
-	Defaults  *spec.ProjectDefaults
+	Defaults *spec.ProjectDefaults
+	// Limits is the singleton top-level `limits { … }` block lowered into spec.ProjectSpec.Limits, the
+	// project-wide execution-limit baseline. Nil when the file declares none (issue #440, ADR 007).
+	Limits    *spec.ExecutionLimits
 	SourceMap *SourceMap
 }
 
@@ -92,6 +95,9 @@ func (r *Result) ToGraph() *spec.ProjectGraph {
 	}
 	if r.Defaults != nil {
 		g.Spec.Defaults = r.Defaults
+	}
+	if r.Limits != nil {
+		g.Spec.Limits = r.Limits
 	}
 	return g
 }
@@ -155,6 +161,12 @@ func LowerFile(f *lang.File, opts Options) (*Result, lang.Diagnostics) {
 				continue
 			}
 			res.Defaults = l.defaults(decl)
+		case *lang.LimitsDecl:
+			if res.Limits != nil {
+				l.diag(decl.Pos, "duplicate `limits` block: a project may declare limits at most once")
+				continue
+			}
+			res.Limits = l.projectLimits(decl)
 		}
 	}
 	return res, l.diags

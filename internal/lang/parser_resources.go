@@ -6,7 +6,7 @@ import "strings"
 // declaration. `tool` and `policy` are contextual: they are ordinary identifiers elsewhere (a grant
 // path `tool.x.y`, an agent field `policy foo`), and only at the top level introduce a declaration.
 func (p *parser) isResourceDeclKeyword() bool {
-	return p.cur.Kind == KindIdent && (p.cur.Lit == "tool" || p.cur.Lit == "policy" || p.cur.Lit == "environment" || p.cur.Lit == "provider" || p.cur.Lit == "defaults")
+	return p.cur.Kind == KindIdent && (p.cur.Lit == "tool" || p.cur.Lit == "policy" || p.cur.Lit == "environment" || p.cur.Lit == "provider" || p.cur.Lit == "defaults" || p.cur.Lit == "limits")
 }
 
 // parseTool parses `tool <Name> { type … safety { … } operations { … } }` (ADR 005).
@@ -80,6 +80,16 @@ func (p *parser) parseTool() *ToolDecl {
 		}
 	}
 	p.expect(KindRBrace, "to close tool body")
+	return d
+}
+
+// parseLimitsDecl parses the top-level singleton `limits { … }` declaration (issue #440, ADR 007),
+// reusing parseToolLimits for the shared nine-field body. The keyword position is captured before the
+// body is parsed so a duplicate/collision diagnostic can point at the block.
+func (p *parser) parseLimitsDecl() *LimitsDecl {
+	d := &LimitsDecl{Pos: p.cur.Pos}
+	p.advance() // consume 'limits'
+	d.Block = p.parseToolLimits()
 	return d
 }
 

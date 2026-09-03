@@ -70,6 +70,10 @@ func Graph(g *spec.ProjectGraph) (*lang.File, []Unsupported) {
 	if d := r.defaults(g.Spec.Defaults); d != nil {
 		f.Decls = append(f.Decls, d)
 	}
+	// Project-wide execution-limit baseline (project config), raised only when at least one field is set.
+	if d := r.projectLimits(g.Spec.Limits); d != nil {
+		f.Decls = append(f.Decls, d)
+	}
 	for _, name := range sortedKeys(g.Tools) {
 		f.Decls = append(f.Decls, r.tool(g.Tools[name]))
 	}

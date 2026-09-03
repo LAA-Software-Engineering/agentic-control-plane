@@ -50,17 +50,7 @@ func printTool(b *strings.Builder, d *ToolDecl) {
 		b.WriteString("    }\n")
 	}
 	if lim := d.Limits; lim != nil {
-		b.WriteString("    limits {\n")
-		printIntPtr(b, "        ", "maxToolInputBytes", lim.MaxToolInputBytes)
-		printIntPtr(b, "        ", "maxToolOutputBytes", lim.MaxToolOutputBytes)
-		printIntPtr(b, "        ", "maxCheckpointBytes", lim.MaxCheckpointBytes)
-		printIntPtr(b, "        ", "maxStateBytes", lim.MaxStateBytes)
-		printIntPtr(b, "        ", "maxWorkflowNesting", lim.MaxWorkflowNesting)
-		printIntPtr(b, "        ", "maxLoopIterations", lim.MaxLoopIterations)
-		printIdentField(b, "        ", "toolInputExceedPolicy", lim.ToolInputExceedPolicy)
-		printIdentField(b, "        ", "toolOutputExceedPolicy", lim.ToolOutputExceedPolicy)
-		printIdentField(b, "        ", "checkpointExceedPolicy", lim.CheckpointExceedPolicy)
-		b.WriteString("    }\n")
+		printLimitsBlockAt(b, "    ", lim)
 	}
 	if s := d.Safety; s != nil {
 		b.WriteString("    safety {\n")
@@ -343,6 +333,32 @@ func printProvider(b *strings.Builder, d *ProviderDecl) {
 	printStringLitField(b, "    ", "apiKeyFrom", d.APIKeyFrom)
 	printStringLitField(b, "    ", "workspaceIdFrom", d.WorkspaceIDFrom)
 	b.WriteString("}\n")
+}
+
+// printLimitsBlockAt renders a `limits { … }` block at the given indent (fields at indent+4), shared
+// by the per-tool override and the top-level project baseline (issue #440).
+func printLimitsBlockAt(b *strings.Builder, indent string, lim *ToolLimitsBlock) {
+	inner := indent + "    "
+	fmt.Fprintf(b, "%slimits {\n", indent)
+	printIntPtr(b, inner, "maxToolInputBytes", lim.MaxToolInputBytes)
+	printIntPtr(b, inner, "maxToolOutputBytes", lim.MaxToolOutputBytes)
+	printIntPtr(b, inner, "maxCheckpointBytes", lim.MaxCheckpointBytes)
+	printIntPtr(b, inner, "maxStateBytes", lim.MaxStateBytes)
+	printIntPtr(b, inner, "maxWorkflowNesting", lim.MaxWorkflowNesting)
+	printIntPtr(b, inner, "maxLoopIterations", lim.MaxLoopIterations)
+	printIdentField(b, inner, "toolInputExceedPolicy", lim.ToolInputExceedPolicy)
+	printIdentField(b, inner, "toolOutputExceedPolicy", lim.ToolOutputExceedPolicy)
+	printIdentField(b, inner, "checkpointExceedPolicy", lim.CheckpointExceedPolicy)
+	fmt.Fprintf(b, "%s}\n", indent)
+}
+
+// printLimitsDecl renders the top-level singleton `limits { … }` declaration (issue #440, ADR 007).
+func printLimitsDecl(b *strings.Builder, d *LimitsDecl) {
+	if d.Block == nil {
+		b.WriteString("limits {\n}\n")
+		return
+	}
+	printLimitsBlockAt(b, "", d.Block)
 }
 
 // printDefaults renders the singleton `defaults { policy … model … runtime … }` block (issue #440).
