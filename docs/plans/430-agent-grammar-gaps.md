@@ -101,5 +101,12 @@ flags, and the softer `defaults.policy` / `workspace` gaps remain for Phase 2c (
    remains a general `.agent` grammar limitation for hand-authored multi-field workflow outputs.
    Remaining softer gap: the `spec.workspace` tool sub-block (root/testCommand) still has no `.agent`
    form (implement-review-loop documents this; it uses the env-var path).
-5. **Phase 3 — remove YAML as an accepted source** (breaking; only after the deprecation window). 2c has
-   now proven nothing in the examples needs YAML source.
+5. **Phase 3 — make `.agent` the sole *authoring* surface** (non-breaking, per ADR 003 §2 / ADR 005 §1).
+   "Remove YAML as a project source" is a **documentation and positioning** change, **not** a loader
+   change: the YAML codec/loader is *retained* as non-authoring infrastructure (interchange, `terfyn
+   export` round-trip, machine-generated resources, and the internal test fixtures) exactly as ADR 003
+   §2 and ADR 005 §1 commit. So Phase 3 updates `init`/`new` (already `.agent`-only), all examples
+   (done in 2c), and the docs (README, `docs/EXAMPLES.md`, `docs/LANGUAGE.md`, `docs/DESIGN_DOC.md`) so a
+   normal project is `.agent`-only and YAML is never generated, recommended, or required for authoring;
+   the deprecation notice points to `terfyn migrate --to-agent`. Actually *removing* YAML ingestion
+   would reverse ADR 003/005 and must be a **separate ADR** that explicitly supersedes them.

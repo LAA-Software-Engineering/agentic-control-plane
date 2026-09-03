@@ -201,11 +201,12 @@ Notes:
 
 ## Inline tool and policy declarations ([ADR 005](adr/005-inline-resource-declarations.md), #333)
 
-A `.agent` file may also declare **tools** and **policies** at the top level, so a small project
-can be a single `.agent` file plus `project.yaml`. They lower to the **same** `spec.ToolResource` /
-`spec.PolicyResource` the YAML loader produces (one IR, one validator); YAML remains a first-class
-ingress, and a duplicate `(kind, name)` across any ingress — inline↔inline or inline↔YAML — is a
-**load error** with no precedence.
+A `.agent` file declares **tools** and **policies** (and environments, providers) at the top level, so
+a whole project is a single `.agent` file — no `project.yaml`. They lower to the **same**
+`spec.ToolResource` / `spec.PolicyResource` the YAML loader produces (one IR, one validator); YAML
+remains a first-class *non-authoring* ingress (interchange, machine-generated resources), and a
+duplicate `(kind, name)` across any ingress — inline↔inline or inline↔YAML — is a **load error** with
+no precedence.
 
 ```agent
 tool workspace {
@@ -265,8 +266,9 @@ policy coding {
 - `tool`, `policy`, `environment`, and `provider` are **contextual**: only a top-level `tool <Name> {` /
   `policy <Name> {` / `environment <Name> {` / `provider <alias> {` opens a declaration; the grant path
   `tool.<name>.<op>` and the agent field `policy <name>` are unchanged. The native `workspace { … }`
-  block is a follow-on field (ADR 005 §4); until a field exists in the grammar, author that resource in
-  YAML and import it.
+  tool sub-block (root / test command) is a follow-on field with no `.agent` grammar yet (ADR 005 §4,
+  issue #440); until it lands, configure the native workspace via the `TERFYN_WORKSPACE_ROOT` /
+  `TERFYN_WORKSPACE_TEST_COMMAND` environment variables (see `examples/implement-review-loop`).
 
 ## The normative program
 

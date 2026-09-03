@@ -505,9 +505,12 @@ End goal later:
 > format**, not the primary authoring surface: the loader still accepts it (machine-generated
 > resources, existing fixtures, and interchange all depend on it), `terfyn export --format yaml`
 > materializes the compiled graph on demand, and nothing generated is written to disk by default.
-> Tools, policies, environments, and the `Project` config below have no `.agent` surface and are
-> authored in YAML. The kinds and fields in this section describe the resource model both surfaces
-> compile to.
+> Tools, policies, environments, and custom providers now all have first-class `.agent` surfaces
+> (issue #440), so a project is authored entirely in `.agent`; the `Project` config below is derived
+> (project name from the directory, built-in providers, discovered `.agent` files) rather than
+> hand-authored. The kinds and fields in this section describe the resource model both surfaces
+> compile to. A handful of resource fields (e.g. the native `workspace` tool sub-block) still have no
+> `.agent` grammar and remain YAML-only as a non-authoring ingress.
 
 ## 7.1 Project
 

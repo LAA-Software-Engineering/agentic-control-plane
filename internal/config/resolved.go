@@ -192,7 +192,7 @@ func yamlSourceDeprecation(root string) string {
 	if _, err := project.FindProjectFile(root); err != nil {
 		return ""
 	}
-	return "this project is authored in YAML (project.yaml); YAML project authoring is deprecated (issue #430). Migrate to .agent source — see `terfyn export`. YAML remains supported as export/interchange output, not as an authoring format."
+	return "this project is authored in YAML (project.yaml); YAML project authoring is deprecated (issue #430). Migrate to .agent source with `terfyn migrate --to-agent`. YAML remains supported as export/interchange output and machine ingress, not as an authoring format."
 }
 
 func loadMergedUserLocal(projectRoot, homeDir string) (*UserLocalOverlay, error) {

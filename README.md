@@ -26,7 +26,7 @@ No API keys needed — `init` scaffolds a mock model and a local `echo` tool, so
 go install github.com/Terfyn/terfyn/cmd/terfyn@latest
 # (no Go toolchain? grab a release binary instead — see Install and project setup below)
 
-terfyn init my-agent-system                       # scaffold main.agent + project.yaml
+terfyn init my-agent-system                       # scaffold a .agent-only project (main.agent)
 terfyn validate --project my-agent-system         # types, schemas, references, policy lint
 terfyn plan     --project my-agent-system         # what changes + what authority agents gain
 terfyn apply    --project my-agent-system --auto-approve
@@ -192,7 +192,7 @@ The bound is not over what those operations do at the far end; the trust anchor 
 
 ## Features (MVP today)
 
-- **`terfyn init`** — scaffold a `.agent`-led project (`main.agent` workflow plus `project.yaml`, policies, tools)  
+- **`terfyn init`** — scaffold a `.agent`-only project (a single `main.agent` with a starter agent, policy, and workflow; no `project.yaml`)  
 - **`terfyn export --format yaml`** — materialize the compiled resource graph as YAML on demand (nothing written to disk by default; `--output DIR` writes a loadable project)  
 - **`terfyn migrate --to-agent`** — convert a project's YAML-authored declarative resources (providers/tools/policies/environments/agents) to `.agent` source (stdout, or `--output FILE`); non-destructive, and reports any construct with no `.agent` form (e.g. a YAML-authored workflow) rather than emitting lossy output  
 - **`terfyn fmt`** — format `.agent` sources to canonical form (and normalize project YAML)  
@@ -268,53 +268,34 @@ terfyn inspect --web --project my-agent-system   # read-only local UI on http://
 
 `inspect --web` binds to **localhost only** and opens the state DB read-only. Avoid running it while `terfyn run` is writing the same SQLite file (you may see `database is locked` without WAL); use it when runs are idle or on a copy of the DB.
 
-### Authoring: `.agent` plus `project.yaml`
+### Authoring: `.agent` source
 
-Agents and workflows are authored in `.agent` ([grammar reference](docs/LANGUAGE.md)); `.agent` files anywhere under the project root are discovered and compiled automatically. Tools, policies, and project configuration stay YAML (the interchange format). After **`terfyn init my-agent-system`**, `my-agent-system/main.agent` is:
+A Terfyn project is authored **entirely in `.agent`** ([grammar reference](docs/LANGUAGE.md)) — agents, workflows, tools, and policies all live in `.agent` files. There is **no `project.yaml`**: `.agent` files anywhere under the project root are discovered and compiled automatically, the project name is the directory name, and built-in model providers (`anthropic/*`, `openai/*`, `gemini/*`, `grok/*`, `kimi/*`, `mock/*`) resolve with no configuration — their credentials come from the environment at run time. After **`terfyn init my-agent-system`**, `my-agent-system/main.agent` is:
 
 ```text
-workflow hello() {
-    helper.echo(message: "hello")
+agent assistant {
+    model mock/default
+    instructions """
+    You are a helpful assistant.
+    """
+}
+
+// The default project policy. shell_safe is the conservative starting point:
+// safe reads run freely while shell commands and side-effecting tools require approval.
+policy default {
+    preset shell_safe
+}
+
+workflow hello(input: string) -> string
+    policy default
+{
+    return assistant(input)
 }
 ```
 
-and `my-agent-system/project.yaml` holds the config — a **`Project`** resource with **`spec.imports`** listing the YAML resources (policies, tools); `.agent` sources are not imported, they are discovered:
+That is the whole project — no other files are needed. Add tools, agents, and policies as more `.agent` declarations (or scaffold them with **`terfyn new`**); switch models by naming a built-in provider (`model openai/gpt-4o-mini`), and only declare a `provider` alias for a custom endpoint or credential. Environment overlays, MCP/HTTP tools, and HITL gates are all `.agent` constructs — see [`docs/LANGUAGE.md`](docs/LANGUAGE.md).
 
-```yaml
-apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: my-agent-system
-spec:
-  imports:
-    - ./policies/default.yaml
-    - ./tools/helper.yaml
-  defaults:
-    policy: default
-    model: openai/gpt-4o-mini
-    runtime: local
-  providers:
-    models:
-      openai:
-        type: openai
-        apiKeyFrom: env:OPENAI_API_KEY
-      # Optional: Claude via Messages API (set ANTHROPIC_API_KEY and use e.g. defaults.model: anthropic/claude-sonnet-4-20250514)
-      # anthropic:
-      #   type: anthropic
-      #   apiKeyFrom: env:ANTHROPIC_API_KEY
-      # Optional OpenAI-compatible providers (models e.g. grok/grok-4.6, gemini/gemini-3.1-pro-preview, kimi/kimi-k3):
-      # grok:
-      #   type: grok            # xAI, https://api.x.ai/v1
-      #   apiKeyFrom: env:XAI_API_KEY
-      # gemini:
-      #   type: gemini          # Google, https://generativelanguage.googleapis.com/v1beta/openai
-      #   apiKeyFrom: env:GEMINI_API_KEY
-      # kimi:
-      #   type: kimi            # Moonshot, https://api.moonshot.ai/v1
-      #   apiKeyFrom: env:MOONSHOT_API_KEY
-```
-
-To see the compiled resource graph as YAML — for inspection or handoff to another tool — run `terfyn export --format yaml` (it prints to stdout; nothing is written to disk unless you pass `--output DIR`). YAML remains valid ingress, so you can still author or generate resources directly in it.
+YAML is **not** a project-authoring format: `terfyn init` / `terfyn new` never write it, and nothing you author needs it. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)) — `terfyn export --format yaml` materializes the compiled resource graph on demand (to stdout, or a loadable directory with `--output DIR`) for inspection or handoff. The loader still *accepts* YAML resources as a non-authoring ingress so machine-generated resources, existing fixtures, and the export round-trip keep working; to convert a legacy YAML project to `.agent`, run **`terfyn migrate --to-agent`**.
 
 Field-by-field rules, extra kinds, env overlays, MCP HTTP tools, and **`defaults.runtime`** are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for Anthropic fragments, MCP over HTTP, and structured-output notes.
 
