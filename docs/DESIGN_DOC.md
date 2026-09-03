@@ -596,10 +596,6 @@ spec:
 
   policy: default
 
-  memory:
-    type: session
-    maxMessages: 20
-
   constraints:
     maxIterations: 8
     timeoutSeconds: 90
@@ -620,7 +616,6 @@ spec:
 * `instructions`
 * `tools` — Tool metadata names, or pinned `tool.<name>.<operation>` uses strings (one advertised operation per Tool; HTTP must be pinned)
 * `policy`
-* `memory.type`
 * `constraints`
 * `input.schema`
 * `output.schema`
@@ -1035,10 +1030,6 @@ spec:
       - external.visible
     permitWithApproval:
       - destructive
-
-  security:
-    networkAccess: restricted
-    secretAccess: deny-by-default
 ```
 
 ### MVP

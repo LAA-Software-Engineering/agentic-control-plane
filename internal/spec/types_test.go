@@ -147,7 +147,6 @@ func sampleAgent() *AgentResource {
 				"Cite concrete evidence from tool outputs when possible.\n",
 			Tools:  []string{"github", "docs"},
 			Policy: "default",
-			Memory: &AgentMemory{Type: "session", MaxMessages: 20},
 			Constraints: &AgentConstraints{
 				MaxIterations:           8,
 				TimeoutSeconds:          90,
@@ -263,10 +262,6 @@ func samplePolicy() *PolicyResource {
 					"tool.github.pull_request.merge",
 					"tool.slack.message.send",
 				},
-			},
-			Security: &PolicySecurity{
-				NetworkAccess: "restricted",
-				SecretAccess:  "deny-by-default",
 			},
 		},
 	}

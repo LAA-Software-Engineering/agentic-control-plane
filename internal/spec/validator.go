@@ -129,12 +129,6 @@ func validateRuntimes(g *ProjectGraph) []error {
 	if g.Spec.Defaults != nil {
 		check(g.Pos, "Project: defaults.runtime", g.Spec.Defaults.Runtime)
 	}
-	for name, ar := range g.Agents {
-		if ar == nil {
-			continue
-		}
-		check(ar.Pos, fmt.Sprintf("Agent/%s: spec.runtime", name), ar.Spec.Runtime)
-	}
 	for name, wr := range g.Workflows {
 		if wr == nil {
 			continue

@@ -195,14 +195,8 @@ func TestRaise_AgentIO(t *testing.T) {
 // TestRaise_Unsupported: fields with no .agent form are refused (named), never silently dropped.
 func TestRaise_Unsupported(t *testing.T) {
 	g := &spec.ProjectGraph{
-		Agents: map[string]*spec.AgentResource{
-			"a": {Metadata: spec.Metadata{Name: "a"}, Spec: spec.AgentSpec{Runtime: "local"}},
-		},
 		Tools: map[string]*spec.ToolResource{
 			"t": {Metadata: spec.Metadata{Name: "t"}, Spec: spec.ToolSpec{Permissions: &spec.ToolPermissions{Allow: []string{"x"}}}},
-		},
-		Policies: map[string]*spec.PolicyResource{
-			"p": {Metadata: spec.Metadata{Name: "p"}, Spec: spec.PolicySpec{Security: &spec.PolicySecurity{NetworkAccess: "none"}}},
 		},
 	}
 	_, unsup := Graph(g)
@@ -210,7 +204,7 @@ func TestRaise_Unsupported(t *testing.T) {
 	for _, u := range unsup {
 		got[u.Field] = true
 	}
-	for _, want := range []string{"spec.runtime", "spec.permissions", "spec.security"} {
+	for _, want := range []string{"spec.permissions"} {
 		if !got[want] {
 			t.Fatalf("expected an Unsupported for %q, got %v", want, unsup)
 		}

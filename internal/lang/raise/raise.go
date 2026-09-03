@@ -3,9 +3,8 @@
 // #440, Phase 2b). lang.Print then renders canonical .agent text.
 //
 // Correctness discipline: raising is lossless or it refuses. Every spec field that has a .agent
-// grammar form is reconstructed; any field that is set but has NO .agent form (e.g. AgentSpec.Memory,
-// ToolSpec.Retry, PolicySpec.Security) is a hard error naming the resource and field, never a silent
-// drop. The intended end-to-end invariant (checked by the migrate tool, not this package) is that
+// grammar form is reconstructed; any field that is set but has NO .agent form (e.g. ToolSpec.Permissions)
+// is a hard error naming the resource and field, never a silent drop. The intended end-to-end invariant (checked by the migrate tool, not this package) is that
 // re-lowering the raised AST reproduces the original graph — the mirror of the ADR 005 §2 equivalence
 // goldens the forward path already guarantees.
 package raise
@@ -124,13 +123,8 @@ func (r *raiser) agent(a *spec.AgentResource) *lang.AgentDecl {
 			r.reject("Agent", a.Metadata.Name, "spec.output.schema", fmt.Sprintf("schema ref %q is not the schemas/<Type>.json convention", s.Output.Schema))
 		}
 	}
-	// Fields with no .agent form: refusing keeps migration lossless (issue #440).
-	if s.Runtime != "" {
-		r.reject("Agent", a.Metadata.Name, "spec.runtime", "per-agent runtime")
-	}
-	if s.Memory != nil {
-		r.reject("Agent", a.Metadata.Name, "spec.memory", "agent memory config")
-	}
+	// spec.runtime and spec.memory were removed from the canonical model (ADR 007 step 1), so an
+	// AgentSpec can no longer carry them; there is nothing to refuse or raise.
 	return d
 }
 

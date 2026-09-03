@@ -364,22 +364,6 @@ func TestValidateProjectGraph_defaultsRuntimeUnknown(t *testing.T) {
 	}
 }
 
-func TestValidateProjectGraph_agentRuntimeUnknown(t *testing.T) {
-	g := &ProjectGraph{
-		Agents: map[string]*AgentResource{
-			"a": {
-				Kind:     KindAgent,
-				Metadata: Metadata{Name: "a"},
-				Spec:     AgentSpec{Runtime: "remote"},
-			},
-		},
-	}
-	err := ValidateProjectGraph(g, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), `Agent/a: spec.runtime "remote"`) {
-		t.Fatalf("expected agent runtime error, got %v", err)
-	}
-}
-
 func TestValidateProjectGraph_workflowRuntimeUnknown(t *testing.T) {
 	g := &ProjectGraph{
 		Workflows: map[string]*WorkflowResource{
@@ -505,13 +489,6 @@ func TestValidateProjectGraph_runtimeLocalAccepted(t *testing.T) {
 	g := &ProjectGraph{
 		Spec: ProjectSpec{
 			Defaults: &ProjectDefaults{Runtime: "local"},
-		},
-		Agents: map[string]*AgentResource{
-			"a": {
-				Kind:     KindAgent,
-				Metadata: Metadata{Name: "a"},
-				Spec:     AgentSpec{Runtime: "local"},
-			},
 		},
 		Workflows: map[string]*WorkflowResource{
 			"w": {
