@@ -71,6 +71,9 @@ func githubPullRequestCreate(ctx context.Context, with map[string]any) (map[stri
 	if draft, ok := with["draft"].(bool); ok {
 		payload["draft"] = draft
 	}
+	if v, ok := with["maintainer_can_modify"].(bool); ok {
+		payload["maintainer_can_modify"] = v
+	}
 	path := fmt.Sprintf("/repos/%s/%s/pulls", url.PathEscape(owner), url.PathEscape(repo))
 	b, err := githubPOSTJSON(ctx, path, payload, maxGitHubJSONBody)
 	if err != nil {
