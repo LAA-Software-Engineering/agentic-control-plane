@@ -1,130 +1,162 @@
-# ADR 007: Removing YAML as an accepted loader ingress
+# ADR 007: `.agent` as the only executable source; YAML is output, not ingress
 
 ## Status
 
-**Proposed (draft).** This ADR is a decision request, not an accepted decision. It would **supersede
-[ADR 003](003-yaml-as-compilation-output.md) §2 and [ADR 005](005-inline-resource-declarations.md) §1
-on one specific point** — that the YAML loader "remains supported ingress to the IR… demoted in docs,
-not in code." Accepting it reverses that commitment. It is written so the maintainers can decide with
-the full cost in view; the recommendation (below) is *not* to accept full removal now.
+**Proposed (draft).** A decision request that would **supersede [ADR 003](003-yaml-as-compilation-output.md)
+§2 and [ADR 005](005-inline-resource-declarations.md) §1 on one point** — that the YAML loader "remains
+supported ingress to the IR… demoted in docs, not in code." Accepting it reverses that commitment.
+
+An [earlier draft](https://github.com/Terfyn/terfyn/pull/465) of this ADR recommended *against* removal,
+on the grounds that machine producers need a non-parser ingress and that `terfyn export` round-trips
+through the loader. That recommendation has been revised: neither argument justifies a permanent second
+*executable* frontend. The replacement for the machine ingress is not "machines emit `.agent` text" — it
+is a **typed resource-graph ingress**, made a first-class part of this decision — and export can be a
+one-way serialization without being compilable source.
 
 ## Context
 
 ADR 003 made `.agent` the authoring surface and YAML the compilation-output / interchange format, but
-was explicit that **the YAML loader stays in code**:
+was explicit that **the YAML loader stays in code** (§2), for three reasons: fixture churn,
+machine-generated resources needing a non-parser ingress, and interchange (with export round-tripping
+back through the loader, §1). ADR 005 §1 reaffirmed it.
 
-> ADR 003 §2: "`internal/spec` and `internal/project` continue to accept YAML as a valid way to
-> construct a resource graph… This is the LLVM model: `.ll` is hand-writable, nobody hand-writes it, it
-> remains fully supported… The change is to documentation and positioning, not to loader capability."
-
-ADR 005 §1 reaffirmed it ("YAML remains a first-class ingress… the YAML loader stays exactly as ADR
-003 §2 committed"). ADR 003 gave **three reasons** to keep the loader:
-
-1. **Fixture churn** — many IR-level tests are written against YAML; rewriting them into a language
-   that did not yet exist would be churn.
-2. **Machine-generated resources** — a future inspector UI, a module registry, or another tool emitting
-   Terfyn needs an ingress that is *not* a parser.
-3. **Interchange** — YAML is the interchange format, and `terfyn export` output must round-trip back
-   through the loader to the same graph (ADR 003 §1).
-
-Since those ADRs, issue #430 shipped the intended direction **without** touching loader capability:
+Issue #430 then shipped that direction **without touching loader capability**:
 
 - `terfyn init` / `terfyn new` scaffold `.agent`-only; **all 15 `examples/*` are `.agent`-only**.
-- The `.agent` grammar now expresses the **entire resource model** — tools (incl. `mcp` / `http` /
-  `workspace`), policies (incl. `hitl`), environments, custom `provider` aliases, and multi-field
-  workflow outputs via object-literal returns (#440).
-- `terfyn migrate --to-agent` (built on `internal/lang/raise`) converts a YAML project to `.agent`.
-- A deprecation notice fires when a project is loaded from `project.yaml`.
-- ADR 003's Phase-3 "positioning" is done: the docs present `.agent` as the sole authoring surface and
-  YAML as non-authoring interchange only.
+- The `.agent` grammar now expresses the **entire resource model** — tools (`mcp` / `http` /
+  `workspace`), policies (`hitl`), environments, custom `provider` aliases, and multi-field workflow
+  outputs via object-literal returns (#440).
+- `terfyn migrate --to-agent` (on `internal/lang/raise`) converts a YAML project to `.agent`.
+- A deprecation notice fires when a project loads from `project.yaml`.
 
-So reason (1) is materially weaker — there is now a `.agent` target for every construct **and** a
-migration tool. Reasons (2) and (3) are unchanged and remain architecturally valid. The question this
-ADR forces: now that nothing *needs* to be authored in YAML, should the loader stop *accepting* it?
+So the user-facing goal — humans do not author YAML — is **already met by positioning**. This ADR asks a
+different, architectural question: *should YAML cease to be an executable ingress into Terfyn at all, or
+does it remain a supported second source-language frontend indefinitely?*
 
-Current YAML that the loader ingests (measured):
+The three ADR-003 reasons, re-examined:
 
-- **104** YAML resource files (`kind:` documents) under `internal/` and `test/`.
-- **25** `project.yaml` / `project.yml` fixtures under `*/testdata`.
-- The `terfyn export` → `WriteProjectDir` → **reload** round-trip (`internal/project/export_test.go`,
-  `tool_manifest_roundtrip_test.go`).
+1. **Fixture churn** — materially weaker now: there is a `.agent` target for every construct **and** a
+   migration tool. Churn is a one-time sequenced cost, not a permanent constraint.
+2. **Machine-generated resources** — valid that machine producers need a non-parser ingress, but *that
+   ingress does not have to be YAML project source.* A typed resource-graph / API ingress serves it
+   better and does not make YAML a second executable source language. This is the crux, and it is
+   promoted to a **deliverable** of this decision rather than a reason to keep YAML.
+3. **Interchange / round-trip** — `terfyn export --format yaml` producing YAML does **not** imply
+   `terfyn run project.yaml`. Export can be a one-way inspection / handoff / diagnostics format, as in
+   many systems. The ADR-003 §1 "export reloads to the same graph" guarantee is a choice, not a
+   necessity; it is dropped (or re-expressed as export-to-`.agent`).
 
-Not affected by this ADR: `terfyn test` files (`tests/*.yaml`) use their own decoder in
-`internal/testkit`, not the resource codec, and JSON Schemas are JSON. Both stay regardless.
+Current YAML the loader ingests (measured): **104** resource files (`kind:` documents) and **25**
+`project.yaml` / `project.yml` fixtures under `internal/` and `test/`; plus the `export → WriteProjectDir
+→ reload` round-trip test. Not affected: `terfyn test` files (`tests/*.yaml`, decoded by
+`internal/testkit`, not the resource codec) and JSON Schemas.
 
 ## Decision (proposed)
 
-Remove YAML as an **accepted source ingress**: `internal/spec.LoadResourceFile` and the
-`internal/project` loader no longer construct a resource graph from `project.yaml` or imported YAML
-resource files. The YAML **codec** (`gopkg.in/yaml.v3` marshalling in `internal/spec`) is retained
-**only** where `terfyn export --format yaml` needs it to *emit* YAML; it is no longer a loading path.
+Adopt a single-executable-source architecture with separate human and machine front doors:
 
-Concretely:
+```
+ Human source                          Machine producer
+      │                                      │
+      ▼                                      ▼
+   .agent                        typed API / canonical machine
+      │                            serialization (ResourceGraph)
+      ▼                                      │
+ parser / compiler ─────────────────────────┤
+      │                                      ▼
+      └────────────────►  Canonical typed IR / ResourceGraph
+                                 │
+                                 ├──► validate / plan / apply / run
+                                 └──► export YAML / JSON  (one-way output)
+```
 
-- `LoadProject` / `loadYAMLGraph` are deleted or reduced to a hard error directing the user to
-  `terfyn migrate --to-agent`.
-- The project loader accepts `.agent` sources only; a `project.yaml` at the root is a load error.
-- Export still produces YAML for inspection/handoff, but the "round-trips back through the loader"
-  guarantee (ADR 003 §1) is either dropped or re-expressed as "exports to `.agent`."
+- **`.agent` is the canonical human source language** — the only executable *source* into the IR.
+- **The typed ResourceGraph / a stable API is the canonical machine ingress** — machine producers build
+  the IR directly (or via a canonical machine serialization), not through a second source-language
+  parser.
+- **YAML is an optional output serialization** — `terfyn export` emits it for inspection and handoff;
+  it is not project or resource source.
 
-## Consequences and migration cost (honest accounting)
+### The invariant this ADR establishes
 
-This is a **large, breaking, mostly-internal** change. What it costs:
+> A Terfyn project has exactly one executable source language: `.agent`. No YAML document may be supplied
+> to `validate`, `plan`, `apply`, or `run` as project or resource source. Machine integrations operate on
+> the typed resource graph / API rather than through a second source-language frontend. YAML may remain an
+> output serialization format.
 
-- **The export→reload round-trip contract breaks.** ADR 003 §1 promises `export --output DIR` writes a
-  project that reloads to the same graph. With YAML ingestion gone, that no longer holds unless export
-  is changed to emit `.agent` (which requires a **public, complete `.agent` serializer** — today the
-  printer prints the AST, and `raise` reconstructs an AST from a graph, but there is no supported
-  "graph → `.agent` file" product surface, and `raise` deliberately refuses a few fields).
-- **~104 resource-YAML fixtures + ~25 `project.yaml` fixtures must be migrated or relocated.** Options
-  per fixture: convert to `.agent` (mechanical, but some assert YAML-specific decode / `spec.Pos`
-  line-column stamping and would need rewriting or deletion), or move behind a codec-only test helper
-  that unmarshals YAML without going through the loader. Either way this is a wide, error-prone sweep
-  touching `internal/spec`, `internal/project`, `internal/cli/testdata`, `internal/engine/testdata`,
-  and `test/integration`.
-- **Machine-ingress consumers lose a non-parser ingress** (ADR 003 §2 reason 2). Any tool that emits
-  Terfyn resources (an inspector UI, a module registry, codegen) must now emit `.agent` text or call a
-  Go API directly — a parser becomes mandatory where a data format used to suffice. This is the most
-  consequential *architectural* loss and the hardest to reverse.
-- **`raise` / `migrate` become load-bearing** for anyone with legacy YAML, and must cover every field
-  losslessly (today `raise` refuses a small set, e.g. `tool.retry`, `tool.permissions`,
-  `policy.security`, per-operation `schema`) — those gaps would need closing first.
-- The `spec` package keeps the `yaml.v3` dependency regardless (for export), so this does **not** remove
-  a dependency — the benefit is consistency ("one ingress"), not a smaller build.
+### Scope: source vs. codec
+
+This decision is about **product architecture, not implementation purity.** The objective is that no YAML
+document is *accepted as executable source* — it is **not** "no `yaml.v3` decoder anywhere in the repo."
+The YAML marshal/unmarshal codec may remain **private** where `terfyn export` (or isolated compatibility
+tooling) needs it; what is removed is `LoadResourceFile` / the project loader as a *graph-construction
+frontend for user or resource source*. Tests that specifically exercise the YAML codec may keep YAML
+fixtures against that private codec.
+
+## Consequences and migration cost
+
+Large, breaking, and **almost entirely internal** — no human project loses an authoring path (they were
+`.agent`-only already), and machine producers gain a better ingress than they had.
+
+- **The export→reload guarantee (ADR 003 §1) is dropped** or re-expressed as export-to-`.agent`. Export
+  stays as a one-way YAML/JSON serialization. This removes a contract, not a user capability.
+- **~104 resource-YAML + ~25 `project.yaml` fixtures** move off the project loader: convert to `.agent`
+  (mechanical; most already have a `.agent` twin pattern), or, for tests that specifically assert YAML
+  decode / `spec.Pos` stamping, retarget them at the private codec directly.
+- **Machine-ingress consumers gain a typed ingress** (the replacement is a deliverable, step 3 below),
+  so ADR 003 §2's second reason is *satisfied*, not ignored — no interface is deleted without a
+  replacement.
+- **`raise` / `migrate` must be lossless** for any remaining YAML users; the current `raise` field gaps
+  (`tool.retry`, `tool.permissions`, `policy.security`, per-operation `schema`) are closed as part of
+  the sequence.
+- `internal/spec` keeps `yaml.v3` for export, so this is not a dependency removal; the benefit is
+  architectural (one executable source language, a clean machine front door), not a smaller build.
+
+## Migration sequence
+
+1. **Immediately:** `LoadProject` accepts only `.agent`; a `project.yaml` at the root is a hard error
+   with a `terfyn migrate --to-agent` hint. (This alone enforces the invariant for the user-facing path
+   and is the reversible first step.)
+2. Migrate the ~25 `project.yaml` fixtures to `.agent`.
+3. Introduce / identify a **first-class machine-facing ResourceGraph ingestion API** (the non-parser
+   ingress machine producers use instead of YAML source).
+4. Move IR-level tests off the project-YAML loader; tests that specifically test the YAML codec keep
+   YAML fixtures against the private codec.
+5. Close the `raise` field gaps so migration is lossless.
+6. Remove `LoadResourceFile` as a normal graph-construction frontend.
+7. Retain YAML marshal/unmarshal privately only where export (or isolated compatibility tooling) needs
+   it.
 
 ## Alternatives
 
-- **A. Status quo (do nothing) — recommended default.** Keep ADR 003 §2 / 005 §1 as written. `.agent`
-  is already the sole *authoring* surface (docs + tooling, Phase 3), and YAML stays a supported
-  non-authoring ingress for interchange, machine producers, and fixtures. Zero cost, no reversal, no
-  broken round-trip. The user-facing goal of #430 is already met.
-- **B. Scope removal to the project root only.** Reject a hand-authored `project.yaml` **project** at
-  the loader (a real "no YAML *projects*" stance), but keep resource-YAML parsing (`LoadResourceFile`)
-  for the export round-trip, machine ingress, and IR-level fixtures. This removes YAML *authoring* in
-  code (not just docs) with a far smaller blast radius, and is reversible. It does not deliver "one
-  ingress," but it does make "no YAML project source" enforced rather than merely deprecated.
-- **C. Full removal (this ADR's Decision).** Everything above. Largest cost; reverses two accepted
-  ADRs on the loader point; needs the export contract and machine-ingress story resolved first.
+- **A. Status quo (do nothing).** Keep ADR 003 §2 / 005 §1. YAML stays a supported executable ingress
+  forever. Rejected as an **end state**: it leaves `.agent` plus a permanent second source-language
+  frontend — the "zombie YAML frontend" this ADR exists to retire — even though nothing authors it.
+- **B. Reject YAML *projects* at the root only** (keep the resource codec as an ingress for tests /
+  machine producers / round-trip). This is **step 1 of the sequence, not an end state.** It enforces
+  "no YAML project source" cheaply and reversibly, but still treats resource YAML as an executable
+  ingress. Good as a first landing; insufficient as the destination.
+- **C. Single executable source (this Decision).** `.agent` is the only executable source; machine
+  producers use a typed ingress; YAML is output-only. The clean end state.
 
 ## Recommendation
 
-**Do not accept full removal (Alternative C) now.** The two durable reasons ADR 003 §2 gave for keeping
-the loader — machine-generated resources and the interchange round-trip — remain valid, and #430
-already achieved its user-facing goal (no one authors YAML) through positioning plus a complete
-`.agent` grammar. Full removal trades a large internal migration and a real loss of non-parser ingress
-for a mostly-aesthetic "single ingress" consistency.
+**Accept C as the target architecture, conditioned on the typed machine-ingress replacement (step 3)
+being part of the decision — not a follow-up afterthought.** The earlier "keep YAML" recommendation
+over-weighted two arguments that do not require a second *executable* frontend: machine producers are
+better served by a typed resource-graph ingress than by YAML source, and export can be one-way. A/B are
+not acceptable as the destination; B is the sensible first step *toward* C.
 
-If enforcing "no YAML *project source* in code" (beyond the current deprecation warning) is desired,
-prefer **Alternative B**: a bounded, reversible step that rejects YAML *projects* while retaining the
-resource codec for tests, export round-trip, and machine ingress.
+Land the enforcement incrementally (sequence above): step 1 immediately (it is reversible and delivers
+the user-facing invariant), then 2–7 as the machine ingress and fixture migration are built out, with
+step 6 (removing `LoadResourceFile` as a source frontend) gated on step 3 (the typed ingress exists) so
+no machine interface is removed before its replacement ships.
 
-## What would gate accepting C
+## What gates full acceptance
 
-1. A concrete driver beyond consistency — e.g. a maintenance or soundness cost of the dual ingress that
-   status-quo docs cannot address.
-2. A decision on the ADR 003 §1 export contract: drop the reload guarantee, or ship a supported
-   `graph → .agent` serializer (and close the `raise` field gaps) so export emits `.agent`.
-3. A migration plan for the ~104 resource-YAML + ~25 `project.yaml` fixtures (convert vs. codec-only
-   helper), with an owner and a landing sequence.
-4. A machine-ingress answer: the supported way for non-Terfyn producers to emit resources without a
-   parser, or an explicit decision to drop that capability.
+1. Agreement that the ADR-003 §1 export round-trip guarantee is dropped (export becomes one-way).
+2. A concrete design for the typed machine-ingress API (step 3) — the non-parser ingress that replaces
+   YAML source for machine producers.
+3. A fixture-migration plan and owner for the ~104 resource-YAML + ~25 `project.yaml` files (convert vs.
+   retarget at the private codec).
+4. Closing the `raise` field gaps so `terfyn migrate --to-agent` is lossless.
