@@ -370,10 +370,12 @@ operations on `tool.github` (`tool.github.read_pr`, `tool.github.read_comments`)
 `implement-review` Implementer grants `read_file` + `write_file` + `run_tests` on one
 `workspace` tool. `AgentSpec.Tools` (consumed by the #160 agent loop) advertises **each
 operation as its own tool-def** (#291): a tool with a single granted operation keeps the bare
-tool name (`workspace`), and a tool with several is disambiguated as `<name>.<operation>`
-(`workspace.read_file`). Each operation is gated independently, so the capability boundary is
-per operation — an operation the agent did not grant is denied at resolution regardless of the
-prompt. The lowered ADR 002 fixture now passes full agent-spec validation.
+tool name (`workspace`), and a tool with several is first disambiguated as `<name>.<operation>`
+and then normalized to the provider-safe handle `<name>_<operation>`
+(`workspace_read_file`). Distinct grants that normalize to the same handle are rejected during
+validation. Each operation is gated independently, so the capability boundary is per operation —
+an operation the agent did not grant is denied at resolution regardless of the prompt. The
+lowered ADR 002 fixture now passes full agent-spec validation.
 
 ## Type and effect checking (#198)
 

@@ -26,11 +26,12 @@ func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []model
 	defs = make([]models.ToolDef, 0, len(advertised))
 	usesByName = make(map[string]string, len(advertised))
 	for _, item := range advertised {
+		// ResolveAgentAdvertisedTools owns provider-safe naming and rejects collisions,
+		// so this map cannot silently replace one granted operation with another.
 		usesByName[item.Name] = item.Uses
 		desc := "Project tool " + item.Name
-		// The tool-def name may be a per-operation handle (`workspace.read_file`,
-		// #291), so resolve the backing Tool by the name parsed from the uses string
-		// rather than by the tool-def name, to keep the type in the description.
+		// Resolve the backing Tool by the name parsed from the uses string rather than
+		// by the tool-def name, to keep the type in the description.
 		toolName := item.Name
 		if tn, _, err := tools.ParseUses(item.Uses); err == nil {
 			toolName = tn
