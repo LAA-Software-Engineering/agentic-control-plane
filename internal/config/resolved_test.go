@@ -327,3 +327,37 @@ workflow hello(input: string) -> string {
 		t.Fatalf("state path = %q, want %q", rc.StatePath(), want)
 	}
 }
+
+// TestResolve_yamlSourceDeprecation is issue #440 Phase 2a: a project loaded from a hand-authored
+// YAML project file is flagged with a deprecation notice, while a .agent-only project is not.
+func TestResolve_yamlSourceDeprecation(t *testing.T) {
+	// YAML project (project.yaml present) → flagged.
+	yamlRoot := t.TempDir()
+	writeProject(t, yamlRoot, nil)
+	rcYAML, err := Resolve(ResolveOptions{ProjectRoot: yamlRoot})
+	if err != nil {
+		t.Fatalf("resolve YAML project: %v", err)
+	}
+	if w := rcYAML.SourceDeprecation(); w == "" || !strings.Contains(w, "deprecated") {
+		t.Fatalf("YAML project must be flagged as deprecated source, got %q", w)
+	}
+
+	// .agent-only project (no project.yaml) → not flagged.
+	agentRoot := t.TempDir()
+	writeYAML(t, filepath.Join(agentRoot, "main.agent"), `agent a {
+    model mock/default
+    instructions "x"
+}
+
+workflow w(input: any) -> any {
+    return input
+}
+`)
+	rcAgent, err := Resolve(ResolveOptions{ProjectRoot: agentRoot})
+	if err != nil {
+		t.Fatalf("resolve .agent-only project: %v", err)
+	}
+	if w := rcAgent.SourceDeprecation(); w != "" {
+		t.Fatalf(".agent-only project must not be flagged, got %q", w)
+	}
+}

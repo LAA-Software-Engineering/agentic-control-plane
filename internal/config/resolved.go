@@ -40,13 +40,14 @@ type ResolveOptions struct {
 // ResolvedConfig is a frozen snapshot of the fully resolved project configuration.
 // Graph returns a defensive copy; treat it as read-only.
 type ResolvedConfig struct {
-	graph       *spec.ProjectGraph
-	executables map[string]*execir.Program
-	root        string
-	env         string
-	statePath   string
-	digest      string
-	mcpWarnings []tools.MCPDiscoveryWarning
+	graph             *spec.ProjectGraph
+	executables       map[string]*execir.Program
+	root              string
+	env               string
+	statePath         string
+	digest            string
+	mcpWarnings       []tools.MCPDiscoveryWarning
+	sourceDeprecation string
 }
 
 // Executables returns the execution IR of each workflow (the pinned program #260
@@ -101,6 +102,17 @@ func (r *ResolvedConfig) Digest() string {
 		return ""
 	}
 	return r.digest
+}
+
+// SourceDeprecation returns a non-empty deprecation notice when the project was loaded from a
+// hand-authored YAML project source (a project.yaml / project.yml), or "" for a .agent-only project
+// (issue #430 Phase 2). YAML remains valid as `terfyn export` output and internal `.agentic/` state;
+// this flags only YAML used as *authoring* source.
+func (r *ResolvedConfig) SourceDeprecation() string {
+	if r == nil {
+		return ""
+	}
+	return r.sourceDeprecation
 }
 
 // MCPDiscoveryWarnings returns non-fatal MCP tools/list failures from the last resolve pass.
@@ -161,14 +173,26 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 	}
 
 	return &ResolvedConfig{
-		graph:       frozen,
-		executables: executables,
-		root:        root,
-		env:         env,
-		statePath:   statePath,
-		digest:      digest,
-		mcpWarnings: mcpWarnings,
+		graph:             frozen,
+		executables:       executables,
+		root:              root,
+		env:               env,
+		statePath:         statePath,
+		digest:            digest,
+		mcpWarnings:       mcpWarnings,
+		sourceDeprecation: yamlSourceDeprecation(root),
 	}, nil
+}
+
+// yamlSourceDeprecation returns the deprecation notice when the project is authored in YAML (a
+// project.yaml / project.yml exists at root), or "" for a .agent-only project. A YAML project file is
+// the presence bit for YAML *authoring*: imported YAML resources are declared through it, and a
+// .agent-only project has none (issue #430 Phase 2).
+func yamlSourceDeprecation(root string) string {
+	if _, err := project.FindProjectFile(root); err != nil {
+		return ""
+	}
+	return "this project is authored in YAML (project.yaml); YAML project authoring is deprecated (issue #430). Migrate to .agent source — see `terfyn export`. YAML remains supported as export/interchange output, not as an authoring format."
 }
 
 func loadMergedUserLocal(projectRoot, homeDir string) (*UserLocalOverlay, error) {

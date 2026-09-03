@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/Terfyn/terfyn/internal/config"
 	"github.com/Terfyn/terfyn/internal/effects"
@@ -9,16 +10,26 @@ import (
 )
 
 // prepareResolvedConfig loads and resolves the project configuration using the full
-// precedence ladder (CLI > environment > project > user-local > defaults).
+// precedence ladder (CLI > environment > project > user-local > defaults). Every project-loading
+// command routes through here (directly or via [prepareProjectGraph]), so it is the single place the
+// YAML-source deprecation notice (issue #430 Phase 2) is emitted — once per invocation, to stderr, so
+// it never corrupts `-o json` output on stdout.
 func prepareResolvedConfig(g *Global) (*config.ResolvedConfig, error) {
 	if g == nil {
 		return nil, fmt.Errorf("cli: nil globals")
 	}
-	return config.Resolve(config.ResolveOptions{
+	rc, err := config.Resolve(config.ResolveOptions{
 		ProjectRoot: g.ProjectRoot,
 		Env:         g.Env,
 		StatePath:   g.StatePath,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if w := rc.SourceDeprecation(); w != "" {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+	}
+	return rc, nil
 }
 
 // prepareProjectGraph resolves configuration and returns the validated graph and root.
