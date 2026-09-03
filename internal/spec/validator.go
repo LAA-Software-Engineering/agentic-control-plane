@@ -163,18 +163,6 @@ func validateToolSpecs(g *ProjectGraph) []error {
 		default:
 			errs = append(errs, tr.Pos.Errorf("Tool/%s: unsupported spec.type %q", name, t))
 		}
-		if tr.Spec.Permissions != nil {
-			for i, a := range tr.Spec.Permissions.Allow {
-				if strings.TrimSpace(a) == "" {
-					errs = append(errs, tr.Pos.Errorf("Tool/%s: permissions.allow[%d] must be non-empty", name, i))
-				}
-			}
-			for i, d := range tr.Spec.Permissions.Deny {
-				if strings.TrimSpace(d) == "" {
-					errs = append(errs, tr.Pos.Errorf("Tool/%s: permissions.deny[%d] must be non-empty", name, i))
-				}
-			}
-		}
 		if tr.Spec.Retry != nil && tr.Spec.Retry.MaxAttempts < 0 {
 			errs = append(errs, tr.Pos.Errorf("Tool/%s: retry.maxAttempts must be non-negative", name))
 		}

@@ -55,7 +55,18 @@ YAML yourself.`,
 
 func runMigrateToAgent(cmd *cobra.Command, output string, force bool) error {
 	g := Globals()
-	graph, yamlPaths, err := project.LoadYAMLResources(g.ProjectRoot)
+
+	// Legacy-compatibility (ADR 007 step 1): fields removed from the canonical model (tool.permissions,
+	// policy.security, agent.memory, agent.runtime) would make the strict loader reject a legacy YAML
+	// project. Strip them from a temp copy first — accept, warn once per field per resource, and omit —
+	// so migration never hard-fails on a valid old project and nothing meaningful is silently dropped.
+	migRoot, legacyWarnings, cleanup, err := prepareMigrationRoot(g.ProjectRoot)
+	if err != nil {
+		return NewExitError(ExitValidationError, err)
+	}
+	defer cleanup()
+
+	graph, yamlPaths, err := project.LoadYAMLResources(migRoot)
 	if err != nil {
 		return NewExitError(ExitValidationError, err)
 	}
@@ -80,7 +91,7 @@ func runMigrateToAgent(cmd *cobra.Command, output string, force bool) error {
 		}
 	}
 
-	reportMigrationSummary(cmd, yamlPaths, unsupported)
+	reportMigrationSummary(cmd, yamlPaths, unsupported, legacyWarnings)
 
 	if len(unsupported) > 0 && !force {
 		return NewExitErrorf(ExitValidationError, "migrate: %d resource(s) could not be migrated to .agent (see above); resolve them or pass --force to write the rest", len(unsupported))
@@ -99,9 +110,15 @@ func runMigrateToAgent(cmd *cobra.Command, output string, force bool) error {
 
 // reportMigrationSummary prints, to stderr, which YAML files were read and any resources that could
 // not be migrated, grouped for a clean actionable report.
-func reportMigrationSummary(cmd *cobra.Command, yamlPaths []string, unsupported []raise.Unsupported) {
+func reportMigrationSummary(cmd *cobra.Command, yamlPaths []string, unsupported []raise.Unsupported, legacyWarnings []string) {
 	w := cmd.ErrOrStderr()
 	fmt.Fprintf(w, "migrate --to-agent: read %d YAML file(s)\n", len(yamlPaths))
+	if len(legacyWarnings) > 0 {
+		fmt.Fprintf(w, "\n%d deprecated field(s) dropped (removed from the canonical model, ADR 007):\n", len(legacyWarnings))
+		for _, warn := range legacyWarnings {
+			fmt.Fprintf(w, "  - %s\n", warn)
+		}
+	}
 	if len(unsupported) == 0 {
 		return
 	}

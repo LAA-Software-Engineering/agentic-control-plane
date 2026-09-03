@@ -6,8 +6,7 @@
     "Wall-clock ceiling increased (Policy/default).",
     "Agent/reviewer gained tool.github.echo.",
     "Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).",
-    "New write-like tool permission \"issues.write\" added (Tool/github); see ActionSuggestsWriteSideEffects.",
-    "Agent tools list gained write-like tool \"github\" (Agent/reviewer).",
+    "Agent tools list gained write-capable tool \"github\" (Agent/reviewer; declares side effects).",
     "Agent model changed (Agent/reviewer)."
   ],
   "riskItems": [
@@ -116,24 +115,8 @@
       ]
     },
     {
-      "category": "permission_widening",
-      "reason": "New write-like tool permission \"issues.write\" added (Tool/github); see ActionSuggestsWriteSideEffects.",
-      "severity": "high",
-      "target": {
-        "kind": "tool",
-        "name": "github"
-      },
-      "witness": [
-        {
-          "kind": "tool",
-          "name": "github",
-          "reachability": "static"
-        }
-      ]
-    },
-    {
       "category": "tool_surface_change",
-      "reason": "Agent tools list gained write-like tool \"github\" (Agent/reviewer).",
+      "reason": "Agent tools list gained write-capable tool \"github\" (Agent/reviewer; declares side effects).",
       "severity": "high",
       "target": {
         "kind": "agent",

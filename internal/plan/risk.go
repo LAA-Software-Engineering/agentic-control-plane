@@ -11,26 +11,6 @@ import (
 	"github.com/Terfyn/terfyn/internal/state"
 )
 
-// ActionSuggestsWriteSideEffects is the MVP heuristic for whether a tool permission "allow"
-// action may grant mutating side effects. It is used when diffing Tool specs and when
-// planning brand-new tools (no prior state). True when s (ASCII case-folding) contains any of:
-//   - "write"  (e.g. issues.write, pull_requests.write)
-//   - "delete"
-//   - "merge"
-//   - ".send"  (e.g. slack.message.send)
-//   - ".post"
-func ActionSuggestsWriteSideEffects(action string) bool {
-	s := strings.ToLower(strings.TrimSpace(action))
-	if s == "" {
-		return false
-	}
-	return strings.Contains(s, "write") ||
-		strings.Contains(s, "delete") ||
-		strings.Contains(s, "merge") ||
-		strings.Contains(s, ".send") ||
-		strings.Contains(s, ".post")
-}
-
 type policySpecRisk struct {
 	Execution *struct {
 		MaxTotalCostUsd     float64 `json:"maxTotalCostUsd"`
@@ -51,9 +31,6 @@ type agentSpecRisk struct {
 }
 
 type toolSpecRisk struct {
-	Permissions *struct {
-		Allow []string `json:"allow"`
-	} `json:"permissions"`
 	Safety *struct {
 		Trusted          *bool `json:"trusted"`
 		SideEffects      *bool `json:"sideEffects"`
@@ -466,9 +443,12 @@ func parseDefaultRuntime(resourceJSON string) string {
 func toolSurfaceItem(g *spec.ProjectGraph, agentName, toolName string, target RiskTarget, wit []WitnessHop) RiskItem {
 	sev := RiskSeverityMedium
 	reason := fmt.Sprintf("Agent tools list gained %q (Agent/%s).", toolName, agentName)
-	if toolHasWriteLikeAllow(g, toolName) {
+	// A tool that declares side effects (safety.sideEffects) is write-capable. This is the declared
+	// capability signal (ADR 007 step 1) that replaced the removed spec.permissions allow-name heuristic:
+	// an agent gaining a side-effecting tool widens its authority and is high severity.
+	if toolHasSideEffects(g, toolName) {
 		sev = RiskSeverityHigh
-		reason = fmt.Sprintf("Agent tools list gained write-like tool %q (Agent/%s).", toolName, agentName)
+		reason = fmt.Sprintf("Agent tools list gained write-capable tool %q (Agent/%s; declares side effects).", toolName, agentName)
 	}
 	return RiskItem{
 		Category: RiskCategoryToolSurfaceChange,
@@ -480,18 +460,15 @@ func toolSurfaceItem(g *spec.ProjectGraph, agentName, toolName string, target Ri
 }
 
 func summarizeToolRisk(sink *riskSink, g *spec.ProjectGraph, op Operation, oldJSON, newJSON string, hadPrev bool) {
-	newTool, ok := parseToolSpec(newJSON)
-	if !ok {
+	if _, ok := parseToolSpec(newJSON); !ok {
 		return
 	}
 	name := op.Target.Name
 	target := RiskTarget{Kind: RiskTargetTool, Name: name}
 	wit := staticResourceWitness(WitnessKindTool, name)
-	newAllows := toolAllows(newTool)
 	newDecision := toolPlanDecisionFromGraph(g, name)
 
 	if op.Action == ActionCreate || !hadPrev {
-		addPermissionWidening(sink, name, nil, newAllows, target, wit)
 		addToolSafetyRisk(sink, name, newDecision, nil, target, wit)
 		return
 	}
@@ -500,43 +477,8 @@ func summarizeToolRisk(sink *riskSink, g *spec.ProjectGraph, op Operation, oldJS
 	if !ok {
 		return
 	}
-	oldAllows := toolAllows(oldTool)
-	addPermissionWidening(sink, name, oldAllows, newAllows, target, wit)
 	oldDecision := toolDecisionFromParsed(g, name, oldTool)
 	addToolSafetyRisk(sink, name, newDecision, &oldDecision, target, wit)
-}
-
-func addPermissionWidening(sink *riskSink, toolName string, oldAllows, newAllows []string, target RiskTarget, wit []WitnessHop) {
-	oldSet := make(map[string]struct{}, len(oldAllows))
-	for _, a := range oldAllows {
-		a = strings.TrimSpace(a)
-		if a == "" {
-			continue
-		}
-		oldSet[a] = struct{}{}
-	}
-	for _, a := range newAllows {
-		a = strings.TrimSpace(a)
-		if a == "" {
-			continue
-		}
-		if _, ok := oldSet[a]; ok {
-			continue
-		}
-		sev := RiskSeverityMedium
-		reason := fmt.Sprintf("New tool permission allow %q added (Tool/%s).", a, toolName)
-		if ActionSuggestsWriteSideEffects(a) {
-			sev = RiskSeverityHigh
-			reason = fmt.Sprintf("New write-like tool permission %q added (Tool/%s); see ActionSuggestsWriteSideEffects.", a, toolName)
-		}
-		sink.add(RiskItem{
-			Category: RiskCategoryPermissionWidening,
-			Severity: sev,
-			Reason:   reason,
-			Target:   target,
-			Witness:  wit,
-		})
-	}
 }
 
 func toolPlanDecisionFromGraph(g *spec.ProjectGraph, toolName string) policy.ToolDecision {
@@ -751,27 +693,19 @@ func agentTools(a *agentSpecRisk) []string {
 	return out
 }
 
-func toolAllows(t *toolSpecRisk) []string {
-	if t == nil || t.Permissions == nil {
-		return nil
-	}
-	return t.Permissions.Allow
-}
-
-func toolHasWriteLikeAllow(g *spec.ProjectGraph, toolName string) bool {
+// toolHasSideEffects reports whether the named tool declares side effects (safety.sideEffects: true) —
+// the declared write-capability signal (ADR 007 step 1) that replaced the removed spec.permissions
+// allow-name heuristic. Side-effect metadata is materialized during normalization, so a native tool
+// with no explicit safety carries its derived default here.
+func toolHasSideEffects(g *spec.ProjectGraph, toolName string) bool {
 	if g == nil {
 		return false
 	}
 	tr := g.Tools[toolName]
-	if tr == nil || tr.Spec.Permissions == nil {
+	if tr == nil || tr.Spec.Safety == nil || tr.Spec.Safety.SideEffects == nil {
 		return false
 	}
-	for _, a := range tr.Spec.Permissions.Allow {
-		if ActionSuggestsWriteSideEffects(a) {
-			return true
-		}
-	}
-	return false
+	return *tr.Spec.Safety.SideEffects
 }
 
 func containsString(slice []string, want string) bool {

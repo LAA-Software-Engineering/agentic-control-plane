@@ -111,11 +111,13 @@ type AgentIO struct {
 // --- Tool (design doc §7.3, MVP types: mcp, http, native) ---
 
 type ToolSpec struct {
-	Type        string           `yaml:"type,omitempty" json:"type,omitempty"`
-	MCP         *ToolMCP         `yaml:"mcp,omitempty" json:"mcp,omitempty"`
-	HTTP        *ToolHTTP        `yaml:"http,omitempty" json:"http,omitempty"`
-	Permissions *ToolPermissions `yaml:"permissions,omitempty" json:"permissions,omitempty"`
-	Retry       *ToolRetry       `yaml:"retry,omitempty" json:"retry,omitempty"`
+	Type  string     `yaml:"type,omitempty" json:"type,omitempty"`
+	MCP   *ToolMCP   `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	HTTP  *ToolHTTP  `yaml:"http,omitempty" json:"http,omitempty"`
+	Retry *ToolRetry `yaml:"retry,omitempty" json:"retry,omitempty"`
+	// Note: spec.permissions (allow/deny) was removed from the canonical model (ADR 007 step 1); it was a
+	// non-authoritative plan-only write heuristic superseded by operations/effects capability analysis.
+	// `terfyn migrate --to-agent` still accepts legacy YAML with it (warn + omit).
 	// Safety carries blast-radius metadata for fail-closed policy derivation (issue #103).
 	Safety *ToolSafety `yaml:"safety,omitempty" json:"safety,omitempty"`
 	// Operations declares per-operation named effects (issue #188, ADR 002). Additive to Safety.
@@ -195,11 +197,6 @@ type ToolWorkspace struct {
 	// never a tool-call argument, so an agent cannot choose an arbitrary command. Empty falls back to
 	// TERFYN_WORKSPACE_TEST_COMMAND.
 	TestCommand string `yaml:"testCommand,omitempty" json:"testCommand,omitempty"`
-}
-
-type ToolPermissions struct {
-	Allow []string `yaml:"allow,omitempty" json:"allow,omitempty"`
-	Deny  []string `yaml:"deny,omitempty" json:"deny,omitempty"`
 }
 
 type ToolRetry struct {

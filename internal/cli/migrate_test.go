@@ -182,3 +182,106 @@ func TestMigrate_requiresDirection(t *testing.T) {
 		t.Fatal("migrate without --to-agent should error")
 	}
 }
+
+// writeLegacyYAMLProject writes a YAML project whose resources carry the four fields removed from the
+// canonical model in ADR 007 step 1 (tool.permissions, policy.security, agent.memory, agent.runtime).
+func writeLegacyYAMLProject(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("project.yaml", `apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: legacy
+spec:
+  imports:
+    - ./tool.yaml
+    - ./policy.yaml
+    - ./agent.yaml
+`)
+	write("tool.yaml", `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: helper
+spec:
+  type: mock
+  permissions:
+    allow:
+      - contents.read
+  safety:
+    trusted: true
+`)
+	write("policy.yaml", `apiVersion: agentic.dev/v0
+kind: Policy
+metadata:
+  name: guarded
+spec:
+  execution:
+    maxTotalCostUsd: 5
+  security:
+    networkAccess: restricted
+    secretAccess: deny-by-default
+`)
+	write("agent.yaml", `apiVersion: agentic.dev/v0
+kind: Agent
+metadata:
+  name: assistant
+spec:
+  model: mock/default
+  policy: guarded
+  runtime: local
+  memory:
+    type: session
+    maxMessages: 20
+`)
+	return root
+}
+
+// TestMigrate_legacyRemovedFields_warnAndOmit: migrating a legacy YAML project that carries the four
+// removed fields accepts it, warns once per field per resource, omits them from the generated .agent,
+// and the output still re-loads (ADR 007 step 1 legacy-compat).
+func TestMigrate_legacyRemovedFields_warnAndOmit(t *testing.T) {
+	root := writeLegacyYAMLProject(t)
+	out, errOut, err := runMigrate(t, "migrate", "--to-agent", "--project", root)
+	if err != nil {
+		t.Fatalf("migrate failed: %v\nstderr:\n%s", err, errOut)
+	}
+	// One warning per removed field per resource.
+	for _, want := range []string{
+		"Tool/helper: spec.permissions is deprecated",
+		"Policy/guarded: spec.security is no longer part of the canonical model",
+		"Agent/assistant: spec.memory is no longer part of the canonical model",
+		"Agent/assistant: spec.runtime is no longer part of the canonical model",
+	} {
+		if !strings.Contains(errOut, want) {
+			t.Fatalf("missing legacy warning %q in:\n%s", want, errOut)
+		}
+	}
+	// The removed fields must not appear in the generated .agent.
+	for _, banned := range []string{"permissions", "networkAccess", "secretAccess", "memory", "maxMessages", "runtime"} {
+		if strings.Contains(out, banned) {
+			t.Fatalf("generated .agent must not contain removed field %q:\n%s", banned, out)
+		}
+	}
+	// The kept resources are present and the output re-loads.
+	for _, want := range []string{"tool helper {", "policy guarded {", "agent assistant {"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("generated .agent missing %q:\n%s", want, out)
+		}
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.agent"), []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := project.LoadProject(dir); err != nil {
+		t.Fatalf("migrated .agent did not re-load: %v\n%s", err, out)
+	}
+}

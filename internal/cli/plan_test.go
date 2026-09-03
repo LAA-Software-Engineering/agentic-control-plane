@@ -339,7 +339,9 @@ func mutateRiskCategories(t *testing.T, root string) {
 	replaceFile(t, filepath.Join(root, "policy.yaml"), "      - tool.helper.echo\n", "")
 	replaceFile(t, filepath.Join(root, "agent.yaml"), "  model: mock/gpt-4\n", "  model: mock/gpt-4o\n")
 	replaceFile(t, filepath.Join(root, "agent.yaml"), "    - helper\n", "    - helper\n    - github\n")
-	replaceFile(t, filepath.Join(root, "github.yaml"), "      - contents.read\n", "      - contents.read\n      - issues.write\n")
+	// The agent gaining the side-effecting `github` tool is the tool_surface_change signal (ADR 007 step
+	// 1 replaced the removed permission-widening heuristic); make github write-capable so it's high.
+	replaceFile(t, filepath.Join(root, "github.yaml"), "sideEffects: false", "sideEffects: true")
 }
 
 func replaceFile(t *testing.T, path, old, new string) {
@@ -437,7 +439,6 @@ func TestPlan_json_riskItems_structuredAndStringList(t *testing.T) {
 		"approval_removal",
 		"budget_relaxation",
 		"model_change",
-		"permission_widening",
 		"tool_surface_change",
 	} {
 		if cats[want] == 0 {

@@ -5,8 +5,7 @@ risk:
   - Wall-clock ceiling increased (Policy/default).
   - Agent/reviewer gained tool.github.echo.
   - Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).
-  - New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
-  - Agent tools list gained write-like tool "github" (Agent/reviewer).
+  - Agent tools list gained write-capable tool "github" (Agent/reviewer; declares side effects).
   - Agent model changed (Agent/reviewer).
 riskItems:
   - category: approval_removal
@@ -76,19 +75,9 @@ riskItems:
         reachability: autonomous
     ident: unknown (tool.github.echo)
     reachability: autonomous
-  - category: permission_widening
-    severity: high
-    reason: New write-like tool permission "issues.write" added (Tool/github); see ActionSuggestsWriteSideEffects.
-    target:
-      kind: tool
-      name: github
-    witness:
-      - kind: tool
-        name: github
-        reachability: static
   - category: tool_surface_change
     severity: high
-    reason: Agent tools list gained write-like tool "github" (Agent/reviewer).
+    reason: Agent tools list gained write-capable tool "github" (Agent/reviewer; declares side effects).
     target:
       kind: agent
       name: reviewer
