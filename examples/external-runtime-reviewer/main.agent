@@ -19,6 +19,29 @@
 //   terfyn test                      # forbidEffect: Reviewer / workspace.write PASSES
 //   terfyn run workflow/review --runtime claude-code   # see README "Running under claude-code"
 
+policy reviewer {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    effects {
+        permit { workspace.read, process.exec }
+    }
+}
+
+tool workspace {
+    type native
+    safety {
+        trusted true
+        sideEffects true
+    }
+    operations {
+        read_file { effects { workspace.read } }
+        run_tests { effects { process.exec } }
+        write_file { effects { workspace.write } }
+    }
+}
+
 agent Reviewer {
     model mock/gpt-4
     policy reviewer
@@ -44,6 +67,7 @@ workflow review(input: ReviewRequest) -> ReviewResult
         workspace.read,
         process.exec
     }
+    policy reviewer
 {
     return Reviewer(input)
 }

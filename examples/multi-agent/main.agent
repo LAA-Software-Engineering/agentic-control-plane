@@ -1,6 +1,43 @@
-// Authored in .agent: the triager and fixer agents and the handoff workflow. Each
-// agent keeps its own tool grant and policy. Tools, policies, project config, and
-// JSON Schemas stay YAML.
+// Authored entirely in .agent (ADR 003, issue #430): the triager and fixer agents,
+// the handoff workflow, and the tools and policies they use. Each agent keeps its
+// own tool grant and policy — no project.yaml, no YAML resources. JSON Schemas stay
+// JSON (referenced by type); the built-in `mock` provider and default `local`
+// runtime are implicit.
+
+policy triage-readonly {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    approvals {
+        requiredFor {
+            tool.patch.default
+        }
+    }
+}
+
+policy apply-fix {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+}
+
+tool lookup {
+    type mock
+    safety {
+        trusted true
+        sideEffects false
+    }
+}
+
+tool patch {
+    type mock
+    safety {
+        trusted true
+        sideEffects true
+    }
+}
 
 agent triager {
     model mock/gpt-4

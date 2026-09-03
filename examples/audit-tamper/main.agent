@@ -1,9 +1,18 @@
-// Authored in .agent: the scribe agent and the note workflow. Tools, policies, the
-// project config, and JSON Schemas stay YAML (the interchange format).
+// Authored entirely in .agent (ADR 003, issue #430): the scribe agent, the note
+// workflow, and the cheap-ceiling policy — no project.yaml, no YAML resources.
+// JSON Schemas stay JSON (referenced by type); the built-in `mock` provider and
+// the default `local` runtime are implicit.
 //
 //   terfyn validate && terfyn plan && terfyn apply --auto-approve
 //   terfyn run workflow/note --input-file fixtures/sample-input.json
 //   ./scripts/tamper-trace.sh   # then: terfyn audit verify  ->  fails, exit 1
+
+policy cheap-ceiling {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+}
 
 agent scribe {
     model mock/gpt-4
