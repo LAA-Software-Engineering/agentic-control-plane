@@ -56,7 +56,7 @@ func TestValidateProjectGraph_temperatureOutOfRange(t *testing.T) {
 					Kind:     KindAgent,
 					Metadata: Metadata{Name: "a"},
 					Spec: AgentSpec{
-						Constraints: &AgentConstraints{Temperature: temp},
+						Constraints: &AgentConstraints{Temperature: &temp},
 					},
 				},
 			},
@@ -75,7 +75,7 @@ func TestValidateProjectGraph_temperatureOutOfRange(t *testing.T) {
 					Kind:     KindAgent,
 					Metadata: Metadata{Name: "a"},
 					Spec: AgentSpec{
-						Constraints: &AgentConstraints{Temperature: temp},
+						Constraints: &AgentConstraints{Temperature: &temp},
 					},
 				},
 			},

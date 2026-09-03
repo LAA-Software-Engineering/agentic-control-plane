@@ -35,11 +35,17 @@ func TestAgentTemperature(t *testing.T) {
 	if got := agentTemperature(&spec.AgentResource{}); got != nil {
 		t.Fatalf("nil constraints = %v, want nil", *got)
 	}
-	// 0 means "provider default" (spec omitempty / env-merge semantics), so it is not sent.
-	if got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{Temperature: 0}}}); got != nil {
-		t.Fatalf("zero temperature = %v, want nil", *got)
+	// An unset temperature (nil) falls back to the provider default and is not sent.
+	if got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{}}}); got != nil {
+		t.Fatalf("unset temperature = %v, want nil", *got)
 	}
-	got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{Temperature: 0.2}}})
+	// An explicit 0 is honored (deterministic sampling), not treated as unset.
+	zero := 0.0
+	if got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{Temperature: &zero}}}); got == nil || *got != 0 {
+		t.Fatalf("zero temperature = %v, want 0", got)
+	}
+	half := 0.2
+	got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{Temperature: &half}}})
 	if got == nil || *got != 0.2 {
 		t.Fatalf("explicit temperature = %v, want 0.2", got)
 	}

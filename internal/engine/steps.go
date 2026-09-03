@@ -135,19 +135,17 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 }
 
 // agentTemperature returns the sampling temperature to send for agent, or nil to leave the provider
-// default. The spec models constraints.temperature as a float64 with omitempty, and environment
-// overlays treat 0 as "unset" (spec.mergeAgentOverride), so a zero value means "provider default"
-// here too; every non-zero value — already folded into the spec hash and plan diffs — is now sent
-// (issue #388).
+// default. constraints.temperature is a *float64, so an explicit 0 (deterministic sampling) is
+// honored and sent; only an unset constraint (nil) falls back to the provider default (issue #388).
 func agentTemperature(agent *spec.AgentResource) *float64 {
 	if agent == nil || agent.Spec.Constraints == nil {
 		return nil
 	}
-	t := agent.Spec.Constraints.Temperature
-	if t == 0 {
-		return nil
+	if t := agent.Spec.Constraints.Temperature; t != nil {
+		v := *t
+		return &v
 	}
-	return &t
+	return nil
 }
 
 func (e *Executor) runAgentToolLoop(

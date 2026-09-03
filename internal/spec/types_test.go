@@ -133,6 +133,8 @@ func sampleProject() *ProjectResource {
 	}
 }
 
+func floatPtr(v float64) *float64 { return &v }
+
 func sampleAgent() *AgentResource {
 	return &AgentResource{
 		APIVersion: APIVersionV0,
@@ -149,7 +151,7 @@ func sampleAgent() *AgentResource {
 			Constraints: &AgentConstraints{
 				MaxIterations:           8,
 				TimeoutSeconds:          90,
-				Temperature:             0.2,
+				Temperature:             floatPtr(0.2),
 				RequireStructuredOutput: true,
 			},
 			Input:  &AgentIO{Schema: "./schemas/review-input.json"},

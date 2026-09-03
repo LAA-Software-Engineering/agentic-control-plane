@@ -466,7 +466,7 @@ func validateAgentSpecs(g *ProjectGraph) []error {
 			// Temperature is sent to the provider (issue #388); reject values outside the broadest
 			// accepted range so an obviously invalid knob fails at validate rather than at request
 			// time. Providers enforce their own (narrower) ceilings; 0 means "provider default".
-			if c.Temperature < 0 || c.Temperature > 2 {
+			if c.Temperature != nil && (*c.Temperature < 0 || *c.Temperature > 2) {
 				errs = append(errs, ar.Pos.Errorf("Agent/%s: constraints.temperature must be between 0 and 2", name))
 			}
 		}
