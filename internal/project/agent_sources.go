@@ -182,6 +182,18 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 				g.Policies[name] = pol
 			}
 		}
+		// Inline `environment` declarations (issue #440) fold back like the other kinds: a name already
+		// in g is a YAML Environment cloned by pointer; a genuine cross-ingress duplicate was already
+		// reported by MergeLowered inside Check. Without this, a .agent-declared environment reaches
+		// prog.Graph but is dropped from the returned graph, so `--env <name>` finds nothing.
+		if g.Environments == nil {
+			g.Environments = map[string]*spec.EnvironmentResource{}
+		}
+		for name, e := range prog.Graph.Environments {
+			if _, ok := g.Environments[name]; !ok {
+				g.Environments[name] = e
+			}
+		}
 	}
 	// The checked execution IR (positional-arg rebinds included) is the pinned
 	// program for every .agent workflow (issue #260); the loader previously

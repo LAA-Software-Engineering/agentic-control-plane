@@ -57,6 +57,56 @@ workflow Review(input: PullRequest) -> Review {
 	}
 }
 
+// TestLoadProject_ingestsAgentEnvironment is the regression for the #440 environment fold-back gap:
+// an `environment` declared in .agent lowers and merges inside Check, but the loader must also fold it
+// back into the returned graph — otherwise `--env <name>` silently finds nothing (issue #440).
+func TestLoadProject_ingestsAgentEnvironment(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "main.agent", `
+agent assistant {
+    model mock/default
+}
+
+policy default {
+    preset shell_safe
+}
+
+environment prod {
+    overrides {
+        agents {
+            assistant {
+                model anthropic/claude-sonnet-5
+            }
+        }
+    }
+}
+
+workflow hello(input: string) -> string policy default {
+    return assistant(input)
+}
+`)
+
+	g, err := LoadProject(root)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	env, ok := g.Environments["prod"]
+	if !ok {
+		t.Fatalf("environment 'prod' from .agent source missing from loaded graph, got %v", keys(g.Environments))
+	}
+	if env.Spec.Overrides == nil || env.Spec.Overrides.Agents["assistant"].Model != "anthropic/claude-sonnet-5" {
+		t.Fatalf("environment override not preserved through load: %+v", env.Spec.Overrides)
+	}
+	// End to end: applying the environment overrides the agent's model.
+	applied, err := spec.ApplyEnvironment(g, "prod")
+	if err != nil {
+		t.Fatalf("ApplyEnvironment: %v", err)
+	}
+	if got := applied.Agents["assistant"].Spec.Model; got != "anthropic/claude-sonnet-5" {
+		t.Fatalf("after ApplyEnvironment, assistant model = %q, want anthropic/claude-sonnet-5", got)
+	}
+}
+
 func TestLoadProject_agentControlFlowLoadsAndLowers(t *testing.T) {
 	// Control flow now COMPILES and carries a pinned program (issue #259): the
 	// gate that refused if/for is gone. The workflow loads, its resource

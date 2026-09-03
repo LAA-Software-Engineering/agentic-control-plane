@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`.agent`-declared `environment` overlays are no longer dropped by the loader** (issue #440): the environment grammar (added in the previous change) lowered and merged correctly inside `check.Check`, but `compileAgentSources` folded only Agents/Workflows/Tools/Policies back from the checked graph into the returned project graph — never Environments. As a result an `environment` authored in `.agent` reached the checker but was absent from the loaded graph, so `--env <name>` silently found nothing (and `terfyn validate`/`plan` could not see it). The loader now folds environments back like the other kinds. Regression test loads a `.agent`-only project and asserts the environment survives and its override applies via `spec.ApplyEnvironment`.
+
 - **`read_file` on a directory returns its entries instead of erroring**: an agent exploring a checkout naturally does `read_file("framework")` before it knows `framework` is a directory; the native handler used to fail (`read … : is a directory`), which — because an agent tool-call error aborts the run — killed the whole run. `read_file` now detects a directory and returns `{is_directory: true, entries: [...]}` (sub-directories suffixed `/`), bounded like the file branch — over `maxWorkspaceDirEntries` (1000) it trims and sets `truncated: true` rather than reading an unbounded tree — so a directory read is a useful listing and there is a way to explore the tree without a separate list op. The input schema description says so, so the model knows. (The broader issue — an agent tool-call error aborting the run rather than being returned to the model to recover — is separate and still open.)
 
 ### Added
