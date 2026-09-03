@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Native `issues.get` operation**: fetch a single GitHub issue (`GET /repos/{owner}/{repo}/issues/{number}`, args `owner`/`repo`/`number`, returns `{issue}`). `pull_request.get` hits `/pulls/{number}` and 404s on a plain issue number, so an issue-fixing workflow — one whose input is an *issue*, not a PR — had no way to read the issue body. `issues.get` reads the issues endpoint (which also resolves PRs, since a PR is an issue), pairs with the existing `issues.comment` for the reply, and advertises its input schema to the agent loop like the other native ops. Surfaced by the downstream `terfyn-maintainer` example, whose input is a GitHub issue.
+
 ### Fixed
 
 - **Native tool operations advertise their input schema to the agent loop**: the agent tool-calling loop handed the model a permissive empty parameter schema (`{"properties":{}}`) for every tool, so on a real provider an agent could not know a tool's required arguments — a call to `pull_request.get` omitted `owner`/`repo`/`number`, `read_file` omitted `path` — and native tool calls failed (`native: pull_request.* missing or empty one of [owner]`). Native operations have fixed argument shapes, so they now carry built-in JSON Schemas (`internal/tools/native.OperationInputSchema`: `read_file`→`path`, `write_file`→`path`+`content`, `pull_request.get`/`diff`→`owner`/`repo`/`number`, `post_comment`→…`body`, `create_branch`→`name`, `push_branch`→`branch`, etc.), and `advertisedAgentTools` advertises the operation's schema for native-typed tools (other types keep the permissive default). This makes agentic use of the native workspace/github/git tools work on real models rather than only on mock. Surfaced by the downstream `terfyn-maintainer` example.
