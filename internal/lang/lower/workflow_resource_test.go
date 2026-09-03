@@ -422,7 +422,10 @@ func TestLowerWorkflowResource_ExamplesLowerWithoutError(t *testing.T) {
 		t.Fatalf("walk examples: %v", err)
 	}
 	if len(files) == 0 {
-		t.Fatalf("no example Workflow resources found under %s", root)
+		// The examples are now authored entirely in .agent (issue #430/#440), so there are no YAML
+		// Workflow resources left to sweep. This is a bonus check over real examples; LowerWorkflowResource
+		// stays covered by the inline-fixture tests in this file. Skip rather than fail on the end state.
+		t.Skip("no YAML Workflow resources under examples/ (examples are .agent-only, #440)")
 	}
 }
 

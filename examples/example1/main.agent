@@ -1,0 +1,45 @@
+// example1: a minimal storefront support-snippet workflow, authored entirely in
+// .agent (ADR 003, issue #430). A native `helper` tool supplies the return-policy
+// context; the `support_writer` agent (openai/gpt-4o-mini) drafts the customer
+// email fields. No project.yaml — the built-in `mock`/`openai` providers and the
+// default `local` runtime are implicit.
+//
+// Note (issue #440): the original YAML workflow produced a *flat* multi-field
+// output (`output.value: {product, subject, line}`) composed across two steps.
+// `.agent` has no object-literal return, so the agent now emits the whole object
+// (it already receives `product`) and the workflow returns it — the same fields,
+// wrapped in the standard `.agent` `value` envelope.
+
+policy default {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+}
+
+tool helper {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+agent support_writer {
+    model openai/gpt-4o-mini
+    policy default
+    constraints {
+        timeoutSeconds 60
+    }
+    instructions """
+    You draft short customer-facing email lines for a storefront.
+    You receive JSON in the user message: product name and a return-policy line from internal systems.
+    Respond with one JSON object only (no markdown, no code fences).
+    Use exactly this shape: {"product": "<the product name, echoed back>", "subject": "<=8 words>", "line": "<=25 words, friendly>"}
+    """
+}
+
+workflow support_snippet(input: any) policy default {
+    context = helper.echo(product: input.product, policy_line: "30-day returns on all SKUs; free outbound shipping on defects.")
+    snippet = support_writer(product: context.echo.product, return_policy: context.echo.policy_line)
+    return snippet
+}

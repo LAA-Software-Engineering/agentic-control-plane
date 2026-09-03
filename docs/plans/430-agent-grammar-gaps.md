@@ -87,11 +87,19 @@ flags, and the softer `defaults.policy` / `workspace` gaps remain for Phase 2c (
    and refuses (reports) any construct with no `.agent` form. YAML-authored **workflows are not
    raised**: `.agent` has no object-literal return for a multi-field `output.value`, and forward
    lowering always stamps explicit DAG needs where YAML uses an implicit sequential chain — so a
-   workflow body is migrated by hand. (14/15 examples already author workflows in `.agent`; only
-   `example1` is pure-YAML and hits the object-return gap.)
+   workflow body is migrated by hand. (This mattered for only one example — `example1`, the sole
+   pure-YAML workflow — which was hand-restructured during Phase 2c, below.)
 3. ✅ **Grammar additions** (critical path 1–4) — each its own PR; the real work, now complete.
-4. **Phase 2c — migrate the 15 examples + docs** (needs 2b and the grammar additions the examples use:
-   environments, hitl, workspace). `defaults.policy` handling and `example1`'s object-return workflow
-   are the known residuals.
-5. **Phase 3 — remove YAML as an accepted source** (breaking; only after the deprecation window and
-   once 2c proves nothing needs YAML).
+4. ✅ **Phase 2c — migrate the 15 examples + docs** — **all 15 examples are now `.agent`-only.** Each
+   example's YAML tools/policies/environments were raised into its `main.agent` and `project.yaml`
+   dropped; `defaults.policy`/`defaults.model` were made explicit on the resources that relied on them,
+   and redundant built-in providers / `defaults.runtime: local` were dropped (all verified with a
+   `terfyn export` before/after diff showing only those benign changes). `example1` — the one pure-YAML
+   workflow with a multi-field `output.value` — was **restructured** so the agent emits the whole object
+   and the workflow returns it (the standard `.agent` `value` envelope), preserving the data flow and
+   fields. **No example depends on the object-literal-return gap**, so it does not block Phase 3; it
+   remains a general `.agent` grammar limitation for hand-authored multi-field workflow outputs.
+   Remaining softer gap: the `spec.workspace` tool sub-block (root/testCommand) still has no `.agent`
+   form (implement-review-loop documents this; it uses the env-var path).
+5. **Phase 3 — remove YAML as an accepted source** (breaking; only after the deprecation window). 2c has
+   now proven nothing in the examples needs YAML source.
