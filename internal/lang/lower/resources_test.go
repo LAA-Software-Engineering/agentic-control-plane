@@ -135,6 +135,31 @@ func normPolicySpecJSON(t *testing.T, pr *spec.PolicyResource) string {
 	return string(b)
 }
 
+// TestInlinePolicy_Preset covers the .agent `preset` field (issue #430): a policy may select a
+// built-in preset, which lowers to spec.PolicySpec.Preset and resolves through normalization exactly
+// like the YAML spec.preset — so a .agent-only project can declare a shell_safe default policy.
+func TestInlinePolicy_Preset(t *testing.T) {
+	res := lowerToolsOrFatal(t, `policy default {
+    preset shell_safe
+}`)
+	if len(res.Policies) != 1 {
+		t.Fatalf("expected 1 policy, got %d", len(res.Policies))
+	}
+	if got := res.Policies[0].Spec.Preset; got != spec.PresetShellSafe {
+		t.Fatalf("lowered preset = %q, want %q", got, spec.PresetShellSafe)
+	}
+
+	// End to end: after normalization the preset resolves to the built-in shell_safe policy.
+	g := &spec.ProjectGraph{
+		Meta:     spec.Metadata{Name: "p"},
+		Policies: map[string]*spec.PolicyResource{"default": res.Policies[0]},
+	}
+	spec.NormalizeProjectGraph(g)
+	if rp := g.Policies["default"].Spec.ResolvedPreset; rp != spec.PresetShellSafe {
+		t.Fatalf("resolved preset = %q, want %q", rp, spec.PresetShellSafe)
+	}
+}
+
 func TestInlinePolicy_Lowering(t *testing.T) {
 	res := lowerToolsOrFatal(t, `policy p {
     execution { maxTotalCostUsd 5 maxWallClockSeconds 300 }

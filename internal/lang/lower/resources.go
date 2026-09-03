@@ -67,6 +67,9 @@ func (l *lowerer) policy(d *lang.PolicyDecl) *spec.PolicyResource {
 		Metadata:   spec.Metadata{Name: name},
 		Pos:        d.Pos,
 	}
+	if preset := identName(d.Preset); preset != "" {
+		pr.Spec.Preset = preset
+	}
 	if e := d.Execution; e != nil {
 		ex := &spec.PolicyExecution{}
 		if e.MaxTotalCostUsd != nil {

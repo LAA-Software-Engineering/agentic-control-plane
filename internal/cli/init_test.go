@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/config"
 )
 
 func TestInit_thenValidateSucceeds(t *testing.T) {
@@ -23,13 +23,13 @@ func TestInit_thenValidateSucceeds(t *testing.T) {
 	}
 
 	proj := filepath.Join(parent, name)
-	if _, err := os.Stat(filepath.Join(proj, "project.yaml")); err != nil {
-		t.Fatal(err)
-	}
-	// The scaffold leads on the .agent authoring surface (ADR 003 / #200): the
-	// workflow is a .agent source, not YAML.
+	// Issue #430: init scaffolds a .agent-only project — main.agent is the sole source, and no
+	// project.yaml is generated.
 	if _, err := os.Stat(filepath.Join(proj, "main.agent")); err != nil {
-		t.Fatalf("expected init to scaffold a .agent source: %v", err)
+		t.Fatalf("expected init to scaffold main.agent: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(proj, "project.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("init must NOT create project.yaml (issue #430), stat err = %v", err)
 	}
 
 	ResetGlobalsForTest()
@@ -42,9 +42,12 @@ func TestInit_thenValidateSucceeds(t *testing.T) {
 	}
 }
 
-func TestInit_defaultPolicyExpandsShellSafePreset(t *testing.T) {
+// TestInit_agentOnlyResolves confirms the generated .agent-only project resolves through
+// config.Resolve (the path validate/plan/apply/run share) with no YAML — the agent + workflow are
+// present and the config fingerprints (issue #430).
+func TestInit_agentOnlyResolves(t *testing.T) {
 	parent := t.TempDir()
-	name := "shellsafe"
+	name := "hello"
 
 	ResetGlobalsForTest()
 	cmd := NewRootCmd()
@@ -55,18 +58,17 @@ func TestInit_defaultPolicyExpandsShellSafePreset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ResetGlobalsForTest()
-	g := &Global{ProjectRoot: filepath.Join(parent, name)}
-	graph, _, err := prepareProjectGraph(g)
+	proj := filepath.Join(parent, name)
+	rc, err := config.Resolve(config.ResolveOptions{ProjectRoot: proj})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("generated .agent-only project must resolve: %v", err)
 	}
-	pr, ok := graph.Policies["default"]
-	if !ok || pr == nil {
-		t.Fatal("expected default policy")
+	g := rc.Graph()
+	if g.Agents["assistant"] == nil || g.Workflows["hello"] == nil {
+		t.Fatalf("generated project missing starter agent/workflow: agents=%d workflows=%d", len(g.Agents), len(g.Workflows))
 	}
-	if pr.Spec.ResolvedPreset != spec.PresetShellSafe {
-		t.Fatalf("default policy ResolvedPreset = %q want %s", pr.Spec.ResolvedPreset, spec.PresetShellSafe)
+	if g.Meta.Name != name {
+		t.Fatalf("project name = %q, want the directory basename %q", g.Meta.Name, name)
 	}
 }
 

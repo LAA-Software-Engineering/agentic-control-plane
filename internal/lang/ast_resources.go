@@ -45,6 +45,7 @@ type ToolOperationDecl struct {
 type PolicyDecl struct {
 	Pos       Pos
 	Name      *Ident
+	Preset    *Ident // preset <name>; a built-in policy preset (e.g. shell_safe). nil if omitted.
 	Execution *PolicyExecutionBlock
 	Approvals *PolicyApprovalsBlock
 	Effects   *PolicyEffectsBlock

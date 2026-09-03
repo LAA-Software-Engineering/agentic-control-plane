@@ -165,8 +165,12 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("init: %v\n%s", err, out)
 		}
-		if _, err := os.Stat(filepath.Join(projDir, "project.yaml")); err != nil {
-			t.Fatal(err)
+		// Issue #430: init scaffolds a .agent-only project — no project.yaml.
+		if _, err := os.Stat(filepath.Join(projDir, "project.yaml")); !os.IsNotExist(err) {
+			t.Fatalf("init must not create project.yaml, stat err = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(projDir, "main.agent")); err != nil {
+			t.Fatalf("init must scaffold main.agent: %v", err)
 		}
 
 		out, err = runCLI(t, "validate", "--project", projDir, "--no-color")
