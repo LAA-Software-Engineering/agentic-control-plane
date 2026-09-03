@@ -10,7 +10,7 @@ import "encoding/json"
 // Operations absent from this map advertise the permissive default (any object).
 var operationInputSchemas = map[string]json.RawMessage{
 	// workspace adapter
-	"read_file":  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative file path."}},"required":["path"],"additionalProperties":false}`),
+	"read_file":  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative path. A file returns its content; a directory (including \".\") returns its entries, so you can explore the tree."}},"required":["path"],"additionalProperties":false}`),
 	"write_file": json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative file path."},"content":{"type":"string","description":"Full new contents of the file."}},"required":["path","content"],"additionalProperties":false}`),
 	"run_tests":  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false,"description":"Runs the operator-configured test command; takes no arguments."}`),
 

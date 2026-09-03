@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`read_file` on a directory returns its entries instead of erroring**: an agent exploring a checkout naturally does `read_file("framework")` before it knows `framework` is a directory; the native handler used to fail (`read … : is a directory`), which — because an agent tool-call error aborts the run — killed the whole run. `read_file` now detects a directory and returns `{is_directory: true, entries: [...]}` (sub-directories suffixed `/`), bounded like the file branch — over `maxWorkspaceDirEntries` (1000) it trims and sets `truncated: true` rather than reading an unbounded tree — so a directory read is a useful listing and there is a way to explore the tree without a separate list op. The input schema description says so, so the model knows. (The broader issue — an agent tool-call error aborting the run rather than being returned to the model to recover — is separate and still open.)
+
 ### Added
 
 - **`.agent` tool `mcp` / `http` transport blocks** (issue #440, first grammar blocker from the `.agent` gap audit): a `type mcp` or `type http` tool can now be authored entirely in `.agent` — `mcp { transport "…"  command "…"  args { "…" "…" }  url "…"  headers { "<key>" "<value>" } }` and `http { baseUrl "…"  headers { "<key>" "<value>" } }` — instead of escaping to YAML. `args` is a whitespace-separated string list; `headers` is string key/value pairs (author order preserved). The blocks lower to `spec.ToolMCP` / `spec.ToolHTTP` **byte-identically to their YAML twins** (ADR 005 §2 equivalence goldens), and `terfyn fmt` round-trips them. Also fixes a #436 round-trip gap: `fmt` now prints the policy `preset` field (it was silently dropped). `docs/LANGUAGE.md` updated.
