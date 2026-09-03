@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/Terfyn/terfyn/internal/policy"
 	"github.com/Terfyn/terfyn/internal/spec"
 )
 
@@ -35,7 +37,15 @@ func TestCompiledWorkflowEvaluator_noPolicyFallsBackToSafetyDerived(t *testing.T
 		Workflows: map[string]*spec.WorkflowResource{
 			"demo": {Metadata: spec.Metadata{Name: "demo"}, Spec: spec.WorkflowSpec{}},
 		},
-		// No policies declared, and no defaults.policy → the implicit "default" is undeclared.
+		// A side-effecting (untrusted) tool and a trusted one — no operations block, so the manifest is
+		// open and a call reaches the safety-derived decision. No policies, no defaults.policy → the
+		// implicit "default" is undeclared.
+		Tools: map[string]*spec.ToolResource{
+			"slack": {Metadata: spec.Metadata{Name: "slack"}, Spec: spec.ToolSpec{Type: "mock",
+				Safety: &spec.ToolSafety{Trusted: spec.BoolPtr(false), SideEffects: spec.BoolPtr(true)}}},
+			"docs": {Metadata: spec.Metadata{Name: "docs"}, Spec: spec.ToolSpec{Type: "mock",
+				Safety: &spec.ToolSafety{Trusted: spec.BoolPtr(true)}}},
+		},
 	}
 	for _, pinned := range []bool{false, true} {
 		ev, err := compiledWorkflowEvaluator("", g, "", pinned)
@@ -44,6 +54,16 @@ func TestCompiledWorkflowEvaluator_noPolicyFallsBackToSafetyDerived(t *testing.T
 		}
 		if ev == nil {
 			t.Fatalf("pinned=%v: expected a non-nil evaluator", pinned)
+		}
+		// Assert the actual authority, not just non-nil: the fallback is the safety-derived evaluator,
+		// so a side-effecting/untrusted tool requires approval and a trusted tool is allowed — a future
+		// refactor that swapped in a wider (e.g. permissive) evaluator would fail here.
+		err = ev.CheckToolCall(context.Background(), policy.ToolCallContext{Uses: "tool.slack.message.send"})
+		if d, ok := policy.AsDenied(err); !ok || d.Reason != policy.ReasonApprovalRequired {
+			t.Fatalf("pinned=%v: side-effecting tool must require approval under the no-policy fallback, got %v", pinned, err)
+		}
+		if err := ev.CheckToolCall(context.Background(), policy.ToolCallContext{Uses: "tool.docs.read"}); err != nil {
+			t.Fatalf("pinned=%v: a trusted tool must be allowed under the no-policy fallback, got %v", pinned, err)
 		}
 	}
 
