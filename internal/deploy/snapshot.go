@@ -227,19 +227,34 @@ func Persist(ctx context.Context, store state.ArtifactStore, b Built) (string, e
 	return b.Snapshot.Digest, nil
 }
 
-// BuildAndPersist collects schemas under projectRoot, builds the snapshot for g, and persists it,
-// returning the snapshot digest and any warnings. Both run-start pinning and apply use this. An
-// empty projectRoot skips schema capture (no schemas pinned).
-func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.ProjectGraph, environment, compilerVersion, projectRoot string, execs map[string]*execir.Program) (digest string, warnings []string, err error) {
+// Prepare collects schemas under projectRoot (authoring-time disk I/O) and builds the deployment
+// snapshot for g without writing anything, returning the built snapshot and any advisory warnings.
+// It performs no store I/O, so a caller can persist the result with [Persist] inside its own
+// transaction — apply builds the snapshot here, then commits it alongside the applied rows so the
+// two never diverge (issue #387). An empty projectRoot skips schema capture (no schemas pinned).
+func Prepare(g *spec.ProjectGraph, environment, compilerVersion, projectRoot string, execs map[string]*execir.Program) (Built, []string, error) {
 	var schemas map[string]string
 	var schemaWarnings []string
 	if strings.TrimSpace(projectRoot) != "" {
+		var err error
 		schemas, schemaWarnings, err = CollectSchemas(g, projectRoot)
 		if err != nil {
-			return "", nil, err
+			return Built{}, nil, err
 		}
 	}
 	b, err := Build(g, environment, compilerVersion, schemas, execs)
+	if err != nil {
+		return Built{}, nil, err
+	}
+	return b, append(schemaWarnings, b.Warnings...), nil
+}
+
+// BuildAndPersist collects schemas under projectRoot, builds the snapshot for g, and persists it,
+// returning the snapshot digest and any warnings. Run-start pinning uses this; apply builds with
+// [Prepare] and persists inside its apply transaction (issue #387). An empty projectRoot skips
+// schema capture (no schemas pinned).
+func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.ProjectGraph, environment, compilerVersion, projectRoot string, execs map[string]*execir.Program) (digest string, warnings []string, err error) {
+	b, warnings, err := Prepare(g, environment, compilerVersion, projectRoot, execs)
 	if err != nil {
 		return "", nil, err
 	}
@@ -247,5 +262,5 @@ func BuildAndPersist(ctx context.Context, store state.ArtifactStore, g *spec.Pro
 	if err != nil {
 		return "", nil, err
 	}
-	return d, append(schemaWarnings, b.Warnings...), nil
+	return d, warnings, nil
 }

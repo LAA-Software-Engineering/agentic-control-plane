@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Terfyn/terfyn/internal/deploy"
 	"github.com/Terfyn/terfyn/internal/plan"
 	"github.com/Terfyn/terfyn/internal/spec"
+	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
 )
 
@@ -125,6 +127,95 @@ func TestApplyPlan_deleteRemovesRow(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].Kind != spec.KindProject {
 		t.Fatalf("want project only, got %+v", list)
+	}
+}
+
+// TestApplyPlanAndFinalize_rollsBackPlanRowsWhenFinalizeFails is the regression for issue #387: the
+// applied_* rows and the deployment snapshot commit in one transaction, so a failure while
+// persisting the snapshot must leave no applied rows behind (never applied_resources ahead of a
+// stale current-snapshot pointer).
+func TestApplyPlanAndFinalize_rollsBackPlanRowsWhenFinalizeFails(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "apply-finalize-fail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	g := graphWithAgent()
+	p, err := plan.NewPlanner(st).ComputePlan(ctx, "dev", g, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Operations) == 0 {
+		t.Fatal("want non-empty plan")
+	}
+
+	boom := errors.New("snapshot persistence failed")
+	at := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
+	err = NewApplier(st).ApplyPlanAndFinalize(ctx, "dev", g, p, at, func(ctx context.Context, store state.DeploymentTxStore) error {
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("want finalize error, got %v", err)
+	}
+
+	// The whole apply must have rolled back: no applied rows, no current-snapshot pointer.
+	list, err := st.ListAppliedResourcesByEnv(ctx, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("plan rows must roll back with the failed snapshot, got %+v", list)
+	}
+	if _, err := st.CurrentSnapshotDigestForEnv(ctx, "dev"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("current-snapshot pointer must not be set, got %v", err)
+	}
+}
+
+// TestApplyPlanAndFinalize_commitsRowsAndSnapshotTogether verifies the success path: applied rows,
+// the snapshot, and the env→snapshot pointer are all visible after one atomic apply (issue #387).
+func TestApplyPlanAndFinalize_commitsRowsAndSnapshotTogether(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "apply-finalize-ok.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	g := graphWithAgent()
+	p, err := plan.NewPlanner(st).ComputePlan(ctx, "dev", g, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	built, _, err := deploy.Prepare(g, "dev", "v1", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	at := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
+	err = NewApplier(st).ApplyPlanAndFinalize(ctx, "dev", g, p, at, func(ctx context.Context, store state.DeploymentTxStore) error {
+		if _, err := deploy.Persist(ctx, store, built); err != nil {
+			return err
+		}
+		return store.SetCurrentSnapshot(ctx, "dev", built.Snapshot.Digest)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.GetAppliedResource(ctx, "dev", spec.ResourceID{Kind: spec.KindAgent, Name: "rev"}); err != nil {
+		t.Fatalf("agent row should be committed: %v", err)
+	}
+	digest, err := st.CurrentSnapshotDigestForEnv(ctx, "dev")
+	if err != nil {
+		t.Fatalf("current snapshot should be set: %v", err)
+	}
+	if digest != built.Snapshot.Digest {
+		t.Fatalf("current snapshot digest = %q, want %q", digest, built.Snapshot.Digest)
+	}
+	if _, err := st.GetSnapshot(ctx, built.Snapshot.Digest); err != nil {
+		t.Fatalf("snapshot row should be committed: %v", err)
 	}
 }
 

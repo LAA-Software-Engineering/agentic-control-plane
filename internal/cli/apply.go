@@ -14,10 +14,8 @@ import (
 	"github.com/Terfyn/terfyn/internal/apply"
 	"github.com/Terfyn/terfyn/internal/config"
 	"github.com/Terfyn/terfyn/internal/deploy"
-	"github.com/Terfyn/terfyn/internal/execir"
 	"github.com/Terfyn/terfyn/internal/plan"
 	"github.com/Terfyn/terfyn/internal/render"
-	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
 	"github.com/mattn/go-isatty"
@@ -98,12 +96,21 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 	}
 
 	if len(pl.Operations) == 0 {
+		built, warnings, err := deploy.Prepare(graph, env, Version, rc.ProjectRoot(), rc.Executables())
+		if err != nil {
+			return fmt.Errorf("apply: build deployment snapshot: %w", err)
+		}
+		// Persist the snapshot and current-env pointer atomically even on a no-op apply, so a failure
+		// here cannot leave the pointer half-updated (issue #387).
+		if err := st.RunDeploymentTx(ctx, func(ctx context.Context, store state.DeploymentTxStore) error {
+			return persistDeploymentSnapshot(ctx, store, env, built)
+		}); err != nil {
+			return fmt.Errorf("apply: %w", err)
+		}
 		if err := writeApplyEmptyOutput(cmd, env, dsn, pl, rc, g); err != nil {
 			return err
 		}
-		if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env, rc.ProjectRoot(), rc.Executables()); err != nil {
-			return err
-		}
+		writeSnapshotWarnings(cmd, warnings)
 		return persistSnapshots(rc)
 	}
 
@@ -133,41 +140,55 @@ func runApply(cmd *cobra.Command, flagAutoApprove bool) error {
 		}
 	}
 
+	// Build the snapshot before opening the write transaction (pure computation plus authoring-time
+	// disk reads, no store writes), then persist the applied rows and the snapshot together so a
+	// failure while writing the snapshot rolls the whole apply back instead of leaving
+	// applied_resources ahead of a stale current-snapshot pointer (issue #387).
+	built, warnings, err := deploy.Prepare(graph, env, Version, rc.ProjectRoot(), rc.Executables())
+	if err != nil {
+		return fmt.Errorf("apply: build deployment snapshot: %w", err)
+	}
 	at := time.Now().UTC()
-	if err := apply.NewApplier(st).ApplyPlan(ctx, env, graph, pl, at); err != nil {
+	err = apply.NewApplier(st).ApplyPlanAndFinalize(ctx, env, graph, pl, at, func(ctx context.Context, store state.DeploymentTxStore) error {
+		return persistDeploymentSnapshot(ctx, store, env, built)
+	})
+	if err != nil {
 		if errors.Is(err, apply.ErrDeploymentStateChanged) {
 			return NewExitError(ExitPlanApplyConflict, err)
 		}
 		return fmt.Errorf("apply: %w", err)
 	}
 
+	// Report success only after the transaction has committed.
 	if err := writeApplySuccessOutput(cmd, env, dsn, pl, rc, g, at); err != nil {
 		return err
 	}
-	if err := persistDeploymentSnapshot(ctx, cmd, st, graph, env, rc.ProjectRoot(), rc.Executables()); err != nil {
-		return err
-	}
+	writeSnapshotWarnings(cmd, warnings)
 	return persistSnapshots(rc)
 }
 
-// persistDeploymentSnapshot retains the immutable, content-addressed deployment snapshot for the
-// applied graph (issue #207) so later runs can pin it and inspect/logs can detect superseded runs.
-// Literal-secret warnings are printed to stderr; the snapshot preserves env: references verbatim
-// and never stores resolved secret values.
-func persistDeploymentSnapshot(ctx context.Context, cmd *cobra.Command, st state.ArtifactStore, graph *spec.ProjectGraph, env, projectRoot string, execs map[string]*execir.Program) error {
-	digest, warnings, err := deploy.BuildAndPersist(ctx, st, graph, env, Version, projectRoot, execs)
-	if err != nil {
-		return fmt.Errorf("apply: persist deployment snapshot: %w", err)
+// persistDeploymentSnapshot writes the immutable, content-addressed deployment snapshot for the
+// applied graph (issue #207) and points the environment at it, through store. Callers run it inside
+// the apply transaction so the snapshot commits atomically with the applied rows (issue #387); on
+// every apply, including a re-apply of an earlier digest (rollback), the pointer is updated so
+// superseded detection reflects the current deployment. The built snapshot preserves env: references
+// verbatim and never stores resolved secret values.
+func persistDeploymentSnapshot(ctx context.Context, store state.ArtifactStore, env string, built deploy.Built) error {
+	if _, err := deploy.Persist(ctx, store, built); err != nil {
+		return fmt.Errorf("persist deployment snapshot: %w", err)
 	}
-	// Point the environment at what was just applied — on every apply, including a re-apply of an
-	// earlier digest (rollback) — so superseded detection reflects the current deployment.
-	if err := st.SetCurrentSnapshot(ctx, env, digest); err != nil {
-		return fmt.Errorf("apply: set current deployment snapshot: %w", err)
+	if err := store.SetCurrentSnapshot(ctx, env, built.Snapshot.Digest); err != nil {
+		return fmt.Errorf("set current deployment snapshot: %w", err)
 	}
+	return nil
+}
+
+// writeSnapshotWarnings prints advisory snapshot warnings (e.g. literal secrets, uncaptured schema
+// files) to stderr after the apply has committed.
+func writeSnapshotWarnings(cmd *cobra.Command, warnings []string) {
 	for _, w := range warnings {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
 	}
-	return nil
 }
 
 func readApplyConfirmation(r io.Reader) (bool, error) {

@@ -47,10 +47,22 @@ type ArtifactStore interface {
 	PruneUnreferencedArtifacts(ctx context.Context) (removed int64, err error)
 }
 
+// DeploymentTxStore exposes every deployment-side mutation available inside a single apply
+// transaction: the applied_* rows ([DeploymentStore]) and the content-addressed snapshot/artifact
+// writes plus the env→snapshot pointer ([ArtifactStore]). Apply persists the plan rows and the
+// deployment snapshot through this combined store so both commit atomically (issue #387); a failure
+// in either half rolls back the whole apply instead of leaving applied_resources ahead of the
+// current-snapshot pointer.
+type DeploymentTxStore interface {
+	DeploymentStore
+	ArtifactStore
+}
+
 // TransactionalDeployment runs deployment mutations in a single atomic transaction when supported
-// (design doc §12.2 D apply, issue #15).
+// (design doc §12.2 D apply, issue #15). fn receives a [DeploymentTxStore] so the applied rows and
+// the deployment snapshot it persists share one transaction (issue #387).
 type TransactionalDeployment interface {
-	RunDeploymentTx(ctx context.Context, fn func(ctx context.Context, dep DeploymentStore) error) error
+	RunDeploymentTx(ctx context.Context, fn func(ctx context.Context, dep DeploymentTxStore) error) error
 }
 
 // RuntimeStore persists execution rows from design doc §14.2 (runs, run_steps, trace_events).
