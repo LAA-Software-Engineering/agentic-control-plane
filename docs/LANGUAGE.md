@@ -273,6 +273,12 @@ policy coding {
   within, and the `testCommand` `run_tests` executes). Both fields are optional; when omitted, the
   `TERFYN_WORKSPACE_ROOT` / `TERFYN_WORKSPACE_TEST_COMMAND` environment variables apply, and a declared
   value takes precedence over the env. Lowers to `spec.ToolWorkspace` identically to the YAML twin.
+- Tool `retry` (#440): `tool <Name> { … retry { maxAttempts N backoff "…" } }` — retry config honored by
+  `mcp` / `http` tool calls; both fields optional.
+- Tool per-operation `schema` (#440): `operations { <op> { schema "…" effects { … } } }` — a JSON Schema
+  ref validating that operation's input before dispatch (part of the closed-world capability manifest).
+- Policy `tools` (#440): `policy <Name> { … tools { forbidUnknownTools <bool> } }` — when true, any tool
+  call not explicitly permitted is denied (the strict-preset closed world); enforced by the evaluator.
 
 ## The normative program
 
