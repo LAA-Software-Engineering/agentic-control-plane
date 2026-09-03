@@ -47,7 +47,7 @@ limits {
     maxToolOutputBytes 8192
     maxWorkflowNesting 4
     toolInputExceedPolicy fail
-    checkpointExceedPolicy truncate
+    checkpointExceedPolicy fail
 }
 
 tool github {

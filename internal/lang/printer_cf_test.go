@@ -326,7 +326,7 @@ func TestPrint_ProjectLimitsRoundTrip(t *testing.T) {
     maxToolInputBytes 4096
     maxLoopIterations 100
     toolInputExceedPolicy fail
-    checkpointExceedPolicy truncate
+    checkpointExceedPolicy fail
 }
 `
 	f, diags := Parse("t.agent", src)
@@ -343,7 +343,7 @@ func TestPrint_ProjectLimitsRoundTrip(t *testing.T) {
 	}
 	for _, want := range []string{
 		"limits {", "maxToolInputBytes 4096", "maxLoopIterations 100",
-		"toolInputExceedPolicy fail", "checkpointExceedPolicy truncate",
+		"toolInputExceedPolicy fail", "checkpointExceedPolicy fail",
 	} {
 		if !strings.Contains(once, want) {
 			t.Fatalf("printed output missing %q:\n%s", want, once)

@@ -576,7 +576,7 @@ func TestInlineProjectLimits_YAMLEquivalence(t *testing.T) {
     maxWorkflowNesting 4
     maxLoopIterations 100
     toolInputExceedPolicy fail
-    checkpointExceedPolicy truncate
+    checkpointExceedPolicy fail
 }`
 	f, diags := lang.Parse("t.agent", agentSrc)
 	if diags.HasErrors() {
@@ -601,7 +601,7 @@ spec:
     maxWorkflowNesting: 4
     maxLoopIterations: 100
     toolInputExceedPolicy: fail
-    checkpointExceedPolicy: truncate
+    checkpointExceedPolicy: fail
 `
 	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "project.yaml")
 	if err != nil {
@@ -619,6 +619,48 @@ spec:
 	}
 	if string(inJSON) != string(yJSON) {
 		t.Fatalf("inline project limits differs from YAML twin:\n inline: %s\n yaml:   %s", inJSON, yJSON)
+	}
+}
+
+// TestLowerLimits_CheckpointTruncateRejectedByValidation locks the grammar's authorable surface to the
+// validated envelope: a `checkpointExceedPolicy truncate` limits block lowers cleanly (the grammar
+// accepts the enum), but graph validation rejects it as unsafe (`spec.ValidateExecutionLimits`,
+// checkpoint truncation loses durable state) — for BOTH the top-level project baseline and a per-tool
+// override. This is the end-to-end guard the equivalence goldens can't give, since they compare lowered
+// JSON without ever validating a graph (review of #473 / recurrence of #468).
+func TestLowerLimits_CheckpointTruncateRejectedByValidation(t *testing.T) {
+	cases := map[string]string{
+		"project baseline": `limits {
+    checkpointExceedPolicy truncate
+}`,
+		"per-tool override": `tool bulk {
+    type native
+    limits {
+        checkpointExceedPolicy truncate
+    }
+}`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			f, diags := lang.Parse("t.agent", src)
+			if diags.HasErrors() {
+				t.Fatalf("parse: %v", diags)
+			}
+			res, ld := LowerFile(f, Options{})
+			if ld.HasErrors() {
+				t.Fatalf("the grammar must accept the enum at lower time: %v", ld)
+			}
+			g := res.ToGraph()
+			g.Meta.Name = "demo"
+			spec.NormalizeProjectGraph(g)
+			err := spec.ValidateProjectGraph(g, t.TempDir())
+			if err == nil {
+				t.Fatal("checkpointExceedPolicy truncate must be rejected by graph validation")
+			}
+			if !containsStr(err.Error(), "checkpointExceedPolicy") {
+				t.Fatalf("validation error should name checkpointExceedPolicy: %v", err)
+			}
+		})
 	}
 }
 
@@ -823,7 +865,7 @@ func TestInlineTool_LimitsYAMLEquivalence(t *testing.T) {
         maxLoopIterations 10
         toolInputExceedPolicy truncate
         toolOutputExceedPolicy fail
-        checkpointExceedPolicy truncate
+        checkpointExceedPolicy fail
     }
 }`
 	yamlSrc := `apiVersion: agentic.dev/v0
@@ -840,7 +882,7 @@ spec:
     maxLoopIterations: 10
     toolInputExceedPolicy: truncate
     toolOutputExceedPolicy: fail
-    checkpointExceedPolicy: truncate
+    checkpointExceedPolicy: fail
 `
 	inline := lowerToolsOrFatal(t, agentSrc).Tools[0]
 	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "bulk.yaml")
