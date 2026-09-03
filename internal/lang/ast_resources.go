@@ -103,3 +103,39 @@ type PolicyEffectsBlock struct {
 	Permit             []*EffectRef
 	PermitWithApproval []*EffectRef
 }
+
+// EnvironmentDecl is a top-level `environment <Name> { overrides { … } }` declaration (issue #440):
+// per-environment agent/policy overrides that lower to spec.EnvironmentResource, applied by
+// spec.ApplyEnvironment exactly like the YAML Environment resource.
+type EnvironmentDecl struct {
+	Pos       Pos
+	Name      *Ident
+	Overrides *EnvOverridesBlock
+}
+
+func (d *EnvironmentDecl) Position() Pos { return d.Pos }
+func (d *EnvironmentDecl) declNode()     {}
+
+// EnvOverridesBlock is `overrides { agents { … } policies { … } }`.
+type EnvOverridesBlock struct {
+	Pos      Pos
+	Agents   []*AgentOverrideEntry
+	Policies []*PolicyOverrideEntry
+}
+
+// AgentOverrideEntry is one `<agentName> { model … constraints { … } }` entry under `agents { … }`.
+type AgentOverrideEntry struct {
+	Pos         Pos
+	Name        *Ident
+	Model       *ModelRef
+	Constraints *Constraints
+}
+
+// PolicyOverrideEntry is one `<policyName> { execution { … } approvals { … } }` entry under
+// `policies { … }`.
+type PolicyOverrideEntry struct {
+	Pos       Pos
+	Name      *Ident
+	Execution *PolicyExecutionBlock
+	Approvals *PolicyApprovalsBlock
+}

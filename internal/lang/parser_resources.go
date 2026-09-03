@@ -6,7 +6,7 @@ import "strings"
 // declaration. `tool` and `policy` are contextual: they are ordinary identifiers elsewhere (a grant
 // path `tool.x.y`, an agent field `policy foo`), and only at the top level introduce a declaration.
 func (p *parser) isResourceDeclKeyword() bool {
-	return p.cur.Kind == KindIdent && (p.cur.Lit == "tool" || p.cur.Lit == "policy")
+	return p.cur.Kind == KindIdent && (p.cur.Lit == "tool" || p.cur.Lit == "policy" || p.cur.Lit == "environment")
 }
 
 // parseTool parses `tool <Name> { type … safety { … } operations { … } }` (ADR 005).
@@ -440,4 +440,174 @@ func (p *parser) parsePolicyEffects() *PolicyEffectsBlock {
 	}
 	p.expect(KindRBrace, "to close effects block")
 	return b
+}
+
+// parseEnvironment parses `environment <Name> { overrides { … } }` (issue #440).
+func (p *parser) parseEnvironment() *EnvironmentDecl {
+	d := &EnvironmentDecl{Pos: p.cur.Pos}
+	p.advance() // consume 'environment'
+	d.Name = p.ident("after 'environment'")
+	if _, ok := p.expect(KindLBrace, "to open environment body"); !ok {
+		return d
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected an environment field (overrides), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		switch field {
+		case "overrides":
+			p.advance()
+			if seen[field] {
+				p.errorf(fpos, "duplicate environment field %q", field)
+			}
+			seen[field] = true
+			d.Overrides = p.parseEnvOverrides()
+		default:
+			p.errorf(fpos, "unknown environment field %q (want overrides)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close environment body")
+	return d
+}
+
+// parseEnvOverrides parses `overrides { agents { … } policies { … } }`.
+func (p *parser) parseEnvOverrides() *EnvOverridesBlock {
+	b := &EnvOverridesBlock{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open overrides block"); !ok {
+		return b
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected an overrides field (agents, policies), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate overrides field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "agents":
+			b.Agents = p.parseAgentOverrides()
+		case "policies":
+			b.Policies = p.parsePolicyOverrides()
+		default:
+			p.errorf(fpos, "unknown overrides field %q (want agents or policies)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close overrides block")
+	return b
+}
+
+// parseAgentOverrides parses `agents { <name> { model … constraints { … } } … }`.
+func (p *parser) parseAgentOverrides() []*AgentOverrideEntry {
+	if _, ok := p.expect(KindLBrace, "to open agents override block"); !ok {
+		return nil
+	}
+	var out []*AgentOverrideEntry
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected an agent name in agents { … }, got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		e := &AgentOverrideEntry{Pos: p.cur.Pos, Name: p.ident("for the agent override name")}
+		name := identName(e.Name)
+		if seen[name] {
+			p.errorf(e.Pos, "duplicate agent override %q", name)
+		}
+		seen[name] = true
+		if _, ok := p.expect(KindLBrace, "to open agent override body"); !ok {
+			continue
+		}
+		fseen := map[string]bool{}
+		for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+			if p.cur.Kind != KindIdent {
+				p.errorf(p.cur.Pos, "expected an agent override field (model, constraints), got %s", p.cur)
+				p.syncLine()
+				continue
+			}
+			field, fpos := p.cur.Lit, p.cur.Pos
+			p.advance()
+			if fseen[field] {
+				p.errorf(fpos, "duplicate agent override field %q", field)
+			}
+			fseen[field] = true
+			switch field {
+			case "model":
+				e.Model = p.parseModelRef()
+			case "constraints":
+				e.Constraints = p.parseConstraints()
+			default:
+				p.errorf(fpos, "unknown agent override field %q (want model or constraints)", field)
+				p.syncLine()
+			}
+		}
+		p.expect(KindRBrace, "to close agent override body")
+		out = append(out, e)
+	}
+	p.expect(KindRBrace, "to close agents override block")
+	return out
+}
+
+// parsePolicyOverrides parses `policies { <name> { execution { … } approvals { … } } … }`.
+func (p *parser) parsePolicyOverrides() []*PolicyOverrideEntry {
+	if _, ok := p.expect(KindLBrace, "to open policies override block"); !ok {
+		return nil
+	}
+	var out []*PolicyOverrideEntry
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a policy name in policies { … }, got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		e := &PolicyOverrideEntry{Pos: p.cur.Pos, Name: p.ident("for the policy override name")}
+		name := identName(e.Name)
+		if seen[name] {
+			p.errorf(e.Pos, "duplicate policy override %q", name)
+		}
+		seen[name] = true
+		if _, ok := p.expect(KindLBrace, "to open policy override body"); !ok {
+			continue
+		}
+		fseen := map[string]bool{}
+		for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+			if p.cur.Kind != KindIdent {
+				p.errorf(p.cur.Pos, "expected a policy override field (execution, approvals), got %s", p.cur)
+				p.syncLine()
+				continue
+			}
+			field, fpos := p.cur.Lit, p.cur.Pos
+			p.advance()
+			if fseen[field] {
+				p.errorf(fpos, "duplicate policy override field %q", field)
+			}
+			fseen[field] = true
+			switch field {
+			case "execution":
+				e.Execution = p.parsePolicyExecution()
+			case "approvals":
+				e.Approvals = p.parsePolicyApprovals()
+			default:
+				p.errorf(fpos, "unknown policy override field %q (want execution or approvals)", field)
+				p.syncLine()
+			}
+		}
+		p.expect(KindRBrace, "to close policy override body")
+		out = append(out, e)
+	}
+	p.expect(KindRBrace, "to close policies override block")
+	return out
 }
