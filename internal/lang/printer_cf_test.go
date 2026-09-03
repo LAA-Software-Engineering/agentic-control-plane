@@ -286,3 +286,34 @@ func TestPrint_ProviderRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestPrint_ToolWorkspaceRoundTrip proves the .agent workspace tool sub-block survives `terfyn fmt`
+// (parse -> print -> parse -> print is idempotent and the fields are retained) — #440.
+func TestPrint_ToolWorkspaceRoundTrip(t *testing.T) {
+	t.Parallel()
+	src := `tool workspace {
+    type native
+    workspace {
+        root "sandbox"
+        testCommand "go test ./..."
+    }
+}
+`
+	f, diags := Parse("t.agent", src)
+	if diags.HasErrors() {
+		t.Fatalf("parse: %v", diags)
+	}
+	once := Print(f)
+	f2, d2 := Parse("t.agent", once)
+	if d2.HasErrors() {
+		t.Fatalf("printed output does not re-parse:\n%s\ndiags: %v", once, d2)
+	}
+	if twice := Print(f2); once != twice {
+		t.Fatalf("Print is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", once, twice)
+	}
+	for _, want := range []string{"workspace {", "root \"sandbox\"", "testCommand \"go test ./...\""} {
+		if !strings.Contains(once, want) {
+			t.Fatalf("printed output missing %q:\n%s", want, once)
+		}
+	}
+}

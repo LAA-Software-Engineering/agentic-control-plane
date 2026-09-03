@@ -28,7 +28,7 @@ func (p *parser) parseTool() *ToolDecl {
 	}
 	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
 		if p.cur.Kind != KindIdent {
-			p.errorf(p.cur.Pos, "expected tool field (type, mcp, http, safety, operations), got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected tool field (type, mcp, http, workspace, safety, operations), got %s", p.cur)
 			p.syncLine()
 			continue
 		}
@@ -49,6 +49,11 @@ func (p *parser) parseTool() *ToolDecl {
 			if b := p.parseToolHTTP(); !dup(field, fpos) {
 				d.HTTP = b
 			}
+		case "workspace":
+			p.advance()
+			if b := p.parseToolWorkspace(); !dup(field, fpos) {
+				d.Workspace = b
+			}
 		case "safety":
 			p.advance()
 			if b := p.parseToolSafety(); !dup(field, fpos) {
@@ -60,12 +65,46 @@ func (p *parser) parseTool() *ToolDecl {
 				d.Operations = ops
 			}
 		default:
-			p.errorf(fpos, "unknown tool field %q (want type, mcp, http, safety, or operations)", field)
+			p.errorf(fpos, "unknown tool field %q (want type, mcp, http, workspace, safety, or operations)", field)
 			p.syncLine()
 		}
 	}
 	p.expect(KindRBrace, "to close tool body")
 	return d
+}
+
+// parseToolWorkspace parses `workspace { root "…" testCommand "…" }` — declarative native workspace
+// config (issue #440). Both fields are optional string literals; the env fallback applies when absent.
+func (p *parser) parseToolWorkspace() *ToolWorkspaceBlock {
+	b := &ToolWorkspaceBlock{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open workspace block"); !ok {
+		return b
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a workspace field (root, testCommand), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate workspace field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "root":
+			b.Root = p.parseStringLit("for root")
+		case "testCommand":
+			b.TestCommand = p.parseStringLit("for testCommand")
+		default:
+			p.errorf(fpos, "unknown workspace field %q (want root or testCommand)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close workspace block")
+	return b
 }
 
 func (p *parser) parseToolSafety() *ToolSafetyBlock {

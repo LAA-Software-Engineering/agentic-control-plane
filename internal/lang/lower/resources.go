@@ -80,6 +80,12 @@ func (l *lowerer) tool(d *lang.ToolDecl) *spec.ToolResource {
 			Headers: headerPairsMap(h.Headers),
 		}
 	}
+	if w := d.Workspace; w != nil {
+		tr.Spec.Workspace = &spec.ToolWorkspace{
+			Root:        stringLitValue(w.Root),
+			TestCommand: stringLitValue(w.TestCommand),
+		}
+	}
 	if d.Safety != nil {
 		tr.Spec.Safety = &spec.ToolSafety{
 			Trusted:          d.Safety.Trusted,

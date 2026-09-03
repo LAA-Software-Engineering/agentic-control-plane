@@ -481,3 +481,39 @@ func TestMergeLowered_ProviderCollision(t *testing.T) {
 		t.Fatalf("failed merge mutated the existing provider: %+v", g.Spec.Providers.Models["corp"])
 	}
 }
+
+// TestInlineTool_WorkspaceYAMLEquivalence is the ADR 005 §2 golden for the .agent workspace tool
+// sub-block (issue #440): an inline workspace tool and its YAML twin normalize to byte-identical spec
+// JSON, so the two front ends never diverge on native workspace config.
+func TestInlineTool_WorkspaceYAMLEquivalence(t *testing.T) {
+	agentSrc := `tool workspace {
+    type native
+    workspace {
+        root "sandbox"
+        testCommand "go test ./..."
+    }
+    safety {
+        trusted true
+        sideEffects true
+    }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Tool
+metadata: {name: workspace}
+spec:
+  type: native
+  workspace:
+    root: sandbox
+    testCommand: "go test ./..."
+  safety: {trusted: true, sideEffects: true}
+`
+	inline := lowerToolsOrFatal(t, agentSrc).Tools[0]
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "workspace.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.ToolResource)
+	if normSpecJSON(t, inline) != normSpecJSON(t, fromYAML) {
+		t.Fatalf("inline workspace tool differs from YAML twin:\n inline: %s\n yaml:   %s", normSpecJSON(t, inline), normSpecJSON(t, fromYAML))
+	}
+}

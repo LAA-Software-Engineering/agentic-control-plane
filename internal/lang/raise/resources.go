@@ -31,6 +31,12 @@ func (r *raiser) tool(t *spec.ToolResource) *lang.ToolDecl {
 			Headers: headerPairs(h.Headers),
 		}
 	}
+	if w := s.Workspace; w != nil {
+		d.Workspace = &lang.ToolWorkspaceBlock{
+			Root:        strLitOrNil(w.Root),
+			TestCommand: strLitOrNil(w.TestCommand),
+		}
+	}
 	if sf := s.Safety; sf != nil {
 		d.Safety = &lang.ToolSafetyBlock{Trusted: sf.Trusted, SideEffects: sf.SideEffects, RequiresApproval: sf.RequiresApproval}
 	}
@@ -57,9 +63,6 @@ func (r *raiser) tool(t *spec.ToolResource) *lang.ToolDecl {
 	}
 	if s.Limits != nil {
 		r.reject("Tool", t.Metadata.Name, "spec.limits", "per-tool execution limits")
-	}
-	if s.Workspace != nil {
-		r.reject("Tool", t.Metadata.Name, "spec.workspace", "native workspace config")
 	}
 	return d
 }
