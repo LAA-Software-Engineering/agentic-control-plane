@@ -1030,10 +1030,6 @@ spec:
       - external.visible
     permitWithApproval:
       - destructive
-
-  security:
-    networkAccess: restricted
-    secretAccess: deny-by-default
 ```
 
 ### MVP
