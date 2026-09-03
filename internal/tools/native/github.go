@@ -56,6 +56,28 @@ func githubPullRequestGet(ctx context.Context, with map[string]any) (map[string]
 	return map[string]any{"pull_request": pr}, nil
 }
 
+// githubIssuesGet fetches a single issue (GET /repos/{owner}/{repo}/issues/{number}).
+// Unlike pull_request.get (which hits /pulls and 404s on a non-PR number), this reads
+// the issues endpoint, so a plain issue — the input to an issue-fixing workflow — can
+// be fetched. Note the GitHub issues endpoint also returns PRs (a PR is an issue), so
+// it is the more general "get by number".
+func githubIssuesGet(ctx context.Context, with map[string]any) (map[string]any, error) {
+	owner, repo, number, err := githubRepoTriplet(with)
+	if err != nil {
+		return nil, err
+	}
+	path := fmt.Sprintf("/repos/%s/%s/issues/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(number))
+	b, err := githubGET(ctx, path, githubAcceptJSON, maxGitHubJSONBody)
+	if err != nil {
+		return nil, err
+	}
+	var issue map[string]any
+	if err := json.Unmarshal(b, &issue); err != nil {
+		return nil, fmt.Errorf("native: issues.get decode: %w", err)
+	}
+	return map[string]any{"issue": issue}, nil
+}
+
 func githubPullRequestDiff(ctx context.Context, with map[string]any) (map[string]any, error) {
 	owner, repo, number, err := githubRepoTriplet(with)
 	if err != nil {

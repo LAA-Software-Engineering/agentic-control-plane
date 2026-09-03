@@ -388,3 +388,50 @@ func TestGithubPullRequestGet_httpError(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestGithubIssuesGet_happyPath(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token-xyz")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// issues.get must hit the /issues/ endpoint, not /pulls/ (which 404s on a
+		// plain issue number).
+		if r.URL.Path != "/repos/acme/widget/issues/123" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		if r.Method != http.MethodGet {
+			t.Fatalf("method %s", r.Method)
+		}
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			t.Fatalf("missing bearer: %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"number":123,"title":"Fix the CSRF bug","body":"details"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("GITHUB_API_URL", srv.URL)
+
+	reg := NewRegistry()
+	out, _, err := reg.Dispatch(context.Background(), "issues.get", map[string]any{
+		"owner":  "acme",
+		"repo":   "widget",
+		"number": float64(123),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, ok := out["issue"].(map[string]any)
+	if !ok {
+		t.Fatalf("issue: %T %#v", out["issue"], out["issue"])
+	}
+	if issue["title"] != "Fix the CSRF bug" || issue["body"] != "details" {
+		t.Fatalf("issue %#v", issue)
+	}
+}
+
+func TestGithubIssuesGet_requiresOwner(t *testing.T) {
+	reg := NewRegistry()
+	if _, _, err := reg.Dispatch(context.Background(), "issues.get", map[string]any{
+		"repo": "widget", "number": float64(1),
+	}); err == nil {
+		t.Fatal("issues.get without owner should error")
+	}
+}

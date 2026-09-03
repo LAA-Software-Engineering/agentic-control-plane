@@ -21,6 +21,7 @@ var dispatchHandlers = map[string]dispatchHandler{
 	"identity":                   dispatchIdentity,
 	"issues.comment":             dispatchGitHubJSON(githubIssuesComment),
 	"issues.create":              dispatchGitHubJSON(githubIssuesCreate),
+	"issues.get":                 dispatchGitHubJSON(githubIssuesGet),
 	"message.send":               dispatchSlackMessageSend,
 	"message.update":             dispatchSlackMessageUpdate,
 	"pull_request.create_review": dispatchGitHubJSON(githubPullRequestCreateReview),

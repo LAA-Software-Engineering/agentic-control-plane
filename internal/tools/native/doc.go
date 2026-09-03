@@ -6,7 +6,7 @@
 //
 // GitHub REST (require GITHUB_TOKEN; GITHUB_API_URL overrides the base, default
 // https://api.github.com, e.g. for tests):
-//   - Reads: pull_request.get, pull_request.diff, check_runs.list.
+//   - Reads: issues.get, pull_request.get, pull_request.diff, check_runs.list.
 //   - pull_request.post_comment is simulated unless owner, repo, number, and body are all set, in
 //     which case it writes to the issue comments API (PRs use the same issue number). By default
 //     comment_strategy is replace: find a comment containing <!-- agentic-review --> and PATCH it,

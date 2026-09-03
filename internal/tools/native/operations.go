@@ -33,6 +33,7 @@ var operationCatalog = map[string][]string{
 	"check_runs.list":            {"owner", "repo", "ref"},
 	"issues.create":              {"owner", "repo", "title", "body"},
 	"issues.comment":             {"owner", "repo", "number", "body"},
+	"issues.get":                 {"owner", "repo", "number"},
 	"commit_status.create":       {"owner", "repo", "sha", "state", "context", "description", "target_url"},
 	"message.send":               {"channel", "text", "thread_ts"},
 	"message.update":             {"channel", "ts", "text"},

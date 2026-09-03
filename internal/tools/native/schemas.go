@@ -17,6 +17,8 @@ var operationInputSchemas = map[string]json.RawMessage{
 	// github adapter
 	"pull_request.get":          githubTripletSchema,
 	"pull_request.diff":         githubTripletSchema,
+	"issues.get":                githubTripletSchema,
+	"issues.comment":            json.RawMessage(`{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"number":{"type":"integer"},"body":{"type":"string","description":"Comment body (Markdown)."}},"required":["owner","repo","number","body"]}`),
 	"pull_request.post_comment": json.RawMessage(`{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"number":{"type":"integer"},"body":{"type":"string","description":"Comment body (Markdown)."}},"required":["owner","repo","number","body"]}`),
 	"check_runs.list":           json.RawMessage(`{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"ref":{"type":"string","description":"Commit SHA or ref."}},"required":["owner","repo","ref"]}`),
 
