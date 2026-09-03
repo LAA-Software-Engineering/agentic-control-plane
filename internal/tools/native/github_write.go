@@ -39,6 +39,119 @@ func githubIssuesCreate(ctx context.Context, with map[string]any) (map[string]an
 	return pickGitHubFields(obj, "number", "id", "html_url", "state"), nil
 }
 
+// githubPullRequestCreate opens a pull request: POST /repos/{owner}/{repo}/pulls.
+// head is the branch with the change, base the branch to merge into. The GitHub API
+// names the action "create" (the UI says "open"). Either title or issue is required:
+// passing an issue number converts that issue into the PR. This is the deliverable of
+// an issue-fixing workflow — the fix lands as a reviewable PR.
+func githubPullRequestCreate(ctx context.Context, with map[string]any) (map[string]any, error) {
+	owner, repo, err := githubOwnerRepo(with, "pull_request.create")
+	if err != nil {
+		return nil, err
+	}
+	head, err := stringFromWith(with, "head")
+	if err != nil {
+		return nil, fmt.Errorf("native: pull_request.create %w", err)
+	}
+	base, err := stringFromWith(with, "base")
+	if err != nil {
+		return nil, fmt.Errorf("native: pull_request.create %w", err)
+	}
+	payload := map[string]any{"head": head, "base": base}
+	if title, ok := tryStringFromWith(with, "title"); ok {
+		payload["title"] = title
+	} else if issue, ok := with["issue"]; ok && issue != nil && issue != "" {
+		payload["issue"] = issue // convert an existing issue into the PR
+	} else {
+		return nil, fmt.Errorf("native: pull_request.create requires title or issue")
+	}
+	if body, ok := tryStringFromWith(with, "body"); ok {
+		payload["body"] = body
+	}
+	if draft, ok := with["draft"].(bool); ok {
+		payload["draft"] = draft
+	}
+	path := fmt.Sprintf("/repos/%s/%s/pulls", url.PathEscape(owner), url.PathEscape(repo))
+	b, err := githubPOSTJSON(ctx, path, payload, maxGitHubJSONBody)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := decodeGitHubObject(b, "pull_request.create")
+	if err != nil {
+		return nil, err
+	}
+	return pickGitHubFields(obj, "number", "id", "html_url", "state"), nil
+}
+
+// githubPullRequestUpdate edits a pull request: PATCH /repos/{owner}/{repo}/pulls/{number}.
+// Any of title, body, base, or state (open | closed) may be set; state=closed closes it.
+func githubPullRequestUpdate(ctx context.Context, with map[string]any) (map[string]any, error) {
+	owner, repo, err := githubOwnerRepo(with, "pull_request.update")
+	if err != nil {
+		return nil, err
+	}
+	number, err := stringFromWith(with, "number")
+	if err != nil {
+		return nil, fmt.Errorf("native: pull_request.update %w", err)
+	}
+	payload := githubMutablePatch(with, "title", "body", "base", "state")
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("native: pull_request.update requires one of title, body, base, state")
+	}
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(number))
+	b, err := githubPATCHJSON(ctx, path, payload, maxGitHubJSONBody)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := decodeGitHubObject(b, "pull_request.update")
+	if err != nil {
+		return nil, err
+	}
+	return pickGitHubFields(obj, "number", "id", "html_url", "state"), nil
+}
+
+// githubIssuesUpdate edits an issue: PATCH /repos/{owner}/{repo}/issues/{number}.
+// Any of title, body, or state (open | closed) may be set; labels replaces the label set.
+func githubIssuesUpdate(ctx context.Context, with map[string]any) (map[string]any, error) {
+	owner, repo, err := githubOwnerRepo(with, "issues.update")
+	if err != nil {
+		return nil, err
+	}
+	number, err := stringFromWith(with, "number")
+	if err != nil {
+		return nil, fmt.Errorf("native: issues.update %w", err)
+	}
+	payload := githubMutablePatch(with, "title", "body", "state")
+	if labels, ok := with["labels"]; ok && labels != nil {
+		payload["labels"] = labels
+	}
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("native: issues.update requires one of title, body, state, labels")
+	}
+	path := fmt.Sprintf("/repos/%s/%s/issues/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(number))
+	b, err := githubPATCHJSON(ctx, path, payload, maxGitHubJSONBody)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := decodeGitHubObject(b, "issues.update")
+	if err != nil {
+		return nil, err
+	}
+	return pickGitHubFields(obj, "number", "id", "html_url", "state"), nil
+}
+
+// githubMutablePatch collects the given optional string fields present in with into a
+// PATCH payload, so an update sends only the fields the caller set.
+func githubMutablePatch(with map[string]any, fields ...string) map[string]any {
+	payload := map[string]any{}
+	for _, f := range fields {
+		if v, ok := tryStringFromWith(with, f); ok {
+			payload[f] = v
+		}
+	}
+	return payload
+}
+
 // githubIssuesComment comments on an issue or PR: POST /repos/{owner}/{repo}/issues/{number}/comments.
 func githubIssuesComment(ctx context.Context, with map[string]any) (map[string]any, error) {
 	owner, repo, err := githubOwnerRepo(with, "issues.comment")

@@ -435,3 +435,66 @@ func TestGithubIssuesGet_requiresOwner(t *testing.T) {
 		t.Fatal("issues.get without owner should error")
 	}
 }
+
+func TestGithubPullRequestCreate(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "tok")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/repos/acme/widget/pulls" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		b, _ := io.ReadAll(r.Body)
+		body := string(b)
+		for _, want := range []string{`"head":"terfyn/fix-7"`, `"base":"main"`, `"title":"Fix it"`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("request body %q missing %q", body, want)
+			}
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"number":42,"html_url":"https://github.com/acme/widget/pull/42","state":"open"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("GITHUB_API_URL", srv.URL)
+
+	out, _, err := NewRegistry().Dispatch(context.Background(), "pull_request.create", map[string]any{
+		"owner": "acme", "repo": "widget", "head": "terfyn/fix-7", "base": "main", "title": "Fix it",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["number"] != float64(42) || out["html_url"] == "" {
+		t.Fatalf("out %#v", out)
+	}
+}
+
+func TestGithubPullRequestCreate_requiresTitleOrIssue(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "tok")
+	_, _, err := NewRegistry().Dispatch(context.Background(), "pull_request.create", map[string]any{
+		"owner": "a", "repo": "b", "head": "h", "base": "main",
+	})
+	if err == nil || !strings.Contains(err.Error(), "title or issue") {
+		t.Fatalf("err = %v, want title-or-issue", err)
+	}
+}
+
+func TestGithubIssuesList(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "tok")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/o/r/issues" || r.URL.Query().Get("state") != "open" {
+			t.Fatalf("path %q query %q", r.URL.Path, r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"number":1},{"number":2}]`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("GITHUB_API_URL", srv.URL)
+
+	out, _, err := NewRegistry().Dispatch(context.Background(), "issues.list", map[string]any{
+		"owner": "o", "repo": "r", "state": "open",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if arr, ok := out["issues"].([]any); !ok || len(arr) != 2 {
+		t.Fatalf("issues %#v", out["issues"])
+	}
+}

@@ -6,13 +6,16 @@
 //
 // GitHub REST (require GITHUB_TOKEN; GITHUB_API_URL overrides the base, default
 // https://api.github.com, e.g. for tests):
-//   - Reads: issues.get, pull_request.get, pull_request.diff, check_runs.list.
+//   - Reads: issues.get, issues.list, pull_request.get, pull_request.diff, pull_request.list,
+//     check_runs.list.
 //   - pull_request.post_comment is simulated unless owner, repo, number, and body are all set, in
 //     which case it writes to the issue comments API (PRs use the same issue number). By default
 //     comment_strategy is replace: find a comment containing <!-- agentic-review --> and PATCH it,
 //     or POST once. Use comment_strategy append to always create a new comment. Optional comment_id
 //     forces PATCH on that id.
-//   - Writes: issues.create, issues.comment, pull_request.create_review (event APPROVE /
+//   - Writes: issues.create, issues.comment, issues.update, pull_request.create (open a PR;
+//     title or issue required, head + base required), pull_request.update (edit/close),
+//     pull_request.create_review (event APPROVE /
 //     REQUEST_CHANGES / COMMENT; a body is required for the latter two), and commit_status.create
 //     (state error / failure / pending / success). Each returns a small curated subset of the
 //     GitHub payload rather than the whole object.
