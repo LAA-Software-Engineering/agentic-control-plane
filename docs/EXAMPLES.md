@@ -21,19 +21,16 @@ terfyn fmt --check --project .
 terfyn init my-agent-system
 ```
 
-Creates a directory layout like:
+Creates a single-file `.agent` project — **no `project.yaml`, no YAML resources**:
 
 ```text
 my-agent-system/
-  project.yaml
-  main.agent            # the hello workflow, authored in .agent (discovered, not imported)
-  policies/default.yaml
-  tools/helper.yaml
+  main.agent            # a starter agent, a `default` policy, and the hello workflow
 ```
 
-The scaffold leads on the **`.agent`** authoring surface (ADR 002 / [ADR 003](adr/003-yaml-as-compilation-output.md)): the workflow is a `.agent` source ([grammar reference](LANGUAGE.md)), while policies, tools, and project config stay YAML. `.agent` files anywhere under the project root are discovered and compiled automatically — they are **not** listed in `spec.imports`.
+A Terfyn project is authored **entirely in `.agent`** (ADR 002 / [ADR 003](adr/003-yaml-as-compilation-output.md); [grammar reference](LANGUAGE.md)): agents, workflows, tools, and policies are all `.agent` declarations, discovered and compiled automatically from any `.agent` file under the project root. The project name is the directory name and built-in model providers need no configuration, so nothing else is required.
 
-YAML remains valid ingress and the compilation/interchange format, so a workflow can also be authored directly in YAML — that equivalent form is shown in **section 3** below. Sections **2–3** mirror the YAML companions `init` creates (project, policy, tool); **section 4** is a separate **`gpt-4o-mini`** project layout you can copy beside or instead of the scaffold.
+> **The YAML in sections 2–4 below is the compiled/interchange form, not the authoring surface.** `terfyn export --format yaml` emits it, and the loader still *accepts* it as a non-authoring ingress (machine-generated resources, fixtures, the export round-trip) — but you never hand-author or generate it for a project. Read those sections as a field reference for the resource model; author the equivalent `.agent` (sections **8–9** show `.agent` projects, and every `examples/*` project is `.agent`-only). To convert a legacy YAML project, run `terfyn migrate --to-agent`.
 
 ---
 
@@ -165,136 +162,64 @@ The runtime calls OpenAI’s **`/v1/chat/completions`** endpoint. The agent **mu
 
 ### Layout
 
+The whole project is one `.agent` file — [**`examples/example1/main.agent`**](../examples/example1/main.agent):
+
 ```text
 example1/
-  project.yaml
-  policies/default.yaml
-  tools/helper.yaml
-  agents/support_writer.yaml
-  workflows/support_snippet.yaml
+  main.agent            # policy, native tool, support_writer agent, and support_snippet workflow
 ```
 
-Reuse **`policies/default.yaml`** and **`tools/helper.yaml`** from **section 3** unchanged.
-
-### `project.yaml`
-
-```yaml
-apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: example1
-spec:
-  imports:
-    - ./policies/default.yaml
-    - ./tools/helper.yaml
-    - ./agents/support_writer.yaml
-    - ./workflows/support_snippet.yaml
-  defaults:
-    policy: default
-    model: openai/gpt-4o-mini
-  providers:
-    models:
-      mock:
-        type: mock
-      openai:
-        type: openai
-        apiKeyFrom: env:OPENAI_API_KEY
 ```
+policy default {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+}
 
-**Anthropic (Claude)** — register a second namespace and point agents at **`anthropic/<model id>`** (same pattern as OpenAI). Keys use **`env:ANTHROPIC_API_KEY`**; the runtime calls Anthropic’s [**Messages API**](https://docs.anthropic.com/en/api/messages) (`POST /v1/messages`).
+tool helper {
+    type native
+    safety {
+        sideEffects false
+    }
+}
 
-```yaml
-  providers:
-    models:
-      anthropic:
-        type: anthropic
-        apiKeyFrom: env:ANTHROPIC_API_KEY
-  defaults:
-    model: anthropic/claude-sonnet-4-20250514
-```
-
-**Identity-linked keys:** if your `ANTHROPIC_API_KEY` is an identity-linked key (not scoped to one workspace), Anthropic returns `HTTP 400: anthropic-workspace-id is required …`. Add **`workspaceIdFrom`** (same `env:VAR` form as `apiKeyFrom`); the adapter sends it as the `anthropic-workspace-id` header. Plain workspace-scoped keys don't need it.
-
-```yaml
-      anthropic:
-        type: anthropic
-        apiKeyFrom: env:ANTHROPIC_API_KEY
-        workspaceIdFrom: env:ANTHROPIC_WORKSPACE_ID
-```
-
-**Structured JSON output:** there is no MVP `response_format: json_object` equivalent in this adapter—agents rely on **instructions** (same as in **`agents/support_writer.yaml`**: one JSON object, no markdown fences). If you set **`spec.output.schema`**, the engine still validates the assistant text as JSON after generation.
-
-### `agents/support_writer.yaml`
-
-`metadata.name` is the value you use in **`agent:`** on the workflow step.
-
-```yaml
-apiVersion: agentic.dev/v0
-kind: Agent
-metadata:
-  name: support_writer
-spec:
-  model: openai/gpt-4o-mini
-  policy: default
-  constraints:
-    timeoutSeconds: 60
-  instructions: |
+agent support_writer {
+    model openai/gpt-4o-mini
+    policy default
+    constraints {
+        timeoutSeconds 60
+    }
+    instructions """
     You draft short customer-facing email lines for a storefront.
     You receive JSON in the user message: product name and a return-policy line from internal systems.
     Respond with one JSON object only (no markdown, no code fences).
-    Use exactly this shape: {"subject": "<=8 words>", "line": "<=25 words, friendly>"}
+    Use exactly this shape: {"product": "<the product name, echoed back>", "subject": "<=8 words>", "line": "<=25 words, friendly>"}
+    """
+}
+
+workflow support_snippet(input: any) policy default {
+    context = helper.echo(product: input.product, policy_line: "30-day returns on all SKUs; free outbound shipping on defects.")
+    snippet = support_writer(product: context.echo.product, return_policy: context.echo.policy_line)
+    return snippet
+}
 ```
 
-### `workflows/support_snippet.yaml`
+**Switching to Anthropic (Claude)** — point the agent at **`anthropic/<model id>`**; `anthropic` is a built-in namespace whose key comes from **`env:ANTHROPIC_API_KEY`**, and the runtime calls Anthropic’s [**Messages API**](https://docs.anthropic.com/en/api/messages) (`POST /v1/messages`). No declaration is needed for the built-in — just `model anthropic/claude-sonnet-4-20250514`.
 
-The compose step passes the echo step’s payload into the model via **`${steps.context.output.echo...}`** (see §13.1 in **`DESIGN_DOC.md`**).
+**Identity-linked keys:** if your `ANTHROPIC_API_KEY` is identity-linked (not scoped to one workspace), Anthropic returns `HTTP 400: anthropic-workspace-id is required …`. Declare a `provider` alias to add **`workspaceIdFrom`** (same `env:VAR` form as `apiKeyFrom`); the adapter sends it as the `anthropic-workspace-id` header:
 
-**CLI-driven product (requires `--input`).** If you use **`${input.product}`** anywhere in the workflow, you **must** pass **`--input product=...`** on **`run`**. Otherwise interpolation fails with **`undefined path "input.product"`** because the run input object is empty.
-
-```yaml
-apiVersion: agentic.dev/v0
-kind: Workflow
-metadata:
-  name: support_snippet
-spec:
-  policy: default
-  steps:
-    - id: context
-      uses: tool.helper.echo
-      with:
-        product: "${input.product}"
-        policy_line: "30-day returns on all SKUs; free outbound shipping on defects."
-    - id: compose
-      agent: support_writer
-      with:
-        product: "${input.product}"
-        return_policy: "${steps.context.output.echo.policy_line}"
-  output:
-    value:
-      product: ${input.product}
-      subject: ${steps.compose.output.subject}
-      line: ${steps.compose.output.line}
+```
+provider anthropic {
+    type anthropic
+    apiKeyFrom "env:ANTHROPIC_API_KEY"
+    workspaceIdFrom "env:ANTHROPIC_WORKSPACE_ID"
+}
 ```
 
-**Zero-argument demo.** To run **`terfyn run workflow/support_snippet`** with no **`--input`**, put a literal product on the first step and thread it through **`steps.context.output.echo`** (the checked-in [**`examples/example1/`**](../examples/example1/) tree uses **`${input.product}`** instead, so it **requires** **`--input product=...`** unless you edit the YAML):
+**Structured JSON output:** there is no `response_format: json_object` equivalent in this adapter — agents rely on **instructions** (one JSON object, no markdown fences, as above). If you give the agent an `output <Type>` with a `schemas/<Type>.json`, the engine still validates the assistant text as JSON after generation.
 
-```yaml
-    - id: context
-      uses: tool.helper.echo
-      with:
-        product: "ACME USB-C hub" # literal default; or "${input.product}" + --input product=...
-        policy_line: "30-day returns on all SKUs; free outbound shipping on defects."
-    - id: compose
-      agent: support_writer
-      with:
-        product: "${steps.context.output.echo.product}"
-        return_policy: "${steps.context.output.echo.policy_line}"
-  output:
-    value:
-      product: ${steps.context.output.echo.product}
-      subject: ${steps.compose.output.subject}
-      line: ${steps.compose.output.line}
-```
+The workflow composes the echo step’s payload into the model via `context.echo.…` (which lowers to `${steps.context.output.echo.…}`; see §13.1 in **`DESIGN_DOC.md`**). Because it references **`input.product`**, `terfyn run workflow/support_snippet` **requires `--input product=...`**; otherwise interpolation fails with `undefined path "input.product"`. For a zero-argument demo, replace `input.product` on the `context` step with a literal (e.g. `product: "ACME USB-C hub"`) and thread `context.echo.product` onward.
 
 ### Commands
 
@@ -337,7 +262,7 @@ terfyn audit verify --project examples/example1 --run <run-id>
 
 See [`docs/AUDIT_CHAIN.md`](AUDIT_CHAIN.md).
 
-Optional: add **`spec.output.schema`** on the agent (path relative to the project root) so replies are validated with JSON Schema; see `internal/engine/testdata/wfproj/schemas/` and **`DESIGN_DOC.md`**.
+Optional: give the agent an **`output <Type>`** with a matching `schemas/<Type>.json` so replies are validated with JSON Schema; see `internal/engine/testdata/wfproj/schemas/` and **`DESIGN_DOC.md`**.
 
 ---
 
@@ -347,22 +272,23 @@ Declare an **`Environment`** resource and pass **`-e` / `--env`** to `validate`,
 
 A checked-in **dev / staging / prod** overlay project lives under [**`examples/env-overlays/`**](../examples/env-overlays/README.md): `validate -e <env>`, `apply -e dev`, then `plan -e prod --from-env dev` for the promotion **risk delta**.
 
-**`environments/staging.yaml`**
+Declare the overlay in `.agent` (in any `.agent` file under the project root):
 
-```yaml
-apiVersion: agentic.dev/v0
-kind: Environment
-metadata:
-  name: staging
-spec:
-  overrides:
-    policies:
-      default:
-        execution:
-          maxWallClockSeconds: 600
+```
+environment staging {
+    overrides {
+        policies {
+            default {
+                execution {
+                    maxWallClockSeconds 600
+                }
+            }
+        }
+    }
+}
 ```
 
-Add **`./environments/staging.yaml`** to **`spec.imports`** in `project.yaml`, then:
+Then select it with `-e`:
 
 ```bash
 terfyn validate --project my-agent-system -e staging
@@ -372,12 +298,14 @@ terfyn validate --project my-agent-system -e staging
 
 ## 6. Model reference cheat sheet
 
-| `defaults.model` / `spec.model` (agent) | Meaning |
-|----------------------------------------|---------|
-| `mock/gpt-4` | Deterministic mock string (no network) |
-| `openai/gpt-4o-mini` | OpenAI API model id `gpt-4o-mini` via `providers.models.openai` |
+An agent selects its model with `model <provider>/<name>`:
 
-The segment before **`/`** must match a key under **`spec.providers.models`**. Unsupported provider types fail at runtime with an error from the model registry.
+| `model` (agent) | Meaning |
+|-----------------|---------|
+| `mock/gpt-4` | Deterministic mock string (no network) |
+| `openai/gpt-4o-mini` | OpenAI API model id `gpt-4o-mini` via the built-in `openai` namespace |
+
+The segment before **`/`** is a provider namespace. Built-in namespaces (`anthropic`, `openai`, `gemini`, `grok`, `kimi`, `mock`) need no declaration and read their credential from the conventional environment variable; declare a top-level `provider <alias> { … }` only for a custom endpoint or credential. An unknown provider fails at runtime with an error from the model registry.
 
 ---
 
