@@ -35,6 +35,12 @@ func printTool(b *strings.Builder, d *ToolDecl) {
 		printHeadersBlock(b, "        ", h.Headers)
 		b.WriteString("    }\n")
 	}
+	if w := d.Workspace; w != nil {
+		b.WriteString("    workspace {\n")
+		printStringLitField(b, "        ", "root", w.Root)
+		printStringLitField(b, "        ", "testCommand", w.TestCommand)
+		b.WriteString("    }\n")
+	}
 	if s := d.Safety; s != nil {
 		b.WriteString("    safety {\n")
 		printBoolField(b, "        ", "trusted", s.Trusted)

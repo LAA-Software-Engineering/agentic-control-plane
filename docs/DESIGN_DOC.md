@@ -509,8 +509,10 @@ End goal later:
 > (issue #440), so a project is authored entirely in `.agent`; the `Project` config below is derived
 > (project name from the directory, built-in providers, discovered `.agent` files) rather than
 > hand-authored. The kinds and fields in this section describe the resource model both surfaces
-> compile to. A handful of resource fields (e.g. the native `workspace` tool sub-block) still have no
-> `.agent` grammar and remain YAML-only as a non-authoring ingress.
+> compile to. A few rarely-used resource fields may still lack a `.agent` surface and remain reachable
+> only through the YAML non-authoring ingress; the common resource model — agents, workflows, tools
+> (including `mcp`/`http`/`workspace` config), policies (including `hitl`), environments, and providers
+> — is fully authorable in `.agent`.
 
 ## 7.1 Project
 

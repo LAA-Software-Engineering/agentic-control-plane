@@ -243,3 +243,31 @@ func assertSpecEqual(t *testing.T, label string, a, b any, printed string) {
 		t.Fatalf("%s spec drifted after raise->print->lower:\n original: %s\n round:    %s\n printed source:\n%s", label, aj, bj, printed)
 	}
 }
+
+// TestRaise_ToolWorkspace: a tool with a native workspace sub-block now raises (no longer refused) and
+// round-trips through print+lower to the same spec (issue #440).
+func TestRaise_ToolWorkspace(t *testing.T) {
+	src := `tool workspace {
+    type native
+    workspace {
+        root "sandbox"
+        testCommand "go test ./..."
+    }
+    safety {
+        trusted true
+        sideEffects true
+    }
+}
+`
+	g1 := lowerToGraph(t, src)
+	raised, unsup := Graph(g1)
+	if len(unsup) != 0 {
+		t.Fatalf("workspace tool must raise without Unsupported, got %v", unsup)
+	}
+	out := lang.Print(raised)
+	if !strings.Contains(out, "workspace {") || !strings.Contains(out, "root \"sandbox\"") {
+		t.Fatalf("raised source missing workspace block:\n%s", out)
+	}
+	g2 := lowerToGraph(t, out)
+	assertSpecEqual(t, "tool workspace", g1.Tools["workspace"].Spec, g2.Tools["workspace"].Spec, out)
+}

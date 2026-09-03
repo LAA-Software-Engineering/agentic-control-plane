@@ -7,12 +7,13 @@ package lang
 
 // ToolDecl is a `tool <Name> { … }` declaration.
 type ToolDecl struct {
-	Pos    Pos
-	Name   *Ident
-	Type   *Ident           // type <native|mock|mcp|http>
-	MCP    *ToolMCPBlock    // mcp { … } transport config (issue #440)
-	HTTP   *ToolHTTPBlock   // http { … } transport config (issue #440)
-	Safety *ToolSafetyBlock // safety { … }
+	Pos       Pos
+	Name      *Ident
+	Type      *Ident              // type <native|mock|mcp|http>
+	MCP       *ToolMCPBlock       // mcp { … } transport config (issue #440)
+	HTTP      *ToolHTTPBlock      // http { … } transport config (issue #440)
+	Workspace *ToolWorkspaceBlock // workspace { … } native workspace config (issue #440)
+	Safety    *ToolSafetyBlock    // safety { … }
 	// Operations is nil when the block is omitted (open callable set) and non-nil when present,
 	// including an empty `operations {}` (a closed, deny-all manifest). This distinction is the
 	// OperationsDeclared bit (#204) and MUST survive lowering.
@@ -34,6 +35,14 @@ type ToolHTTPBlock struct {
 	Pos     Pos
 	BaseURL *StringLit
 	Headers []*HeaderPair
+}
+
+// ToolWorkspaceBlock is `workspace { root "…" testCommand "…" }` (issue #440): declarative config for
+// the native workspace adapter. Each field is nil when omitted (env fallback applies).
+type ToolWorkspaceBlock struct {
+	Pos         Pos
+	Root        *StringLit
+	TestCommand *StringLit
 }
 
 // HeaderPair is one `"<key>" "<value>"` entry in a headers { … } block.
