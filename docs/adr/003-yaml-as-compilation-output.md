@@ -47,6 +47,14 @@ file that anyone could have edited after the fact.
 
 ### 2. The YAML loader remains supported ingress to the IR — demoted in docs, not in code
 
+> **Superseded by [ADR 007](007-remove-yaml-ingestion.md) (2026-09-03).** This section committed to
+> keeping the YAML loader as a supported ingress in code. ADR 007 reverses that: `.agent` becomes the
+> only executable source, machine producers get a typed ResourceGraph ingress instead of YAML source,
+> and YAML is retained only as an output serialization. The removal is sequenced and gated (lossless
+> migration before rejecting YAML; the typed ingress before removing the resource-YAML frontend). The
+> rest of this ADR — YAML as compilation output / interchange, `.agent` as the authoring surface —
+> stands.
+
 `internal/spec` and `internal/project` continue to accept YAML as a valid way to construct a
 resource graph. Three reasons:
 

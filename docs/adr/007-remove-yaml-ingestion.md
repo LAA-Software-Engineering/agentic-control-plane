@@ -2,9 +2,14 @@
 
 ## Status
 
-**Proposed (draft).** A decision request that would **supersede [ADR 003](003-yaml-as-compilation-output.md)
-§2 and [ADR 005](005-inline-resource-declarations.md) §1 on one point** — that the YAML loader "remains
-supported ingress to the IR… demoted in docs, not in code." Accepting it reverses that commitment.
+**Accepted (2026-09-03).** This ADR **supersedes [ADR 003](003-yaml-as-compilation-output.md) §2 and
+[ADR 005](005-inline-resource-declarations.md) §1 on one point** — that the YAML loader "remains supported
+ingress to the IR… demoted in docs, not in code." Those ADRs kept YAML as an executable ingress; this one
+reverses that: `.agent` becomes the *only* executable source, and machine producers get a typed
+resource-graph ingress instead of a second source-language frontend. The rest of ADR 003 (YAML as
+compilation output / interchange, `.agent` as authoring surface) and ADR 005 (inline resource
+declarations) stand. Implementation is sequenced (see "Migration sequence"); the hard removal of YAML
+ingress is gated on the replacement paths shipping first.
 
 An [earlier draft](https://github.com/Terfyn/terfyn/pull/465) of this ADR recommended *against* removal,
 on the grounds that machine producers need a non-parser ingress and that `terfyn export` round-trips
@@ -51,7 +56,7 @@ Current YAML the loader ingests (measured): **104** resource files (`kind:` docu
 → reload` round-trip test. Not affected: `terfyn test` files (`tests/*.yaml`, decoded by
 `internal/testkit`, not the resource codec) and JSON Schemas.
 
-## Decision (proposed)
+## Decision
 
 Adopt a single-executable-source architecture with separate human and machine front doors:
 
@@ -84,6 +89,40 @@ Adopt a single-executable-source architecture with separate human and machine fr
 > the typed resource graph / API rather than through a second source-language frontend. YAML may remain an
 > output serialization format.
 
+The strongest one-line formulation: **Terfyn has one language, one IR, and two front doors — `.agent` for
+humans and a typed ResourceGraph API for machines. Serialization formats are not executable source
+languages.**
+
+### The machine ingress is not a safety bypass
+
+The two front doors **converge on the same canonical ResourceGraph and share one control plane.** The
+typed machine ingress is an alternative *serialization / construction* boundary — never an authority or
+validation bypass. It constructs the same `ResourceGraph` the `.agent` compiler produces and MUST pass
+through the identical downstream pipeline: normalization, schema and reference validation, policy lint,
+effect / capability analysis, spec fingerprinting, and deployment validation. There is no privileged
+machine fast path around the control plane; a graph built via the API is held to exactly the same
+soundness checks as one compiled from `.agent`. (This is essential given Terfyn's premise: the safety
+guarantees live in the IR pipeline, so any ingress that reached `plan`/`apply`/`run` without them would
+be a hole, regardless of format.)
+
+```
+ .agent ── parser / compiler ──┐
+                               │
+ machine typed API ────────────┤
+                               ▼
+                   canonical ResourceGraph
+                               │
+                     normalize / validate      (schema + reference resolution)
+                               │
+                        policy lint
+                               │
+                effect / capability analysis
+                               │
+                    spec fingerprint
+                               │
+                    plan  →  apply  →  run
+```
+
 ### Scope: source vs. codec
 
 This decision is about **product architecture, not implementation purity.** The objective is that no YAML
@@ -95,17 +134,23 @@ fixtures against that private codec.
 
 ## Consequences and migration cost
 
-Large, breaking, and **almost entirely internal** — no human project loses an authoring path (they were
-`.agent`-only already), and machine producers gain a better ingress than they had.
+Large and **deliberately breaking.** The migration is mostly internal in *implementation* cost, but it
+intentionally removes the **supported YAML execution path** for legacy projects and machine producers —
+ADR 003 explicitly kept YAML as supported ingress, and such projects execute from YAML today even though
+authoring it is deprecated. Those consumers must have migration / replacement paths **before** their
+ingress is removed (this is why the sequence below gates the hard removal on lossless migration and on the
+typed machine ingress shipping first). No *human authoring* path is lost — humans were `.agent`-only
+already — but a real, supported *execution* path is being withdrawn, and this ADR treats that as a
+compatibility break, not cleanup.
 
 - **The export→reload guarantee (ADR 003 §1) is dropped** or re-expressed as export-to-`.agent`. Export
   stays as a one-way YAML/JSON serialization. This removes a contract, not a user capability.
 - **~104 resource-YAML + ~25 `project.yaml` fixtures** move off the project loader: convert to `.agent`
   (mechanical; most already have a `.agent` twin pattern), or, for tests that specifically assert YAML
   decode / `spec.Pos` stamping, retarget them at the private codec directly.
-- **Machine-ingress consumers gain a typed ingress** (the replacement is a deliverable, step 3 below),
-  so ADR 003 §2's second reason is *satisfied*, not ignored — no interface is deleted without a
-  replacement.
+- **Machine-ingress consumers gain a typed ingress** (the replacement is a deliverable, step 4 below,
+  and step 6's removal is gated on it), so ADR 003 §2's second reason is *satisfied*, not ignored — no
+  interface is deleted without a replacement.
 - **`raise` / `migrate` must be lossless** for any remaining YAML users; the current `raise` field gaps
   (`tool.retry`, `tool.permissions`, `policy.security`, per-operation `schema`) are closed as part of
   the sequence.
@@ -114,18 +159,26 @@ Large, breaking, and **almost entirely internal** — no human project loses an 
 
 ## Migration sequence
 
-1. **Immediately:** `LoadProject` accepts only `.agent`; a `project.yaml` at the root is a hard error
-   with a `terfyn migrate --to-agent` hint. (This alone enforces the invariant for the user-facing path
-   and is the reversible first step.)
-2. Migrate the ~25 `project.yaml` fixtures to `.agent`.
-3. Introduce / identify a **first-class machine-facing ResourceGraph ingestion API** (the non-parser
-   ingress machine producers use instead of YAML source).
-4. Move IR-level tests off the project-YAML loader; tests that specifically test the YAML codec keep
-   YAML fixtures against the private codec.
-5. Close the `raise` field gaps so migration is lossless.
-6. Remove `LoadResourceFile` as a normal graph-construction frontend.
-7. Retain YAML marshal/unmarshal privately only where export (or isolated compatibility tooling) needs
-   it.
+The hard break (rejecting YAML) is **gated on the replacement being real**: a user told "`project.yaml`
+is no longer accepted; run `terfyn migrate --to-agent`" must actually be able to migrate a valid legacy
+project losslessly, and a machine producer must have the typed ingress before its YAML path is removed.
+So gap-closing comes first, not last.
+
+1. **Close the `raise` / `migrate` field gaps and prove YAML → `.agent` migration is lossless** — cover
+   the constructs `raise` currently refuses (`tool.retry`, `tool.permissions`, `policy.security`,
+   per-operation `schema`), with a round-trip test that every accepted YAML resource migrates to `.agent`
+   and re-lowers to the same graph. *Nothing user-facing is rejected until this holds.*
+2. Make `LoadProject` reject a root `project.yaml` with a `terfyn migrate --to-agent` hint (the reversible
+   first user-facing enforcement — Alternative B — now safe because step 1 guarantees a working exit).
+3. Migrate the ~25 `project.yaml` fixtures to `.agent`.
+4. **Ship the first-class typed ResourceGraph machine ingress** (the non-parser path machine producers
+   use instead of YAML source), routed through the same normalization/validation/effect pipeline (see
+   "The machine ingress is not a safety bypass").
+5. Move IR-level tests off the project-YAML loader; tests that specifically test the YAML codec keep YAML
+   fixtures against the private codec.
+6. Remove `LoadResourceFile` as a graph-construction source frontend — **gated on step 4** so no machine
+   interface is withdrawn before its replacement ships.
+7. Restrict the YAML marshal/unmarshal codec to export / isolated compatibility internals.
 
 ## Alternatives
 
@@ -133,30 +186,34 @@ Large, breaking, and **almost entirely internal** — no human project loses an 
   forever. Rejected as an **end state**: it leaves `.agent` plus a permanent second source-language
   frontend — the "zombie YAML frontend" this ADR exists to retire — even though nothing authors it.
 - **B. Reject YAML *projects* at the root only** (keep the resource codec as an ingress for tests /
-  machine producers / round-trip). This is **step 1 of the sequence, not an end state.** It enforces
-  "no YAML project source" cheaply and reversibly, but still treats resource YAML as an executable
-  ingress. Good as a first landing; insufficient as the destination.
+  machine producers / round-trip). This is **step 2 of the sequence (after step 1 proves migration is
+  lossless), not an end state.** It enforces "no YAML project source" cheaply and reversibly, but still
+  treats resource YAML as an executable ingress. Good as a first landing; insufficient as the
+  destination.
 - **C. Single executable source (this Decision).** `.agent` is the only executable source; machine
   producers use a typed ingress; YAML is output-only. The clean end state.
 
-## Recommendation
+## Decision rationale
 
-**Accept C as the target architecture, conditioned on the typed machine-ingress replacement (step 3)
-being part of the decision — not a follow-up afterthought.** The earlier "keep YAML" recommendation
-over-weighted two arguments that do not require a second *executable* frontend: machine producers are
-better served by a typed resource-graph ingress than by YAML source, and export can be one-way. A/B are
-not acceptable as the destination; B is the sensible first step *toward* C.
+C is adopted as the target architecture, with the typed machine-ingress replacement (step 4) a
+first-class **deliverable of the decision**, not a follow-up afterthought. The earlier "keep YAML"
+recommendation over-weighted two arguments that do not require a second *executable* frontend: machine
+producers are better served by a typed resource-graph ingress than by YAML source, and export can be
+one-way. A and B are not acceptable as the destination; B is the sensible first *enforcement* step toward
+C. Enforcement lands incrementally per the sequence, with two hard gates so nothing is withdrawn before
+its replacement exists.
 
-Land the enforcement incrementally (sequence above): step 1 immediately (it is reversible and delivers
-the user-facing invariant), then 2–7 as the machine ingress and fixture migration are built out, with
-step 6 (removing `LoadResourceFile` as a source frontend) gated on step 3 (the typed ingress exists) so
-no machine interface is removed before its replacement ships.
+## Sequencing gates (binding)
 
-## What gates full acceptance
+These orderings are part of the decision; the hard removal must not outrun its replacements:
 
-1. Agreement that the ADR-003 §1 export round-trip guarantee is dropped (export becomes one-way).
-2. A concrete design for the typed machine-ingress API (step 3) — the non-parser ingress that replaces
-   YAML source for machine producers.
-3. A fixture-migration plan and owner for the ~104 resource-YAML + ~25 `project.yaml` files (convert vs.
-   retarget at the private codec).
-4. Closing the `raise` field gaps so `terfyn migrate --to-agent` is lossless.
+1. **Lossless migration precedes rejection.** Step 1 (close `raise`/`migrate` gaps, prove YAML → `.agent`
+   is lossless) must land before step 2 (`LoadProject` rejects `project.yaml`) — a rejection that hands
+   the user a `migrate` command that cannot migrate their project is not acceptable.
+2. **The typed ingress precedes removing `LoadResourceFile`.** Step 4 (ship the typed ResourceGraph
+   machine ingress) must land before step 6 (remove YAML resource ingress) — no machine interface is
+   deleted without its replacement.
+3. **The typed ingress is not a safety bypass** — it routes through the same normalization / validation /
+   effect / fingerprint / deployment pipeline as `.agent` (see above).
+4. **Export becomes one-way** — the ADR-003 §1 export→reload guarantee is dropped (export remains a
+   YAML/JSON output serialization).
