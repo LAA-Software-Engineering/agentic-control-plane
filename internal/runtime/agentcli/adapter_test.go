@@ -4,8 +4,34 @@ import (
 	"testing"
 
 	"github.com/Terfyn/terfyn/internal/execir"
+	"github.com/Terfyn/terfyn/internal/policy"
 	"github.com/Terfyn/terfyn/internal/spec"
 )
+
+// TestPolicyExecution covers the seam issue #389 fixes: the governing policy's execution block is
+// extracted from the evaluator so MapLimits can derive the external run's --max-budget-usd belt.
+func TestPolicyExecution(t *testing.T) {
+	graph := reviewerGraph()
+
+	// A policy with an execution budget exposes it, and MapLimits turns it into the belt.
+	ex := &spec.PolicyExecution{MaxTotalCostUsd: 0.05, MaxWallClockSeconds: 30}
+	eval := policy.NewEvaluator(graph, &spec.PolicySpec{Execution: ex})
+	got := policyExecution(eval)
+	if got == nil || got.MaxTotalCostUsd != 0.05 {
+		t.Fatalf("policyExecution = %+v, want budget 0.05", got)
+	}
+	if l := MapLimits(nil, policyExecution(eval)); l.BudgetUSD != 0.05 {
+		t.Fatalf("MapLimits budget = %v, want 0.05 (regression: was 0 with nil policy)", l.BudgetUSD)
+	}
+
+	// A policy with no execution block, and a nil policy, yield nil (no policy-derived budget).
+	if got := policyExecution(policy.NewEvaluator(graph, &spec.PolicySpec{})); got != nil {
+		t.Fatalf("policy without execution should yield nil, got %+v", got)
+	}
+	if got := policyExecution(policy.NewEvaluator(graph, nil)); got != nil {
+		t.Fatalf("nil policy should yield nil execution, got %+v", got)
+	}
+}
 
 // resolveDrivenAgent gates on the executable, not a distinct-agent count (issue #367 review): a
 // single-agent workflow wrapped in control flow, or a multi-step chain, drops orchestration when
