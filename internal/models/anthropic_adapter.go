@@ -14,14 +14,23 @@ type anthropicClient struct {
 	inner *anthropic.Client
 }
 
-// NewAnthropicClientFromConfig builds a client using apiKeyFrom (e.g. env:ANTHROPIC_API_KEY).
+// NewAnthropicClientFromConfig builds a client using apiKeyFrom (e.g. env:ANTHROPIC_API_KEY),
+// and optionally workspaceIdFrom (e.g. env:ANTHROPIC_WORKSPACE_ID) for the
+// anthropic-workspace-id header required by identity-linked keys.
 func NewAnthropicClientFromConfig(cfg spec.ModelProviderConfig) (*anthropicClient, error) {
 	key, err := ResolveAPIKeyFrom(cfg.APIKeyFrom)
 	if err != nil {
 		return nil, err
 	}
+	var workspaceID string
+	if cfg.WorkspaceIDFrom != "" {
+		workspaceID, err = ResolveAPIKeyFrom(cfg.WorkspaceIDFrom)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &anthropicClient{
-		inner: &anthropic.Client{APIKey: key, HTTPClient: http.DefaultClient},
+		inner: &anthropic.Client{APIKey: key, WorkspaceID: workspaceID, HTTPClient: http.DefaultClient},
 	}, nil
 }
 

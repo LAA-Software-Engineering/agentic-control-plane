@@ -213,6 +213,15 @@ spec:
     model: anthropic/claude-sonnet-4-20250514
 ```
 
+**Identity-linked keys:** if your `ANTHROPIC_API_KEY` is an identity-linked key (not scoped to one workspace), Anthropic returns `HTTP 400: anthropic-workspace-id is required …`. Add **`workspaceIdFrom`** (same `env:VAR` form as `apiKeyFrom`); the adapter sends it as the `anthropic-workspace-id` header. Plain workspace-scoped keys don't need it.
+
+```yaml
+      anthropic:
+        type: anthropic
+        apiKeyFrom: env:ANTHROPIC_API_KEY
+        workspaceIdFrom: env:ANTHROPIC_WORKSPACE_ID
+```
+
 **Structured JSON output:** there is no MVP `response_format: json_object` equivalent in this adapter—agents rely on **instructions** (same as in **`agents/support_writer.yaml`**: one JSON object, no markdown fences). If you set **`spec.output.schema`**, the engine still validates the assistant text as JSON after generation.
 
 ### `agents/support_writer.yaml`

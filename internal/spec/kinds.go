@@ -29,6 +29,10 @@ type ProjectProviders struct {
 type ModelProviderConfig struct {
 	Type       string `yaml:"type" json:"type"`
 	APIKeyFrom string `yaml:"apiKeyFrom,omitempty" json:"apiKeyFrom,omitempty"`
+	// WorkspaceIDFrom optionally sources a workspace id (same env:VAR form as
+	// APIKeyFrom). The anthropic provider sends it as the anthropic-workspace-id
+	// header, which Anthropic requires for identity-linked API keys.
+	WorkspaceIDFrom string `yaml:"workspaceIdFrom,omitempty" json:"workspaceIdFrom,omitempty"`
 }
 
 type ProjectToolsProviders struct {
