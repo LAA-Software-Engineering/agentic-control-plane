@@ -180,7 +180,62 @@ func sanitizeValue(v any, depth int, o RedactionOptions) any {
 		float32, float64:
 		return x
 	default:
-		return unknownPlaceholder(x, o.UnsafeRepr)
+		// Fall back to reflection so named string types (e.g. spec.HitlDecisionKind), typed slices
+		// ([]string, []spec.HitlDecisionKind), and string-keyed maps (map[string]string) serialize to
+		// their values instead of a "<type: unserialized>" placeholder (issue #376). Recurse through
+		// sanitizeValue so element/value redaction and truncation still apply.
+		return sanitizeReflect(x, depth, o)
+	}
+}
+
+// sanitizeReflect handles values the concrete type switch in sanitizeValue does not: named scalar
+// types and typed containers. It normalizes them to the same JSON-safe shapes (string, number,
+// bool, []any, map[string]any) the audit chain stores, so a Go-typed payload field is recorded by
+// value rather than as an opaque placeholder (issue #376).
+func sanitizeReflect(v any, depth int, o RedactionOptions) any {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if rv.IsNil() {
+			return nil
+		}
+		// Increment depth on deref so a pointer/interface cycle is bounded by the MaxDepth guard,
+		// exactly like the container cases (not reachable via JSON-derived payloads today, but
+		// MaxDepth is the anti-cycle guard and this keeps it complete).
+		return sanitizeValue(rv.Elem().Interface(), depth+1, o)
+	case reflect.String:
+		return truncateString(rv.String(), o.MaxStringChars)
+	case reflect.Bool:
+		return rv.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return rv.Uint()
+	case reflect.Float32, reflect.Float64:
+		return rv.Float()
+	case reflect.Slice, reflect.Array:
+		// A byte slice is binary, not a list of numbers (mirrors the concrete []byte case).
+		if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() == reflect.Uint8 {
+			return binaryPlaceholder(rv.Bytes(), o.MaxBinaryBytes)
+		}
+		out := make([]any, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			out[i] = sanitizeValue(rv.Index(i).Interface(), depth+1, o)
+		}
+		return out
+	case reflect.Map:
+		// JSON objects require string keys; a non-string-keyed map has no faithful representation.
+		if rv.Type().Key().Kind() != reflect.String {
+			return unknownPlaceholder(v, o.UnsafeRepr)
+		}
+		out := make(map[string]any, rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			out[iter.Key().String()] = sanitizeValue(iter.Value().Interface(), depth+1, o)
+		}
+		return out
+	default:
+		return unknownPlaceholder(v, o.UnsafeRepr)
 	}
 }
 
