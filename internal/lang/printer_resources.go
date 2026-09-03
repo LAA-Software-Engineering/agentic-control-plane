@@ -345,6 +345,22 @@ func printProvider(b *strings.Builder, d *ProviderDecl) {
 	b.WriteString("}\n")
 }
 
+// printDefaults renders the singleton `defaults { policy … model … runtime … }` block (issue #440).
+// Fields absent from the AST are omitted, so an empty block prints as `defaults {\n}`.
+func printDefaults(b *strings.Builder, d *DefaultsDecl) {
+	b.WriteString("defaults {\n")
+	if d.Policy != nil {
+		fmt.Fprintf(b, "    policy %s\n", identName(d.Policy))
+	}
+	if d.Model != nil {
+		fmt.Fprintf(b, "    model %s/%s\n", d.Model.Provider, d.Model.Name)
+	}
+	if d.Runtime != nil {
+		fmt.Fprintf(b, "    runtime %s\n", identName(d.Runtime))
+	}
+	b.WriteString("}\n")
+}
+
 // printConstraintsAt renders a `constraints { … }` block at the given indent (fields at indent+4).
 func printConstraintsAt(b *strings.Builder, indent string, c *Constraints) {
 	inner := indent + "    "

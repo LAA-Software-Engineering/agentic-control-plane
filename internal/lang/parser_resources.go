@@ -6,7 +6,7 @@ import "strings"
 // declaration. `tool` and `policy` are contextual: they are ordinary identifiers elsewhere (a grant
 // path `tool.x.y`, an agent field `policy foo`), and only at the top level introduce a declaration.
 func (p *parser) isResourceDeclKeyword() bool {
-	return p.cur.Kind == KindIdent && (p.cur.Lit == "tool" || p.cur.Lit == "policy" || p.cur.Lit == "environment" || p.cur.Lit == "provider")
+	return p.cur.Kind == KindIdent && (p.cur.Lit == "tool" || p.cur.Lit == "policy" || p.cur.Lit == "environment" || p.cur.Lit == "provider" || p.cur.Lit == "defaults")
 }
 
 // parseTool parses `tool <Name> { type … safety { … } operations { … } }` (ADR 005).
@@ -872,6 +872,43 @@ func (p *parser) parseProvider() *ProviderDecl {
 		}
 	}
 	p.expect(KindRBrace, "to close provider body")
+	return d
+}
+
+// parseDefaults parses the singleton `defaults { policy <ident> model <provider>/<name> runtime
+// <ident> }` (issue #440, ADR 007). Every field is optional; each may appear at most once.
+func (p *parser) parseDefaults() *DefaultsDecl {
+	d := &DefaultsDecl{Pos: p.cur.Pos}
+	p.advance() // consume 'defaults'
+	if _, ok := p.expect(KindLBrace, "to open defaults body"); !ok {
+		return d
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a defaults field (policy, model, runtime), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate defaults field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "policy":
+			d.Policy = p.ident("after 'policy'")
+		case "model":
+			d.Model = p.parseModelRef()
+		case "runtime":
+			d.Runtime = p.ident("after 'runtime'")
+		default:
+			p.errorf(fpos, "unknown defaults field %q (want policy, model, or runtime)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close defaults body")
 	return d
 }
 

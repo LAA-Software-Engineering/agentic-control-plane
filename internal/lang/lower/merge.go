@@ -97,6 +97,13 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 		}
 		seenProvider[pv.Name] = true
 	}
+	// The singleton `defaults { … }` block lowers into g.Spec.Defaults (project config). A project may
+	// set it at most once: a collision with a YAML `spec.defaults` or another .agent `defaults` block is
+	// an error with no precedence (ADR 005 §3), matching the resource kinds — silently choosing one set
+	// of project-wide fallbacks over another would hide which policy/model actually applies.
+	if r.Defaults != nil && g.Spec.Defaults != nil {
+		errs = append(errs, fmt.Errorf("project: duplicate `defaults` block from lowered .agent source (also declared in YAML spec.defaults or another .agent block)"))
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -118,6 +125,9 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 	}
 	for _, pv := range r.Providers {
 		setProviderModel(g, pv.Name, pv.Config)
+	}
+	if r.Defaults != nil {
+		g.Spec.Defaults = r.Defaults
 	}
 	return nil
 }

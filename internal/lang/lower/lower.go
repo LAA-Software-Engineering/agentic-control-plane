@@ -43,6 +43,9 @@ type Result struct {
 	// config), not a graph map. Carried here in author order so ToGraph/MergeLowered can fold them into
 	// the project spec with duplicate-alias detection (issue #440).
 	Providers []LoweredProvider
+	// Defaults is the singleton `defaults { … }` block lowered into spec.ProjectSpec.Defaults (project
+	// config, not a resource). Nil when the file declares no `defaults` block (issue #440, ADR 007).
+	Defaults  *spec.ProjectDefaults
 	SourceMap *SourceMap
 }
 
@@ -86,6 +89,9 @@ func (r *Result) ToGraph() *spec.ProjectGraph {
 	}
 	for _, pv := range r.Providers {
 		setProviderModel(g, pv.Name, pv.Config)
+	}
+	if r.Defaults != nil {
+		g.Spec.Defaults = r.Defaults
 	}
 	return g
 }
@@ -143,6 +149,12 @@ func LowerFile(f *lang.File, opts Options) (*Result, lang.Diagnostics) {
 			if pv, ok := l.provider(decl); ok {
 				res.Providers = append(res.Providers, pv)
 			}
+		case *lang.DefaultsDecl:
+			if res.Defaults != nil {
+				l.diag(decl.Pos, "duplicate `defaults` block: a project may declare defaults at most once")
+				continue
+			}
+			res.Defaults = l.defaults(decl)
 		}
 	}
 	return res, l.diags

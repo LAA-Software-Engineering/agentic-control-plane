@@ -92,7 +92,8 @@ The reference implementation is [`internal/lang`](../internal/lang):
 
 ```ebnf
 File        = { Declaration } ;
-Declaration = AgentDecl | WorkflowDecl | ToolDecl | PolicyDecl | EnvironmentDecl ;   (* ToolDecl/PolicyDecl: ADR 005, #333; EnvironmentDecl: #440 *)
+Declaration = AgentDecl | WorkflowDecl | ToolDecl | PolicyDecl | EnvironmentDecl | ProviderDecl | DefaultsDecl ;   (* ToolDecl/PolicyDecl: ADR 005, #333; EnvironmentDecl/ProviderDecl/DefaultsDecl: #440 *)
+DefaultsDecl = "defaults" "{" [ "policy" Ident ] [ "model" ModelRef ] [ "runtime" Ident ] "}" ;   (* singleton, #440/ADR 007 *)
 
 AgentDecl   = "agent" Ident "{" { AgentField } "}" ;
 AgentField  = "model"  ModelRef
@@ -265,9 +266,16 @@ policy coding {
   references are optional `env:VAR` strings. Built-in namespaces (`anthropic`, `openai`, `gemini`,
   `grok`, `kimi`, `mock`) resolve implicitly and need **no** declaration — `provider` is only for
   aliases, custom endpoints, and credentials. An agent then selects it as `model <alias>/<model-name>`.
-- `tool`, `policy`, `environment`, and `provider` are **contextual**: only a top-level `tool <Name> {` /
-  `policy <Name> {` / `environment <Name> {` / `provider <alias> {` opens a declaration; the grant path
-  `tool.<name>.<op>` and the agent field `policy <name>` are unchanged.
+- Defaults: `defaults { policy <name> model <provider>/<name> runtime <name> }` (#440, [ADR 007](adr/007-remove-yaml-ingestion.md)) —
+  the singleton project-wide fallbacks, lowering into the project's `spec.defaults`. Every field is
+  optional and a project may declare the block **at most once** (a second block, or a collision with a
+  YAML `spec.defaults`, is a load error with no precedence, ADR 005 §3). This is the reviewable `.agent`
+  home for what YAML expressed as `spec.defaults`; machine/operator-local runtime configuration
+  (`state`, `traces`, `telemetry`, credentials) is not a source concern and lives in CLI/env/user-local
+  config instead.
+- `tool`, `policy`, `environment`, `provider`, and `defaults` are **contextual**: only a top-level
+  `tool <Name> {` / `policy <Name> {` / `environment <Name> {` / `provider <alias> {` / `defaults {`
+  opens a declaration; the grant path `tool.<name>.<op>` and the agent field `policy <name>` are unchanged.
 - Tool `workspace` (#440): `tool <Name> { … workspace { root "…" testCommand "…" } }` — declarative
   config for the native workspace adapter (the sandbox `root` that `read_file`/`write_file` resolve
   within, and the `testCommand` `run_tests` executes). Both fields are optional; when omitted, the

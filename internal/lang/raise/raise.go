@@ -65,6 +65,11 @@ func Graph(g *spec.ProjectGraph) (*lang.File, []Unsupported) {
 			f.Decls = append(f.Decls, r.provider(name, g.Spec.Providers.Models[name]))
 		}
 	}
+	// Project-wide defaults (project config). Raised only when at least one field is set, so an
+	// all-empty spec.defaults does not print an empty block.
+	if d := r.defaults(g.Spec.Defaults); d != nil {
+		f.Decls = append(f.Decls, d)
+	}
 	for _, name := range sortedKeys(g.Tools) {
 		f.Decls = append(f.Decls, r.tool(g.Tools[name]))
 	}
