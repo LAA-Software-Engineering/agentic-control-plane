@@ -287,6 +287,17 @@ func printEnvironment(b *strings.Builder, d *EnvironmentDecl) {
 	b.WriteString("}\n")
 }
 
+// printProvider renders `provider <alias> { type … apiKeyFrom "…" workspaceIdFrom "…" }` (issue #440).
+func printProvider(b *strings.Builder, d *ProviderDecl) {
+	fmt.Fprintf(b, "provider %s {\n", identName(d.Name))
+	if d.Type != nil {
+		fmt.Fprintf(b, "    type %s\n", identName(d.Type))
+	}
+	printStringLitField(b, "    ", "apiKeyFrom", d.APIKeyFrom)
+	printStringLitField(b, "    ", "workspaceIdFrom", d.WorkspaceIDFrom)
+	b.WriteString("}\n")
+}
+
 // printConstraintsAt renders a `constraints { … }` block at the given indent (fields at indent+4).
 func printConstraintsAt(b *strings.Builder, indent string, c *Constraints) {
 	inner := indent + "    "

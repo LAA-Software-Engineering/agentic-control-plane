@@ -147,6 +147,21 @@ type PolicyEffectsBlock struct {
 	PermitWithApproval []*EffectRef
 }
 
+// ProviderDecl is a top-level `provider <alias> { type … apiKeyFrom … workspaceIdFrom … }`
+// declaration (issue #440): a custom/aliased model provider that lowers into
+// spec.ProjectSpec.Providers.Models[alias]. Built-in namespaces (anthropic, openai, …) resolve
+// implicitly and need no declaration; `provider` is for aliases, custom endpoints, and credentials.
+type ProviderDecl struct {
+	Pos             Pos
+	Name            *Ident     // the alias, e.g. corporate-claude
+	Type            *Ident     // underlying provider type (anthropic, openai, mock, …); required
+	APIKeyFrom      *StringLit // env:VAR reference for the API key (optional)
+	WorkspaceIDFrom *StringLit // env:VAR reference for a workspace id (optional)
+}
+
+func (d *ProviderDecl) Position() Pos { return d.Pos }
+func (d *ProviderDecl) declNode()     {}
+
 // EnvironmentDecl is a top-level `environment <Name> { overrides { … } }` declaration (issue #440):
 // per-environment agent/policy overrides that lower to spec.EnvironmentResource, applied by
 // spec.ApplyEnvironment exactly like the YAML Environment resource.

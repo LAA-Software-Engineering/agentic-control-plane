@@ -250,6 +250,31 @@ func lowerInterruptConfig(c *lang.InterruptConfig) *spec.HitlInterruptConfig {
 	return cfg
 }
 
+// provider lowers a `provider <alias> { type … apiKeyFrom … workspaceIdFrom … }` declaration to a
+// spec.ModelProviderConfig destined for spec.ProjectSpec.Providers.Models[alias] (issue #440). The
+// second return is false (with a diagnostic) when the alias or the required type is missing.
+func (l *lowerer) provider(d *lang.ProviderDecl) (LoweredProvider, bool) {
+	name := identName(d.Name)
+	if name == "" {
+		l.diag(d.Pos, "provider declaration has no name")
+		return LoweredProvider{}, false
+	}
+	typ := identName(d.Type)
+	if typ == "" {
+		l.diag(d.Pos, "provider %q must declare a type (e.g. type anthropic)", name)
+		return LoweredProvider{}, false
+	}
+	return LoweredProvider{
+		Name: name,
+		Pos:  d.Pos,
+		Config: spec.ModelProviderConfig{
+			Type:            typ,
+			APIKeyFrom:      stringLitValue(d.APIKeyFrom),
+			WorkspaceIDFrom: stringLitValue(d.WorkspaceIDFrom),
+		},
+	}, true
+}
+
 // environment lowers an `environment <Name> { overrides { … } }` declaration to the same
 // spec.EnvironmentResource the YAML loader produces (issue #440), applied by spec.ApplyEnvironment.
 func (l *lowerer) environment(d *lang.EnvironmentDecl) *spec.EnvironmentResource {

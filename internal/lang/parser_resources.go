@@ -6,7 +6,7 @@ import "strings"
 // declaration. `tool` and `policy` are contextual: they are ordinary identifiers elsewhere (a grant
 // path `tool.x.y`, an agent field `policy foo`), and only at the top level introduce a declaration.
 func (p *parser) isResourceDeclKeyword() bool {
-	return p.cur.Kind == KindIdent && (p.cur.Lit == "tool" || p.cur.Lit == "policy" || p.cur.Lit == "environment")
+	return p.cur.Kind == KindIdent && (p.cur.Lit == "tool" || p.cur.Lit == "policy" || p.cur.Lit == "environment" || p.cur.Lit == "provider")
 }
 
 // parseTool parses `tool <Name> { type … safety { … } operations { … } }` (ADR 005).
@@ -637,6 +637,44 @@ func (p *parser) parseDecisionListBlock() []*Ident {
 	}
 	p.expect(KindRBrace, "to close allowedDecisions block")
 	return out
+}
+
+// parseProvider parses `provider <alias> { type <ident> apiKeyFrom "…" workspaceIdFrom "…" }`
+// (issue #440). `type` is required; the two credential references are optional string literals.
+func (p *parser) parseProvider() *ProviderDecl {
+	d := &ProviderDecl{Pos: p.cur.Pos}
+	p.advance() // consume 'provider'
+	d.Name = p.ident("after 'provider'")
+	if _, ok := p.expect(KindLBrace, "to open provider body"); !ok {
+		return d
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a provider field (type, apiKeyFrom, workspaceIdFrom), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate provider field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "type":
+			d.Type = p.ident("after 'type'")
+		case "apiKeyFrom":
+			d.APIKeyFrom = p.parseStringLit("for apiKeyFrom")
+		case "workspaceIdFrom":
+			d.WorkspaceIDFrom = p.parseStringLit("for workspaceIdFrom")
+		default:
+			p.errorf(fpos, "unknown provider field %q (want type, apiKeyFrom, or workspaceIdFrom)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close provider body")
+	return d
 }
 
 // parseEnvironment parses `environment <Name> { overrides { … } }` (issue #440).

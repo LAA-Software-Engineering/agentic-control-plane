@@ -39,7 +39,18 @@ type Result struct {
 	Tools        []*spec.ToolResource
 	Policies     []*spec.PolicyResource
 	Environments []*spec.EnvironmentResource
-	SourceMap    *SourceMap
+	// Providers are not a resource kind — they lower into spec.ProjectSpec.Providers.Models (project
+	// config), not a graph map. Carried here in author order so ToGraph/MergeLowered can fold them into
+	// the project spec with duplicate-alias detection (issue #440).
+	Providers []LoweredProvider
+	SourceMap *SourceMap
+}
+
+// LoweredProvider is one `provider <alias> { … }` declaration lowered to its ProjectSpec config.
+type LoweredProvider struct {
+	Name   string
+	Config spec.ModelProviderConfig
+	Pos    spec.Pos
 }
 
 // ToGraph folds the lowered resources into a fresh spec.ProjectGraph keyed by
@@ -73,7 +84,22 @@ func (r *Result) ToGraph() *spec.ProjectGraph {
 	for _, e := range r.Environments {
 		g.Environments[e.Metadata.Name] = e
 	}
+	for _, pv := range r.Providers {
+		setProviderModel(g, pv.Name, pv.Config)
+	}
 	return g
+}
+
+// setProviderModel writes one lowered provider alias into g.Spec.Providers.Models, allocating the
+// nested config as needed. Providers are project config, not a resource keyed in a graph map.
+func setProviderModel(g *spec.ProjectGraph, name string, cfg spec.ModelProviderConfig) {
+	if g.Spec.Providers == nil {
+		g.Spec.Providers = &spec.ProjectProviders{}
+	}
+	if g.Spec.Providers.Models == nil {
+		g.Spec.Providers.Models = map[string]spec.ModelProviderConfig{}
+	}
+	g.Spec.Providers.Models[name] = cfg
 }
 
 // LowerFile lowers a parsed .agent file into its resource projection. Diagnostics
@@ -112,6 +138,10 @@ func LowerFile(f *lang.File, opts Options) (*Result, lang.Diagnostics) {
 		case *lang.EnvironmentDecl:
 			if e := l.environment(decl); e != nil {
 				res.Environments = append(res.Environments, e)
+			}
+		case *lang.ProviderDecl:
+			if pv, ok := l.provider(decl); ok {
+				res.Providers = append(res.Providers, pv)
 			}
 		}
 	}
