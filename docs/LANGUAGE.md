@@ -233,15 +233,21 @@ policy coding {
 - Fields are newline- (or whitespace-) separated, like `constraints` / `grants`; there is no `;`.
 - Tool: `type` (native/mock/mcp/http), `safety { trusted / sideEffects / requiresApproval }`,
   `operations { <op> { effects { … } } }`. An operation name may be dotted (`pull_request.get`).
+  A `type mcp` tool configures its transport with `mcp { transport "…"  command "…"  args { "…" "…" }
+  url "…"  headers { "<key>" "<value>" } }`, and a `type http` tool with `http { baseUrl "…"
+  headers { "<key>" "<value>" } }` (#440). `args` is a whitespace-separated string list; `headers` is
+  string key/value pairs. Both lower identically to the YAML `spec.mcp` / `spec.http` (ADR 005 §2).
+  Header values that hold a secret (e.g. `Authorization`) should be an `env:VAR` reference, not an
+  inline literal — the same rule as elsewhere; a literal secret in a snapshot-persisted header is
+  flagged at apply/run (#207) and never resolved to a stored value.
 - Policy: `preset <name>` (a built-in preset — `strict` / `permissive` / `shell_safe` — resolved and
   overridable exactly like the YAML `spec.preset`, #430), `execution { maxTotalCostUsd /
   maxWallClockSeconds / requireStructuredOutput }`, `approvals { requiredFor { … } / requireAllTools
   / permissive }`, and the full effect model `effects { permit { … } permitWithApproval { … } }`.
 - `tool` and `policy` are **contextual**: only a top-level `tool <Name> {` / `policy <Name> {`
   opens a declaration; the grant path `tool.<name>.<op>` and the agent field `policy <name>` are
-  unchanged. Transport config (mcp/http), the native `workspace { … }` block, and `hitl`
-  are follow-on fields (ADR 005 §4); until a field exists in the grammar, author that resource in
-  YAML and import it.
+  unchanged. The native `workspace { … }` block and policy `hitl` are follow-on fields (ADR 005 §4);
+  until a field exists in the grammar, author that resource in YAML and import it.
 
 ## The normative program
 

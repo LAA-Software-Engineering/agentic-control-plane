@@ -28,7 +28,7 @@ func (p *parser) parseTool() *ToolDecl {
 	}
 	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
 		if p.cur.Kind != KindIdent {
-			p.errorf(p.cur.Pos, "expected tool field (type, safety, operations), got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected tool field (type, mcp, http, safety, operations), got %s", p.cur)
 			p.syncLine()
 			continue
 		}
@@ -38,6 +38,16 @@ func (p *parser) parseTool() *ToolDecl {
 			p.advance()
 			if id := p.ident("after 'type'"); !dup(field, fpos) {
 				d.Type = id
+			}
+		case "mcp":
+			p.advance()
+			if b := p.parseToolMCP(); !dup(field, fpos) {
+				d.MCP = b
+			}
+		case "http":
+			p.advance()
+			if b := p.parseToolHTTP(); !dup(field, fpos) {
+				d.HTTP = b
 			}
 		case "safety":
 			p.advance()
@@ -50,7 +60,7 @@ func (p *parser) parseTool() *ToolDecl {
 				d.Operations = ops
 			}
 		default:
-			p.errorf(fpos, "unknown tool field %q (want type, safety, or operations)", field)
+			p.errorf(fpos, "unknown tool field %q (want type, mcp, http, safety, or operations)", field)
 			p.syncLine()
 		}
 	}
@@ -96,6 +106,125 @@ func (p *parser) parseToolSafety() *ToolSafetyBlock {
 	}
 	p.expect(KindRBrace, "to close safety block")
 	return b
+}
+
+// parseToolMCP parses `mcp { transport … command … args { … } url … headers { … } }` (issue #440).
+func (p *parser) parseToolMCP() *ToolMCPBlock {
+	b := &ToolMCPBlock{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open mcp block"); !ok {
+		return b
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected an mcp field (transport, command, args, url, headers), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate mcp field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "transport":
+			b.Transport = p.parseStringLit("after 'transport'")
+		case "command":
+			b.Command = p.parseStringLit("after 'command'")
+		case "url":
+			b.URL = p.parseStringLit("after 'url'")
+		case "args":
+			b.Args = p.parseStringListBlock("args")
+		case "headers":
+			b.Headers = p.parseHeadersBlock()
+		default:
+			p.errorf(fpos, "unknown mcp field %q (want transport, command, args, url, or headers)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close mcp block")
+	return b
+}
+
+// parseToolHTTP parses `http { baseUrl … headers { … } }` (issue #440).
+func (p *parser) parseToolHTTP() *ToolHTTPBlock {
+	b := &ToolHTTPBlock{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open http block"); !ok {
+		return b
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected an http field (baseUrl, headers), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate http field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "baseUrl":
+			b.BaseURL = p.parseStringLit("after 'baseUrl'")
+		case "headers":
+			b.Headers = p.parseHeadersBlock()
+		default:
+			p.errorf(fpos, "unknown http field %q (want baseUrl or headers)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close http block")
+	return b
+}
+
+// parseStringListBlock parses `<field> { "a" "b" … }` — a whitespace-separated list of string
+// literals (e.g. mcp args). Order is preserved.
+func (p *parser) parseStringListBlock(field string) []*StringLit {
+	if _, ok := p.expect(KindLBrace, "to open "+field+" block"); !ok {
+		return nil
+	}
+	var out []*StringLit
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindString {
+			p.errorf(p.cur.Pos, "expected a string in %s { … }, got %s", field, p.cur)
+			p.syncLine()
+			continue
+		}
+		if s := p.parseStringLit("in " + field); s != nil {
+			out = append(out, s)
+		}
+	}
+	p.expect(KindRBrace, "to close "+field+" block")
+	return out
+}
+
+// parseHeadersBlock parses `headers { "<key>" "<value>" … }` — string key/value pairs.
+func (p *parser) parseHeadersBlock() []*HeaderPair {
+	if _, ok := p.expect(KindLBrace, "to open headers block"); !ok {
+		return nil
+	}
+	var out []*HeaderPair
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindString {
+			p.errorf(p.cur.Pos, "expected a header key string in headers { … }, got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		pos := p.cur.Pos
+		key := p.parseStringLit("for the header key")
+		if p.cur.Kind != KindString {
+			p.errorf(p.cur.Pos, "expected a value string after header key, got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		val := p.parseStringLit("for the header value")
+		out = append(out, &HeaderPair{Pos: pos, Key: key, Value: val})
+	}
+	p.expect(KindRBrace, "to close headers block")
+	return out
 }
 
 func (p *parser) parseToolOperations() *ToolOperations {

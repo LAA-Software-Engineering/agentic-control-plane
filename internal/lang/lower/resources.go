@@ -11,6 +11,45 @@ import (
 // .OperationsDeclared, which the closed-world capability manifest (#204) derives from the presence
 // of an `operations` block (including an empty one).
 
+// stringLitValue returns a string literal's value, or "" when absent.
+func stringLitValue(s *lang.StringLit) string {
+	if s == nil {
+		return ""
+	}
+	return s.Value
+}
+
+// stringLitList returns the values of a string-literal list, or nil when empty (matching YAML omitempty).
+func stringLitList(items []*lang.StringLit) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		out = append(out, stringLitValue(it))
+	}
+	return out
+}
+
+// headerPairsMap collapses header key/value pairs into a map, or nil when empty (matching YAML
+// omitempty). A duplicate key keeps the last value, mirroring YAML map semantics.
+func headerPairsMap(pairs []*lang.HeaderPair) map[string]string {
+	if len(pairs) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		if p == nil || p.Key == nil {
+			continue
+		}
+		out[p.Key.Value] = stringLitValue(p.Value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func (l *lowerer) tool(d *lang.ToolDecl) *spec.ToolResource {
 	name := identName(d.Name)
 	if name == "" {
@@ -25,6 +64,21 @@ func (l *lowerer) tool(d *lang.ToolDecl) *spec.ToolResource {
 	}
 	if d.Type != nil {
 		tr.Spec.Type = d.Type.Name
+	}
+	if m := d.MCP; m != nil {
+		tr.Spec.MCP = &spec.ToolMCP{
+			Transport: stringLitValue(m.Transport),
+			Command:   stringLitValue(m.Command),
+			URL:       stringLitValue(m.URL),
+			Args:      stringLitList(m.Args),
+			Headers:   headerPairsMap(m.Headers),
+		}
+	}
+	if h := d.HTTP; h != nil {
+		tr.Spec.HTTP = &spec.ToolHTTP{
+			BaseURL: stringLitValue(h.BaseURL),
+			Headers: headerPairsMap(h.Headers),
+		}
 	}
 	if d.Safety != nil {
 		tr.Spec.Safety = &spec.ToolSafety{

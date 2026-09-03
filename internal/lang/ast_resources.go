@@ -10,11 +10,37 @@ type ToolDecl struct {
 	Pos    Pos
 	Name   *Ident
 	Type   *Ident           // type <native|mock|mcp|http>
+	MCP    *ToolMCPBlock    // mcp { … } transport config (issue #440)
+	HTTP   *ToolHTTPBlock   // http { … } transport config (issue #440)
 	Safety *ToolSafetyBlock // safety { … }
 	// Operations is nil when the block is omitted (open callable set) and non-nil when present,
 	// including an empty `operations {}` (a closed, deny-all manifest). This distinction is the
 	// OperationsDeclared bit (#204) and MUST survive lowering.
 	Operations *ToolOperations
+}
+
+// ToolMCPBlock is `mcp { transport … command … args { … } url … headers { … } }` (issue #440).
+type ToolMCPBlock struct {
+	Pos       Pos
+	Transport *StringLit
+	Command   *StringLit
+	Args      []*StringLit
+	URL       *StringLit
+	Headers   []*HeaderPair
+}
+
+// ToolHTTPBlock is `http { baseUrl … headers { … } }` (issue #440).
+type ToolHTTPBlock struct {
+	Pos     Pos
+	BaseURL *StringLit
+	Headers []*HeaderPair
+}
+
+// HeaderPair is one `"<key>" "<value>"` entry in a headers { … } block.
+type HeaderPair struct {
+	Pos   Pos
+	Key   *StringLit
+	Value *StringLit
 }
 
 func (d *ToolDecl) Position() Pos { return d.Pos }
