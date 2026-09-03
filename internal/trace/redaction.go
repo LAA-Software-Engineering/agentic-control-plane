@@ -199,7 +199,10 @@ func sanitizeReflect(v any, depth int, o RedactionOptions) any {
 		if rv.IsNil() {
 			return nil
 		}
-		return sanitizeValue(rv.Elem().Interface(), depth, o)
+		// Increment depth on deref so a pointer/interface cycle is bounded by the MaxDepth guard,
+		// exactly like the container cases (not reachable via JSON-derived payloads today, but
+		// MaxDepth is the anti-cycle guard and this keeps it complete).
+		return sanitizeValue(rv.Elem().Interface(), depth+1, o)
 	case reflect.String:
 		return truncateString(rv.String(), o.MaxStringChars)
 	case reflect.Bool:
