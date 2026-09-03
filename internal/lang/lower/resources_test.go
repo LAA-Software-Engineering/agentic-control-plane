@@ -482,6 +482,90 @@ func TestMergeLowered_ProviderCollision(t *testing.T) {
 	}
 }
 
+// TestInlineDefaults_YAMLEquivalence is the ADR 005 §2 golden for the .agent `defaults` block (issue
+// #440, ADR 007): an inline defaults block and its YAML twin normalize to byte-identical spec JSON, so
+// the two front ends never diverge on project-wide fallbacks.
+func TestInlineDefaults_YAMLEquivalence(t *testing.T) {
+	agentSrc := `defaults {
+    policy default
+    model anthropic/claude-sonnet-5
+    runtime container
+}`
+	f, diags := lang.Parse("t.agent", agentSrc)
+	if diags.HasErrors() {
+		t.Fatalf("parse: %v", diags)
+	}
+	res, ld := LowerFile(f, Options{})
+	if ld.HasErrors() {
+		t.Fatalf("lower: %v", ld)
+	}
+	if res.Defaults == nil {
+		t.Fatal("expected a lowered defaults block")
+	}
+	inline := res.ToGraph().Spec.Defaults
+
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Project
+metadata: {name: demo}
+spec:
+  defaults:
+    policy: default
+    model: anthropic/claude-sonnet-5
+    runtime: container
+`
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "project.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.ProjectResource).Spec.Defaults
+
+	inJSON, err := json.Marshal(inline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yJSON, err := json.Marshal(fromYAML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(inJSON) != string(yJSON) {
+		t.Fatalf("inline defaults differs from YAML twin:\n inline: %s\n yaml:   %s", inJSON, yJSON)
+	}
+}
+
+// TestLowerDefaults_DuplicateBlockDiag: a project may declare `defaults` at most once; a second block
+// in the same file is a lowering error, never a silent last-wins override of project-wide fallbacks.
+func TestLowerDefaults_DuplicateBlockDiag(t *testing.T) {
+	f, diags := lang.Parse("t.agent", "defaults {\n    policy a\n}\ndefaults {\n    policy b\n}")
+	if diags.HasErrors() {
+		t.Fatalf("unexpected parse errors: %v", diags)
+	}
+	_, ld := LowerFile(f, Options{})
+	if !ld.HasErrors() {
+		t.Fatal("two `defaults` blocks must be a lowering error")
+	}
+}
+
+// TestMergeLowered_DefaultsCollision: a lowered `defaults` block colliding with an existing
+// spec.defaults (from YAML or another .agent block) is a load error (ADR 005 §3), never a silent
+// swap of which policy/model applies project-wide.
+func TestMergeLowered_DefaultsCollision(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Spec: spec.ProjectSpec{Defaults: &spec.ProjectDefaults{Policy: "yaml-policy"}},
+	}
+	res := &Result{Defaults: &spec.ProjectDefaults{Policy: "agent-policy"}}
+	err := MergeLowered(g, res)
+	if err == nil {
+		t.Fatal("a duplicate defaults block across ingress must be an error")
+	}
+	if !containsStr(err.Error(), "defaults") {
+		t.Fatalf("collision error should name `defaults`: %v", err)
+	}
+	// The pre-existing YAML defaults must be untouched by the failed merge.
+	if g.Spec.Defaults.Policy != "yaml-policy" {
+		t.Fatalf("failed merge mutated the existing defaults: %+v", g.Spec.Defaults)
+	}
+}
+
 // TestInlineTool_WorkspaceYAMLEquivalence is the ADR 005 §2 golden for the .agent workspace tool
 // sub-block (issue #440): an inline workspace tool and its YAML twin normalize to byte-identical spec
 // JSON, so the two front ends never diverge on native workspace config.

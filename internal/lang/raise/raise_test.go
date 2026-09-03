@@ -36,6 +36,12 @@ func TestRaise_RoundTrip(t *testing.T) {
     workspaceIdFrom "env:CORP_WS"
 }
 
+defaults {
+    policy base
+    model corporate-claude/claude-sonnet-5
+    runtime container
+}
+
 tool github {
     type mcp
     mcp {
@@ -112,6 +118,7 @@ agent assistant {
 
 	// Compare each resource kind's spec JSON.
 	assertSpecEqual(t, "providers", g1.Spec.Providers, g2.Spec.Providers, out)
+	assertSpecEqual(t, "defaults", g1.Spec.Defaults, g2.Spec.Defaults, out)
 	for _, name := range sortedKeys(g1.Tools) {
 		assertSpecEqual(t, "tool "+name, g1.Tools[name].Spec, g2.Tools[name].Spec, out)
 	}

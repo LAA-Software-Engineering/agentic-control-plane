@@ -244,6 +244,22 @@ func (r *raiser) environment(e *spec.EnvironmentResource) *lang.EnvironmentDecl 
 	return d
 }
 
+// defaults raises spec.ProjectSpec.Defaults to the singleton lang.DefaultsDecl (issue #440, ADR 007).
+// Returns nil when the spec is nil or all fields are empty, so an empty block is never emitted.
+func (r *raiser) defaults(d *spec.ProjectDefaults) *lang.DefaultsDecl {
+	if d == nil || (d.Policy == "" && d.Model == "" && d.Runtime == "") {
+		return nil
+	}
+	out := &lang.DefaultsDecl{
+		Policy:  ident(d.Policy),
+		Runtime: ident(d.Runtime),
+	}
+	if d.Model != "" {
+		out.Model = modelRef(d.Model)
+	}
+	return out
+}
+
 // provider raises one ProjectSpec.Providers.Models entry to a lang.ProviderDecl (issue #440).
 func (r *raiser) provider(alias string, cfg spec.ModelProviderConfig) *lang.ProviderDecl {
 	return &lang.ProviderDecl{

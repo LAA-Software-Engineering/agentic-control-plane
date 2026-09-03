@@ -206,6 +206,20 @@ type ProviderDecl struct {
 func (d *ProviderDecl) Position() Pos { return d.Pos }
 func (d *ProviderDecl) declNode()     {}
 
+// DefaultsDecl is the top-level singleton `defaults { policy … model … runtime … }` declaration
+// (issue #440, ADR 007): project-wide fallbacks that lower into spec.ProjectSpec.Defaults. It is the
+// reviewable `.agent` home for what YAML expressed as `spec.defaults`. A project may declare it at
+// most once; a second block, or a collision with a YAML `spec.defaults`, is a lowering error.
+type DefaultsDecl struct {
+	Pos     Pos
+	Policy  *Ident    // default policy name applied to workflows/agents that declare none (optional)
+	Model   *ModelRef // default model (<provider>/<name>) for agents that declare none (optional)
+	Runtime *Ident    // default runtime name (optional)
+}
+
+func (d *DefaultsDecl) Position() Pos { return d.Pos }
+func (d *DefaultsDecl) declNode()     {}
+
 // EnvironmentDecl is a top-level `environment <Name> { overrides { … } }` declaration (issue #440):
 // per-environment agent/policy overrides that lower to spec.EnvironmentResource, applied by
 // spec.ApplyEnvironment exactly like the YAML Environment resource.

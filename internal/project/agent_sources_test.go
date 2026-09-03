@@ -148,6 +148,43 @@ workflow hello(input: string) -> string policy default {
 	}
 }
 
+// TestLoadProject_ingestsAgentDefaults is the end-to-end load test for the #440/ADR-007 `defaults`
+// block: a `.agent`-declared defaults block lowers into ProjectSpec.Defaults and must be folded back
+// into the returned graph, so scaffolding and default-policy resolution see it.
+func TestLoadProject_ingestsAgentDefaults(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "main.agent", `
+defaults {
+    policy default
+    model anthropic/claude-sonnet-5
+    runtime container
+}
+
+agent assistant {
+    model mock/default
+}
+
+policy default {
+    preset shell_safe
+}
+
+workflow hello(input: string) -> string policy default {
+    return assistant(input)
+}
+`)
+
+	g, err := LoadProject(root)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if g.Spec.Defaults == nil {
+		t.Fatalf("defaults from .agent source missing from loaded graph spec")
+	}
+	if g.Spec.Defaults.Policy != "default" || g.Spec.Defaults.Model != "anthropic/claude-sonnet-5" || g.Spec.Defaults.Runtime != "container" {
+		t.Fatalf("defaults not preserved through load: %+v", g.Spec.Defaults)
+	}
+}
+
 func providerKeys(g *spec.ProjectGraph) []string {
 	if g.Spec.Providers == nil {
 		return nil

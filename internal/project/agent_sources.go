@@ -206,6 +206,13 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 				}
 			}
 		}
+		// The singleton `defaults` block (issue #440, ADR 007) lowers into ProjectSpec.Defaults (project
+		// config, not a resource map), so it folds back through the spec. A defaults already in g came from
+		// YAML spec.defaults; a genuine cross-ingress collision was reported by MergeLowered inside Check.
+		// Without this, a .agent-declared defaults reaches prog.Graph but is dropped from the returned graph.
+		if g.Spec.Defaults == nil && prog.Graph.Spec.Defaults != nil {
+			g.Spec.Defaults = prog.Graph.Spec.Defaults
+		}
 	}
 	// The checked execution IR (positional-arg rebinds included) is the pinned
 	// program for every .agent workflow (issue #260); the loader previously

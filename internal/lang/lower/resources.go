@@ -320,6 +320,24 @@ func (l *lowerer) provider(d *lang.ProviderDecl) (LoweredProvider, bool) {
 	}, true
 }
 
+// defaults lowers the singleton `defaults { policy … model … runtime … }` block to a
+// spec.ProjectDefaults destined for spec.ProjectSpec.Defaults (issue #440, ADR 007). Returns nil
+// only for a nil decl; an all-empty block lowers to a zero-value ProjectDefaults (harmless, and the
+// printer/raiser round-trips it to nothing).
+func (l *lowerer) defaults(d *lang.DefaultsDecl) *spec.ProjectDefaults {
+	if d == nil {
+		return nil
+	}
+	out := &spec.ProjectDefaults{
+		Policy:  identName(d.Policy),
+		Runtime: identName(d.Runtime),
+	}
+	if d.Model != nil {
+		out.Model = d.Model.Raw
+	}
+	return out
+}
+
 // environment lowers an `environment <Name> { overrides { … } }` declaration to the same
 // spec.EnvironmentResource the YAML loader produces (issue #440), applied by spec.ApplyEnvironment.
 func (l *lowerer) environment(d *lang.EnvironmentDecl) *spec.EnvironmentResource {
