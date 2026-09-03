@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -239,5 +240,29 @@ func TestWorkspaceReadFile_directoryReturnsEntries(t *testing.T) {
 	got := strings.Join(ents, ",")
 	if got != "main.go,sub/" {
 		t.Fatalf("entries = %q, want main.go,sub/", got)
+	}
+}
+
+func TestWorkspaceReadFile_directoryTruncates(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "many")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < maxWorkspaceDirEntries+50; i++ {
+		if err := os.WriteFile(filepath.Join(sub, "f"+strconv.Itoa(i)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := WithWorkspaceConfig(context.Background(), WorkspaceConfig{Root: dir})
+	out, _, err := NewRegistry().Dispatch(ctx, "read_file", map[string]any{"path": "many"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["truncated"] != true {
+		t.Fatalf("truncated = %v, want true", out["truncated"])
+	}
+	if ents := out["entries"].([]string); len(ents) != maxWorkspaceDirEntries {
+		t.Fatalf("entries len = %d, want %d", len(ents), maxWorkspaceDirEntries)
 	}
 }

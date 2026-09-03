@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **`read_file` on a directory returns its entries instead of erroring**: an agent exploring a checkout naturally does `read_file("framework")` before it knows `framework` is a directory; the native handler used to fail (`read … : is a directory`), which — because an agent tool-call error aborts the run — killed the whole run. `read_file` now detects a directory and returns `{is_directory: true, entries: [...]}` (sub-directories suffixed `/`), so a directory read is a useful listing and there is a way to explore the tree without a separate list op. The input schema description says so, so the model knows. (The broader issue — an agent tool-call error aborting the run rather than being returned to the model to recover — is separate and still open.)
+- **`read_file` on a directory returns its entries instead of erroring**: an agent exploring a checkout naturally does `read_file("framework")` before it knows `framework` is a directory; the native handler used to fail (`read … : is a directory`), which — because an agent tool-call error aborts the run — killed the whole run. `read_file` now detects a directory and returns `{is_directory: true, entries: [...]}` (sub-directories suffixed `/`), bounded like the file branch — over `maxWorkspaceDirEntries` (1000) it trims and sets `truncated: true` rather than reading an unbounded tree — so a directory read is a useful listing and there is a way to explore the tree without a separate list op. The input schema description says so, so the model knows. (The broader issue — an agent tool-call error aborting the run rather than being returned to the model to recover — is separate and still open.)
 
 ### Added
 

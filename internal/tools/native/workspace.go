@@ -34,6 +34,9 @@ const (
 	// captured run_tests output. Both guard against an unbounded read into a tool result.
 	maxWorkspaceReadBytes       = 1 << 20  // 1 MiB
 	maxWorkspaceTestOutputBytes = 64 << 10 // 64 KiB
+	// maxWorkspaceDirEntries caps a read_file directory listing the same way (a big
+	// node_modules or generated tree degrades to truncated=true rather than unbounded).
+	maxWorkspaceDirEntries = 1000
 )
 
 // WorkspaceConfig is the declarative workspace config resolved from a Tool resource. Root is
@@ -152,10 +155,18 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 	defer f.Close()
 	// A directory is not an error: return its entries so an agent can explore the tree
 	// (there is no separate list operation). Sub-directories are marked with a trailing "/".
+	// Bounded like the file branch: read at most maxWorkspaceDirEntries+1 so a pathological
+	// directory (a big node_modules, a generated tree) degrades gracefully with truncated=true
+	// rather than an unbounded read + oversized tool result.
 	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
-		ents, rderr := f.ReadDir(-1)
-		if rderr != nil {
+		ents, rderr := f.ReadDir(maxWorkspaceDirEntries + 1)
+		if rderr != nil && !errors.Is(rderr, io.EOF) {
 			return nil, meta, fmt.Errorf("native: read_file %q (directory): %w", rawPath, rderr)
+		}
+		truncated := false
+		if len(ents) > maxWorkspaceDirEntries {
+			ents = ents[:maxWorkspaceDirEntries]
+			truncated = true
 		}
 		names := make([]string, 0, len(ents))
 		for _, e := range ents {
@@ -167,7 +178,11 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 		}
 		sort.Strings(names)
 		meta.DurationMs = time.Since(start).Milliseconds()
-		return map[string]any{"path": rel, "is_directory": true, "entries": names}, meta, nil
+		out := map[string]any{"path": rel, "is_directory": true, "entries": names}
+		if truncated {
+			out["truncated"] = true
+		}
+		return out, meta, nil
 	}
 	// Bound the read itself, not just the result: read at most one byte past the cap so a larger
 	// file is reported truncated without loading all of it into memory.
