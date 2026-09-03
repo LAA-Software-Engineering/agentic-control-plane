@@ -290,3 +290,40 @@ spec:
 		t.Fatal("expected graph")
 	}
 }
+
+// TestResolve_agentOnlyProject is issue #430: config.Resolve loads a project with only .agent source
+// (no project.yaml) end to end — validate/plan/apply/run all go through Resolve, so a non-error here
+// with a populated graph and a stable digest is the whole static lifecycle working YAML-free.
+func TestResolve_agentOnlyProject(t *testing.T) {
+	root := t.TempDir()
+	writeYAML(t, filepath.Join(root, "main.agent"), `agent assistant {
+    model mock/default
+
+    instructions """
+    You are a helpful assistant.
+    """
+}
+
+workflow hello(input: string) -> string {
+    return assistant(input)
+}
+`)
+	rc, err := Resolve(ResolveOptions{ProjectRoot: root})
+	if err != nil {
+		t.Fatalf("agent-only project must resolve without project.yaml: %v", err)
+	}
+	g := rc.Graph()
+	if g.Meta.Name != filepath.Base(root) {
+		t.Fatalf("project name = %q, want the directory basename %q", g.Meta.Name, filepath.Base(root))
+	}
+	if g.Workflows["hello"] == nil || g.Agents["assistant"] == nil {
+		t.Fatalf(".agent resources missing: agents=%v workflows=%v", len(g.Agents), len(g.Workflows))
+	}
+	if strings.TrimSpace(rc.Digest()) == "" {
+		t.Fatal("resolved config digest must be non-empty")
+	}
+	// The default state path lands under the project root (no project.yaml state block needed).
+	if want := filepath.Join(root, ".agentic", "state.db"); rc.StatePath() != want {
+		t.Fatalf("state path = %q, want %q", rc.StatePath(), want)
+	}
+}
