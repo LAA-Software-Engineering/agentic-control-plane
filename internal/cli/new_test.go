@@ -133,6 +133,32 @@ func TestNew_targetFileFlag(t *testing.T) {
 	}
 }
 
+// TestNew_rejectsReservedWordName (review of #443): a name that is a .agent keyword passes the
+// identifier check but would produce an unparseable declaration; the pre-write parse check rejects it
+// immediately and leaves the file untouched, rather than writing a block that fails at the next validate.
+func TestNew_rejectsReservedWordName(t *testing.T) {
+	root := newScaffoldProject(t)
+	target := filepath.Join(root, "main.agent")
+	before, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runScaffold(t, "new", "workflow", "return", "--project", root)
+	if err == nil {
+		t.Fatal("expected an error for a reserved-word name")
+	}
+	if ExitCodeOf(err) != ExitValidationError {
+		t.Fatalf("exit=%d err=%v", ExitCodeOf(err), err)
+	}
+	after, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("main.agent was modified despite the pre-write parse rejection")
+	}
+}
+
 func TestNew_rejectsInvalidName(t *testing.T) {
 	root := newScaffoldProject(t)
 	_, err := runScaffold(t, "new", "agent", "1bad", "--project", root)

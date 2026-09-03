@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Terfyn/terfyn/internal/lang"
 	"github.com/Terfyn/terfyn/internal/render"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/spf13/cobra"
@@ -90,7 +91,19 @@ func runNew(cmd *cobra.Command, kind, word, name, file string, dryRun bool) erro
 	if dryRun {
 		return writeNewDryRun(cmd, kind, name, rel, block)
 	}
-	if err := appendDeclaration(target, block); err != nil {
+
+	content, err := agentFileAfterAppend(target, block)
+	if err != nil {
+		return fmt.Errorf("new: %w", err)
+	}
+	// Parse the resulting file before writing: the existing project already parses (it was resolved
+	// above), so a parse error here means the new declaration is malformed — in practice a reserved
+	// word used as the name (e.g. `terfyn new agent return`). Reject it immediately with a clear error
+	// rather than writing a block that only fails at the next `validate` (review of #443).
+	if _, diags := lang.Parse(target, content); diags.HasErrors() {
+		return NewExitErrorf(ExitValidationError, "new: %q cannot be used as a %s name — the scaffolded declaration would not parse (it may be a reserved word); choose a different name", name, word)
+	}
+	if err := writeAgentFileAtomic(target, content); err != nil {
 		return fmt.Errorf("new: %w", err)
 	}
 	return writeNewSuccess(cmd, kind, name, rel)
@@ -168,15 +181,14 @@ func starterDeclaration(kind, name string) string {
 	}
 }
 
-// appendDeclaration atomically appends block to the target .agent file, creating it if absent and
-// inserting a blank-line separator after any existing content. The write is temp-file + rename so a
-// failure never leaves a partial file.
-func appendDeclaration(target, block string) error {
+// agentFileAfterAppend returns what the target .agent file becomes after appending block: the
+// existing content (empty when the file is absent) plus a blank-line separator plus the block.
+func agentFileAfterAppend(target, block string) (string, error) {
 	var existing []byte
 	if b, err := os.ReadFile(target); err == nil {
 		existing = b
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("read %s: %w", target, err)
+		return "", fmt.Errorf("read %s: %w", target, err)
 	}
 
 	var buf strings.Builder
@@ -188,7 +200,12 @@ func appendDeclaration(target, block string) error {
 		buf.WriteByte('\n')
 	}
 	buf.WriteString(block)
+	return buf.String(), nil
+}
 
+// writeAgentFileAtomic writes content to target via a same-directory temp file + rename, creating
+// parent directories as needed, so a failure never leaves a partial file.
+func writeAgentFileAtomic(target, content string) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return fmt.Errorf("create dir: %w", err)
 	}
@@ -198,7 +215,7 @@ func appendDeclaration(target, block string) error {
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
-	if _, err := tmp.WriteString(buf.String()); err != nil {
+	if _, err := tmp.WriteString(content); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write temp: %w", err)
 	}
