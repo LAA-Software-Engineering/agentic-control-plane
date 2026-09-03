@@ -194,6 +194,7 @@ The bound is not over what those operations do at the far end; the trust anchor 
 
 - **`terfyn init`** — scaffold a `.agent`-led project (`main.agent` workflow plus `project.yaml`, policies, tools)  
 - **`terfyn export --format yaml`** — materialize the compiled resource graph as YAML on demand (nothing written to disk by default; `--output DIR` writes a loadable project)  
+- **`terfyn migrate --to-agent`** — convert a project's YAML-authored declarative resources (providers/tools/policies/environments/agents) to `.agent` source (stdout, or `--output FILE`); non-destructive, and reports any construct with no `.agent` form (e.g. a YAML-authored workflow) rather than emitting lossy output  
 - **`terfyn fmt`** — format `.agent` sources to canonical form (and normalize project YAML)  
 - **`terfyn validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references; runs **policy lint** (ungated sensitive tools, invalid HITL config, etc.) as **advisory** output — use **`--strict`** to exit **2** on high-severity lint findings (fail-closed safety metadata still gates at **run** even when lint passes)  
 - **`terfyn plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint, effect bound, and authority delta; JSON/YAML output includes **`policyLint`**, **`deploymentBaseline`**, **`effectBound`**, and **`authority`**
