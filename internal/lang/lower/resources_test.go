@@ -517,3 +517,66 @@ spec:
 		t.Fatalf("inline workspace tool differs from YAML twin:\n inline: %s\n yaml:   %s", normSpecJSON(t, inline), normSpecJSON(t, fromYAML))
 	}
 }
+
+// TestObjectReturn_YAMLOutputEquivalence: an object-literal return lowers to the same flat
+// WorkflowOutput.Value a YAML `output.value: {…}` produces (issue #440), so the .agent form is a true
+// substitute for the multi-field YAML output that previously had no .agent representation.
+func TestObjectReturn_YAMLOutputEquivalence(t *testing.T) {
+	agentSrc := `workflow snippet(input: any) {
+    c = helper.echo(product: input.product)
+    return { product: c.echo.product, subject: c.echo.subject }
+}`
+	f, d := lang.Parse("t.agent", agentSrc)
+	if d.HasErrors() {
+		t.Fatalf("parse: %v", d)
+	}
+	res, ld := LowerFile(f, Options{})
+	if ld.HasErrors() {
+		t.Fatalf("lower: %v", ld)
+	}
+	inline := res.Workflows[0]
+
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Workflow
+metadata: {name: snippet}
+spec:
+  steps:
+    - id: c
+      uses: tool.helper.echo
+      with: {product: "${input.product}"}
+  output:
+    value:
+      product: ${steps.c.output.echo.product}
+      subject: ${steps.c.output.echo.subject}
+`
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "snippet.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.WorkflowResource)
+
+	ij, _ := json.Marshal(inline.Spec.Output)
+	yj, _ := json.Marshal(fromYAML.Spec.Output)
+	if string(ij) != string(yj) {
+		t.Fatalf("object-return output differs from YAML twin:\n inline: %s\n yaml:   %s", ij, yj)
+	}
+}
+
+// TestScalarReturn_StillWrapsValue: a non-object return keeps the single-`value` envelope (#440).
+func TestScalarReturn_StillWrapsValue(t *testing.T) {
+	f, d := lang.Parse("t.agent", "workflow w(input: any) {\n    c = a.b(x: input.x)\n    return c\n}")
+	if d.HasErrors() {
+		t.Fatalf("parse: %v", d)
+	}
+	res, ld := LowerFile(f, Options{})
+	if ld.HasErrors() {
+		t.Fatalf("lower: %v", ld)
+	}
+	v := res.Workflows[0].Spec.Output.Value
+	if len(v) != 1 {
+		t.Fatalf("scalar return must have one output field, got %v", v)
+	}
+	if _, ok := v["value"]; !ok {
+		t.Fatalf("scalar return must use the {value: …} envelope, got %v", v)
+	}
+}

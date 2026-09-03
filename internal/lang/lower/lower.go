@@ -501,9 +501,7 @@ func (wl *workflowLowerer) lowerBody(body []lang.Stmt) {
 			wl.lowerControlStmts([]lang.Stmt{st}, frontier)
 			wl.synthetic = false
 		case *lang.ReturnStmt:
-			wl.output = &spec.WorkflowOutput{
-				Value: map[string]any{"value": wl.lowerValue(s.Value, "return", frontier)},
-			}
+			wl.output = &spec.WorkflowOutput{Value: wl.outputValueFor(s.Value, frontier)}
 		}
 	}
 }
@@ -552,9 +550,7 @@ func (wl *workflowLowerer) lowerControlStmts(body []lang.Stmt, predNeeds []strin
 			// bound and the on-exhaustion failure (#361).
 			wl.lowerControlStmts(s.Body, predNeeds)
 		case *lang.ReturnStmt:
-			wl.output = &spec.WorkflowOutput{
-				Value: map[string]any{"value": wl.lowerValue(s.Value, "return", predNeeds)},
-			}
+			wl.output = &spec.WorkflowOutput{Value: wl.outputValueFor(s.Value, predNeeds)}
 		}
 	}
 }
@@ -677,6 +673,17 @@ func (wl *workflowLowerer) lowerArg(e lang.Expr, parentID string, argIdx int, pr
 		wl.lowerCall(id, v, predNeeds, v.Pos)
 		*tempNeeds = append(*tempNeeds, id)
 		return stepToken(id)
+	case *lang.ObjectExpr:
+		// An object literal as an argument (issue #440) lowers field-by-field, mirroring lowerArg so a
+		// nested call/ref inside it hoists and tracks predecessors like any other argument value.
+		out := make(map[string]any, len(v.Fields))
+		for i, f := range v.Fields {
+			if f == nil || f.Key == nil {
+				continue
+			}
+			out[f.Key.Name] = wl.lowerArg(f.Value, parentID+"_"+f.Key.Name, i, predNeeds, tempNeeds)
+		}
+		return out
 	default:
 		wl.l.diag(e.Position(), "unsupported argument expression")
 		return ""
@@ -695,10 +702,36 @@ func (wl *workflowLowerer) lowerValue(e lang.Expr, idBase string, predNeeds []st
 		id := wl.freshID(idBase + "_" + calleeLeaf(v.Callee))
 		wl.lowerCall(id, v, predNeeds, v.Pos)
 		return stepToken(id)
+	case *lang.ObjectExpr:
+		return wl.objectFieldsMap(v, idBase, predNeeds)
 	default:
 		wl.l.diag(e.Position(), "unsupported expression")
 		return ""
 	}
+}
+
+// objectFieldsMap lowers an object literal's fields into a map[string]any (each value lowered like any
+// other resource value: refs → interpolation tokens, nested calls hoisted to steps). Issue #440.
+func (wl *workflowLowerer) objectFieldsMap(v *lang.ObjectExpr, idBase string, predNeeds []string) map[string]any {
+	out := make(map[string]any, len(v.Fields))
+	for _, f := range v.Fields {
+		if f == nil || f.Key == nil {
+			continue
+		}
+		out[f.Key.Name] = wl.lowerValue(f.Value, idBase+"_"+f.Key.Name, predNeeds)
+	}
+	return out
+}
+
+// outputValueFor builds a workflow output's Value map for a `return <expr>`. An object literal becomes
+// the value map directly (`return {a: x}` → `{a: …}`), matching a YAML `output.value: {a}`; any other
+// expression uses the single-`value` envelope (`return x` → `{value: …}`) the scalar convention needs
+// (issue #440).
+func (wl *workflowLowerer) outputValueFor(e lang.Expr, predNeeds []string) map[string]any {
+	if obj, ok := e.(*lang.ObjectExpr); ok {
+		return wl.objectFieldsMap(obj, "return", predNeeds)
+	}
+	return map[string]any{"value": wl.lowerValue(e, "return", predNeeds)}
 }
 
 // token renders a reference as an interpolation string, e.g. result.summary ->
