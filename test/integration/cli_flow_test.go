@@ -284,7 +284,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		root := repoRoot(t)
 		demo := filepath.Join(root, "examples", "pr-review-demo")
 		input := filepath.Join(demo, "fixtures", "sample-pr.json")
-		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+		if _, err := os.Stat(filepath.Join(demo, "main.agent")); err != nil {
 			t.Fatalf("demo project: %v", err)
 		}
 		db := filepath.Join(t.TempDir(), "pr-review-demo.db")
@@ -473,7 +473,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		root := repoRoot(t)
 		demo := filepath.Join(root, "examples", "policy-denial-midrun")
 		input := filepath.Join(demo, "fixtures", "sample-input.json")
-		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+		if _, err := os.Stat(filepath.Join(demo, "main.agent")); err != nil {
 			t.Fatalf("demo project: %v", err)
 		}
 		db := filepath.Join(t.TempDir(), "policy-denial-midrun.db")

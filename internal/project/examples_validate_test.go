@@ -21,7 +21,9 @@ func TestExamples_validateTypedWiring(t *testing.T) {
 			continue
 		}
 		dir := filepath.Join(root, e.Name())
-		if _, err := os.Stat(filepath.Join(dir, "project.yaml")); err != nil {
+		// An example is loadable if it has a project.yaml OR any .agent source (a .agent-only project,
+		// issue #430/#440). Skip a directory with neither (nothing to load).
+		if !hasProjectFile(dir) && !hasAgentFile(t, dir) {
 			continue
 		}
 		t.Run(e.Name(), func(t *testing.T) {
@@ -35,4 +37,28 @@ func TestExamples_validateTypedWiring(t *testing.T) {
 			}
 		})
 	}
+}
+
+func hasProjectFile(dir string) bool {
+	for _, n := range []string{"project.yaml", "project.yml"} {
+		if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAgentFile(t *testing.T, dir string) bool {
+	t.Helper()
+	found := false
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if !d.IsDir() && filepath.Ext(path) == ".agent" {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
