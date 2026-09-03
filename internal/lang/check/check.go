@@ -292,9 +292,17 @@ func rebindNodes(nodes []execir.Node, byPos map[lang.Pos]map[string]string) {
 			rebindNodes(v.Else, byPos)
 		case *execir.Loop:
 			rebindNodes(v.Body, byPos)
+		case *execir.While:
+			rebindNodes(v.Body, byPos)
+		case *execir.Retry:
+			rebindNodes(v.Body, byPos)
 		case *execir.Fork:
 			for i := range v.Branches {
 				rebindNodes(v.Branches[i].Nodes, byPos)
+			}
+		case *execir.Graph:
+			for i := range v.Nodes {
+				rebindNodes([]execir.Node{v.Nodes[i].Run}, byPos)
 			}
 		}
 	}
