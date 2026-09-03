@@ -56,12 +56,82 @@ func TestRegistry_unknownProviderNamespace(t *testing.T) {
 		},
 	}
 	reg := NewRegistry(g)
-	_, _, err := reg.ClientFor("anthropic/claude-3")
+	// A namespace that is neither declared nor a Terfyn built-in is unknown.
+	_, _, err := reg.ClientFor("acme/model-1")
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "unknown provider namespace") || !strings.Contains(err.Error(), "anthropic") {
+	if !strings.Contains(err.Error(), "unknown provider namespace") || !strings.Contains(err.Error(), "acme") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// TestRegistry_builtinNamespaces_noProvidersBlock is issue #430: a built-in provider namespace
+// resolves with no providers.models declaration at all (a nil/empty registry), so a .agent program
+// can select a provider without any project-level YAML.
+func TestRegistry_builtinNamespaces_noProvidersBlock(t *testing.T) {
+	// mock needs no credential.
+	reg := NewRegistry(nil)
+	cli, id, err := reg.ClientFor("mock/default")
+	if err != nil {
+		t.Fatalf("mock built-in should resolve without config: %v", err)
+	}
+	if id != "default" {
+		t.Fatalf("model id %q", id)
+	}
+	if _, ok := cli.(*MockClient); !ok {
+		t.Fatalf("want *MockClient, got %T", cli)
+	}
+
+	// A live provider resolves from the built-in table + conventional env var, no providers block.
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	cli, id, err = reg.ClientFor("anthropic/claude-sonnet-5")
+	if err != nil {
+		t.Fatalf("anthropic built-in should resolve from ANTHROPIC_API_KEY: %v", err)
+	}
+	if id != "claude-sonnet-5" {
+		t.Fatalf("model id %q", id)
+	}
+	if _, ok := cli.(*anthropicClient); !ok {
+		t.Fatalf("want *anthropicClient, got %T", cli)
+	}
+}
+
+// TestRegistry_builtinMissingCredential reports a missing credential, not an unknown namespace
+// (issue #430): the namespace resolves, but the live client needs its conventional secret.
+func TestRegistry_builtinMissingCredential(t *testing.T) {
+	// Ensure the conventional var is absent for this provider.
+	t.Setenv("XAI_API_KEY", "")
+	reg := NewRegistry(nil)
+	_, _, err := reg.ClientFor("grok/grok-4")
+	if err == nil {
+		t.Fatal("expected a missing-credential error")
+	}
+	if strings.Contains(err.Error(), "unknown provider namespace") {
+		t.Fatalf("built-in namespace must not be 'unknown', got %v", err)
+	}
+	if !strings.Contains(err.Error(), "XAI_API_KEY") {
+		t.Fatalf("want a credential error naming XAI_API_KEY, got %v", err)
+	}
+}
+
+// TestRegistry_explicitProviderOverridesBuiltin: an explicit providers.models entry wins over the
+// built-in for the same namespace (issue #430) — the escape hatch for custom base URLs / creds.
+func TestRegistry_explicitProviderOverridesBuiltin(t *testing.T) {
+	t.Setenv("CUSTOM_ANTHROPIC_KEY", "sk-custom")
+	g := &spec.ProjectGraph{
+		Spec: spec.ProjectSpec{
+			Providers: &spec.ProjectProviders{
+				Models: map[string]spec.ModelProviderConfig{
+					"anthropic": {Type: "anthropic", APIKeyFrom: "env:CUSTOM_ANTHROPIC_KEY"},
+				},
+			},
+		},
+	}
+	reg := NewRegistry(g)
+	// Resolves via the explicit (non-conventional) credential; the built-in ANTHROPIC_API_KEY is unset.
+	if _, _, err := reg.ClientFor("anthropic/claude-sonnet-5"); err != nil {
+		t.Fatalf("explicit provider config should win: %v", err)
 	}
 }
 

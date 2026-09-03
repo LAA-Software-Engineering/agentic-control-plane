@@ -7,7 +7,9 @@ import (
 	"github.com/Terfyn/terfyn/internal/spec"
 )
 
-// Registry resolves model references using Project.spec.providers.models (design doc §7.1, issue #17).
+// Registry resolves model references using Project.spec.providers.models (design doc §7.1, issue
+// #17), falling back to Terfyn's built-in provider namespaces (issue #430) so a .agent program can
+// select a provider (model anthropic/…) with no providers.models declaration.
 type Registry struct {
 	models map[string]spec.ModelProviderConfig
 }
@@ -39,10 +41,7 @@ func (r *Registry) ClientFor(modelRef string) (client ModelClient, modelID strin
 	}
 	ns := modelRef[:i]
 	id := modelRef[i+1:]
-	if r == nil || r.models == nil {
-		return nil, "", fmt.Errorf("models: unknown provider namespace %q", ns)
-	}
-	cfg, ok := r.models[ns]
+	cfg, ok := r.lookup(ns)
 	if !ok {
 		return nil, "", fmt.Errorf("models: unknown provider namespace %q", ns)
 	}
@@ -86,4 +85,15 @@ func (r *Registry) ClientFor(modelRef string) (client ModelClient, modelID strin
 	default:
 		return nil, "", fmt.Errorf("models: unsupported provider type %q for namespace %q", cfg.Type, ns)
 	}
+}
+
+// lookup resolves a namespace to its provider config: an explicit providers.models entry wins, else
+// a built-in namespace (issue #430). Returns false when the namespace is neither.
+func (r *Registry) lookup(ns string) (spec.ModelProviderConfig, bool) {
+	if r != nil && r.models != nil {
+		if cfg, ok := r.models[ns]; ok {
+			return cfg, true
+		}
+	}
+	return builtinProviderConfig(ns)
 }
