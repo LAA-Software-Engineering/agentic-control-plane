@@ -2,7 +2,6 @@ package engine
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -243,33 +242,5 @@ func TestAgentToolCapabilityBoundary(t *testing.T) {
 	// A wholly unknown operation is likewise denied.
 	if _, err := resolveAgentToolCall("workspace_delete_repo", revUses); err == nil {
 		t.Fatalf("an unadvertised operation must be denied")
-	}
-}
-
-func TestSanitizeToolDefName(t *testing.T) {
-	t.Parallel()
-	// Provider tool-name pattern (Anthropic/OpenAI): ^[A-Za-z0-9_-]{1,128}$.
-	valid := regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
-	cases := map[string]string{
-		"workspace.read_file":     "workspace_read_file",
-		"github.pull_request.get": "github_pull_request_get",
-		"workspace":               "workspace", // already safe (single-op handle)
-		"already-safe_1":          "already-safe_1",
-		"weird name/slash":        "weird_name_slash",
-	}
-	for in, want := range cases {
-		got := sanitizeToolDefName(in)
-		if got != want {
-			t.Errorf("sanitizeToolDefName(%q) = %q, want %q", in, got, want)
-		}
-		if !valid.MatchString(got) {
-			t.Errorf("sanitizeToolDefName(%q) = %q does not match the provider name pattern", in, got)
-		}
-	}
-	if got := sanitizeToolDefName(""); !valid.MatchString(got) {
-		t.Errorf("empty name sanitized to %q, not a valid tool name", got)
-	}
-	if got := sanitizeToolDefName(strings.Repeat("x.", 100)); len(got) > 128 {
-		t.Errorf("over-long name not truncated: len=%d", len(got))
 	}
 }

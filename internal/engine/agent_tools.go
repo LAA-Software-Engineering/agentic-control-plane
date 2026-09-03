@@ -3,7 +3,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/Terfyn/terfyn/internal/models"
@@ -27,19 +26,9 @@ func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []model
 	defs = make([]models.ToolDef, 0, len(advertised))
 	usesByName = make(map[string]string, len(advertised))
 	for _, item := range advertised {
-		// The tool-def name may be a per-operation handle (`workspace.read_file`,
-		// #291). Providers require tool names to match ^[A-Za-z0-9_-]{1,128}$ — the
-		// '.' in a multi-operation handle is rejected by Anthropic and OpenAI — so the
-		// model-facing handle is sanitized. The canonical `uses` string is unchanged,
-		// so policy, dispatch, and traces still key off the real operation.
-		handle := sanitizeToolDefName(item.Name)
-		for i := 2; ; i++ {
-			if _, clash := usesByName[handle]; !clash {
-				break
-			}
-			handle = sanitizeToolDefName(item.Name) + "_" + strconv.Itoa(i)
-		}
-		usesByName[handle] = item.Uses
+		// ResolveAgentAdvertisedTools owns provider-safe naming and rejects collisions,
+		// so this map cannot silently replace one granted operation with another.
+		usesByName[item.Name] = item.Uses
 		desc := "Project tool " + item.Name
 		// Resolve the backing Tool by the name parsed from the uses string rather than
 		// by the tool-def name, to keep the type in the description.
@@ -53,37 +42,12 @@ func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []model
 			}
 		}
 		defs = append(defs, models.ToolDef{
-			Name:        handle,
+			Name:        item.Name,
 			Description: desc,
 			Parameters:  defaultAgentToolParameters,
 		})
 	}
 	return defs, usesByName, nil
-}
-
-// sanitizeToolDefName maps a tool-def handle to the provider tool-name pattern
-// ^[A-Za-z0-9_-]{1,128}$. Every character outside that set (notably the '.' in a
-// per-operation handle like "workspace.read_file", #291) becomes '_'. This renames
-// only the handle the model calls by; the canonical uses string is untouched.
-func sanitizeToolDefName(name string) string {
-	var b strings.Builder
-	b.Grow(len(name))
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('_')
-		}
-	}
-	s := b.String()
-	if s == "" {
-		s = "tool"
-	}
-	if len(s) > 128 {
-		s = s[:128]
-	}
-	return s
 }
 
 // resolveAgentToolCall maps a model tool name onto the single advertised uses string.

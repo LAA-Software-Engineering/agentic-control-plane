@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -62,7 +63,7 @@ func TestResolveAgentAdvertisedTools(t *testing.T) {
 	}
 
 	// Multiple operations on ONE tool are advertised as distinct per-operation
-	// tool-defs (#291), each disambiguated as <name>.<operation>.
+	// tool-defs (#291), each disambiguated and sanitized as <name>_<operation>.
 	got, err = ResolveAgentAdvertisedTools(&AgentResource{
 		Metadata: Metadata{Name: "reviewer"},
 		Spec:     AgentSpec{Tools: []string{"shell", "tool.shell.command.run"}},
@@ -73,10 +74,10 @@ func TestResolveAgentAdvertisedTools(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("multi-op want 2 tool-defs, got %+v", got)
 	}
-	if got[0].Name != "shell.echo" || got[0].Uses != "tool.shell.echo" {
+	if got[0].Name != "shell_echo" || got[0].Uses != "tool.shell.echo" {
 		t.Fatalf("first op %+v", got[0])
 	}
-	if got[1].Name != "shell.command.run" || got[1].Uses != "tool.shell.command.run" {
+	if got[1].Name != "shell_command_run" || got[1].Uses != "tool.shell.command.run" {
 		t.Fatalf("second op %+v", got[1])
 	}
 
@@ -90,6 +91,72 @@ func TestResolveAgentAdvertisedTools(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Name != "shell" || got[0].Uses != "tool.shell.command.run" {
 		t.Fatalf("idempotent duplicate %+v", got)
+	}
+}
+
+func TestResolveAgentAdvertisedTools_SanitizedHandleCollisionIsLoud(t *testing.T) {
+	t.Parallel()
+	tools := map[string]*ToolResource{
+		"github":        {Metadata: Metadata{Name: "github"}, Spec: ToolSpec{Type: "mock"}},
+		"github_issues": {Metadata: Metadata{Name: "github_issues"}, Spec: ToolSpec{Type: "mock"}},
+	}
+
+	// These are distinct before provider sanitization (`github.issues.get` vs
+	// `github_issues.get`) but both map to `github_issues_get` afterwards.
+	_, err := ResolveAgentAdvertisedTools(&AgentResource{
+		Metadata: Metadata{Name: "impl"},
+		Spec: AgentSpec{Tools: []string{
+			"tool.github.issues.get", "tool.github.issues.list",
+			"tool.github_issues.get", "tool.github_issues.list",
+		}},
+	}, tools)
+	if err == nil || !strings.Contains(err.Error(), "same provider tool name") {
+		t.Fatalf("expected a loud sanitized-handle collision error, got %v", err)
+	}
+}
+
+func TestResolveAgentAdvertisedTools_TruncatedHandleCollisionIsLoud(t *testing.T) {
+	t.Parallel()
+	prefix := strings.Repeat("a", 128)
+	tools := map[string]*ToolResource{
+		"long": {Metadata: Metadata{Name: "long"}, Spec: ToolSpec{Type: "mock"}},
+	}
+
+	_, err := ResolveAgentAdvertisedTools(&AgentResource{
+		Metadata: Metadata{Name: "impl"},
+		Spec: AgentSpec{Tools: []string{
+			"tool.long." + prefix + "x", "tool.long." + prefix + "y",
+		}},
+	}, tools)
+	if err == nil || !strings.Contains(err.Error(), "same provider tool name") {
+		t.Fatalf("expected a loud truncated-handle collision error, got %v", err)
+	}
+}
+
+func TestAgentToolName(t *testing.T) {
+	t.Parallel()
+	valid := regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	cases := map[string]string{
+		"workspace.read_file":     "workspace_read_file",
+		"github.pull_request.get": "github_pull_request_get",
+		"workspace":               "workspace",
+		"already-safe_1":          "already-safe_1",
+		"weird name/slash":        "weird_name_slash",
+	}
+	for in, want := range cases {
+		got := AgentToolName(in)
+		if got != want {
+			t.Errorf("AgentToolName(%q) = %q, want %q", in, got, want)
+		}
+		if !valid.MatchString(got) {
+			t.Errorf("AgentToolName(%q) = %q does not match the provider name pattern", in, got)
+		}
+	}
+	if got := AgentToolName(""); !valid.MatchString(got) {
+		t.Errorf("empty name sanitized to %q, not a valid tool name", got)
+	}
+	if got := AgentToolName(strings.Repeat("x.", 100)); len(got) > 128 {
+		t.Errorf("over-long name not truncated: len=%d", len(got))
 	}
 }
 
@@ -112,7 +179,7 @@ func TestResolveAgentAdvertisedTools_HandleCollisionIsLoud(t *testing.T) {
 			"tool.workspace.read_file", "tool.workspace.write_file", "workspace.read_file",
 		}},
 	}, tools)
-	if err == nil || !strings.Contains(err.Error(), "same tool handle") {
+	if err == nil || !strings.Contains(err.Error(), "same provider tool name") {
 		t.Fatalf("expected a loud handle-collision error, got %v", err)
 	}
 }

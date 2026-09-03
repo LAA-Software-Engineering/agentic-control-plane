@@ -91,11 +91,9 @@ func Compile(graph *spec.ProjectGraph, agentName string) (CompiledServer, error)
 	return cs, nil
 }
 
-// mcpToolName derives a valid MCP tool identifier from a tool name and (possibly dotted)
-// operation: the dots that separate operation segments become underscores, so
-// tool "github", operation "pull_request.post_comment" -> "github_pull_request_post_comment".
+// mcpToolName uses the same provider-safe namespace as built-in agent tool-defs.
 func mcpToolName(tool, operation string) string {
-	return tool + "_" + strings.ReplaceAll(operation, ".", "_")
+	return spec.AgentToolName(tool + "." + operation)
 }
 
 func manifestEffects(m tools.CapabilityManifest, operation string) []string {

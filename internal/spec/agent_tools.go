@@ -29,7 +29,9 @@ type AdvertisedAgentTool struct {
 // operation, not per tool. To stay backward compatible, a tool with a SINGLE
 // granted operation keeps the bare tool name as its tool-def name (`workspace`); a
 // tool with SEVERAL is disambiguated as `<name>.<operation>`
-// (`workspace.read_file`). An exact-duplicate operation listed twice is idempotent.
+// (`workspace.read_file`). The resulting handle is normalized with [AgentToolName]
+// before it enters the shared model/MCP namespace. An exact-duplicate operation
+// listed twice is idempotent.
 func ResolveAgentAdvertisedTools(agent *AgentResource, tools map[string]*ToolResource) ([]AdvertisedAgentTool, error) {
 	if agent == nil || len(agent.Spec.Tools) == 0 {
 		return nil, nil
@@ -79,27 +81,49 @@ func ResolveAgentAdvertisedTools(agent *AgentResource, tools map[string]*ToolRes
 		opsPerTool[name]++
 	}
 	out := make([]AdvertisedAgentTool, 0, len(entries))
-	// The `<name>.<operation>` disambiguation shares a namespace with a bare tool-def
-	// name, and a tool name may itself contain a dot, so two distinct granted
-	// operations can in principle mint the same handle (a multi-op grant on
-	// `workspace` vs a bare grant of a tool literally named `workspace.read_file`).
-	// That would let the engine's usesByName map silently drop one GRANTED capability
-	// (not an escalation — both are granted — but a granted op becoming unreachable
-	// through an ambiguous handle). Reject it loudly, the same way the old
-	// one-operation-per-tool guard rejected a conflicting reuse (#291 review).
+	// The normalized provider/MCP name is the callable namespace. Distinct source
+	// handles may collide there because punctuation is replaced or because the name
+	// is truncated to the provider's 128-character limit. Reject such collisions at
+	// resolution so validate and plan fail closed before any runtime is selected.
 	seenName := make(map[string]string, len(entries))
 	for _, e := range entries {
 		defName := e.toolName
 		if opsPerTool[e.toolName] > 1 {
 			defName = e.toolName + "." + operationFromUses(e.toolName, e.uses)
 		}
+		defName = AgentToolName(defName)
 		if prev, dup := seenName[defName]; dup {
-			return nil, agent.Pos.Errorf("Agent/%s: two granted operations map to the same tool handle %q (%s vs %s) — a dotted tool name collides with a <tool>.<operation> handle; rename the tool to disambiguate", agentName, defName, prev, e.uses)
+			return nil, agent.Pos.Errorf("Agent/%s: two granted operations map to the same provider tool name %q (%s vs %s); rename the tool or operation to disambiguate", agentName, defName, prev, e.uses)
 		}
 		seenName[defName] = e.uses
 		out = append(out, AdvertisedAgentTool{Name: defName, Uses: e.uses})
 	}
 	return out, nil
+}
+
+// AgentToolName maps an agent tool-def handle to the shared model/MCP tool-name
+// pattern ^[A-Za-z0-9_-]{1,128}$. Every character outside that set (notably the
+// dots in per-operation handles such as "workspace.read_file") becomes '_'. The
+// canonical uses string remains unchanged and is the policy/dispatch identity.
+func AgentToolName(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	s := b.String()
+	if s == "" {
+		s = "tool"
+	}
+	if len(s) > 128 {
+		s = s[:128]
+	}
+	return s
 }
 
 // parseAgentToolEntry accepts a Tool metadata name or a pinned uses string
