@@ -79,7 +79,7 @@ func mergeAgentOverride(agentSpec *AgentSpec, ovr AgentOverride) {
 		if co.TimeoutSeconds != 0 {
 			merged.TimeoutSeconds = co.TimeoutSeconds
 		}
-		if co.Temperature != 0 {
+		if co.Temperature != nil {
 			merged.Temperature = co.Temperature
 		}
 		if co.RequireStructuredOutput {

@@ -282,7 +282,8 @@ func lowerConstraints(c *lang.Constraints) *spec.AgentConstraints {
 		out.TimeoutSeconds = *c.TimeoutSeconds
 	}
 	if c.Temperature != nil {
-		out.Temperature = *c.Temperature
+		t := *c.Temperature
+		out.Temperature = &t
 	}
 	if c.RequireStructuredOutput != nil {
 		out.RequireStructuredOutput = *c.RequireStructuredOutput

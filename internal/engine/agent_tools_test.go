@@ -27,6 +27,30 @@ func TestAgentMaxIterations(t *testing.T) {
 	}
 }
 
+func TestAgentTemperature(t *testing.T) {
+	t.Parallel()
+	if got := agentTemperature(nil); got != nil {
+		t.Fatalf("nil agent = %v, want nil", *got)
+	}
+	if got := agentTemperature(&spec.AgentResource{}); got != nil {
+		t.Fatalf("nil constraints = %v, want nil", *got)
+	}
+	// An unset temperature (nil) falls back to the provider default and is not sent.
+	if got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{}}}); got != nil {
+		t.Fatalf("unset temperature = %v, want nil", *got)
+	}
+	// An explicit 0 is honored (deterministic sampling), not treated as unset.
+	zero := 0.0
+	if got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{Temperature: &zero}}}); got == nil || *got != 0 {
+		t.Fatalf("zero temperature = %v, want 0", got)
+	}
+	half := 0.2
+	got := agentTemperature(&spec.AgentResource{Spec: spec.AgentSpec{Constraints: &spec.AgentConstraints{Temperature: &half}}})
+	if got == nil || *got != 0.2 {
+		t.Fatalf("explicit temperature = %v, want 0.2", got)
+	}
+}
+
 func TestResolveAgentToolCall(t *testing.T) {
 	t.Parallel()
 	advertised := map[string]string{

@@ -93,10 +93,13 @@ type AgentMemory struct {
 }
 
 type AgentConstraints struct {
-	MaxIterations           int     `yaml:"maxIterations,omitempty" json:"maxIterations,omitempty"`
-	TimeoutSeconds          int     `yaml:"timeoutSeconds,omitempty" json:"timeoutSeconds,omitempty"`
-	Temperature             float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
-	RequireStructuredOutput bool    `yaml:"requireStructuredOutput,omitempty" json:"requireStructuredOutput,omitempty"`
+	MaxIterations  int `yaml:"maxIterations,omitempty" json:"maxIterations,omitempty"`
+	TimeoutSeconds int `yaml:"timeoutSeconds,omitempty" json:"timeoutSeconds,omitempty"`
+	// Temperature is a pointer so an explicit 0 (deterministic sampling) is distinct from unset
+	// (nil → provider default). Every set value, including 0, is folded into the spec hash, shown in
+	// plan diffs, merged by environment overlays, and sent to the provider (issue #388).
+	Temperature             *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
+	RequireStructuredOutput bool     `yaml:"requireStructuredOutput,omitempty" json:"requireStructuredOutput,omitempty"`
 }
 
 type AgentIO struct {

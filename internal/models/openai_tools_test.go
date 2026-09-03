@@ -128,6 +128,49 @@ func TestBuildOpenAIChatPayload_omitsToolsWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIChatPayload_temperature(t *testing.T) {
+	t.Parallel()
+	temp := 0.0
+	body, err := buildOpenAIChatPayload(GenerateRequest{
+		Model:       "gpt-4.1",
+		Messages:    []ChatMessage{{Role: "user", Content: "hi"}},
+		Temperature: &temp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	// A pointer-valued 0 must be sent (deterministic output), not dropped.
+	v, ok := got["temperature"]
+	if !ok {
+		t.Fatalf("temperature missing: %s", body)
+	}
+	if v.(float64) != 0 {
+		t.Fatalf("temperature = %v, want 0", v)
+	}
+}
+
+func TestBuildOpenAIChatPayload_omitsTemperatureWhenNil(t *testing.T) {
+	t.Parallel()
+	body, err := buildOpenAIChatPayload(GenerateRequest{
+		Model:    "gpt-4.1",
+		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["temperature"]; ok {
+		t.Fatalf("temperature present when unset: %v", got["temperature"])
+	}
+}
+
 func TestBuildOpenAIChatPayload_emptyParametersDefault(t *testing.T) {
 	t.Parallel()
 	body, err := buildOpenAIChatPayload(GenerateRequest{

@@ -21,6 +21,8 @@ type Request struct {
 	Messages   []ChatMessage
 	Tools      []Tool
 	ToolChoice *ToolChoice
+	// Temperature is sent verbatim when non-nil; nil leaves the Messages API default (issue #388).
+	Temperature *float64
 }
 
 // Response is a decoded Messages API result.
@@ -122,18 +124,20 @@ func marshalRequest(req Request) ([]byte, error) {
 		return nil, fmt.Errorf("anthropic: empty model")
 	}
 	payload := struct {
-		Model      string        `json:"model"`
-		MaxTokens  int           `json:"max_tokens"`
-		System     string        `json:"system,omitempty"`
-		Messages   []ChatMessage `json:"messages"`
-		Tools      []Tool        `json:"tools,omitempty"`
-		ToolChoice *ToolChoice   `json:"tool_choice,omitempty"`
+		Model       string        `json:"model"`
+		MaxTokens   int           `json:"max_tokens"`
+		System      string        `json:"system,omitempty"`
+		Messages    []ChatMessage `json:"messages"`
+		Tools       []Tool        `json:"tools,omitempty"`
+		ToolChoice  *ToolChoice   `json:"tool_choice,omitempty"`
+		Temperature *float64      `json:"temperature,omitempty"`
 	}{
-		Model:      req.Model,
-		MaxTokens:  defaultMaxTok,
-		System:     strings.TrimSpace(req.System),
-		Tools:      req.Tools,
-		ToolChoice: req.ToolChoice,
+		Model:       req.Model,
+		MaxTokens:   defaultMaxTok,
+		System:      strings.TrimSpace(req.System),
+		Tools:       req.Tools,
+		ToolChoice:  req.ToolChoice,
+		Temperature: req.Temperature,
 	}
 	for _, m := range req.Messages {
 		role := strings.ToLower(strings.TrimSpace(m.Role))

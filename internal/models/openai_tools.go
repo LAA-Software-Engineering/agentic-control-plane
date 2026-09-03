@@ -42,10 +42,11 @@ type openaiMessage struct {
 }
 
 type openaiChatRequest struct {
-	Model      string          `json:"model"`
-	Messages   []openaiMessage `json:"messages"`
-	Tools      []openaiTool    `json:"tools,omitempty"`
-	ToolChoice string          `json:"tool_choice,omitempty"`
+	Model       string          `json:"model"`
+	Messages    []openaiMessage `json:"messages"`
+	Tools       []openaiTool    `json:"tools,omitempty"`
+	ToolChoice  string          `json:"tool_choice,omitempty"`
+	Temperature *float64        `json:"temperature,omitempty"`
 }
 
 type openaiChatResponse struct {
@@ -68,8 +69,9 @@ func buildOpenAIChatPayload(req GenerateRequest) ([]byte, error) {
 		return nil, err
 	}
 	payload := openaiChatRequest{
-		Model:    req.Model,
-		Messages: msgs,
+		Model:       req.Model,
+		Messages:    msgs,
+		Temperature: req.Temperature,
 	}
 	// tool_choice is only valid alongside tools; a stray ToolChoice on a
 	// plain completion is ignored so existing two-field call sites stay valid.
