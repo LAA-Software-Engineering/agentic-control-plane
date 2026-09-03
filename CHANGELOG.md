@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`.agent` environment overlays** (issue #440, second grammar blocker from the `.agent` gap audit): a top-level `environment <Name> { overrides { agents { … } policies { … } } }` declaration is now authorable in `.agent`, replacing the YAML `Environment` resource. An agent override sets `model` and/or `constraints`; a policy override sets `execution` and/or `approvals` (whose `requiredFor` entries union onto the base policy) — lowering **byte-identically to the YAML twin** (ADR 005 §2 equivalence golden) and applied by `--env` through the same `spec.ApplyEnvironment` path. Reuses the existing constraints/execution/approvals sub-parsers and lowerers; `terfyn fmt` round-trips the nested block. `docs/LANGUAGE.md` updated.
+
 - **`.agent` tool `mcp` / `http` transport blocks** (issue #440, first grammar blocker from the `.agent` gap audit): a `type mcp` or `type http` tool can now be authored entirely in `.agent` — `mcp { transport "…"  command "…"  args { "…" "…" }  url "…"  headers { "<key>" "<value>" } }` and `http { baseUrl "…"  headers { "<key>" "<value>" } }` — instead of escaping to YAML. `args` is a whitespace-separated string list; `headers` is string key/value pairs (author order preserved). The blocks lower to `spec.ToolMCP` / `spec.ToolHTTP` **byte-identically to their YAML twins** (ADR 005 §2 equivalence goldens), and `terfyn fmt` round-trips them. Also fixes a #436 round-trip gap: `fmt` now prints the policy `preset` field (it was silently dropped). `docs/LANGUAGE.md` updated.
 
 - **Native GitHub PR/issue lifecycle operations**: round out the github adapter so an issue-fixing workflow can produce and manage a pull request. New ops:
