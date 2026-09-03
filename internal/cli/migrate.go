@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
+	"github.com/Terfyn/terfyn/internal/config"
 	"github.com/Terfyn/terfyn/internal/lang"
 	"github.com/Terfyn/terfyn/internal/lang/lower"
 	"github.com/Terfyn/terfyn/internal/lang/raise"
@@ -13,6 +15,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/project"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // newMigrateCmd registers `terfyn migrate --to-agent` (issue #440, Phase 2b): convert a project's
@@ -31,11 +34,16 @@ func newMigrateCmd() *cobra.Command {
 		Long: `Convert a project's YAML-authored resources into .agent source (ADR 003, issue #430).
 
 --to-agent raises the YAML declarative resources — custom provider aliases, tools, policies,
-environments, and agents — into a single .agent file, printed to stdout by default. Built-in model
-providers (anthropic, openai, mock, …) are implicit and dropped; imports are auto-discovered and
-dropped. Migration is lossless or it refuses: any construct with no .agent authoring form (a
-YAML-authored workflow, or a field like tool.retry / policy.security) is listed as needing manual
-migration and the file is not written unless --force.
+environments, agents, and the project-wide defaults/limits — into a single .agent file, printed to
+stdout by default. Built-in model providers (anthropic, openai, mock, …) are implicit and dropped;
+imports are auto-discovered and dropped. Migration is lossless or it refuses: any construct with no
+.agent authoring form (notably a YAML-authored workflow) is listed as needing manual migration and the
+file is not written unless --force.
+
+Operator-local runtime config (spec.state / spec.traces / spec.telemetry) is not .agent source — it is
+machine configuration that lives in the user-local overlay. It is never written to the .agent output;
+instead migrate prints the equivalent .agentic/local.yaml block for you to relocate, so nothing is
+silently dropped.
 
 Pass --output FILE to write the .agent source (default: print to stdout). This command is
 non-destructive: it never deletes the existing YAML — review the output, then remove the migrated
@@ -76,6 +84,12 @@ func runMigrateToAgent(cmd *cobra.Command, output string, force bool) error {
 	// does not emit a redundant `provider` block; a customized entry (differing config) is kept.
 	dropRedundantBuiltinProviders(graph)
 
+	// Operator-local runtime configuration (state, traces, telemetry) is not a source concern and has no
+	// .agent authoring form (ADR 007): it moves to the user-local overlay (.agentic/local.yaml). raise
+	// omits these fields, so surface them here as a ready-to-paste overlay — otherwise migration would
+	// silently discard a meaningful project.yaml section.
+	operatorOverlay := extractOperatorConfig(graph)
+
 	file, unsupported := raise.Graph(graph)
 	source := lang.Print(file)
 
@@ -91,7 +105,7 @@ func runMigrateToAgent(cmd *cobra.Command, output string, force bool) error {
 		}
 	}
 
-	reportMigrationSummary(cmd, yamlPaths, unsupported, legacyWarnings)
+	reportMigrationSummary(cmd, yamlPaths, unsupported, legacyWarnings, operatorOverlay)
 
 	if len(unsupported) > 0 && !force {
 		return NewExitErrorf(ExitValidationError, "migrate: %d resource(s) could not be migrated to .agent (see above); resolve them or pass --force to write the rest", len(unsupported))
@@ -110,7 +124,7 @@ func runMigrateToAgent(cmd *cobra.Command, output string, force bool) error {
 
 // reportMigrationSummary prints, to stderr, which YAML files were read and any resources that could
 // not be migrated, grouped for a clean actionable report.
-func reportMigrationSummary(cmd *cobra.Command, yamlPaths []string, unsupported []raise.Unsupported, legacyWarnings []string) {
+func reportMigrationSummary(cmd *cobra.Command, yamlPaths []string, unsupported []raise.Unsupported, legacyWarnings []string, operatorOverlay *config.UserLocalOverlay) {
 	w := cmd.ErrOrStderr()
 	fmt.Fprintf(w, "migrate --to-agent: read %d YAML file(s)\n", len(yamlPaths))
 	if len(legacyWarnings) > 0 {
@@ -118,6 +132,11 @@ func reportMigrationSummary(cmd *cobra.Command, yamlPaths []string, unsupported 
 		for _, warn := range legacyWarnings {
 			fmt.Fprintf(w, "  - %s\n", warn)
 		}
+	}
+	if overlayYAML := renderOperatorOverlay(operatorOverlay); overlayYAML != "" {
+		fmt.Fprintf(w, "\noperator-local runtime config (state/traces/telemetry) is not .agent source (ADR 007);\n"+
+			"it was not written to the .agent output. Move it into %s:\n\n%s\n",
+			config.ProjectUserLocalRel, indentBlock(overlayYAML, "  "))
 	}
 	if len(unsupported) == 0 {
 		return
@@ -137,6 +156,52 @@ func reportMigrationSummary(cmd *cobra.Command, yamlPaths []string, unsupported 
 		fmt.Fprintf(w, "  - %s %q: %s — %s\n", u.Kind, u.Name, u.Field, u.Detail)
 	}
 	fmt.Fprintln(w, "\nKeep these in YAML, or resolve them, then re-run.")
+}
+
+// extractOperatorConfig pulls the operator-local runtime configuration (state, traces, telemetry) out
+// of the project spec into a user-local overlay (issue #440, ADR 007). These fields have no .agent
+// authoring form — they are machine/operator config that lives in .agentic/local.yaml — so migration
+// surfaces them for relocation rather than dropping them. Returns nil when the project sets none.
+func extractOperatorConfig(g *spec.ProjectGraph) *config.UserLocalOverlay {
+	if g == nil {
+		return nil
+	}
+	if g.Spec.State == nil && g.Spec.Traces == nil && g.Spec.Telemetry == nil {
+		return nil
+	}
+	return &config.UserLocalOverlay{
+		State:     g.Spec.State,
+		Traces:    g.Spec.Traces,
+		Telemetry: g.Spec.Telemetry,
+	}
+}
+
+// renderOperatorOverlay marshals the operator-local overlay to the YAML shape of .agentic/local.yaml,
+// or returns "" when there is nothing to relocate.
+func renderOperatorOverlay(overlay *config.UserLocalOverlay) string {
+	if overlay == nil {
+		return ""
+	}
+	var buf strings.Builder
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(overlay); err != nil {
+		return ""
+	}
+	_ = enc.Close()
+	return strings.TrimRight(buf.String(), "\n")
+}
+
+// indentBlock prefixes every non-empty line of s with indent, for embedding a YAML block in the report.
+func indentBlock(s, indent string) string {
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		lines[i] = indent + ln
+	}
+	return strings.Join(lines, "\n")
 }
 
 // dropRedundantBuiltinProviders removes provider aliases whose config exactly equals the built-in

@@ -9,6 +9,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/Terfyn/terfyn/internal/config"
 	"github.com/Terfyn/terfyn/internal/project"
 	"github.com/Terfyn/terfyn/internal/spec"
 )
@@ -75,6 +76,117 @@ spec:
       - tool.lookup.default
 `)
 	return root
+}
+
+// TestMigrate_relocatesOperatorConfig proves migration does not silently drop the operator-local
+// runtime config (state/traces/telemetry): those fields have no .agent form (ADR 007), so they must be
+// surfaced for relocation into .agentic/local.yaml — not omitted from the .agent output AND lost. The
+// emitted block must be a valid UserLocalOverlay that round-trips every field the project.yaml set.
+func TestMigrate_relocatesOperatorConfig(t *testing.T) {
+	root := t.TempDir()
+	writeF := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeF("project.yaml", `apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: demo
+spec:
+  imports:
+    - ./tools/lookup.yaml
+  state:
+    backend: sqlite
+    dsn: "file:./state.db"
+  traces:
+    backend: file
+    retentionDays: 30
+    redactKeys: ["authorization", "cookie"]
+    maxPayloadBytes: 4096
+  telemetry:
+    enabled: true
+    serviceName: demo-svc
+    endpoint: "http://localhost:4317"
+    consoleExport: true
+`)
+	writeF("tools/lookup.yaml", `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: lookup
+spec:
+  type: mock
+`)
+
+	out, errOut, err := runMigrate(t, "migrate", "--to-agent", "--project", root)
+	if err != nil {
+		t.Fatalf("migrate failed: %v\nstderr:\n%s", err, errOut)
+	}
+
+	// The .agent output must NOT carry operator-local config (it has no source form).
+	for _, forbidden := range []string{"backend", "telemetry", "serviceName", "retentionDays"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf(".agent output must not contain operator-local field %q:\n%s", forbidden, out)
+		}
+	}
+
+	// The summary must surface the relocation to .agentic/local.yaml, not silently drop the section.
+	if !strings.Contains(errOut, config.ProjectUserLocalRel) {
+		t.Fatalf("migration summary must name the operator-config home %q:\n%s", config.ProjectUserLocalRel, errOut)
+	}
+
+	// The emitted block must be a valid UserLocalOverlay that preserves every field the project set.
+	overlayYAML := extractOverlayBlock(t, errOut)
+	if err := os.WriteFile(filepath.Join(root, ".agentic-relocated.yaml"), []byte(overlayYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ov, err := config.LoadUserLocalOverlay(filepath.Join(root, ".agentic-relocated.yaml"))
+	if err != nil {
+		t.Fatalf("relocated operator config is not a valid user-local overlay: %v\nblock:\n%s", err, overlayYAML)
+	}
+	if ov.State == nil || ov.State.Backend != "sqlite" || ov.State.DSN != "file:./state.db" {
+		t.Fatalf("state not preserved through relocation: %+v", ov.State)
+	}
+	if ov.Traces == nil || ov.Traces.Backend != "file" || ov.Traces.RetentionDays != 30 || ov.Traces.MaxPayloadBytes != 4096 || len(ov.Traces.RedactKeys) != 2 {
+		t.Fatalf("traces not preserved through relocation: %+v", ov.Traces)
+	}
+	if ov.Telemetry == nil || !ov.Telemetry.Enabled || ov.Telemetry.ServiceName != "demo-svc" || ov.Telemetry.Endpoint != "http://localhost:4317" || !ov.Telemetry.ConsoleExport {
+		t.Fatalf("telemetry not preserved through relocation: %+v", ov.Telemetry)
+	}
+}
+
+// extractOverlayBlock pulls the indented YAML overlay block out of the migration summary (the lines
+// after the "Move it into …:" header), de-indenting the two-space report indent.
+func extractOverlayBlock(t *testing.T, summary string) string {
+	t.Helper()
+	lines := strings.Split(summary, "\n")
+	var block []string
+	collecting := false
+	for _, ln := range lines {
+		if strings.Contains(ln, config.ProjectUserLocalRel) && strings.HasSuffix(strings.TrimSpace(ln), ":") {
+			collecting = true
+			continue
+		}
+		if !collecting {
+			continue
+		}
+		if strings.HasPrefix(ln, "  ") {
+			block = append(block, strings.TrimPrefix(ln, "  "))
+		} else if strings.TrimSpace(ln) == "" && len(block) > 0 {
+			// blank line inside the block — keep it
+			block = append(block, "")
+		} else if len(block) > 0 {
+			break
+		}
+	}
+	if len(block) == 0 {
+		t.Fatalf("no overlay block found in summary:\n%s", summary)
+	}
+	return strings.Join(block, "\n")
 }
 
 // TestMigrate_raisesDeclarativesAndDropsBuiltin: migrating a hybrid YAML project prints .agent with
