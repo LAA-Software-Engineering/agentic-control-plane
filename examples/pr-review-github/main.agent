@@ -1,6 +1,27 @@
-// Authored in .agent: the reviewer agent and the pr-review-github workflow. Tools,
-// policies, project config, and JSON Schemas stay YAML. The review's structured
-// output is interpolated into the comment body via a ${...} argument template.
+// Authored entirely in .agent (ADR 003, issue #430): the reviewer agent, the
+// pr-review-github workflow, and the tool and policy they use — no project.yaml, no
+// YAML resources. JSON Schemas stay JSON (referenced by type); the built-in `mock`
+// provider and default `local` runtime are implicit. The review's structured output
+// is interpolated into the comment body via a ${...} argument template.
+
+tool github {
+    type native
+    safety {
+        trusted true
+    }
+}
+
+policy guarded-writes {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    approvals {
+        requiredFor {
+            tool.github.pull_request.post_comment
+        }
+    }
+}
 
 agent reviewer {
     model mock/gpt-4

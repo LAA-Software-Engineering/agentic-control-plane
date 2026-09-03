@@ -1,5 +1,51 @@
-// Authored in .agent: the responder agent and the incident-triage workflow. Tools,
-// policies, project config, and JSON Schemas stay YAML.
+// Authored entirely in .agent (ADR 003, issue #430): the responder agent, the
+// incident-triage workflow, and the tools and policy they use — no project.yaml, no
+// YAML resources. JSON Schemas stay JSON (referenced by type); the built-in `mock`
+// provider and default `local` runtime are implicit.
+
+tool logs {
+    type mock
+    safety {
+        trusted true
+        sideEffects false
+    }
+}
+
+tool pager {
+    type mock
+    safety {
+        trusted true
+        sideEffects false
+    }
+}
+
+tool restart {
+    type mock
+    safety {
+        trusted false
+        sideEffects true
+    }
+}
+
+tool tracker {
+    type mock
+    safety {
+        trusted true
+        sideEffects false
+    }
+}
+
+policy gated-remediation {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    approvals {
+        requiredFor {
+            tool.restart.restart
+        }
+    }
+}
 
 agent responder {
     model mock/gpt-4

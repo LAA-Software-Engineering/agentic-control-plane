@@ -123,7 +123,7 @@ because it was never granted `write_file`.
 
 ## Run it for real
 
-The `workspace` tool ([`tools/workspace.yaml`](tools/workspace.yaml)) is the native
+The `workspace` tool (the `tool workspace { … }` declaration in [`main.agent`](main.agent)) is the native
 filesystem + test-runner adapter: `read_file` / `write_file` operate inside a **sandbox
 root**, and `run_tests` runs an **operator-configured** command in it. Executing the loop
 therefore needs a real model to drive the agents and two env vars for the sandbox:
@@ -144,9 +144,10 @@ The sandbox root confines every `read_file` / `write_file` — a `..` path or sy
 escape is rejected — and `run_tests` runs only the configured command, never a command the agent
 chooses, so the capability boundary holds at the filesystem too.
 
-Instead of the env vars, the sandbox root and test command can be declared on the tool
-(`spec.workspace.root` / `testCommand` in [`tools/workspace.yaml`](tools/workspace.yaml)); a
-relative root resolves against the project root, and declared config takes precedence over the env.
+This example configures the sandbox via the env vars above. The root and test command can also be
+declared on the tool itself (`spec.workspace.root` / `testCommand`) — a relative root resolves against
+the project root and declared config takes precedence over the env — but that tool sub-block is a
+YAML-authored resource field with no `.agent` form yet (issue #440), so it is not shown here.
 
 > The deterministic `mock/gpt-4` model drives `validate` / `plan` / `apply`, but it cannot
 > execute the tool loop — it emits empty-argument tool calls — so `run` needs a real model.

@@ -373,7 +373,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		root := repoRoot(t)
 		demo := filepath.Join(root, "examples", "incident-triage")
 		input := filepath.Join(demo, "fixtures", "sample-alert.json")
-		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+		if _, err := os.Stat(filepath.Join(demo, "main.agent")); err != nil {
 			t.Fatalf("demo project: %v", err)
 		}
 		db := filepath.Join(t.TempDir(), "incident-triage.db")
@@ -928,7 +928,7 @@ func runTamperHelper(t *testing.T, demo, db, runID string) bool {
 func TestCLI_ValidatePrReviewGithubActionsProject(t *testing.T) {
 	root := repoRoot(t)
 	ex := filepath.Join(root, "examples", "pr-review-github-actions")
-	if _, err := os.Stat(filepath.Join(ex, "project.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(ex, "main.agent")); err != nil {
 		t.Fatalf("example project: %v", err)
 	}
 	out, err := runCLI(t, "validate", "--project", ex, "--no-color")
@@ -946,7 +946,7 @@ func TestCLI_PrReviewGithubExample(t *testing.T) {
 	root := repoRoot(t)
 	ex := filepath.Join(root, "examples", "pr-review-github")
 	input := filepath.Join(ex, "fixtures", "sample-input.json")
-	if _, err := os.Stat(filepath.Join(ex, "project.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(ex, "main.agent")); err != nil {
 		t.Fatalf("example project: %v", err)
 	}
 
