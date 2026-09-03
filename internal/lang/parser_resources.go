@@ -172,12 +172,17 @@ func (p *parser) parsePolicy() *PolicyDecl {
 	}
 	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
 		if p.cur.Kind != KindIdent {
-			p.errorf(p.cur.Pos, "expected policy field (execution, approvals, effects), got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected policy field (preset, execution, approvals, effects), got %s", p.cur)
 			p.syncLine()
 			continue
 		}
 		field, fpos := p.cur.Lit, p.cur.Pos
 		switch field {
+		case "preset":
+			p.advance()
+			if id := p.ident("after 'preset'"); !dup(field, fpos) {
+				d.Preset = id
+			}
 		case "execution":
 			p.advance()
 			if b := p.parsePolicyExecution(); !dup(field, fpos) {
@@ -194,7 +199,7 @@ func (p *parser) parsePolicy() *PolicyDecl {
 				d.Effects = b
 			}
 		default:
-			p.errorf(fpos, "unknown policy field %q (want execution, approvals, or effects)", field)
+			p.errorf(fpos, "unknown policy field %q (want preset, execution, approvals, or effects)", field)
 			p.syncLine()
 		}
 	}

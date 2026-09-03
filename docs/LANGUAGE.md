@@ -233,12 +233,13 @@ policy coding {
 - Fields are newline- (or whitespace-) separated, like `constraints` / `grants`; there is no `;`.
 - Tool: `type` (native/mock/mcp/http), `safety { trusted / sideEffects / requiresApproval }`,
   `operations { <op> { effects { … } } }`. An operation name may be dotted (`pull_request.get`).
-- Policy: `execution { maxTotalCostUsd / maxWallClockSeconds / requireStructuredOutput }`,
-  `approvals { requiredFor { … } / requireAllTools / permissive }`, and the full effect model
-  `effects { permit { … } permitWithApproval { … } }`.
+- Policy: `preset <name>` (a built-in preset — `strict` / `permissive` / `shell_safe` — resolved and
+  overridable exactly like the YAML `spec.preset`, #430), `execution { maxTotalCostUsd /
+  maxWallClockSeconds / requireStructuredOutput }`, `approvals { requiredFor { … } / requireAllTools
+  / permissive }`, and the full effect model `effects { permit { … } permitWithApproval { … } }`.
 - `tool` and `policy` are **contextual**: only a top-level `tool <Name> {` / `policy <Name> {`
   opens a declaration; the grant path `tool.<name>.<op>` and the agent field `policy <name>` are
-  unchanged. Transport config (mcp/http), the native `workspace { … }` block, `hitl`, and `preset`
+  unchanged. Transport config (mcp/http), the native `workspace { … }` block, and `hitl`
   are follow-on fields (ADR 005 §4); until a field exists in the grammar, author that resource in
   YAML and import it.
 

@@ -15,6 +15,15 @@ agent assistant {
     """
 }
 
-workflow hello(input: string) -> string {
+// The default project policy. shell_safe is the conservative starting point:
+// safe reads run freely while shell commands and side-effecting tools require
+// approval. Add tools and grants, then tighten this policy as the project grows.
+policy default {
+    preset shell_safe
+}
+
+workflow hello(input: string) -> string
+    policy default
+{
     return assistant(input)
 }
