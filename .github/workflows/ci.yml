@@ -34,6 +34,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Windows Defender real-time scanning of every temp file the suite creates — t.TempDir dirs,
+      # SQLite .db files, compiled test binaries, and the Go build/module caches — is a documented
+      # drag on the already-slow windows-latest runner. Register exclusion paths before the Go setup,
+      # build, and test steps so none of that I/O is scanned. Best-effort: tamper protection can
+      # refuse the change, which must NOT fail the job — it only forgoes the speedup.
+      - name: Reduce Defender interference (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $paths = @(
+            "${{ github.workspace }}",
+            $env:RUNNER_TEMP,
+            $env:TEMP,
+            $env:TMP,
+            (Join-Path $env:LOCALAPPDATA 'go-build'),
+            (Join-Path $env:USERPROFILE 'go')
+          ) | Where-Object { $_ -and (Test-Path $_ -IsValid) } | Select-Object -Unique
+          foreach ($p in $paths) {
+            try {
+              Add-MpPreference -ExclusionPath $p -ErrorAction Stop
+              Write-Host "Defender exclusion added: $p"
+            } catch {
+              Write-Host "::warning::could not add Defender exclusion for $p : $($_.Exception.Message)"
+            }
+          }
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
