@@ -205,3 +205,52 @@ func TestPrint_EnvironmentRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestPrint_PolicyHitlRoundTrip proves the .agent policy hitl block survives `terfyn fmt`
+// (parse -> print -> parse -> print is idempotent and every nested construct is retained) — #440.
+func TestPrint_PolicyHitlRoundTrip(t *testing.T) {
+	t.Parallel()
+	src := `policy gated-publish {
+    hitl {
+        descriptionPrefix "Publishing requires operator approval"
+        redactKeys { "token" }
+        toolSwitchMap {
+            deploy_to_production { missing_operation staging }
+        }
+        interruptOn {
+            deploy
+            publish {
+                allowedDecisions { approve reject edit }
+                description "Review publish"
+                allowedEditArgs { "topic" }
+                switchMap {
+                    a.b { c.d }
+                }
+            }
+        }
+    }
+}
+`
+	f, diags := Parse("t.agent", src)
+	if diags.HasErrors() {
+		t.Fatalf("parse: %v", diags)
+	}
+	once := Print(f)
+	f2, d2 := Parse("t.agent", once)
+	if d2.HasErrors() {
+		t.Fatalf("printed output does not re-parse:\n%s\ndiags: %v", once, d2)
+	}
+	if twice := Print(f2); once != twice {
+		t.Fatalf("Print is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", once, twice)
+	}
+	for _, want := range []string{
+		"hitl {", "descriptionPrefix \"Publishing requires operator approval\"",
+		"redactKeys { \"token\" }", "deploy_to_production { missing_operation staging }",
+		"interruptOn {", "\n            deploy\n", "publish {",
+		"allowedDecisions { approve reject edit }", "a.b { c.d }",
+	} {
+		if !strings.Contains(once, want) {
+			t.Fatalf("printed output missing %q:\n%s", want, once)
+		}
+	}
+}

@@ -75,6 +75,49 @@ type PolicyDecl struct {
 	Execution *PolicyExecutionBlock
 	Approvals *PolicyApprovalsBlock
 	Effects   *PolicyEffectsBlock
+	Hitl      *HitlBlock // hitl { … } human-in-the-loop review config (issue #106, #440)
+}
+
+// HitlBlock is the parsed `hitl { … }` policy sub-block (issues #106, #440). It lowers to
+// spec.HitlPolicy. interruptOn keys are Tool metadata.name values (they configure review at a gate,
+// they do not gate by themselves — see spec.HitlPolicy).
+type HitlBlock struct {
+	Pos               Pos
+	DescriptionPrefix *StringLit
+	RedactKeys        []*StringLit
+	ToolSwitchMap     []*SwitchMapEntry // source operation -> allowed switch targets
+	InterruptOn       []*InterruptEntry
+}
+
+// SwitchMapEntry maps a source operation to its allowed switch-decision targets. Source and each
+// target are dotted operation names joined into a single Ident (like tool operation names).
+type SwitchMapEntry struct {
+	Pos     Pos
+	Source  *Ident
+	Targets []*Ident
+}
+
+// InterruptEntry is one `interruptOn` tool entry: a bare `<tool>` means enabled with defaults
+// (YAML `true`); `<tool> { … }` supplies per-tool review config.
+type InterruptEntry struct {
+	Pos    Pos
+	Name   *Ident
+	Config *InterruptConfig // nil = enabled with defaults
+}
+
+// InterruptConfig is per-tool review configuration inside an interruptOn entry. It lowers to
+// spec.HitlInterruptConfig; each field is nil/empty when omitted.
+type InterruptConfig struct {
+	Pos              Pos
+	AllowedDecisions []*Ident // approve | reject | edit | switch
+	Description      *StringLit
+	AllowedEditArgs  []*StringLit
+	DeniedEditArgs   []*StringLit
+	AllowedEditPaths []*StringLit
+	DeniedEditPaths  []*StringLit
+	AllowedEditTools []*StringLit
+	SwitchMap        []*SwitchMapEntry
+	RedactKeys       []*StringLit
 }
 
 func (d *PolicyDecl) Position() Pos { return d.Pos }

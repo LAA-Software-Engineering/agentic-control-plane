@@ -126,6 +126,7 @@ func (l *lowerer) policy(d *lang.PolicyDecl) *spec.PolicyResource {
 	}
 	pr.Spec.Execution = lowerPolicyExecution(d.Execution)
 	pr.Spec.Approvals = lowerPolicyApprovals(d.Approvals)
+	pr.Spec.Hitl = lowerHitl(d.Hitl)
 	if e := d.Effects; e != nil {
 		ef := &spec.PolicyEffects{}
 		for _, r := range e.Permit {
@@ -173,6 +174,80 @@ func lowerPolicyApprovals(a *lang.PolicyApprovalsBlock) *spec.PolicyApprovals {
 		}
 	}
 	return ap
+}
+
+// switchMapToSpec collapses switch-map entries into map[source][]targets, or nil when empty
+// (matching YAML omitempty). A duplicate source keeps the last, mirroring YAML map semantics.
+func switchMapToSpec(entries []*lang.SwitchMapEntry) map[string][]string {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(entries))
+	for _, e := range entries {
+		if e == nil || e.Source == nil {
+			continue
+		}
+		var targets []string
+		for _, t := range e.Targets {
+			if t != nil {
+				targets = append(targets, t.Name)
+			}
+		}
+		out[e.Source.Name] = targets
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// lowerHitl lowers a `hitl { … }` policy block to spec.HitlPolicy, or nil when absent (issues #106, #440).
+func lowerHitl(h *lang.HitlBlock) *spec.HitlPolicy {
+	if h == nil {
+		return nil
+	}
+	out := &spec.HitlPolicy{
+		DescriptionPrefix: stringLitValue(h.DescriptionPrefix),
+		RedactKeys:        stringLitList(h.RedactKeys),
+		ToolSwitchMap:     switchMapToSpec(h.ToolSwitchMap),
+	}
+	if len(h.InterruptOn) > 0 {
+		out.InterruptOn = make(map[string]spec.HitlInterruptValue, len(h.InterruptOn))
+		for _, e := range h.InterruptOn {
+			if e == nil || e.Name == nil {
+				continue
+			}
+			out.InterruptOn[e.Name.Name] = spec.HitlInterruptValue{
+				Enabled: true,
+				Config:  lowerInterruptConfig(e.Config),
+			}
+		}
+	}
+	return out
+}
+
+// lowerInterruptConfig lowers a per-tool interruptOn config block, or nil when the entry is a bare
+// tool name (enabled with defaults).
+func lowerInterruptConfig(c *lang.InterruptConfig) *spec.HitlInterruptConfig {
+	if c == nil {
+		return nil
+	}
+	cfg := &spec.HitlInterruptConfig{
+		Description:      stringLitValue(c.Description),
+		AllowedEditArgs:  stringLitList(c.AllowedEditArgs),
+		DeniedEditArgs:   stringLitList(c.DeniedEditArgs),
+		AllowedEditPaths: stringLitList(c.AllowedEditPaths),
+		DeniedEditPaths:  stringLitList(c.DeniedEditPaths),
+		AllowedEditTools: stringLitList(c.AllowedEditTools),
+		SwitchMap:        switchMapToSpec(c.SwitchMap),
+		RedactKeys:       stringLitList(c.RedactKeys),
+	}
+	for _, d := range c.AllowedDecisions {
+		if d != nil {
+			cfg.AllowedDecisions = append(cfg.AllowedDecisions, spec.HitlDecisionKind(d.Name))
+		}
+	}
+	return cfg
 }
 
 // environment lowers an `environment <Name> { overrides { … } }` declaration to the same

@@ -301,7 +301,7 @@ func (p *parser) parsePolicy() *PolicyDecl {
 	}
 	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
 		if p.cur.Kind != KindIdent {
-			p.errorf(p.cur.Pos, "expected policy field (preset, execution, approvals, effects), got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected policy field (preset, execution, approvals, effects, hitl), got %s", p.cur)
 			p.syncLine()
 			continue
 		}
@@ -327,8 +327,13 @@ func (p *parser) parsePolicy() *PolicyDecl {
 			if b := p.parsePolicyEffects(); !dup(field, fpos) {
 				d.Effects = b
 			}
+		case "hitl":
+			p.advance()
+			if b := p.parsePolicyHitl(); !dup(field, fpos) {
+				d.Hitl = b
+			}
 		default:
-			p.errorf(fpos, "unknown policy field %q (want preset, execution, approvals, or effects)", field)
+			p.errorf(fpos, "unknown policy field %q (want preset, execution, approvals, effects, or hitl)", field)
 			p.syncLine()
 		}
 	}
@@ -440,6 +445,198 @@ func (p *parser) parsePolicyEffects() *PolicyEffectsBlock {
 	}
 	p.expect(KindRBrace, "to close effects block")
 	return b
+}
+
+// parsePolicyHitl parses `hitl { descriptionPrefix … redactKeys { … } toolSwitchMap { … }
+// interruptOn { … } }` (issues #106, #440).
+func (p *parser) parsePolicyHitl() *HitlBlock {
+	b := &HitlBlock{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open hitl block"); !ok {
+		return b
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a hitl field (descriptionPrefix, redactKeys, toolSwitchMap, interruptOn), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate hitl field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "descriptionPrefix":
+			b.DescriptionPrefix = p.parseStringLit("for descriptionPrefix")
+		case "redactKeys":
+			b.RedactKeys = p.parseStringListBlock("redactKeys")
+		case "toolSwitchMap":
+			b.ToolSwitchMap = p.parseSwitchMapBlock("toolSwitchMap")
+		case "interruptOn":
+			b.InterruptOn = p.parseInterruptOnBlock()
+		default:
+			p.errorf(fpos, "unknown hitl field %q (want descriptionPrefix, redactKeys, toolSwitchMap, or interruptOn)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close hitl block")
+	return b
+}
+
+// parseSwitchMapBlock parses `<field> { <source-op> { <target-op> … } … }` — a map from a source
+// operation to its allowed switch targets. Operation names may be dotted (joined into one Ident).
+func (p *parser) parseSwitchMapBlock(field string) []*SwitchMapEntry {
+	if _, ok := p.expect(KindLBrace, "to open "+field+" block"); !ok {
+		return nil
+	}
+	var out []*SwitchMapEntry
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a source operation in %s { … }, got %s", field, p.cur)
+			p.syncLine()
+			continue
+		}
+		src := p.parseDottedPath("source operation")
+		if len(src) == 0 {
+			p.syncLine()
+			continue
+		}
+		e := &SwitchMapEntry{Pos: src[0].Pos, Source: &Ident{Pos: src[0].Pos, Name: dottedName(src)}}
+		if seen[e.Source.Name] {
+			p.errorf(e.Pos, "duplicate %s source %q", field, e.Source.Name)
+		}
+		seen[e.Source.Name] = true
+		if _, ok := p.expect(KindLBrace, "to open the switch-target list"); !ok {
+			continue
+		}
+		for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+			if p.cur.Kind != KindIdent {
+				p.errorf(p.cur.Pos, "expected a target operation, got %s", p.cur)
+				p.syncLine()
+				continue
+			}
+			tgt := p.parseDottedPath("target operation")
+			if len(tgt) == 0 {
+				p.syncLine()
+				continue
+			}
+			e.Targets = append(e.Targets, &Ident{Pos: tgt[0].Pos, Name: dottedName(tgt)})
+		}
+		p.expect(KindRBrace, "to close the switch-target list")
+		out = append(out, e)
+	}
+	p.expect(KindRBrace, "to close "+field+" block")
+	return out
+}
+
+// parseInterruptOnBlock parses `interruptOn { <tool> [ { … } ] … }`. A bare tool name is enabled
+// with defaults (YAML `true`); a `<tool> { … }` supplies per-tool review config.
+func (p *parser) parseInterruptOnBlock() []*InterruptEntry {
+	if _, ok := p.expect(KindLBrace, "to open interruptOn block"); !ok {
+		return nil
+	}
+	var out []*InterruptEntry
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a tool name in interruptOn { … }, got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		name := p.ident("for an interruptOn tool")
+		if name == nil {
+			p.syncLine()
+			continue
+		}
+		if seen[name.Name] {
+			p.errorf(name.Pos, "duplicate interruptOn tool %q", name.Name)
+		}
+		seen[name.Name] = true
+		e := &InterruptEntry{Pos: name.Pos, Name: name}
+		if p.cur.Kind == KindLBrace {
+			e.Config = p.parseInterruptConfig()
+		}
+		out = append(out, e)
+	}
+	p.expect(KindRBrace, "to close interruptOn block")
+	return out
+}
+
+// parseInterruptConfig parses a per-tool `{ allowedDecisions { … } description … allowedEditArgs { … }
+// … switchMap { … } redactKeys { … } }` review block.
+func (p *parser) parseInterruptConfig() *InterruptConfig {
+	c := &InterruptConfig{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open interruptOn config"); !ok {
+		return c
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected an interruptOn config field, got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate interruptOn config field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "allowedDecisions":
+			c.AllowedDecisions = p.parseDecisionListBlock()
+		case "description":
+			c.Description = p.parseStringLit("for description")
+		case "allowedEditArgs":
+			c.AllowedEditArgs = p.parseStringListBlock("allowedEditArgs")
+		case "deniedEditArgs":
+			c.DeniedEditArgs = p.parseStringListBlock("deniedEditArgs")
+		case "allowedEditPaths":
+			c.AllowedEditPaths = p.parseStringListBlock("allowedEditPaths")
+		case "deniedEditPaths":
+			c.DeniedEditPaths = p.parseStringListBlock("deniedEditPaths")
+		case "allowedEditTools":
+			c.AllowedEditTools = p.parseStringListBlock("allowedEditTools")
+		case "switchMap":
+			c.SwitchMap = p.parseSwitchMapBlock("switchMap")
+		case "redactKeys":
+			c.RedactKeys = p.parseStringListBlock("redactKeys")
+		default:
+			p.errorf(fpos, "unknown interruptOn config field %q", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close interruptOn config")
+	return c
+}
+
+// parseDecisionListBlock parses `allowedDecisions { approve reject edit switch }` — a list of the
+// four decision kinds. Unknown kinds are diagnosed; validity is re-checked during lowering/check.
+func (p *parser) parseDecisionListBlock() []*Ident {
+	if _, ok := p.expect(KindLBrace, "to open allowedDecisions block"); !ok {
+		return nil
+	}
+	var out []*Ident
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a decision (approve, reject, edit, switch), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		switch p.cur.Lit {
+		case "approve", "reject", "edit", "switch":
+			out = append(out, &Ident{Pos: p.cur.Pos, Name: p.cur.Lit})
+			p.advance()
+		default:
+			p.errorf(p.cur.Pos, "unknown decision %q (want approve, reject, edit, or switch)", p.cur.Lit)
+			p.advance()
+		}
+	}
+	p.expect(KindRBrace, "to close allowedDecisions block")
+	return out
 }
 
 // parseEnvironment parses `environment <Name> { overrides { … } }` (issue #440).
