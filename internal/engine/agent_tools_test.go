@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -188,10 +189,12 @@ func TestAdvertisedAgentTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("multi-op advertise err %v", err)
 	}
-	if len(defs) != 2 || defs[0].Name != "shell.echo" || defs[1].Name != "shell.command.run" {
+	// The model-facing handle is sanitized to the provider name pattern (no '.'),
+	// and the uses map keys by that sanitized handle (#291 + provider compat).
+	if len(defs) != 2 || defs[0].Name != "shell_echo" || defs[1].Name != "shell_command_run" {
 		t.Fatalf("multi-op defs %+v", defs)
 	}
-	if uses["shell.echo"] != "tool.shell.echo" || uses["shell.command.run"] != "tool.shell.command.run" {
+	if uses["shell_echo"] != "tool.shell.echo" || uses["shell_command_run"] != "tool.shell.command.run" {
 		t.Fatalf("multi-op uses %+v", uses)
 	}
 }
@@ -220,7 +223,8 @@ func TestAgentToolCapabilityBoundary(t *testing.T) {
 		t.Fatalf("implementer advertise: %v", err)
 	}
 	// The Implementer CAN invoke write_file — it is advertised and maps to its uses.
-	uses, err := resolveAgentToolCall("workspace.write_file", implUses)
+	// The model-facing handle is the sanitized name (no '.'), not the dotted uses.
+	uses, err := resolveAgentToolCall("workspace_write_file", implUses)
 	if err != nil || uses != "tool.workspace.write_file" {
 		t.Fatalf("implementer write_file should resolve, got uses=%q err=%v", uses, err)
 	}
@@ -230,14 +234,42 @@ func TestAgentToolCapabilityBoundary(t *testing.T) {
 		t.Fatalf("reviewer advertise: %v", err)
 	}
 	// The Reviewer read_file/run_tests resolve; write_file is DENIED (not advertised).
-	if _, err := resolveAgentToolCall("workspace.read_file", revUses); err != nil {
+	if _, err := resolveAgentToolCall("workspace_read_file", revUses); err != nil {
 		t.Fatalf("reviewer read_file should resolve, got %v", err)
 	}
-	if _, err := resolveAgentToolCall("workspace.write_file", revUses); err == nil {
+	if _, err := resolveAgentToolCall("workspace_write_file", revUses); err == nil {
 		t.Fatalf("reviewer write_file MUST be denied at the capability boundary, but it resolved")
 	}
 	// A wholly unknown operation is likewise denied.
-	if _, err := resolveAgentToolCall("workspace.delete_repo", revUses); err == nil {
+	if _, err := resolveAgentToolCall("workspace_delete_repo", revUses); err == nil {
 		t.Fatalf("an unadvertised operation must be denied")
+	}
+}
+
+func TestSanitizeToolDefName(t *testing.T) {
+	t.Parallel()
+	// Provider tool-name pattern (Anthropic/OpenAI): ^[A-Za-z0-9_-]{1,128}$.
+	valid := regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	cases := map[string]string{
+		"workspace.read_file":     "workspace_read_file",
+		"github.pull_request.get": "github_pull_request_get",
+		"workspace":               "workspace", // already safe (single-op handle)
+		"already-safe_1":          "already-safe_1",
+		"weird name/slash":        "weird_name_slash",
+	}
+	for in, want := range cases {
+		got := sanitizeToolDefName(in)
+		if got != want {
+			t.Errorf("sanitizeToolDefName(%q) = %q, want %q", in, got, want)
+		}
+		if !valid.MatchString(got) {
+			t.Errorf("sanitizeToolDefName(%q) = %q does not match the provider name pattern", in, got)
+		}
+	}
+	if got := sanitizeToolDefName(""); !valid.MatchString(got) {
+		t.Errorf("empty name sanitized to %q, not a valid tool name", got)
+	}
+	if got := sanitizeToolDefName(strings.Repeat("x.", 100)); len(got) > 128 {
+		t.Errorf("over-long name not truncated: len=%d", len(got))
 	}
 }

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent tool-def names are sanitized to the provider name pattern**: a per-operation tool handle from a multi-operation grant (#291) — e.g. `workspace.read_file` or `github.pull_request.get` — contains a `.`, which Anthropic and OpenAI reject (tool names must match `^[A-Za-z0-9_-]{1,128}$`; Anthropic returns `HTTP 400: tools.0.custom.name: String should match pattern …`). The model-facing tool-def name is now sanitized (each character outside the pattern becomes `_`), while the canonical `uses` string is unchanged — so policy, dispatch, traces, and the effect bound still key off the real operation, and `resolveAgentToolCall` maps the sanitized handle back. This makes multi-operation grants work on the real Anthropic/OpenAI providers (previously usable only on the mock model, which does not validate tool names). Surfaced by the downstream `terfyn-maintainer` example.
+
 ### Added
 
 - **Anthropic `workspaceIdFrom` — support identity-linked API keys**: the anthropic provider config accepts an optional `workspaceIdFrom` (same `env:VAR` form as `apiKeyFrom`, e.g. `env:ANTHROPIC_WORKSPACE_ID`), which the adapter resolves at client construction and sends as the `anthropic-workspace-id` header on every `POST /v1/messages`. Anthropic **requires** this header when authenticating with an identity-linked API key (one not scoped to a single workspace) — without it the API returns `HTTP 400: anthropic-workspace-id is required …`, which previously made those keys unusable with Terfyn. The header is only sent when `workspaceIdFrom` is set (and its value is trimmed); a plain workspace-scoped key needs nothing new. Surfaced by the downstream `terfyn-maintainer` example failing on an identity-linked key. `docs/EXAMPLES.md` updated.

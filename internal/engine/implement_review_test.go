@@ -159,7 +159,8 @@ func TestImplementReviewLoop_ReviewerCannotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("implementer advertise: %v", err)
 	}
-	if uses, err := resolveAgentToolCall("workspace.write_file", implUses); err != nil || uses != "tool.workspace.write_file" {
+	// The model-facing handle is the sanitized name (no '.'); the uses string stays dotted.
+	if uses, err := resolveAgentToolCall("workspace_write_file", implUses); err != nil || uses != "tool.workspace.write_file" {
 		t.Fatalf("Implementer must be able to write, got uses=%q err=%v", uses, err)
 	}
 
@@ -167,10 +168,10 @@ func TestImplementReviewLoop_ReviewerCannotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reviewer advertise: %v", err)
 	}
-	if _, err := resolveAgentToolCall("workspace.read_file", revUses); err != nil {
+	if _, err := resolveAgentToolCall("workspace_read_file", revUses); err != nil {
 		t.Fatalf("Reviewer must be able to read, got %v", err)
 	}
-	if _, err := resolveAgentToolCall("workspace.write_file", revUses); err == nil {
+	if _, err := resolveAgentToolCall("workspace_write_file", revUses); err == nil {
 		t.Fatalf("Reviewer write_file MUST be denied at the capability boundary")
 	}
 }
