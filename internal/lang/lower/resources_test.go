@@ -398,3 +398,86 @@ spec:
 		t.Fatalf("inline environment differs from YAML twin:\n inline: %s\n yaml:   %s", inJSON, yJSON)
 	}
 }
+
+// TestInlineProvider_YAMLEquivalence is the ADR 005 §2 golden for the .agent `provider` decl (issue
+// #440): an inline provider alias lowers into ProjectSpec.Providers.Models byte-identically to its
+// YAML twin, so the two front ends can never diverge on custom-provider config.
+func TestInlineProvider_YAMLEquivalence(t *testing.T) {
+	agentSrc := `provider corporate-claude {
+    type anthropic
+    apiKeyFrom "env:CORP_ANTHROPIC_KEY"
+    workspaceIdFrom "env:CORP_WORKSPACE"
+}`
+	res := lowerToolsOrFatal(t, agentSrc)
+	if len(res.Providers) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(res.Providers))
+	}
+	inline := res.ToGraph().Spec.Providers
+
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Project
+metadata: {name: demo}
+spec:
+  providers:
+    models:
+      corporate-claude:
+        type: anthropic
+        apiKeyFrom: "env:CORP_ANTHROPIC_KEY"
+        workspaceIdFrom: "env:CORP_WORKSPACE"
+`
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "project.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.ProjectResource).Spec.Providers
+
+	inJSON, err := json.Marshal(inline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yJSON, err := json.Marshal(fromYAML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(inJSON) != string(yJSON) {
+		t.Fatalf("inline provider differs from YAML twin:\n inline: %s\n yaml:   %s", inJSON, yJSON)
+	}
+}
+
+// TestInlineProvider_MissingTypeDiag: a provider without a type is a lowering diagnostic (the type
+// selects the client and is required in the YAML config too).
+func TestInlineProvider_MissingTypeDiag(t *testing.T) {
+	f, diags := lang.Parse("t.agent", "provider p {\n    apiKeyFrom \"env:K\"\n}")
+	if diags.HasErrors() {
+		t.Fatalf("unexpected parse errors: %v", diags)
+	}
+	_, ld := LowerFile(f, Options{})
+	if !ld.HasErrors() {
+		t.Fatal("a provider with no type must be a lowering error")
+	}
+}
+
+// TestMergeLowered_ProviderCollision: a lowered provider alias that already exists (a YAML
+// providers.models entry, or another .agent provider) is a load error (ADR 005 §3), never a silent
+// endpoint/credential swap.
+func TestMergeLowered_ProviderCollision(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Spec: spec.ProjectSpec{Providers: &spec.ProjectProviders{
+			Models: map[string]spec.ModelProviderConfig{"corp": {Type: "anthropic"}},
+		}},
+	}
+	res := &Result{Providers: []LoweredProvider{{Name: "corp", Config: spec.ModelProviderConfig{Type: "openai"}}}}
+	err := MergeLowered(g, res)
+	if err == nil {
+		t.Fatal("a duplicate provider alias across ingress must be an error")
+	}
+	for _, want := range []string{"provider", "corp"} {
+		if !containsStr(err.Error(), want) {
+			t.Fatalf("collision error should name %q: %v", want, err)
+		}
+	}
+	// The pre-existing YAML config must be untouched by the failed merge.
+	if g.Spec.Providers.Models["corp"].Type != "anthropic" {
+		t.Fatalf("failed merge mutated the existing provider: %+v", g.Spec.Providers.Models["corp"])
+	}
+}
