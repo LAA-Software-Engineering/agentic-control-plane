@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Native GitHub PR/issue lifecycle operations**: round out the github adapter so an issue-fixing workflow can produce and manage a pull request. New ops:
+  - `pull_request.create` — open a PR (`POST /repos/{owner}/{repo}/pulls`; `head` + `base` required, and `title` **or** `issue` — passing an issue number converts it into the PR; `body`/`draft` optional). The GitHub API names the action "create"; "open" is the UI term. This is the deliverable of the flagship issue→PR flow.
+  - `pull_request.update` — edit/close/reopen (`PATCH …/pulls/{number}`; any of `title`/`body`/`base`/`state`).
+  - `pull_request.list` — `GET …/pulls` with optional `state`/`head`/`base`.
+  - `issues.update` — edit/close/label (`PATCH …/issues/{number}`; `title`/`body`/`state`/`labels`).
+  - `issues.list` — `GET …/issues` with optional `state`/`labels`.
+
+  Each is registered in the dispatch table, the operation catalog, and the agent-loop input-schema map. Deliberately **not** added: `pull_request.merge` — auto-merge is a footgun a bounded fixer should not hold; a human merges. Surfaced by the downstream `terfyn-maintainer` example (issue in → PR out).
+
 - **Native `issues.get` operation**: fetch a single GitHub issue (`GET /repos/{owner}/{repo}/issues/{number}`, args `owner`/`repo`/`number`, returns `{issue}`). `pull_request.get` hits `/pulls/{number}` and 404s on a plain issue number, so an issue-fixing workflow — one whose input is an *issue*, not a PR — had no way to read the issue body. `issues.get` reads the issues endpoint (which also resolves PRs, since a PR is an issue), pairs with the existing `issues.comment` for the reply, and advertises its input schema to the agent loop like the other native ops. Surfaced by the downstream `terfyn-maintainer` example, whose input is a GitHub issue.
 
 ### Fixed
