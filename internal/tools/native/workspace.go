@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -149,6 +150,25 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 		return nil, meta, fmt.Errorf("native: read_file %q: %w", rawPath, err)
 	}
 	defer f.Close()
+	// A directory is not an error: return its entries so an agent can explore the tree
+	// (there is no separate list operation). Sub-directories are marked with a trailing "/".
+	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
+		ents, rderr := f.ReadDir(-1)
+		if rderr != nil {
+			return nil, meta, fmt.Errorf("native: read_file %q (directory): %w", rawPath, rderr)
+		}
+		names := make([]string, 0, len(ents))
+		for _, e := range ents {
+			name := e.Name()
+			if e.IsDir() {
+				name += "/"
+			}
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		meta.DurationMs = time.Since(start).Milliseconds()
+		return map[string]any{"path": rel, "is_directory": true, "entries": names}, meta, nil
+	}
 	// Bound the read itself, not just the result: read at most one byte past the cap so a larger
 	// file is reported truncated without loading all of it into memory.
 	data, err := io.ReadAll(io.LimitReader(f, maxWorkspaceReadBytes+1))

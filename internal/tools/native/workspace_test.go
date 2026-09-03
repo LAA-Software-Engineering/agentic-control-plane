@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -211,5 +212,32 @@ func TestWorkspace_RunTestsCommandRequired(t *testing.T) {
 	t.Setenv(envWorkspaceTestCommand, "")
 	if _, _, err := NewRegistry().Dispatch(context.Background(), "run_tests", map[string]any{}); err == nil {
 		t.Fatalf("expected an error when %s is unset", envWorkspaceTestCommand)
+	}
+}
+
+func TestWorkspaceReadFile_directoryReturnsEntries(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "framework", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "framework", "main.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := WithWorkspaceConfig(context.Background(), WorkspaceConfig{Root: dir})
+
+	out, _, err := NewRegistry().Dispatch(ctx, "read_file", map[string]any{"path": "framework"})
+	if err != nil {
+		t.Fatalf("read_file on a directory should not error: %v", err)
+	}
+	if out["is_directory"] != true {
+		t.Fatalf("is_directory = %v", out["is_directory"])
+	}
+	ents, ok := out["entries"].([]string)
+	if !ok {
+		t.Fatalf("entries type %T", out["entries"])
+	}
+	got := strings.Join(ents, ",")
+	if got != "main.go,sub/" {
+		t.Fatalf("entries = %q, want main.go,sub/", got)
 	}
 }
