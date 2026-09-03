@@ -92,6 +92,11 @@ func NormalizeExecutionLimits(l *ExecutionLimits) {
 }
 
 // MergeExecutionLimits overlays override onto base; non-zero override fields win.
+//
+// MaxStateBytes is intentionally not merged as an independent field: it is a deprecated alias whose
+// only effect is to seed MaxCheckpointBytes, applied by NormalizeExecutionLimits on both override and
+// out below. If it ever gains independent semantics, add an explicit branch here so this routine
+// stays the single, complete source of field-merge truth.
 func MergeExecutionLimits(base ExecutionLimits, override *ExecutionLimits) ExecutionLimits {
 	if override == nil {
 		return base
