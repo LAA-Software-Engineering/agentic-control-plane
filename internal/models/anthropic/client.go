@@ -19,9 +19,13 @@ const (
 
 // Client calls POST /v1/messages.
 type Client struct {
-	APIKey     string
-	BaseURL    string
-	HTTPClient *http.Client
+	APIKey  string
+	BaseURL string
+	// WorkspaceID, when set, is sent as the anthropic-workspace-id header. It is
+	// required when authenticating with an identity-linked API key (which is not
+	// scoped to a single workspace); a plain workspace-scoped key leaves it empty.
+	WorkspaceID string
+	HTTPClient  *http.Client
 }
 
 func (c *Client) base() string {
@@ -59,6 +63,9 @@ func (c *Client) Generate(ctx context.Context, req Request) (Response, error) {
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", c.APIKey)
 	httpReq.Header.Set("anthropic-version", apiVersion)
+	if ws := strings.TrimSpace(c.WorkspaceID); ws != "" {
+		httpReq.Header.Set("anthropic-workspace-id", ws)
+	}
 
 	resp, err := c.http().Do(httpReq)
 	if err != nil {

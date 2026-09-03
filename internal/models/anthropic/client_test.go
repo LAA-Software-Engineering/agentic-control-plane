@@ -148,3 +148,34 @@ func TestClient_Generate_omitsToolsWhenEmpty(t *testing.T) {
 		t.Fatalf("text %q", resp.Text)
 	}
 }
+
+func TestClient_Generate_workspaceIDHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		workspace string
+		want      string // expected anthropic-workspace-id header value
+	}{
+		{name: "set", workspace: "wrkspc_123", want: "wrkspc_123"},
+		{name: "unset", workspace: "", want: ""},
+		{name: "trimmed", workspace: "  wrkspc_9  ", want: "wrkspc_9"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("anthropic-workspace-id"); got != tc.want {
+					t.Errorf("anthropic-workspace-id = %q, want %q", got, tc.want)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`))
+			}))
+			defer srv.Close()
+
+			c := &Client{APIKey: "k", BaseURL: srv.URL, WorkspaceID: tc.workspace, HTTPClient: srv.Client()}
+			if _, err := c.Generate(context.Background(), Request{
+				Model:    "m",
+				Messages: []ChatMessage{{Role: "user", Content: "x"}},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
