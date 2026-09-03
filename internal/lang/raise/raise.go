@@ -124,13 +124,8 @@ func (r *raiser) agent(a *spec.AgentResource) *lang.AgentDecl {
 			r.reject("Agent", a.Metadata.Name, "spec.output.schema", fmt.Sprintf("schema ref %q is not the schemas/<Type>.json convention", s.Output.Schema))
 		}
 	}
-	// Fields with no .agent form: refusing keeps migration lossless (issue #440).
-	if s.Runtime != "" {
-		r.reject("Agent", a.Metadata.Name, "spec.runtime", "per-agent runtime")
-	}
-	if s.Memory != nil {
-		r.reject("Agent", a.Metadata.Name, "spec.memory", "agent memory config")
-	}
+	// spec.runtime and spec.memory were removed from the canonical model (ADR 007 step 1), so an
+	// AgentSpec can no longer carry them; there is nothing to refuse or raise.
 	return d
 }
 

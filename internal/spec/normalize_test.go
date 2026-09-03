@@ -34,25 +34,6 @@ func TestNormalizeProjectGraph_agentGetsDefaultModel(t *testing.T) {
 	}
 }
 
-func TestNormalizeProjectGraph_agentGetsDefaultRuntime(t *testing.T) {
-	g := &ProjectGraph{
-		Spec: ProjectSpec{
-			Defaults: &ProjectDefaults{Runtime: "local"},
-		},
-		Agents: map[string]*AgentResource{
-			"a": {
-				Kind:     KindAgent,
-				Metadata: Metadata{Name: "a"},
-				Spec:     AgentSpec{Model: "mock/x"},
-			},
-		},
-	}
-	NormalizeProjectGraph(g)
-	if got := g.Agents["a"].Spec.Runtime; got != "local" {
-		t.Fatalf("Runtime = %q, want local", got)
-	}
-}
-
 func TestNormalizeProjectGraph_workflowGetsDefaultRuntime(t *testing.T) {
 	g := &ProjectGraph{
 		Spec: ProjectSpec{
@@ -131,12 +112,12 @@ func TestNormalizeProjectGraph_preservesExplicitRuntimeOverDefault(t *testing.T)
 		Spec: ProjectSpec{
 			Defaults: &ProjectDefaults{Runtime: "local"},
 		},
-		Agents: map[string]*AgentResource{
-			"a": {Spec: AgentSpec{Runtime: "edge"}},
+		Workflows: map[string]*WorkflowResource{
+			"w": {Spec: WorkflowSpec{Runtime: "edge"}},
 		},
 	}
 	NormalizeProjectGraph(g)
-	if got := g.Agents["a"].Spec.Runtime; got != "edge" {
+	if got := g.Workflows["w"].Spec.Runtime; got != "edge" {
 		t.Fatalf("Runtime = %q, want edge (explicit value must not be replaced by defaults)", got)
 	}
 }

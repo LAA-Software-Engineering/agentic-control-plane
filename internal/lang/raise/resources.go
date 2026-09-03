@@ -122,10 +122,7 @@ func (r *raiser) policy(p *spec.PolicyResource) *lang.PolicyDecl {
 		v := t.ForbidUnknownTools
 		d.Tools = &lang.PolicyToolsBlock{ForbidUnknownTools: &v}
 	}
-	if s.Security != nil {
-		// Removed from the canonical model in a follow-up (ADR 007 step 1); still refused here until then.
-		r.reject("Policy", p.Metadata.Name, "spec.security", "network/secret access controls")
-	}
+	// spec.security was removed from the canonical model (ADR 007 step 1); nothing to refuse or raise.
 	return d
 }
 

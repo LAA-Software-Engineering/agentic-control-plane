@@ -113,10 +113,6 @@ func clonePolicySpec(p *spec.PolicySpec) *spec.PolicySpec {
 		ef.PermitWithApproval = append([]string(nil), p.Effects.PermitWithApproval...)
 		out.Effects = &ef
 	}
-	if p.Security != nil {
-		sec := *p.Security
-		out.Security = &sec
-	}
 	return &out
 }
 

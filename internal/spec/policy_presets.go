@@ -98,9 +98,6 @@ func MergePolicySpec(base, overlay PolicySpec) PolicySpec {
 	if overlay.Approvals != nil {
 		out.Approvals = mergePolicyApprovals(base.Approvals, overlay.Approvals)
 	}
-	if overlay.Security != nil {
-		out.Security = clonePolicySecurity(overlay.Security)
-	}
 	if overlay.Effects != nil {
 		out.Effects = clonePolicyEffects(overlay.Effects)
 	}
@@ -286,14 +283,6 @@ func clonePolicyExecution(in *PolicyExecution) *PolicyExecution {
 }
 
 func clonePolicyTools(in *PolicyTools) *PolicyTools {
-	if in == nil {
-		return nil
-	}
-	cp := *in
-	return &cp
-}
-
-func clonePolicySecurity(in *PolicySecurity) *PolicySecurity {
 	if in == nil {
 		return nil
 	}

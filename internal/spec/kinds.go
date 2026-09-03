@@ -79,21 +79,16 @@ type ProjectTelemetryConfig struct {
 type AgentSpec struct {
 	Description  string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Model        string   `yaml:"model,omitempty" json:"model,omitempty"`
-	Runtime      string   `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Instructions string   `yaml:"instructions,omitempty" json:"instructions,omitempty"`
 	Tools        []string `yaml:"tools,omitempty" json:"tools,omitempty"`
 	// ToolsPos is diagnostic metadata aligned with Tools (issue #187). Not YAML/JSON identity.
 	ToolsPos    []Pos             `yaml:"-" json:"-"`
 	Policy      string            `yaml:"policy,omitempty" json:"policy,omitempty"`
-	Memory      *AgentMemory      `yaml:"memory,omitempty" json:"memory,omitempty"`
 	Constraints *AgentConstraints `yaml:"constraints,omitempty" json:"constraints,omitempty"`
 	Input       *AgentIO          `yaml:"input,omitempty" json:"input,omitempty"`
 	Output      *AgentIO          `yaml:"output,omitempty" json:"output,omitempty"`
-}
-
-type AgentMemory struct {
-	Type        string `yaml:"type,omitempty" json:"type,omitempty"`
-	MaxMessages int    `yaml:"maxMessages,omitempty" json:"maxMessages,omitempty"`
+	// Note: spec.runtime and spec.memory were removed from the canonical model (ADR 007 step 1); they had
+	// no runtime semantics. `terfyn migrate --to-agent` still accepts legacy YAML with them (warn + omit).
 }
 
 type AgentConstraints struct {
@@ -303,8 +298,9 @@ type PolicySpec struct {
 	// Effects is the static permit set for transitive tool effects (issue #190).
 	Effects *PolicyEffects `yaml:"effects,omitempty" json:"effects,omitempty"`
 	// Hitl configures human-in-the-loop approval gates for gated tool calls (issue #106).
-	Hitl     *HitlPolicy     `yaml:"hitl,omitempty" json:"hitl,omitempty"`
-	Security *PolicySecurity `yaml:"security,omitempty" json:"security,omitempty"`
+	Hitl *HitlPolicy `yaml:"hitl,omitempty" json:"hitl,omitempty"`
+	// Note: spec.security (networkAccess/secretAccess) was removed from the canonical model (ADR 007 step
+	// 1); it was never enforced. `terfyn migrate --to-agent` still accepts legacy YAML with it (warn + omit).
 }
 
 // PolicyEffects lists effect identifiers a Policy permits (issue #190, ADR 002).
@@ -335,11 +331,6 @@ type PolicyApprovals struct {
 	RequireAllTools *bool `yaml:"requireAllTools,omitempty" json:"requireAllTools,omitempty"`
 	// Permissive skips tool-call approval when true (permissive preset). Pointer preserves tri-state merge.
 	Permissive *bool `yaml:"permissive,omitempty" json:"permissive,omitempty"`
-}
-
-type PolicySecurity struct {
-	NetworkAccess string `yaml:"networkAccess,omitempty" json:"networkAccess,omitempty"`
-	SecretAccess  string `yaml:"secretAccess,omitempty" json:"secretAccess,omitempty"`
 }
 
 // --- Environment (design doc §7.6, MVP overrides) ---

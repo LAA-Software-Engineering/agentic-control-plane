@@ -12,7 +12,6 @@ import "strings"
 // Default application (§7.1 → effective config):
 //   - Agent.spec.model    ← defaults.model when the agent omits model (empty / whitespace-only).
 //   - Agent.spec.policy   ← defaults.policy when the agent omits policy.
-//   - Agent.spec.runtime  ← defaults.runtime when the agent omits runtime (issue #76).
 //   - Workflow.spec.policy  ← defaults.policy when the workflow omits policy.
 //   - Workflow.spec.runtime ← defaults.runtime when the workflow omits runtime (issue #76).
 //
@@ -30,7 +29,7 @@ func NormalizeProjectGraph(g *ProjectGraph) {
 		if a == nil {
 			continue
 		}
-		normalizeAgentSpec(&a.Spec, def.Model, def.Policy, def.Runtime)
+		normalizeAgentSpec(&a.Spec, def.Model, def.Policy)
 	}
 	for _, w := range g.Workflows {
 		if w == nil {
@@ -54,7 +53,9 @@ func NormalizeProjectGraph(g *ProjectGraph) {
 	}
 }
 
-func normalizeAgentSpec(spec *AgentSpec, defModel, defPolicy, defRuntime string) {
+// normalizeAgentSpec applies defaults.model / defaults.policy to an agent (agents have no runtime of
+// their own — runtime is a workflow/project concern; ADR 007 step 1 removed spec.runtime).
+func normalizeAgentSpec(spec *AgentSpec, defModel, defPolicy string) {
 	if spec == nil {
 		return
 	}
@@ -69,11 +70,6 @@ func normalizeAgentSpec(spec *AgentSpec, defModel, defPolicy, defRuntime string)
 		spec.Policy = defPolicy
 	} else {
 		spec.Policy = strings.TrimSpace(spec.Policy)
-	}
-	if defRuntime != "" && isOmitted(spec.Runtime) {
-		spec.Runtime = defRuntime
-	} else {
-		spec.Runtime = strings.TrimSpace(spec.Runtime)
 	}
 }
 
