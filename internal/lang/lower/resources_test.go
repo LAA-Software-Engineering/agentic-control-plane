@@ -279,3 +279,61 @@ spec:
 		t.Fatalf("inline http tool differs from YAML twin:\n inline: %s\n yaml:   %s", normSpecJSON(t, inline), normSpecJSON(t, fromYAML))
 	}
 }
+
+// TestInlineEnvironment_YAMLEquivalence is the ADR 005 §2 golden for the .agent environment overlay
+// block (issue #440): an inline environment and its YAML twin lower to byte-identical spec JSON.
+func TestInlineEnvironment_YAMLEquivalence(t *testing.T) {
+	agentSrc := `environment prod {
+    overrides {
+        agents {
+            reviewer {
+                model anthropic/claude-sonnet-5
+                constraints { timeoutSeconds 300 }
+            }
+        }
+        policies {
+            guarded-writes {
+                execution { maxTotalCostUsd 10 }
+                approvals { requiredFor { tool.workspace.run_tests } }
+            }
+        }
+    }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Environment
+metadata: {name: prod}
+spec:
+  overrides:
+    agents:
+      reviewer:
+        model: "anthropic/claude-sonnet-5"
+        constraints: {timeoutSeconds: 300}
+    policies:
+      guarded-writes:
+        execution: {maxTotalCostUsd: 10}
+        approvals: {requiredFor: [tool.workspace.run_tests]}
+`
+	res := lowerToolsOrFatal(t, agentSrc)
+	if len(res.Environments) != 1 {
+		t.Fatalf("expected 1 environment, got %d", len(res.Environments))
+	}
+	inline := res.Environments[0]
+
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "prod.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.EnvironmentResource)
+
+	inJSON, err := json.Marshal(inline.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yJSON, err := json.Marshal(fromYAML.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(inJSON) != string(yJSON) {
+		t.Fatalf("inline environment differs from YAML twin:\n inline: %s\n yaml:   %s", inJSON, yJSON)
+	}
+}
