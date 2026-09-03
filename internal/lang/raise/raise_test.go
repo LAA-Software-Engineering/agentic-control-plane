@@ -1,0 +1,245 @@
+package raise
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/lang/lower"
+	"github.com/Terfyn/terfyn/internal/spec"
+)
+
+// lowerToGraph parses+lowers .agent source to a spec graph, failing on any diagnostic.
+func lowerToGraph(t *testing.T, src string) *spec.ProjectGraph {
+	t.Helper()
+	f, d := lang.Parse("t.agent", src)
+	if d.HasErrors() {
+		t.Fatalf("parse: %v", d)
+	}
+	res, ld := lower.LowerFile(f, lower.Options{})
+	if ld.HasErrors() {
+		t.Fatalf("lower: %v", ld)
+	}
+	return res.ToGraph()
+}
+
+// TestRaise_RoundTrip is the migration correctness gate (issue #440): lowering .agent to a spec graph,
+// raising it back to AST, printing, and re-lowering must reproduce the SAME spec — the mirror of the
+// forward ADR 005 §2 goldens. Covers every declarative kind (provider, tool with mcp/safety/ops,
+// policy with preset/execution/approvals/effects/hitl, environment, agent) except agent input/output
+// schemas, which the checker (not LowerFile) wires — see TestRaise_AgentIO.
+func TestRaise_RoundTrip(t *testing.T) {
+	src := `provider corporate-claude {
+    type anthropic
+    apiKeyFrom "env:CORP_KEY"
+    workspaceIdFrom "env:CORP_WS"
+}
+
+tool github {
+    type mcp
+    mcp {
+        transport "stdio"
+        command "npx"
+        args { "-y" "server-github" }
+        headers { "Authorization" "env:GITHUB_TOKEN" }
+    }
+}
+
+tool helper {
+    type mock
+    safety {
+        trusted true
+        sideEffects false
+    }
+    operations {
+        echo { effects { workspace.read } }
+    }
+}
+
+policy base {
+    preset shell_safe
+}
+
+policy guarded {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    approvals {
+        requiredFor {
+            tool.helper.echo
+        }
+    }
+    effects {
+        permit { workspace.read }
+        permitWithApproval { workspace.write }
+    }
+    hitl {
+        descriptionPrefix "review"
+        interruptOn {
+            helper {
+                allowedDecisions { approve reject }
+                description "gate"
+                allowedEditArgs { "topic" }
+            }
+        }
+    }
+}
+
+agent assistant {
+    model corporate-claude/claude-sonnet-5
+    policy guarded
+    description "an assistant"
+    constraints {
+        timeoutSeconds 60
+        maxIterations 8
+    }
+    grants {
+        tool.helper.echo
+    }
+}
+`
+	g1 := lowerToGraph(t, src)
+
+	raised, unsup := Graph(g1)
+	if len(unsup) != 0 {
+		t.Fatalf("unexpected unsupported findings: %v", unsup)
+	}
+	out := lang.Print(raised)
+
+	g2 := lowerToGraph(t, out)
+
+	// Compare each resource kind's spec JSON.
+	assertSpecEqual(t, "providers", g1.Spec.Providers, g2.Spec.Providers, out)
+	for _, name := range sortedKeys(g1.Tools) {
+		assertSpecEqual(t, "tool "+name, g1.Tools[name].Spec, g2.Tools[name].Spec, out)
+	}
+	for _, name := range sortedKeys(g1.Policies) {
+		assertSpecEqual(t, "policy "+name, g1.Policies[name].Spec, g2.Policies[name].Spec, out)
+	}
+	for _, name := range sortedKeys(g1.Agents) {
+		assertSpecEqual(t, "agent "+name, g1.Agents[name].Spec, g2.Agents[name].Spec, out)
+	}
+	if len(g2.Tools) != len(g1.Tools) || len(g2.Policies) != len(g1.Policies) || len(g2.Agents) != len(g1.Agents) {
+		t.Fatalf("resource count drift after round-trip")
+	}
+}
+
+// TestRaise_EnvironmentRoundTrip covers the environment kind end to end (its overrides lower into a
+// resource, unlike agent I/O).
+func TestRaise_EnvironmentRoundTrip(t *testing.T) {
+	src := `environment prod {
+    overrides {
+        agents {
+            reviewer {
+                model anthropic/claude-sonnet-5
+                constraints {
+                    timeoutSeconds 300
+                }
+            }
+        }
+        policies {
+            guarded {
+                execution {
+                    maxTotalCostUsd 10
+                }
+                approvals {
+                    requiredFor {
+                        tool.workspace.run_tests
+                    }
+                }
+            }
+        }
+    }
+}
+`
+	g1 := lowerToGraph(t, src)
+	raised, unsup := Graph(g1)
+	if len(unsup) != 0 {
+		t.Fatalf("unexpected unsupported: %v", unsup)
+	}
+	g2 := lowerToGraph(t, lang.Print(raised))
+	assertSpecEqual(t, "environment prod", g1.Environments["prod"].Spec, g2.Environments["prod"].Spec, lang.Print(raised))
+}
+
+// TestRaise_AgentIO covers input/output schema raising, which LowerFile does not populate (the checker
+// wires it), so it is exercised from a constructed AgentResource.
+func TestRaise_AgentIO(t *testing.T) {
+	a := &spec.AgentResource{
+		Metadata: spec.Metadata{Name: "assistant"},
+		Spec: spec.AgentSpec{
+			Model:  "mock/default",
+			Input:  &spec.AgentIO{Schema: "schemas/TicketInput.json"},
+			Output: &spec.AgentIO{Schema: "schemas/HandoffOutput.json"},
+		},
+	}
+	g := &spec.ProjectGraph{Agents: map[string]*spec.AgentResource{"assistant": a}}
+	raised, unsup := Graph(g)
+	if len(unsup) != 0 {
+		t.Fatalf("unexpected unsupported: %v", unsup)
+	}
+	out := lang.Print(raised)
+	for _, want := range []string{"input TicketInput", "output HandoffOutput"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("printed output missing %q:\n%s", want, out)
+		}
+	}
+	// A non-conventional schema ref cannot be raised to a bare type name — it must be refused.
+	a.Spec.Output.Schema = "weird/path.yaml"
+	if _, u := Graph(g); len(u) == 0 {
+		t.Fatal("a non-conventional output schema ref must be refused")
+	}
+}
+
+// TestRaise_Unsupported: fields with no .agent form are refused (named), never silently dropped.
+func TestRaise_Unsupported(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Agents: map[string]*spec.AgentResource{
+			"a": {Metadata: spec.Metadata{Name: "a"}, Spec: spec.AgentSpec{Runtime: "local"}},
+		},
+		Tools: map[string]*spec.ToolResource{
+			"t": {Metadata: spec.Metadata{Name: "t"}, Spec: spec.ToolSpec{Retry: &spec.ToolRetry{}}},
+		},
+		Policies: map[string]*spec.PolicyResource{
+			"p": {Metadata: spec.Metadata{Name: "p"}, Spec: spec.PolicySpec{Security: &spec.PolicySecurity{NetworkAccess: "none"}}},
+		},
+	}
+	_, unsup := Graph(g)
+	got := map[string]bool{}
+	for _, u := range unsup {
+		got[u.Field] = true
+	}
+	for _, want := range []string{"spec.runtime", "spec.retry", "spec.security"} {
+		if !got[want] {
+			t.Fatalf("expected an Unsupported for %q, got %v", want, unsup)
+		}
+	}
+}
+
+// TestRaise_WorkflowRefused: until workflow raising lands, a workflow yields an Unsupported so the
+// migrate tool never silently drops one.
+func TestRaise_WorkflowRefused(t *testing.T) {
+	g := &spec.ProjectGraph{
+		Workflows: map[string]*spec.WorkflowResource{"w": {Metadata: spec.Metadata{Name: "w"}}},
+	}
+	_, unsup := Graph(g)
+	if len(unsup) != 1 || unsup[0].Kind != "Workflow" {
+		t.Fatalf("expected one Workflow Unsupported, got %v", unsup)
+	}
+}
+
+func assertSpecEqual(t *testing.T, label string, a, b any, printed string) {
+	t.Helper()
+	aj, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bj, err := json.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(aj) != string(bj) {
+		t.Fatalf("%s spec drifted after raise->print->lower:\n original: %s\n round:    %s\n printed source:\n%s", label, aj, bj, printed)
+	}
+}
