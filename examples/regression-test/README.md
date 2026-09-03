@@ -13,11 +13,8 @@ This example shows **CI gating of a policy change**: a fixture case expects the 
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports resources; `mock` model (no API keys). |
-| `main.agent` | The `writer` agent (grants `tool.publish.default`) and the `gated-write` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
-| `tools/publish.yaml` | Trusted mutating `mock` tool. |
-| `policies/gated-publish.yaml` | `requiredFor: tool.publish.default`; ceiling **$5**. |
-| `tests/gated-write.yaml` | `expectError: true` for the unauthorized write. |
+| `main.agent` | Everything, authored in [`.agent`](../../docs/LANGUAGE.md): the `gated-publish` policy (`requiredFor: tool.publish.default`, ceiling **$5**), the `publish` tool (trusted mutating `mock`), the `writer` agent (grants `tool.publish.default`), and the `gated-write` workflow. No `project.yaml`; the built-in `mock` model needs no API keys. |
+| `tests/gated-write.yaml` | `expectError: true` for the unauthorized write (run by `terfyn test`). |
 | `schemas/*.json` | Workflow input and agent output. |
 | `fixtures/sample-article.json` | Tiny `{article}` payload (optional `run`). |
 
@@ -49,10 +46,14 @@ terfyn run workflow/gated-write \
 
 ## The one-line edit that turns CI red
 
-In `policies/gated-publish.yaml`, delete this line:
+In `main.agent`, remove `tool.publish.default` from the `gated-publish` policy's `approvals.requiredFor` block:
 
-```yaml
-      - tool.publish.default
+```
+    approvals {
+        requiredFor {
+            tool.publish.default   // ← delete this line
+        }
+    }
 ```
 
 Then:

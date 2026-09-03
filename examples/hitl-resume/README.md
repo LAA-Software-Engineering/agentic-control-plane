@@ -16,10 +16,7 @@ This example is the distinctive **human-in-the-loop resume** demo. A mock agent 
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports; `mock` model (no API keys). |
-| `main.agent` | The `drafter` agent and the `publish` workflow (`draft` agent then `publish` `uses:` step), authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
-| `tools/publish.yaml` | Trusted mock write (`sideEffects: true`). |
-| `policies/gated-publish.yaml` | `requiredFor` + `hitl.interruptOn`. |
+| `main.agent` | Everything, authored in [`.agent`](../../docs/LANGUAGE.md): the `gated-publish` policy (`requiredFor` + `hitl.interruptOn`), the `publish` tool (trusted mock write, `sideEffects: true`), the `drafter` agent, and the `publish` workflow (`draft` agent then `publish` `uses:` step). No `project.yaml`; the built-in `mock` model needs no API keys. |
 | `schemas/*.json` | Workflow input and agent output. |
 | `fixtures/sample-input.json` | Tiny `{topic}` payload. |
 

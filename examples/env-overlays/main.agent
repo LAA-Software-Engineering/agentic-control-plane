@@ -1,5 +1,24 @@
-// Authored in .agent: the reviewer agent and the review workflow. Tools, policies,
-// the Environment overlays, project config, and JSON Schemas stay YAML.
+// Authored entirely in .agent (ADR 003, issue #430): the reviewer agent, the review
+// workflow, the tool and policy they use, and the dev/staging/prod environment
+// overlays (declared with the `environment` grammar below) — no project.yaml, no
+// YAML resources. JSON Schemas stay JSON (referenced by type). The built-in `mock`
+// and `openai` providers (the overlays switch to `openai/*` models in staging/prod)
+// and the default `local` runtime are implicit.
+
+tool notify {
+    type mock
+    safety {
+        trusted true
+        sideEffects true
+    }
+}
+
+policy default {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+}
 
 agent reviewer {
     model mock/gpt-4
@@ -38,4 +57,55 @@ workflow review(input: TicketInput)
 {
     review = reviewer(ticket: input.ticket)
     return review
+}
+
+// Environment overlays (issue #440): `terfyn plan --env <name>` / `run --env <name>`
+// applies these on top of the base graph.
+
+environment dev {
+    overrides {
+        agents {
+            reviewer {
+                model mock/gpt-4
+            }
+        }
+    }
+}
+
+environment staging {
+    overrides {
+        agents {
+            reviewer {
+                model openai/gpt-4o-mini
+            }
+        }
+    }
+}
+
+environment prod {
+    overrides {
+        agents {
+            reviewer {
+                model openai/gpt-4o
+                constraints {
+                    timeoutSeconds 30
+                    requireStructuredOutput true
+                }
+            }
+        }
+        policies {
+            default {
+                execution {
+                    maxTotalCostUsd 1
+                    maxWallClockSeconds 60
+                    requireStructuredOutput true
+                }
+                approvals {
+                    requiredFor {
+                        tool.notify.default
+                    }
+                }
+            }
+        }
+    }
 }
