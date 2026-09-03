@@ -107,6 +107,58 @@ workflow hello(input: string) -> string policy default {
 	}
 }
 
+// TestLoadProject_ingestsAgentProvider is the end-to-end load test for the #440 `provider` decl: a
+// custom provider alias authored in .agent lowers into ProjectSpec.Providers.Models and must be
+// folded back into the returned graph, so the model registry resolves the alias.
+func TestLoadProject_ingestsAgentProvider(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "main.agent", `
+provider corporate-claude {
+    type anthropic
+    apiKeyFrom "env:CORP_ANTHROPIC_KEY"
+    workspaceIdFrom "env:CORP_WORKSPACE"
+}
+
+agent assistant {
+    model corporate-claude/claude-sonnet-5
+}
+
+policy default {
+    preset shell_safe
+}
+
+workflow hello(input: string) -> string policy default {
+    return assistant(input)
+}
+`)
+
+	g, err := LoadProject(root)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if g.Spec.Providers == nil || g.Spec.Providers.Models == nil {
+		t.Fatalf("provider alias from .agent source missing from loaded graph spec")
+	}
+	cfg, ok := g.Spec.Providers.Models["corporate-claude"]
+	if !ok {
+		t.Fatalf("provider 'corporate-claude' missing; have %v", providerKeys(g))
+	}
+	if cfg.Type != "anthropic" || cfg.APIKeyFrom != "env:CORP_ANTHROPIC_KEY" || cfg.WorkspaceIDFrom != "env:CORP_WORKSPACE" {
+		t.Fatalf("provider config not preserved through load: %+v", cfg)
+	}
+}
+
+func providerKeys(g *spec.ProjectGraph) []string {
+	if g.Spec.Providers == nil {
+		return nil
+	}
+	var k []string
+	for n := range g.Spec.Providers.Models {
+		k = append(k, n)
+	}
+	return k
+}
+
 func TestLoadProject_agentControlFlowLoadsAndLowers(t *testing.T) {
 	// Control flow now COMPILES and carries a pinned program (issue #259): the
 	// gate that refused if/for is gone. The workflow loads, its resource

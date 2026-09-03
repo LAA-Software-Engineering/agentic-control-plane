@@ -85,6 +85,18 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 		}
 		seenEnv[n] = true
 	}
+	// Provider aliases lower into g.Spec.Providers.Models (project config), not a resource map. A
+	// duplicate alias — colliding with a YAML `providers.models` entry or another .agent `provider` —
+	// is an error with no precedence, mirroring the resource kinds (ADR 005 §3): silently shadowing a
+	// provider would swap a model endpoint/credential out from under the author.
+	seenProvider := make(map[string]bool, len(r.Providers))
+	for _, pv := range r.Providers {
+		_, dupYAML := existingProviderModels(g)[pv.Name]
+		if dupYAML || seenProvider[pv.Name] {
+			errs = append(errs, fmt.Errorf("project: duplicate provider %q from lowered .agent source (also declared in YAML providers.models or another .agent block)", pv.Name))
+		}
+		seenProvider[pv.Name] = true
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -104,5 +116,16 @@ func MergeLowered(g *spec.ProjectGraph, r *Result) error {
 	for _, e := range r.Environments {
 		g.Environments[e.Metadata.Name] = e
 	}
+	for _, pv := range r.Providers {
+		setProviderModel(g, pv.Name, pv.Config)
+	}
 	return nil
+}
+
+// existingProviderModels returns g's current provider-alias map (nil-safe), for collision checks.
+func existingProviderModels(g *spec.ProjectGraph) map[string]spec.ModelProviderConfig {
+	if g.Spec.Providers == nil {
+		return nil
+	}
+	return g.Spec.Providers.Models
 }

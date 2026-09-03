@@ -194,6 +194,18 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 				g.Environments[name] = e
 			}
 		}
+		// Inline `provider` declarations (issue #440) lower into ProjectSpec.Providers.Models (project
+		// config, not a resource map), so they fold back through the spec rather than a graph map. A name
+		// already in g is a YAML providers.models entry; a genuine cross-ingress duplicate was already
+		// reported by MergeLowered inside Check. Without this, a .agent-declared provider reaches
+		// prog.Graph but is dropped from the returned graph, so the model registry never sees the alias.
+		if prog.Graph.Spec.Providers != nil {
+			for name, cfg := range prog.Graph.Spec.Providers.Models {
+				if _, ok := existingProviderModel(g, name); !ok {
+					ensureProviderModels(g)[name] = cfg
+				}
+			}
+		}
 	}
 	// The checked execution IR (positional-arg rebinds included) is the pinned
 	// program for every .agent workflow (issue #260); the loader previously
@@ -202,6 +214,26 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 		return prog.Executables, nil
 	}
 	return nil, nil
+}
+
+// existingProviderModel looks up a provider alias in g's project spec (nil-safe).
+func existingProviderModel(g *spec.ProjectGraph, name string) (spec.ModelProviderConfig, bool) {
+	if g.Spec.Providers == nil || g.Spec.Providers.Models == nil {
+		return spec.ModelProviderConfig{}, false
+	}
+	cfg, ok := g.Spec.Providers.Models[name]
+	return cfg, ok
+}
+
+// ensureProviderModels returns g's provider-alias map, allocating the nested structs if absent.
+func ensureProviderModels(g *spec.ProjectGraph) map[string]spec.ModelProviderConfig {
+	if g.Spec.Providers == nil {
+		g.Spec.Providers = &spec.ProjectProviders{}
+	}
+	if g.Spec.Providers.Models == nil {
+		g.Spec.Providers.Models = map[string]spec.ModelProviderConfig{}
+	}
+	return g.Spec.Providers.Models
 }
 
 // errorDiags returns only the error-severity diagnostics (warnings do not fail a

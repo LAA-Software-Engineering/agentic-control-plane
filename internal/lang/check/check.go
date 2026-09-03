@@ -386,6 +386,19 @@ func cloneGraph(g *spec.ProjectGraph) *spec.ProjectGraph {
 	out.Meta = g.Meta
 	out.Pos = g.Pos
 	out.Spec = g.Spec
+	// Deep-copy the provider-alias map: MergeLowered may add .agent `provider` aliases to the clone's
+	// ProjectSpec (issue #440), and the shared *ProjectProviders pointer would otherwise leak those
+	// writes back into the caller's graph — exactly what this clone exists to prevent.
+	if g.Spec.Providers != nil {
+		cp := *g.Spec.Providers
+		if g.Spec.Providers.Models != nil {
+			cp.Models = make(map[string]spec.ModelProviderConfig, len(g.Spec.Providers.Models))
+			for k, v := range g.Spec.Providers.Models {
+				cp.Models[k] = v
+			}
+		}
+		out.Spec.Providers = &cp
+	}
 	for k, v := range g.Agents {
 		out.Agents[k] = v
 	}

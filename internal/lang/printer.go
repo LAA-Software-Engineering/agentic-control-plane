@@ -31,6 +31,8 @@ func Print(f *File) string {
 			printPolicy(&b, n)
 		case *EnvironmentDecl:
 			printEnvironment(&b, n)
+		case *ProviderDecl:
+			printProvider(&b, n)
 		default:
 			fmt.Fprintf(&b, "/* unknown decl %T */\n", d)
 		}

@@ -35,7 +35,7 @@ Categorized by #430's framework. "Examples" = how many of the 15 example project
 | **Tool `mcp` transport** (`command`/`args`/`url`/`headers`) | `ToolSpec.MCP` | 0 | ✅ Closed by #447 — `tool { mcp { … } }`. |
 | **Tool `http` transport** (`baseURL`/headers/methods) | `ToolSpec.HTTP` | 0 | ✅ Closed by #447 — `tool { http { … } }`. |
 | **Policy `hitl`** (interrupt-on, review config) | `PolicySpec.Hitl` | 1 | ✅ Closed by this PR — `policy { hitl { … } }`. |
-| **Custom model providers / aliases** (`type` + `baseURL` + key) | `Providers.models` | 0 | Only built-in namespaces work; `provider corporate-claude { … }` is unspecced. Also needs a `.agent` home for project-scoped provider config. |
+| **Custom model providers / aliases** (`type` + `baseURL` + key) | `Providers.models` | 0 | ✅ Closed by this PR — top-level `provider <alias> { type … apiKeyFrom … workspaceIdFrom … }`. Built-ins stay implicit. |
 
 ### B. Softer gaps (program semantics, but a workaround exists)
 
@@ -67,14 +67,16 @@ Categorized by #430's framework. "Examples" = how many of the 15 example project
   and **custom providers** — otherwise entire classes of project (any MCP/HTTP tool, any aliased
   provider) would have no authoring path.
 
-## Critical path to Phase 3 (grammar additions required)
+## Critical path to Phase 3 (grammar additions required) — ✅ COMPLETE
 
-1. `tool { mcp { … } }` and `tool { http { … } }` transport blocks (unblocks MCP/HTTP tools).
-2. `environment <name> { … }` (or an overrides construct) for env overlays.
-3. `policy { hitl { … } }`.
-4. `provider <alias> { type … base_url … api_key … }` for custom providers/aliases.
+1. ✅ `tool { mcp { … } }` and `tool { http { … } }` transport blocks (#447).
+2. ✅ `environment <name> { overrides { … } }` for env overlays (#448; loader fold-back fixed in #453).
+3. ✅ `policy { hitl { … } }` (#449).
+4. ✅ `provider <alias> { type … apiKeyFrom … workspaceIdFrom … }` for custom providers/aliases (this PR).
 
-The B/C items are individually small (add a field) or reducible to built-in defaults / env / flags.
+All four hard grammar blockers are now closed: no class of project is YAML-only for source authoring.
+The remaining B/C items are individually small (add a field) or reducible to built-in defaults / env /
+flags, and the softer `defaults.policy` / `workspace` gaps remain for Phase 2c (example migration).
 
 ## Suggested #440 sequencing (unchanged from the tracking issue, informed by this audit)
 
