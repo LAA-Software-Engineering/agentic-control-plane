@@ -382,3 +382,35 @@ policy strict {
 		}
 	}
 }
+
+// TestPrint_ToolLimitsRoundTrip proves the #440 tool limits block survives `terfyn fmt`.
+func TestPrint_ToolLimitsRoundTrip(t *testing.T) {
+	t.Parallel()
+	src := `tool bulk {
+    type native
+    limits {
+        maxToolInputBytes 1024
+        maxLoopIterations 10
+        toolInputExceedPolicy truncate
+        checkpointExceedPolicy fail
+    }
+}
+`
+	f, diags := Parse("t.agent", src)
+	if diags.HasErrors() {
+		t.Fatalf("parse: %v", diags)
+	}
+	once := Print(f)
+	f2, d2 := Parse("t.agent", once)
+	if d2.HasErrors() {
+		t.Fatalf("printed output does not re-parse:\n%s\ndiags: %v", once, d2)
+	}
+	if twice := Print(f2); once != twice {
+		t.Fatalf("Print is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", once, twice)
+	}
+	for _, want := range []string{"limits {", "maxToolInputBytes 1024", "maxLoopIterations 10", "toolInputExceedPolicy truncate", "checkpointExceedPolicy fail"} {
+		if !strings.Contains(once, want) {
+			t.Fatalf("printed output missing %q:\n%s", want, once)
+		}
+	}
+}

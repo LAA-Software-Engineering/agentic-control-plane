@@ -277,6 +277,7 @@ policy coding {
   `mcp` / `http` tool calls; both fields optional.
 - Tool per-operation `schema` (#440): `operations { <op> { schema "…" effects { … } } }` — a JSON Schema
   ref validating that operation's input before dispatch (part of the closed-world capability manifest).
+- Tool `limits` (#440): `tool <Name> { … limits { maxToolInputBytes N maxToolOutputBytes N maxCheckpointBytes N maxStateBytes N maxWorkflowNesting N maxLoopIterations N toolInputExceedPolicy <truncate|fail> toolOutputExceedPolicy <…> checkpointExceedPolicy <…> } }` — per-tool overrides of the project/workflow execution limits, merged at **top precedence** by `spec.ResolveExecutionLimits` for that tool's calls. All fields optional.
 - Policy `tools` (#440): `policy <Name> { … tools { forbidUnknownTools <bool> } }` — when true, any tool
   call not explicitly permitted is denied (the strict-preset closed world); enforced by the evaluator.
 

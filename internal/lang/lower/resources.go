@@ -92,6 +92,9 @@ func (l *lowerer) tool(d *lang.ToolDecl) *spec.ToolResource {
 			tr.Spec.Retry.MaxAttempts = *r.MaxAttempts
 		}
 	}
+	if lim := d.Limits; lim != nil {
+		tr.Spec.Limits = lowerToolLimits(lim)
+	}
 	if d.Safety != nil {
 		tr.Spec.Safety = &spec.ToolSafety{
 			Trusted:          d.Safety.Trusted,
@@ -119,6 +122,33 @@ func (l *lowerer) tool(d *lang.ToolDecl) *spec.ToolResource {
 		}
 	}
 	return tr
+}
+
+// lowerToolLimits lowers a `limits { … }` block to spec.ExecutionLimits (issue #440), copying only set
+// fields so an unset override stays zero (and does not win the ResolveExecutionLimits merge).
+func lowerToolLimits(b *lang.ToolLimitsBlock) *spec.ExecutionLimits {
+	out := &spec.ExecutionLimits{}
+	setInt := func(dst *int, src *int) {
+		if src != nil {
+			*dst = *src
+		}
+	}
+	setInt(&out.MaxToolInputBytes, b.MaxToolInputBytes)
+	setInt(&out.MaxToolOutputBytes, b.MaxToolOutputBytes)
+	setInt(&out.MaxCheckpointBytes, b.MaxCheckpointBytes)
+	setInt(&out.MaxStateBytes, b.MaxStateBytes)
+	setInt(&out.MaxWorkflowNesting, b.MaxWorkflowNesting)
+	setInt(&out.MaxLoopIterations, b.MaxLoopIterations)
+	if b.ToolInputExceedPolicy != nil {
+		out.ToolInputExceedPolicy = spec.LimitExceedPolicy(b.ToolInputExceedPolicy.Name)
+	}
+	if b.ToolOutputExceedPolicy != nil {
+		out.ToolOutputExceedPolicy = spec.LimitExceedPolicy(b.ToolOutputExceedPolicy.Name)
+	}
+	if b.CheckpointExceedPolicy != nil {
+		out.CheckpointExceedPolicy = spec.LimitExceedPolicy(b.CheckpointExceedPolicy.Name)
+	}
+	return out
 }
 
 func (l *lowerer) policy(d *lang.PolicyDecl) *spec.PolicyResource {

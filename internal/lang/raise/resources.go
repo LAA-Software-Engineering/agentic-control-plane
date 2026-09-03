@@ -44,6 +44,9 @@ func (r *raiser) tool(t *spec.ToolResource) *lang.ToolDecl {
 		}
 		d.Retry = rb
 	}
+	if lim := s.Limits; lim != nil {
+		d.Limits = raiseToolLimits(lim)
+	}
 	if sf := s.Safety; sf != nil {
 		d.Safety = &lang.ToolSafetyBlock{Trusted: sf.Trusted, SideEffects: sf.SideEffects, RequiresApproval: sf.RequiresApproval}
 	}
@@ -63,10 +66,36 @@ func (r *raiser) tool(t *spec.ToolResource) *lang.ToolDecl {
 		// Removed from the canonical model in a follow-up (ADR 007 step 1); still refused here until then.
 		r.reject("Tool", t.Metadata.Name, "spec.permissions", "tool permissions")
 	}
-	if s.Limits != nil {
-		r.reject("Tool", t.Metadata.Name, "spec.limits", "per-tool execution limits")
-	}
 	return d
+}
+
+// raiseToolLimits reconstructs a `limits { … }` block from spec.ExecutionLimits (issue #440), emitting
+// only non-zero / non-empty fields (matching the lower direction's set-only semantics).
+func raiseToolLimits(l *spec.ExecutionLimits) *lang.ToolLimitsBlock {
+	b := &lang.ToolLimitsBlock{}
+	intPtr := func(n int) *int {
+		if n == 0 {
+			return nil
+		}
+		v := n
+		return &v
+	}
+	b.MaxToolInputBytes = intPtr(l.MaxToolInputBytes)
+	b.MaxToolOutputBytes = intPtr(l.MaxToolOutputBytes)
+	b.MaxCheckpointBytes = intPtr(l.MaxCheckpointBytes)
+	b.MaxStateBytes = intPtr(l.MaxStateBytes)
+	b.MaxWorkflowNesting = intPtr(l.MaxWorkflowNesting)
+	b.MaxLoopIterations = intPtr(l.MaxLoopIterations)
+	if l.ToolInputExceedPolicy != "" {
+		b.ToolInputExceedPolicy = ident(string(l.ToolInputExceedPolicy))
+	}
+	if l.ToolOutputExceedPolicy != "" {
+		b.ToolOutputExceedPolicy = ident(string(l.ToolOutputExceedPolicy))
+	}
+	if l.CheckpointExceedPolicy != "" {
+		b.CheckpointExceedPolicy = ident(string(l.CheckpointExceedPolicy))
+	}
+	return b
 }
 
 // policy raises a PolicyResource to a lang.PolicyDecl (issue #440). ResolvedPreset is derived and

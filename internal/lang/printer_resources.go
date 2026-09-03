@@ -49,6 +49,19 @@ func printTool(b *strings.Builder, d *ToolDecl) {
 		printStringLitField(b, "        ", "backoff", r.Backoff)
 		b.WriteString("    }\n")
 	}
+	if lim := d.Limits; lim != nil {
+		b.WriteString("    limits {\n")
+		printIntPtr(b, "        ", "maxToolInputBytes", lim.MaxToolInputBytes)
+		printIntPtr(b, "        ", "maxToolOutputBytes", lim.MaxToolOutputBytes)
+		printIntPtr(b, "        ", "maxCheckpointBytes", lim.MaxCheckpointBytes)
+		printIntPtr(b, "        ", "maxStateBytes", lim.MaxStateBytes)
+		printIntPtr(b, "        ", "maxWorkflowNesting", lim.MaxWorkflowNesting)
+		printIntPtr(b, "        ", "maxLoopIterations", lim.MaxLoopIterations)
+		printIdentField(b, "        ", "toolInputExceedPolicy", lim.ToolInputExceedPolicy)
+		printIdentField(b, "        ", "toolOutputExceedPolicy", lim.ToolOutputExceedPolicy)
+		printIdentField(b, "        ", "checkpointExceedPolicy", lim.CheckpointExceedPolicy)
+		b.WriteString("    }\n")
+	}
 	if s := d.Safety; s != nil {
 		b.WriteString("    safety {\n")
 		printBoolField(b, "        ", "trusted", s.Trusted)
@@ -245,6 +258,18 @@ func printSwitchMapBlock(b *strings.Builder, indent, name string, entries []*Swi
 func printBoolField(b *strings.Builder, indent, name string, v *bool) {
 	if v != nil {
 		fmt.Fprintf(b, "%s%s %t\n", indent, name, *v)
+	}
+}
+
+func printIntPtr(b *strings.Builder, indent, name string, v *int) {
+	if v != nil {
+		fmt.Fprintf(b, "%s%s %d\n", indent, name, *v)
+	}
+}
+
+func printIdentField(b *strings.Builder, indent, name string, v *Ident) {
+	if v != nil {
+		fmt.Fprintf(b, "%s%s %s\n", indent, name, identName(v))
 	}
 }
 

@@ -14,6 +14,7 @@ type ToolDecl struct {
 	HTTP      *ToolHTTPBlock      // http { … } transport config (issue #440)
 	Workspace *ToolWorkspaceBlock // workspace { … } native workspace config (issue #440)
 	Retry     *ToolRetryBlock     // retry { … } mcp/http call retry config (issue #440)
+	Limits    *ToolLimitsBlock    // limits { … } per-tool execution-limit overrides (issue #440)
 	Safety    *ToolSafetyBlock    // safety { … }
 	// Operations is nil when the block is omitted (open callable set) and non-nil when present,
 	// including an empty `operations {}` (a closed, deny-all manifest). This distinction is the
@@ -51,6 +52,23 @@ type ToolRetryBlock struct {
 	Pos         Pos
 	MaxAttempts *int
 	Backoff     *StringLit
+}
+
+// ToolLimitsBlock is `limits { maxToolInputBytes N … toolInputExceedPolicy <truncate|fail> … }`
+// (issue #440): per-tool overrides of the project/workflow execution limits, merged at top precedence
+// by spec.ResolveExecutionLimits. Each field is nil when omitted. The three *ExceedPolicy fields are
+// the `truncate` / `fail` enum, carried as an Ident.
+type ToolLimitsBlock struct {
+	Pos                    Pos
+	MaxToolInputBytes      *int
+	MaxToolOutputBytes     *int
+	MaxCheckpointBytes     *int
+	MaxStateBytes          *int
+	MaxWorkflowNesting     *int
+	MaxLoopIterations      *int
+	ToolInputExceedPolicy  *Ident
+	ToolOutputExceedPolicy *Ident
+	CheckpointExceedPolicy *Ident
 }
 
 // HeaderPair is one `"<key>" "<value>"` entry in a headers { … } block.

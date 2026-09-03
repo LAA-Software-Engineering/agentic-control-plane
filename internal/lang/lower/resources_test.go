@@ -635,3 +635,62 @@ spec:
 		t.Fatalf("inline policy tools differs from YAML twin:\n inline: %s\n yaml:   %s", normPolicySpecJSON(t, inline), normPolicySpecJSON(t, fromYAML))
 	}
 }
+
+// TestInlineTool_LimitsYAMLEquivalence is the ADR 005 §2 golden for the .agent tool `limits` block
+// (issue #440): the full 9-field per-tool ExecutionLimits override lowers byte-identically to YAML.
+func TestInlineTool_LimitsYAMLEquivalence(t *testing.T) {
+	agentSrc := `tool bulk {
+    type native
+    limits {
+        maxToolInputBytes 1024
+        maxToolOutputBytes 2048
+        maxCheckpointBytes 4096
+        maxStateBytes 8192
+        maxWorkflowNesting 3
+        maxLoopIterations 10
+        toolInputExceedPolicy truncate
+        toolOutputExceedPolicy fail
+        checkpointExceedPolicy truncate
+    }
+}`
+	yamlSrc := `apiVersion: agentic.dev/v0
+kind: Tool
+metadata: {name: bulk}
+spec:
+  type: native
+  limits:
+    maxToolInputBytes: 1024
+    maxToolOutputBytes: 2048
+    maxCheckpointBytes: 4096
+    maxStateBytes: 8192
+    maxWorkflowNesting: 3
+    maxLoopIterations: 10
+    toolInputExceedPolicy: truncate
+    toolOutputExceedPolicy: fail
+    checkpointExceedPolicy: truncate
+`
+	inline := lowerToolsOrFatal(t, agentSrc).Tools[0]
+	dec, err := spec.ParseResourceFromBytes([]byte(yamlSrc), "bulk.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromYAML := dec.Resource.(*spec.ToolResource)
+	if normSpecJSON(t, inline) != normSpecJSON(t, fromYAML) {
+		t.Fatalf("inline limits tool differs from YAML twin:\n inline: %s\n yaml:   %s", normSpecJSON(t, inline), normSpecJSON(t, fromYAML))
+	}
+}
+
+// TestInlineTool_LimitsPrecedence proves a .agent per-tool limits override wins over project/workflow
+// limits at runtime resolution — the enforced-precedence behavior that justifies the grammar (issue
+// #440; per-tool merge in spec.ResolveExecutionLimits, engine/limits.go).
+func TestInlineTool_LimitsPrecedence(t *testing.T) {
+	tr := lowerToolsOrFatal(t, `tool bulk {
+    type native
+    limits { maxToolInputBytes 500 }
+}`).Tools[0]
+	project := &spec.ProjectSpec{Limits: &spec.ExecutionLimits{MaxToolInputBytes: 999999}}
+	resolved := spec.ResolveExecutionLimits(project, nil, &tr.Spec)
+	if resolved.MaxToolInputBytes != 500 {
+		t.Fatalf("per-tool limit must override project: got MaxToolInputBytes=%d, want 500", resolved.MaxToolInputBytes)
+	}
+}
