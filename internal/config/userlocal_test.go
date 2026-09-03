@@ -126,3 +126,44 @@ func TestApplyUserLocalUnder_limitsPrecedence(t *testing.T) {
 		t.Fatalf("unset checkpoint limit should come from user-local, got %d", project.Limits.MaxCheckpointBytes)
 	}
 }
+
+// TestApplyUserLocalUnder_nestingAndLoopFillWhenProjectHasLimits is the regression for issue #378:
+// user-local maxWorkflowNesting / maxLoopIterations must fill unset project fields exactly like the
+// byte limits do, even when the project already has a (partial) limits block. Previously the
+// hand-maintained field list in mergeLimitsUnder omitted these two, so they were silently dropped
+// whenever the project set any unrelated limit.
+func TestApplyUserLocalUnder_nestingAndLoopFillWhenProjectHasLimits(t *testing.T) {
+	project := &spec.ProjectSpec{
+		Limits: &spec.ExecutionLimits{MaxToolInputBytes: 1024},
+	}
+	ApplyUserLocalUnder(project, &UserLocalOverlay{
+		Limits: &spec.ExecutionLimits{
+			MaxWorkflowNesting: 2,
+			MaxLoopIterations:  5,
+			MaxToolOutputBytes: 99,
+		},
+	})
+	if project.Limits.MaxToolInputBytes != 1024 {
+		t.Fatalf("project value should win, got MaxToolInputBytes=%d", project.Limits.MaxToolInputBytes)
+	}
+	if project.Limits.MaxToolOutputBytes != 99 {
+		t.Fatalf("unset byte limit should fill from user-local, got %d", project.Limits.MaxToolOutputBytes)
+	}
+	if project.Limits.MaxWorkflowNesting != 2 {
+		t.Fatalf("user-local maxWorkflowNesting dropped: got %d, want 2", project.Limits.MaxWorkflowNesting)
+	}
+	if project.Limits.MaxLoopIterations != 5 {
+		t.Fatalf("user-local maxLoopIterations dropped: got %d, want 5", project.Limits.MaxLoopIterations)
+	}
+
+	// A project value for these fields still wins over the user-local overlay.
+	project2 := &spec.ProjectSpec{
+		Limits: &spec.ExecutionLimits{MaxWorkflowNesting: 4, MaxLoopIterations: 10},
+	}
+	ApplyUserLocalUnder(project2, &UserLocalOverlay{
+		Limits: &spec.ExecutionLimits{MaxWorkflowNesting: 2, MaxLoopIterations: 5},
+	})
+	if project2.Limits.MaxWorkflowNesting != 4 || project2.Limits.MaxLoopIterations != 10 {
+		t.Fatalf("project limits should win, got nesting=%d loop=%d", project2.Limits.MaxWorkflowNesting, project2.Limits.MaxLoopIterations)
+	}
+}

@@ -449,30 +449,10 @@ func mergeLimitsUnder(dst, src *spec.ExecutionLimits) *spec.ExecutionLimits {
 		spec.NormalizeExecutionLimits(&cp)
 		return &cp
 	}
-	base := *dst
-	override := *src
-	// User-local fills unset project fields only (project wins when set).
-	if base.MaxToolInputBytes <= 0 && override.MaxToolInputBytes > 0 {
-		base.MaxToolInputBytes = override.MaxToolInputBytes
-	}
-	if base.MaxToolOutputBytes <= 0 && override.MaxToolOutputBytes > 0 {
-		base.MaxToolOutputBytes = override.MaxToolOutputBytes
-	}
-	if base.MaxCheckpointBytes <= 0 && override.MaxCheckpointBytes > 0 {
-		base.MaxCheckpointBytes = override.MaxCheckpointBytes
-	}
-	if base.MaxStateBytes <= 0 && override.MaxStateBytes > 0 {
-		base.MaxStateBytes = override.MaxStateBytes
-	}
-	if strings.TrimSpace(string(base.ToolInputExceedPolicy)) == "" && override.ToolInputExceedPolicy != "" {
-		base.ToolInputExceedPolicy = override.ToolInputExceedPolicy
-	}
-	if strings.TrimSpace(string(base.ToolOutputExceedPolicy)) == "" && override.ToolOutputExceedPolicy != "" {
-		base.ToolOutputExceedPolicy = override.ToolOutputExceedPolicy
-	}
-	if strings.TrimSpace(string(base.CheckpointExceedPolicy)) == "" && override.CheckpointExceedPolicy != "" {
-		base.CheckpointExceedPolicy = override.CheckpointExceedPolicy
-	}
-	spec.NormalizeExecutionLimits(&base)
-	return &base
+	// User-local fills unset project fields; the project (dst) wins when set. Express this as a single
+	// [spec.MergeExecutionLimits] with the user-local overlay as the base and the project as the
+	// override, so every field lives in one place and MaxWorkflowNesting/MaxLoopIterations can never
+	// be dropped again by a hand-maintained field list drifting out of sync (issue #378).
+	merged := spec.MergeExecutionLimits(*src, dst)
+	return &merged
 }
