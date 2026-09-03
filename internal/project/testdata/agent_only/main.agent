@@ -1,0 +1,11 @@
+agent assistant {
+    model mock/default
+
+    instructions """
+    You are a helpful assistant.
+    """
+}
+
+workflow hello(input: string) -> string {
+    return assistant(input)
+}

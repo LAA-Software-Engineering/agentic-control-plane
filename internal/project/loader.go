@@ -73,7 +73,18 @@ func loadProjectGraph(root string) (*spec.ProjectGraph, map[string]*execir.Progr
 
 	projPath, err := findProjectFile(rootAbs)
 	if err != nil {
-		return nil, nil, err
+		// No project.yaml/project.yml. A .agent-only project is valid (issue #430): the .agent
+		// source is the sole authoring surface, so synthesize an empty Project and load from the
+		// .agent files alone. Only fall back to the original "no project.yaml" error when there is no
+		// .agent source either (nothing to load).
+		agentFiles, derr := discoverAgentFiles(rootAbs)
+		if derr != nil {
+			return nil, nil, derr
+		}
+		if len(agentFiles) == 0 {
+			return nil, nil, err
+		}
+		return loadAgentOnlyProject(rootAbs)
 	}
 
 	dec, err := spec.LoadResourceFile(projPath)
@@ -129,6 +140,38 @@ func loadProjectGraph(root string) (*spec.ProjectGraph, map[string]*execir.Progr
 	}
 
 	return g, agentExecs, nil
+}
+
+// loadAgentOnlyProject builds a project graph from .agent source alone, with no project.yaml (issue
+// #430). It synthesizes a minimal Project — name from the directory basename, empty Spec (built-in
+// defaults apply), no imports — and folds in the checked .agent resources. This is the whole loader
+// for a .agent-only project: there is no YAML import/merge phase, so no source-precedence question.
+func loadAgentOnlyProject(rootAbs string) (*spec.ProjectGraph, map[string]*execir.Program, error) {
+	g := &spec.ProjectGraph{
+		Meta:         spec.Metadata{Name: projectNameFromDir(rootAbs)},
+		Spec:         spec.ProjectSpec{},
+		Agents:       make(map[string]*spec.AgentResource),
+		Tools:        make(map[string]*spec.ToolResource),
+		Workflows:    make(map[string]*spec.WorkflowResource),
+		Policies:     make(map[string]*spec.PolicyResource),
+		Environments: make(map[string]*spec.EnvironmentResource),
+	}
+	agentExecs, err := compileAgentSources(g, rootAbs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return g, agentExecs, nil
+}
+
+// projectNameFromDir derives a synthesized project's metadata.name from its root directory. A
+// filesystem-root or empty basename falls back to "project" so the name is never empty.
+func projectNameFromDir(rootAbs string) string {
+	base := strings.TrimSpace(filepath.Base(rootAbs))
+	switch base {
+	case "", ".", string(filepath.Separator):
+		return "project"
+	}
+	return base
 }
 
 type resourceKey struct {
