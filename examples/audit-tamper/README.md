@@ -13,9 +13,7 @@ This example is the distinctive **tamper-evident trace** demo. A successful mock
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports the policy; `mock` model (no API keys). |
-| `main.agent` | The `scribe` agent and the `note` workflow, authored in [`.agent`](../../docs/LANGUAGE.md) (discovered automatically, not imported). The run is expected to **succeed**. |
-| `policies/cheap-ceiling.yaml` | `maxTotalCostUsd: 5`. |
+| `main.agent` | Everything: the `cheap-ceiling` policy (`maxTotalCostUsd: 5`), the `scribe` agent, and the `note` workflow — authored in [`.agent`](../../docs/LANGUAGE.md). No `project.yaml`; the built-in `mock` model needs no API keys. The run is expected to **succeed**. |
 | `schemas/*.json` | Workflow input (`NoteInput`) and agent output (`NoteOutput`). |
 | `fixtures/sample-input.json` | Tiny `{topic}` payload. |
 | `scripts/tamper-trace.sh` | Updates **one** `data_json` for `--run` / `--state`. Needs **python3** (stdlib `sqlite3`) or the **sqlite3** CLI. |

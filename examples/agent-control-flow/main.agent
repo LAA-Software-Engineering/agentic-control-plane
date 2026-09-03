@@ -6,11 +6,27 @@
 //       terfyn plan   && terfyn apply --auto-approve
 //       terfyn run workflow/route --input-file fixtures/ticket.json
 
-agent Router {
-    model mock/gpt-4
+policy default {
+    preset shell_safe
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
 }
 
-workflow route(input: Ticket) -> Result {
+tool tagger {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+agent Router {
+    model mock/gpt-4
+    policy default
+}
+
+workflow route(input: Ticket) -> Result policy default {
     for tag in input.tags {
         tagger.echo(tag)
     }

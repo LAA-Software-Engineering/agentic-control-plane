@@ -13,12 +13,7 @@ This example is the distinctive **two-agent** demo. A **triager** looks up conte
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports resources; `mock` model (no API keys). |
-| `main.agent` | The `triager` (`lookup` + `triage-readonly`) and `fixer` (`patch` + `apply-fix`) agents and the `handoff` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
-| `tools/lookup.yaml` | Read-only mock (`sideEffects: false`). |
-| `tools/patch.yaml` | Trusted mock write (`sideEffects: true`, not approval-gated). |
-| `policies/triage-readonly.yaml` | `requiredFor: tool.patch.default`; ceiling **$5**. |
-| `policies/apply-fix.yaml` | No `requiredFor`; ceiling **$5**. |
+| `main.agent` | Everything: the `triage-readonly` policy (`requiredFor: tool.patch.default`, ceiling **$5**) and `apply-fix` policy (no `requiredFor`, ceiling **$5**); the `lookup` (read-only mock, `sideEffects: false`) and `patch` (trusted mock write, `sideEffects: true`, not approval-gated) tools; the `triager` (`lookup` + `triage-readonly`) and `fixer` (`patch` + `apply-fix`) agents; and the `handoff` workflow — authored in [`.agent`](../../docs/LANGUAGE.md). No `project.yaml`; the built-in `mock` model needs no API keys. |
 | `schemas/*.json` | Ticket input and pr-review-shaped agent output. |
 | `fixtures/sample-ticket.json` | Offline ticket payload. |
 
