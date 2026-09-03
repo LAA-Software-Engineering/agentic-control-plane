@@ -273,6 +273,15 @@ func printExpr(e Expr) string {
 			}
 		}
 		return fmt.Sprintf("%s(%s)", dottedName(n.Callee.Parts), strings.Join(args, ", "))
+	case *ObjectExpr:
+		if len(n.Fields) == 0 {
+			return "{}"
+		}
+		fields := make([]string, len(n.Fields))
+		for i, f := range n.Fields {
+			fields[i] = fmt.Sprintf("%s: %s", identName(f.Key), printExpr(f.Value))
+		}
+		return "{ " + strings.Join(fields, ", ") + " }"
 	case nil:
 		return "/*nil*/"
 	default:

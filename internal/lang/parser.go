@@ -784,6 +784,8 @@ func (p *parser) parsePrimary() Expr {
 		e := p.parseExpr()
 		p.expect(KindRParen, "to close parenthesized expression")
 		return e
+	case KindLBrace:
+		return p.parseObjectLiteral()
 	case KindIdent:
 		if (p.cur.Lit == "true" || p.cur.Lit == "false") && p.peekt.Kind != KindDot && p.peekt.Kind != KindLParen {
 			lit := &LitExpr{Pos: p.cur.Pos, Kind: KindIdent, Value: p.cur.Lit == "true"}
@@ -802,6 +804,37 @@ func (p *parser) parsePrimary() Expr {
 		p.errorf(p.cur.Pos, "expected expression, got %s", p.cur)
 		return nil
 	}
+}
+
+// parseObjectLiteral parses `{ key: expr, key: expr }` — an object-literal expression (issue #440).
+// Entries are separated by commas and/or newlines (both tolerated); a trailing comma is allowed. Keys
+// are bare identifiers. The opening brace is the current token.
+func (p *parser) parseObjectLiteral() Expr {
+	obj := &ObjectExpr{Pos: p.cur.Pos}
+	if _, ok := p.expect(KindLBrace, "to open an object literal"); !ok {
+		return obj
+	}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind == KindComma {
+			p.advance()
+			continue
+		}
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected a field name in object literal, got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		fpos := p.cur.Pos
+		key := p.ident("for an object-literal field")
+		if _, ok := p.expect(KindColon, "after an object-literal field name"); !ok {
+			p.syncLine()
+			continue
+		}
+		val := p.parseExpr()
+		obj.Fields = append(obj.Fields, &ObjectField{Pos: fpos, Key: key, Value: val})
+	}
+	p.expect(KindRBrace, "to close an object literal")
+	return obj
 }
 
 // parseNumber converts the current KindNumber token to an int64 (no fractional
