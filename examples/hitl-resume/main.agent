@@ -1,5 +1,36 @@
-// Authored in .agent: the drafter agent and the publish workflow. The tool, policy,
-// project config, and JSON Schemas stay YAML.
+// Authored entirely in .agent (ADR 003, issue #430): the drafter agent, the publish
+// workflow, and the tool and HITL policy they use — no project.yaml, no YAML
+// resources. JSON Schemas stay JSON (referenced by type); the built-in `mock`
+// provider and default `local` runtime are implicit.
+
+tool publish {
+    type mock
+    safety {
+        trusted true
+        sideEffects true
+    }
+}
+
+policy gated-publish {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    approvals {
+        requiredFor {
+            tool.publish.default
+        }
+    }
+    hitl {
+        descriptionPrefix "Publishing requires operator approval"
+        interruptOn {
+            publish {
+                allowedDecisions { approve reject }
+                description "Review publish call (${uses})"
+            }
+        }
+    }
+}
 
 agent drafter {
     model mock/gpt-4

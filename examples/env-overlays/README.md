@@ -4,7 +4,7 @@ This example is the distinctive **promotion** demo: one project, three Environme
 
 ## What it demonstrates
 
-- **dev = mock** — `environments/dev.yaml` pins `Agent/reviewer` to `mock/gpt-4`. Safe to `apply` / optional `run`.
+- **dev = mock** — the `dev` environment (in `main.agent`) pins `Agent/reviewer` to `mock/gpt-4`. Safe to `apply` / optional `run`.
 - **staging = cheap model** — `openai/gpt-4o-mini`. `validate -e staging` / `plan -e staging` only in CI (needs `OPENAI_API_KEY` to **run**).
 - **prod = stricter** — `openai/gpt-4o`, lower cost/wall-clock, `requireStructuredOutput: true`, and extra `approvals.requiredFor: tool.notify.default`.
 - **`plan -e prod` risk** — applied_resources are **per `-e`**. After `apply -e dev`, `plan -e prod` alone would see an empty prod slot (creates, not `model_change`). Use **`--from-env dev`** to diff the prod overlay against applied **dev**. C1 flags **widening**; a mock→prod **model change** is `[medium] model_change`. Prod **tightens** cost and **adds** an approval — those show as **field diffs**, not `budget_relaxation` / `approval_removal`.
@@ -14,13 +14,7 @@ This example is the distinctive **promotion** demo: one project, three Environme
 
 | Path | Role |
 |------|------|
-| `project.yaml` | Imports; mock + openai providers. |
-| `environments/dev.yaml` | Mock model. |
-| `environments/staging.yaml` | `openai/gpt-4o-mini`. |
-| `environments/prod.yaml` | `openai/gpt-4o`, tighter execution, notify approval. |
-| `main.agent` | The `reviewer` agent (grants `tool.notify.default`) and the `review` workflow, authored in [`.agent`](../../docs/LANGUAGE.md); discovered, not imported. |
-| `tools/notify.yaml` | Trusted mock write (`sideEffects: true`). |
-| `policies/default.yaml` | Ceiling **$5** / 300s; no `requiredFor`. |
+| `main.agent` | Everything, authored in [`.agent`](../../docs/LANGUAGE.md): the `default` policy (ceiling **$5** / 300s, no `requiredFor`), the `notify` tool (trusted mock write, `sideEffects: true`), the `reviewer` agent (grants `tool.notify.default`), the `review` workflow, and the three `environment` overlays — `dev` (mock model), `staging` (`openai/gpt-4o-mini`), `prod` (`openai/gpt-4o`, tighter execution, notify approval). No `project.yaml`; the built-in `mock`/`openai` providers need no declaration. |
 | `schemas/*.json` | Ticket input and pr-review-shaped output. |
 | `fixtures/sample-ticket.json` | Offline payload. |
 

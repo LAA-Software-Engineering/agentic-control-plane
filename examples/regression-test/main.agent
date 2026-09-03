@@ -1,5 +1,28 @@
-// Authored in .agent: the writer agent and the gated-write workflow. The tool,
-// policy, project config, test fixture, and JSON Schemas stay YAML.
+// Authored entirely in .agent (ADR 003, issue #430): the writer agent, the
+// gated-write workflow, and the tool and policy they use — no project.yaml, no YAML
+// resources. The `tests/gated-write.yaml` capability assertion (run by `terfyn
+// test`) and JSON Schemas stay in their own files; the built-in `mock` provider
+// and default `local` runtime are implicit.
+
+tool publish {
+    type mock
+    safety {
+        trusted true
+        sideEffects true
+    }
+}
+
+policy gated-publish {
+    execution {
+        maxTotalCostUsd 5
+        maxWallClockSeconds 300
+    }
+    approvals {
+        requiredFor {
+            tool.publish.default
+        }
+    }
+}
 
 agent writer {
     model mock/gpt-4

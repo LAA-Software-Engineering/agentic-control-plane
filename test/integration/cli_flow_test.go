@@ -539,7 +539,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 	t.Run("regression_test_unsafe_policy_fails_fixture", func(t *testing.T) {
 		root := repoRoot(t)
 		src := filepath.Join(root, "examples", "regression-test")
-		if _, err := os.Stat(filepath.Join(src, "project.yaml")); err != nil {
+		if _, err := os.Stat(filepath.Join(src, "main.agent")); err != nil {
 			t.Fatalf("demo project: %v", err)
 		}
 
@@ -565,8 +565,10 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 			t.Fatalf("safe test expected pass:\n%s", out)
 		}
 
-		replaceFile(t, filepath.Join(dst, "policies", "gated-publish.yaml"),
-			"      - tool.publish.default\n", "")
+		// Drop the approval gate from the gated-publish policy (now authored in main.agent): remove the
+		// requiredFor grant (12-space indent — distinct from the agent's 8-space grant of the same op).
+		replaceFile(t, filepath.Join(dst, "main.agent"),
+			"            tool.publish.default\n", "")
 
 		out, err = runCLI(t, "test", "--project", dst, "--no-color")
 		if err == nil {
@@ -729,7 +731,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 	t.Run("env_overlays_plan_prod_model_change", func(t *testing.T) {
 		root := repoRoot(t)
 		demo := filepath.Join(root, "examples", "env-overlays")
-		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+		if _, err := os.Stat(filepath.Join(demo, "main.agent")); err != nil {
 			t.Fatalf("demo project: %v", err)
 		}
 		db := filepath.Join(t.TempDir(), "env-overlays.db")
@@ -775,7 +777,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 		root := repoRoot(t)
 		demo := filepath.Join(root, "examples", "hitl-resume")
 		input := filepath.Join(demo, "fixtures", "sample-input.json")
-		if _, err := os.Stat(filepath.Join(demo, "project.yaml")); err != nil {
+		if _, err := os.Stat(filepath.Join(demo, "main.agent")); err != nil {
 			t.Fatalf("demo project: %v", err)
 		}
 		db := filepath.Join(t.TempDir(), "hitl-resume.db")
