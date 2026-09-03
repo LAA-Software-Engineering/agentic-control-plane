@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`.agent` tool `mcp` / `http` transport blocks** (issue #440, first grammar blocker from the `.agent` gap audit): a `type mcp` or `type http` tool can now be authored entirely in `.agent` — `mcp { transport "…"  command "…"  args { "…" "…" }  url "…"  headers { "<key>" "<value>" } }` and `http { baseUrl "…"  headers { "<key>" "<value>" } }` — instead of escaping to YAML. `args` is a whitespace-separated string list; `headers` is string key/value pairs (author order preserved). The blocks lower to `spec.ToolMCP` / `spec.ToolHTTP` **byte-identically to their YAML twins** (ADR 005 §2 equivalence goldens), and `terfyn fmt` round-trips them. Also fixes a #436 round-trip gap: `fmt` now prints the policy `preset` field (it was silently dropped). `docs/LANGUAGE.md` updated.
+
 - **Native GitHub PR/issue lifecycle operations**: round out the github adapter so an issue-fixing workflow can produce and manage a pull request. New ops:
   - `pull_request.create` — open a PR (`POST /repos/{owner}/{repo}/pulls`; `head` + `base` required, and `title` **or** `issue` — passing an issue number converts it into the PR; `body`/`draft` optional). The GitHub API names the action "create"; "open" is the UI term. This is the deliverable of the flagship issue→PR flow.
   - `pull_request.update` — edit/close/reopen (`PATCH …/pulls/{number}`; any of `title`/`body`/`base`/`state`).
