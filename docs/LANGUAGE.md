@@ -92,7 +92,7 @@ The reference implementation is [`internal/lang`](../internal/lang):
 
 ```ebnf
 File        = { Declaration } ;
-Declaration = AgentDecl | WorkflowDecl | ToolDecl | PolicyDecl ;   (* ToolDecl/PolicyDecl: ADR 005, #333 *)
+Declaration = AgentDecl | WorkflowDecl | ToolDecl | PolicyDecl | EnvironmentDecl ;   (* ToolDecl/PolicyDecl: ADR 005, #333; EnvironmentDecl: #440 *)
 
 AgentDecl   = "agent" Ident "{" { AgentField } "}" ;
 AgentField  = "model"  ModelRef
@@ -244,7 +244,14 @@ policy coding {
   overridable exactly like the YAML `spec.preset`, #430), `execution { maxTotalCostUsd /
   maxWallClockSeconds / requireStructuredOutput }`, `approvals { requiredFor { … } / requireAllTools
   / permissive }`, and the full effect model `effects { permit { … } permitWithApproval { … } }`.
-- `tool` and `policy` are **contextual**: only a top-level `tool <Name> {` / `policy <Name> {`
+- Environment: `environment <Name> { overrides { agents { <agent> { model … constraints { … } } }
+  policies { <policy> { execution { … } approvals { requiredFor { … } } } } } }` (#440) — per-environment
+  agent/policy overrides applied by `--env`, lowering identically to the YAML `Environment` resource
+  (ADR 005 §2). An agent override sets `model` and/or `constraints`; a policy override sets `execution`
+  and/or `approvals` (its `requiredFor` entries union onto the base policy).
+- `tool`, `policy`, and `environment` are **contextual**: only a top-level `tool <Name> {` /
+  `policy <Name> {` / `environment <Name> {` opens a declaration; the grant path `tool.<name>.<op>` and
+  the agent field `policy <name>` are
   opens a declaration; the grant path `tool.<name>.<op>` and the agent field `policy <name>` are
   unchanged. The native `workspace { … }` block and policy `hitl` are follow-on fields (ADR 005 §4);
   until a field exists in the grammar, author that resource in YAML and import it.

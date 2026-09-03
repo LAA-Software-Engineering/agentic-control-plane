@@ -124,28 +124,8 @@ func (l *lowerer) policy(d *lang.PolicyDecl) *spec.PolicyResource {
 	if preset := identName(d.Preset); preset != "" {
 		pr.Spec.Preset = preset
 	}
-	if e := d.Execution; e != nil {
-		ex := &spec.PolicyExecution{}
-		if e.MaxTotalCostUsd != nil {
-			ex.MaxTotalCostUsd = *e.MaxTotalCostUsd
-		}
-		if e.MaxWallClockSeconds != nil {
-			ex.MaxWallClockSeconds = *e.MaxWallClockSeconds
-		}
-		if e.RequireStructuredOutput != nil {
-			ex.RequireStructuredOutput = *e.RequireStructuredOutput
-		}
-		pr.Spec.Execution = ex
-	}
-	if a := d.Approvals; a != nil {
-		ap := &spec.PolicyApprovals{RequireAllTools: a.RequireAllTools, Permissive: a.Permissive}
-		for _, g := range a.RequiredFor {
-			if uses := grantUses(g); uses != "" {
-				ap.RequiredFor = append(ap.RequiredFor, uses)
-			}
-		}
-		pr.Spec.Approvals = ap
-	}
+	pr.Spec.Execution = lowerPolicyExecution(d.Execution)
+	pr.Spec.Approvals = lowerPolicyApprovals(d.Approvals)
 	if e := d.Effects; e != nil {
 		ef := &spec.PolicyEffects{}
 		for _, r := range e.Permit {
@@ -161,4 +141,87 @@ func (l *lowerer) policy(d *lang.PolicyDecl) *spec.PolicyResource {
 		pr.Spec.Effects = ef
 	}
 	return pr
+}
+
+// lowerPolicyExecution lowers a policy execution block, or nil when absent.
+func lowerPolicyExecution(e *lang.PolicyExecutionBlock) *spec.PolicyExecution {
+	if e == nil {
+		return nil
+	}
+	ex := &spec.PolicyExecution{}
+	if e.MaxTotalCostUsd != nil {
+		ex.MaxTotalCostUsd = *e.MaxTotalCostUsd
+	}
+	if e.MaxWallClockSeconds != nil {
+		ex.MaxWallClockSeconds = *e.MaxWallClockSeconds
+	}
+	if e.RequireStructuredOutput != nil {
+		ex.RequireStructuredOutput = *e.RequireStructuredOutput
+	}
+	return ex
+}
+
+// lowerPolicyApprovals lowers a policy approvals block, or nil when absent.
+func lowerPolicyApprovals(a *lang.PolicyApprovalsBlock) *spec.PolicyApprovals {
+	if a == nil {
+		return nil
+	}
+	ap := &spec.PolicyApprovals{RequireAllTools: a.RequireAllTools, Permissive: a.Permissive}
+	for _, g := range a.RequiredFor {
+		if uses := grantUses(g); uses != "" {
+			ap.RequiredFor = append(ap.RequiredFor, uses)
+		}
+	}
+	return ap
+}
+
+// environment lowers an `environment <Name> { overrides { … } }` declaration to the same
+// spec.EnvironmentResource the YAML loader produces (issue #440), applied by spec.ApplyEnvironment.
+func (l *lowerer) environment(d *lang.EnvironmentDecl) *spec.EnvironmentResource {
+	name := identName(d.Name)
+	if name == "" {
+		l.diag(d.Pos, "environment declaration has no name")
+		return nil
+	}
+	er := &spec.EnvironmentResource{
+		APIVersion: spec.APIVersionV0,
+		Kind:       spec.KindEnvironment,
+		Metadata:   spec.Metadata{Name: name},
+		Pos:        d.Pos,
+	}
+	if ov := d.Overrides; ov != nil {
+		out := &spec.EnvironmentOverrides{}
+		if len(ov.Agents) > 0 {
+			out.Agents = map[string]spec.AgentOverride{}
+			for _, a := range ov.Agents {
+				an := identName(a.Name)
+				if an == "" {
+					continue
+				}
+				o := spec.AgentOverride{}
+				if a.Model != nil {
+					o.Model = a.Model.Raw
+				}
+				if a.Constraints != nil {
+					o.Constraints = lowerConstraints(a.Constraints)
+				}
+				out.Agents[an] = o
+			}
+		}
+		if len(ov.Policies) > 0 {
+			out.Policies = map[string]spec.PolicyOverride{}
+			for _, pol := range ov.Policies {
+				pn := identName(pol.Name)
+				if pn == "" {
+					continue
+				}
+				out.Policies[pn] = spec.PolicyOverride{
+					Execution: lowerPolicyExecution(pol.Execution),
+					Approvals: lowerPolicyApprovals(pol.Approvals),
+				}
+			}
+		}
+		er.Spec.Overrides = out
+	}
+	return er
 }

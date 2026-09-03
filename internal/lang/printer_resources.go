@@ -160,3 +160,91 @@ func grantPath(g *Grant) string {
 	}
 	return strings.Join(segs, ".")
 }
+
+// printEnvironment renders `environment <Name> { overrides { agents { … } policies { … } } }`
+// (issue #440) with indent-parameterized sub-block helpers so the nested structure round-trips.
+func printEnvironment(b *strings.Builder, d *EnvironmentDecl) {
+	fmt.Fprintf(b, "environment %s {\n", identName(d.Name))
+	if ov := d.Overrides; ov != nil {
+		b.WriteString("    overrides {\n")
+		if len(ov.Agents) > 0 {
+			b.WriteString("        agents {\n")
+			for _, a := range ov.Agents {
+				fmt.Fprintf(b, "            %s {\n", identName(a.Name))
+				if a.Model != nil {
+					fmt.Fprintf(b, "                model %s\n", a.Model.Raw)
+				}
+				if a.Constraints != nil {
+					printConstraintsAt(b, "                ", a.Constraints)
+				}
+				b.WriteString("            }\n")
+			}
+			b.WriteString("        }\n")
+		}
+		if len(ov.Policies) > 0 {
+			b.WriteString("        policies {\n")
+			for _, pol := range ov.Policies {
+				fmt.Fprintf(b, "            %s {\n", identName(pol.Name))
+				if pol.Execution != nil {
+					printExecutionAt(b, "                ", pol.Execution)
+				}
+				if pol.Approvals != nil {
+					printApprovalsAt(b, "                ", pol.Approvals)
+				}
+				b.WriteString("            }\n")
+			}
+			b.WriteString("        }\n")
+		}
+		b.WriteString("    }\n")
+	}
+	b.WriteString("}\n")
+}
+
+// printConstraintsAt renders a `constraints { … }` block at the given indent (fields at indent+4).
+func printConstraintsAt(b *strings.Builder, indent string, c *Constraints) {
+	inner := indent + "    "
+	fmt.Fprintf(b, "%sconstraints {\n", indent)
+	if c.MaxIterations != nil {
+		fmt.Fprintf(b, "%smaxIterations %d\n", inner, *c.MaxIterations)
+	}
+	if c.TimeoutSeconds != nil {
+		fmt.Fprintf(b, "%stimeoutSeconds %d\n", inner, *c.TimeoutSeconds)
+	}
+	if c.Temperature != nil {
+		fmt.Fprintf(b, "%stemperature %s\n", inner, strconv.FormatFloat(*c.Temperature, 'g', -1, 64))
+	}
+	if c.RequireStructuredOutput != nil {
+		fmt.Fprintf(b, "%srequireStructuredOutput %s\n", inner, strconv.FormatBool(*c.RequireStructuredOutput))
+	}
+	fmt.Fprintf(b, "%s}\n", indent)
+}
+
+// printExecutionAt renders an `execution { … }` block at the given indent.
+func printExecutionAt(b *strings.Builder, indent string, e *PolicyExecutionBlock) {
+	inner := indent + "    "
+	fmt.Fprintf(b, "%sexecution {\n", indent)
+	if e.MaxTotalCostUsd != nil {
+		fmt.Fprintf(b, "%smaxTotalCostUsd %s\n", inner, strconv.FormatFloat(*e.MaxTotalCostUsd, 'f', -1, 64))
+	}
+	if e.MaxWallClockSeconds != nil {
+		fmt.Fprintf(b, "%smaxWallClockSeconds %d\n", inner, *e.MaxWallClockSeconds)
+	}
+	printBoolField(b, inner, "requireStructuredOutput", e.RequireStructuredOutput)
+	fmt.Fprintf(b, "%s}\n", indent)
+}
+
+// printApprovalsAt renders an `approvals { … }` block at the given indent.
+func printApprovalsAt(b *strings.Builder, indent string, a *PolicyApprovalsBlock) {
+	inner := indent + "    "
+	fmt.Fprintf(b, "%sapprovals {\n", indent)
+	if len(a.RequiredFor) > 0 {
+		fmt.Fprintf(b, "%srequiredFor {\n", inner)
+		for _, g := range a.RequiredFor {
+			fmt.Fprintf(b, "%s    %s\n", inner, grantPath(g))
+		}
+		fmt.Fprintf(b, "%s}\n", inner)
+	}
+	printBoolField(b, inner, "requireAllTools", a.RequireAllTools)
+	printBoolField(b, inner, "permissive", a.Permissive)
+	fmt.Fprintf(b, "%s}\n", indent)
+}

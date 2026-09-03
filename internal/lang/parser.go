@@ -84,8 +84,10 @@ func (p *parser) parseFile() *File {
 			f.Decls = append(f.Decls, p.parseTool())
 		case p.cur.Kind == KindIdent && p.cur.Lit == "policy":
 			f.Decls = append(f.Decls, p.parsePolicy())
+		case p.cur.Kind == KindIdent && p.cur.Lit == "environment":
+			f.Decls = append(f.Decls, p.parseEnvironment())
 		default:
-			p.errorf(p.cur.Pos, "expected 'agent', 'workflow', 'tool', or 'policy' declaration, got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected 'agent', 'workflow', 'tool', 'policy', or 'environment' declaration, got %s", p.cur)
 			p.syncTopLevel()
 		}
 	}
