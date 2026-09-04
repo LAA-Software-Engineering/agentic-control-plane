@@ -51,6 +51,11 @@ func runTwoGatesRoot(t *testing.T) string {
 	return clearSnapshotRoots(t, filepath.Join("testdata", "run_two_gates"))
 }
 
+func runNestedGateRoot(t *testing.T) string {
+	t.Helper()
+	return clearSnapshotRoots(t, filepath.Join("testdata", "run_nested_gate"))
+}
+
 func TestRun_demo_integration_succeeds(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "run-cli.db")
 	root := runProjRoot(t)
@@ -232,6 +237,67 @@ func TestRun_decisionIsOneShot_secondGateReInterrupts(t *testing.T) {
 	}
 	if !strings.Contains(s, "--resume "+runID) {
 		t.Fatalf("expected resume hint for the still-gated run:\n%s", s)
+	}
+}
+
+// TestRun_nestedSubworkflowGate_interruptsCleanlyThenResumes proves that a gate
+// inside a subworkflow (parent → child, gate in child) interrupts with exit 0,
+// "Status: interrupted", and the resume hint — not exit 1 with "checkpoint has no
+// pending approval gate" (issue #381). The engine stores the gate under the nested
+// frame, so the CLI's checkpoint lookup must walk the nested chain. Resuming with
+// --decision approve then drives the run to succeed.
+func TestRun_nestedSubworkflowGate_interruptsCleanlyThenResumes(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "run-nested.db")
+	root := runNestedGateRoot(t)
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "workflow/parent",
+		"--project", root,
+		"--state", db,
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("run of a nested-gate workflow must exit 0, got err=%v\n%s", err, out.String())
+	}
+	s := out.String()
+	if !strings.Contains(s, "Status: interrupted") {
+		t.Fatalf("expected nested gate to interrupt cleanly:\n%s", s)
+	}
+	if strings.Contains(s, "no pending approval gate") {
+		t.Fatalf("CLI failed to find the gate inside the subworkflow (#381):\n%s", s)
+	}
+	runID := ""
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Run ID:") {
+			runID = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "Run ID:"))
+		}
+	}
+	if runID == "" {
+		t.Fatalf("missing run id:\n%s", s)
+	}
+	if !strings.Contains(s, "--resume "+runID) {
+		t.Fatalf("expected resume hint for the interrupted nested-gate run:\n%s", s)
+	}
+
+	out.Reset()
+	cmd2 := NewRootCmd()
+	cmd2.SetOut(&out)
+	cmd2.SetErr(&out)
+	cmd2.SetArgs([]string{
+		"run", "--resume", runID,
+		"--project", root,
+		"--state", db,
+		"--decision", "approve",
+	})
+	if err := cmd2.Execute(); err != nil {
+		t.Fatalf("resume: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Status: succeeded") {
+		t.Fatalf("expected nested-gate run to succeed after approve:\n%s", out.String())
 	}
 }
 
