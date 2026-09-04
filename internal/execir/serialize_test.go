@@ -2,8 +2,67 @@ package execir
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
+
+// TestSerialize_UnknownNodeKindFailsClosed proves an unrecognized node kind in a pinned program
+// fails decoding rather than being silently dropped — a resumed program missing a step would
+// execute something other than what was pinned (S8, issue #392).
+func TestSerialize_UnknownNodeKindFailsClosed(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{"formatVersion":"agentic.dev/execir/v1","programs":{"w":{"workflow":"w","params":["input"],` +
+		`"body":[{"kind":"invokeTool","bind":"a","uses":"tool.x.y"},{"kind":"sleep","seconds":5},{"kind":"return","value":{"kind":"ref","path":["a"]}}]}}}`)
+	if _, err := UnmarshalPrograms(payload); err == nil {
+		t.Fatal("expected an error for an unknown node kind, got nil (node silently dropped)")
+	} else if !strings.Contains(err.Error(), "unknown node kind") {
+		t.Fatalf("error should name the unknown node kind, got %v", err)
+	}
+}
+
+// TestSerialize_UnknownValueKindFailsClosed proves an unknown value kind fails closed rather than
+// decoding to a nil literal (#392).
+func TestSerialize_UnknownValueKindFailsClosed(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{"formatVersion":"agentic.dev/execir/v1","programs":{"w":{"workflow":"w","params":["input"],` +
+		`"body":[{"kind":"return","value":{"kind":"futureval","path":["a"]}}]}}}`)
+	if _, err := UnmarshalPrograms(payload); err == nil {
+		t.Fatal("expected an error for an unknown value kind")
+	} else if !strings.Contains(err.Error(), "unknown value kind") {
+		t.Fatalf("error should name the unknown value kind, got %v", err)
+	}
+}
+
+// TestSerialize_UnknownExprKindFailsClosed proves an unknown branch-condition expr kind fails closed
+// rather than decoding to an always-false leaf (which silently takes the else arm) (#392).
+func TestSerialize_UnknownExprKindFailsClosed(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{"formatVersion":"agentic.dev/execir/v1","programs":{"w":{"workflow":"w","params":["input"],` +
+		`"body":[{"kind":"branch","cond":{"kind":"futureexpr"},"then":[],"else":[]}]}}}`)
+	if _, err := UnmarshalPrograms(payload); err == nil {
+		t.Fatal("expected an error for an unknown expr kind")
+	} else if !strings.Contains(err.Error(), "unknown expr kind") {
+		t.Fatalf("error should name the unknown expr kind, got %v", err)
+	}
+}
+
+// unknownNode is a Node the serializer does not know how to encode.
+type unknownNode struct{}
+
+func (unknownNode) node() {}
+
+// TestSerialize_EncodeUnknownNodeFailsClosed proves MarshalPrograms refuses to pin a program
+// containing a node it cannot faithfully encode, rather than writing a lossy "{kind:unknown}"
+// artifact whose bytes would not match the in-memory Program.Digest (#392).
+func TestSerialize_EncodeUnknownNodeFailsClosed(t *testing.T) {
+	t.Parallel()
+	progs := map[string]*Program{"w": {Workflow: "w", Body: []Node{unknownNode{}}}}
+	if _, err := MarshalPrograms(progs); err == nil {
+		t.Fatal("expected MarshalPrograms to refuse an unknown node type")
+	} else if !strings.Contains(err.Error(), "cannot encode unknown node type") {
+		t.Fatalf("error should name the unencodable node, got %v", err)
+	}
+}
 
 // TestSerialize_LargeIntLiteralsExact proves integer literals beyond float64's
 // exact range (2^53) survive marshal→unmarshal — they must not be laundered
