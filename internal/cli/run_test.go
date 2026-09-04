@@ -56,6 +56,56 @@ func runNestedGateRoot(t *testing.T) string {
 	return clearSnapshotRoots(t, filepath.Join("testdata", "run_nested_gate"))
 }
 
+// TestRun_verbose_streamsEventsToStderr proves `terfyn run --verbose` streams trace events to
+// stderr live (#450) while stdout stays clean for the run summary / -o json.
+func TestRun_verbose_streamsEventsToStderr(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "verbose.db")
+	root := runProjRoot(t)
+
+	ResetGlobalsForTest()
+	var out, errb bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errb)
+	cmd.SetArgs([]string{"run", "workflow/demo", "--project", root, "-e", "staging", "--state", db, "--input", "topic=x", "--no-color", "--verbose"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("run: %v\n%s", err, errb.String())
+	}
+	stderr := errb.String()
+	for _, want := range []string{"tool_selection", "tool_execution", "llm_completion"} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("stderr missing streamed %q:\n%s", want, stderr)
+		}
+	}
+	// stdout carries only the run summary — the live stream must not leak into it.
+	if strings.Contains(out.String(), "tool_execution") || strings.Contains(out.String(), "llm_completion") {
+		t.Fatalf("streamed events leaked into stdout:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "Status: succeeded") {
+		t.Fatalf("stdout missing run summary:\n%s", out.String())
+	}
+}
+
+// TestRun_withoutVerbose_noStream proves the stream is opt-in: no trace-event lines appear without
+// --verbose.
+func TestRun_withoutVerbose_noStream(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "quiet.db")
+	root := runProjRoot(t)
+
+	ResetGlobalsForTest()
+	var out, errb bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errb)
+	cmd.SetArgs([]string{"run", "workflow/demo", "--project", root, "-e", "staging", "--state", db, "--input", "topic=x"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("run: %v\n%s", err, errb.String())
+	}
+	if strings.Contains(errb.String(), "tool_execution") || strings.Contains(errb.String(), "llm_completion") {
+		t.Fatalf("events streamed without --verbose:\n%s", errb.String())
+	}
+}
+
 func TestRun_demo_integration_succeeds(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "run-cli.db")
 	root := runProjRoot(t)
