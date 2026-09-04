@@ -5,6 +5,12 @@ import "github.com/Terfyn/terfyn/internal/schema"
 // --- Project (design doc §7.1) ---
 
 type ProjectSpec struct {
+	// Imports is a YAML source-loader mechanism, not part of the canonical model: the loader expands it
+	// to find additional YAML files (internal/project.expandImports). Under ADR 007 `.agent` is the sole
+	// authoring surface and has no import concept, and exported YAML is a one-way serialization of the
+	// graph, not a reloadable manifest — so imports has no future architectural role. The struct field is
+	// retained only temporarily so `terfyn migrate` can still read a legacy YAML project; it disappears
+	// with the YAML loader (ADR 007 steps 6–7). Do not build new behavior on it.
 	Imports   []string                `yaml:"imports,omitempty" json:"imports,omitempty"`
 	Defaults  *ProjectDefaults        `yaml:"defaults,omitempty" json:"defaults,omitempty"`
 	Providers *ProjectProviders       `yaml:"providers,omitempty" json:"providers,omitempty"`
@@ -23,7 +29,6 @@ type ProjectDefaults struct {
 
 type ProjectProviders struct {
 	Models map[string]ModelProviderConfig `yaml:"models,omitempty" json:"models,omitempty"`
-	Tools  *ProjectToolsProviders         `yaml:"tools,omitempty" json:"tools,omitempty"`
 }
 
 type ModelProviderConfig struct {
@@ -33,14 +38,6 @@ type ModelProviderConfig struct {
 	// APIKeyFrom). The anthropic provider sends it as the anthropic-workspace-id
 	// header, which Anthropic requires for identity-linked API keys.
 	WorkspaceIDFrom string `yaml:"workspaceIdFrom,omitempty" json:"workspaceIdFrom,omitempty"`
-}
-
-type ProjectToolsProviders struct {
-	MCP *MCPProviderConfig `yaml:"mcp,omitempty" json:"mcp,omitempty"`
-}
-
-type MCPProviderConfig struct {
-	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 type ProjectStateConfig struct {

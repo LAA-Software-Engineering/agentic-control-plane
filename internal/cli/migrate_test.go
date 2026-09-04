@@ -401,6 +401,68 @@ func TestMigrate_legacyRemovedFields_warnAndOmit(t *testing.T) {
 	}
 }
 
+// TestMigrate_legacyProvidersToolsMCP_warnAndOmit: migrating a legacy project.yaml whose providers
+// block carries the removed `tools.mcp.enabled` no-op strips it (the strict loader would otherwise
+// reject the unknown key), warns once, keeps the canonical providers.models, and re-loads. This is the
+// one nested removed field (ADR 007 step 2 — providers.tools.mcp.enabled had no runtime semantics).
+func TestMigrate_legacyProvidersToolsMCP_warnAndOmit(t *testing.T) {
+	root := t.TempDir()
+	writeF := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeF("project.yaml", `apiVersion: agentic.dev/v0
+kind: Project
+metadata:
+  name: demo
+spec:
+  imports:
+    - ./tools/lookup.yaml
+  providers:
+    models:
+      corp:
+        type: anthropic
+        apiKeyFrom: env:CORP_KEY
+    tools:
+      mcp:
+        enabled: true
+`)
+	writeF("tools/lookup.yaml", `apiVersion: agentic.dev/v0
+kind: Tool
+metadata:
+  name: lookup
+spec:
+  type: mock
+`)
+
+	out, errOut, err := runMigrate(t, "migrate", "--to-agent", "--project", root)
+	if err != nil {
+		t.Fatalf("migrate failed: %v\nstderr:\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, "Project/demo: spec.providers.tools is no longer part of the canonical model") {
+		t.Fatalf("missing providers.tools deprecation warning in:\n%s", errOut)
+	}
+	// The canonical custom provider survives; the dead mcp toggle is gone.
+	if !strings.Contains(out, "provider corp {") {
+		t.Fatalf("canonical custom provider dropped by migration:\n%s", out)
+	}
+	if strings.Contains(out, "enabled") {
+		t.Fatalf("generated .agent must not carry the dead mcp.enabled toggle:\n%s", out)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.agent"), []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := project.LoadProject(dir); err != nil {
+		t.Fatalf("migrated .agent did not re-load: %v\n%s", err, out)
+	}
+}
+
 // writeComprehensiveYAMLProject writes a YAML project exercising the full now-supported declarative
 // resource model (custom provider; mcp/http/native tools with retry, per-op schema, workspace, limits;
 // a policy with execution/approvals/effects/hitl/tools.forbidUnknownTools; an environment overlay; an
