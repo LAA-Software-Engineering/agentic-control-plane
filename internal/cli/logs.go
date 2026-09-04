@@ -11,7 +11,6 @@ import (
 
 	"github.com/Terfyn/terfyn/internal/deploy"
 	"github.com/Terfyn/terfyn/internal/render"
-	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
 	"github.com/Terfyn/terfyn/internal/statejson"
@@ -101,17 +100,9 @@ func runLogs(cmd *cobra.Command, runID, workflow, tenantID, threadID, actorID st
 	}
 	defer func() { _ = st.Close() }()
 
-	if n := spec.TraceRetentionDays(graph); n > 0 {
-		cutoff := time.Now().UTC().AddDate(0, 0, -n)
-		if _, err := st.DeleteRunsStartedBefore(ctx, cutoff); err != nil {
-			return fmt.Errorf("logs: prune trace runs: %w", err)
-		}
-		// GC deployment artifacts orphaned by the deleted runs (#207), same reference-guarded prune
-		// the run path uses — so retention doesn't leave artifacts behind until the next run.
-		if _, err := st.PruneUnreferencedArtifacts(ctx); err != nil {
-			return fmt.Errorf("logs: prune deployment artifacts: %w", err)
-		}
-	}
+	// `terfyn logs` is a read-only history inspector (like state/inspect), so it must NOT prune —
+	// running it to look at a paused run older than retentionDays used to delete that run and its
+	// checkpoints (issue #391). Retention pruning happens only on the write path (`terfyn run`).
 
 	filter := state.RunListFilter{
 		TenantID:     tenantID,

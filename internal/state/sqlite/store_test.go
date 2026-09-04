@@ -361,6 +361,56 @@ func TestDeleteRunsStartedBefore_cascadesChildRows(t *testing.T) {
 	}
 }
 
+// TestDeleteRunsStartedBefore_preservesResumableRuns proves retention never prunes an old
+// `interrupted` or `running` run (or its checkpoints), so a run paused at a HITL gate stays
+// resumable regardless of age, while an old terminal run is still deleted (#391/#402).
+func TestDeleteRunsStartedBefore_preservesResumableRuns(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "retain.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC) // well before any cutoff
+	mk := func(id, status string) {
+		if err := st.StartRun(ctx, state.Run{RunID: id, WorkflowName: "wf", Env: "local", Status: status, StartedAt: old, InputJSON: `{}`}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SaveCheckpoint(ctx, state.RunCheckpoint{
+			RunID: id, StepIndex: 0, StepID: "s1",
+			ContextJSON: `{"version":1,"input":{},"steps":{},"totalCostUsd":0}`,
+			Status:      state.CheckpointStatusInterrupted, CreatedAt: old,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("paused", state.RunStatusInterrupted)
+	mk("live", state.RunStatusRunning)
+	mk("done", state.RunStatusSucceeded)
+
+	n, err := st.DeleteRunsStartedBefore(ctx, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("only the terminal run should be pruned, deleted %d", n)
+	}
+	// Resumable runs and their checkpoints survive.
+	for _, id := range []string{"paused", "live"} {
+		if _, err := st.GetRun(ctx, id); err != nil {
+			t.Fatalf("resumable run %q was pruned: %v", id, err)
+		}
+		if _, err := st.GetLatestCheckpoint(ctx, id); err != nil {
+			t.Fatalf("checkpoint for resumable run %q was pruned: %v", id, err)
+		}
+	}
+	// The terminal run is gone.
+	if _, err := st.GetRun(ctx, "done"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("terminal run should be pruned: %v", err)
+	}
+}
+
 func TestSaveCheckpoint_roundTripAndLatest(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, filepath.Join(t.TempDir(), "cp.db"))

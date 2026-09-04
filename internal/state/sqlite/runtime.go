@@ -455,14 +455,21 @@ ORDER BY seq ASC
 	return out, rows.Err()
 }
 
-// DeleteRunsStartedBefore deletes runs older than cutoff (by runs.started_at, RFC3339Nano text compare).
-// Foreign keys cascade to run_steps and trace_events (design doc 14.2, issue #75).
+// DeleteRunsStartedBefore deletes TERMINAL runs older than cutoff (by runs.started_at). Foreign keys
+// cascade to run_steps, trace_events, and run_checkpoints (design doc 14.2, issue #75).
+//
+// Resumable runs are excluded regardless of age: a `running` or `interrupted` run (e.g. paused at a
+// HITL gate awaiting a human decision) must never be pruned, or `terfyn run --resume <id>` would fail
+// with "run not found" and its checkpoints would be gone — a pause has no deadline tied to trace
+// retention (issue #391/#402). Only finished runs (succeeded/failed) are eligible.
 func (s *Store) DeleteRunsStartedBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	if s == nil || s.db == nil {
 		return 0, fmt.Errorf("sqlite: nil store")
 	}
 	cut := formatSQLiteTime(cutoff) // same fixed-width layout as stored started_at, so the compare is chronological (#385)
-	res, err := s.db.ExecContext(ctx, `DELETE FROM runs WHERE started_at < ?`, cut)
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM runs WHERE started_at < ? AND status NOT IN (?, ?)`,
+		cut, state.RunStatusRunning, state.RunStatusInterrupted)
 	if err != nil {
 		return 0, err
 	}
