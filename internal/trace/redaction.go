@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"unicode/utf8"
 )
 
 // RedactedPlaceholder replaces sensitive values in stored trace payloads (issue #110).
@@ -289,12 +290,44 @@ func truncateString(s string, max int) string {
 		return s
 	}
 	if max <= 3 {
-		return s[:max]
+		return runeSafePrefix(s, max)
 	}
 	keep := max - 3
 	head := keep / 2
 	tail := keep - head
-	return s[:head] + "..." + s[len(s)-tail:]
+	return runeSafePrefix(s, head) + "..." + runeSafeSuffix(s, tail)
+}
+
+// runeSafePrefix returns the longest prefix of s within maxBytes that ends on a
+// UTF-8 rune boundary, so a stored trace preview is never invalid UTF-8 (#386).
+func runeSafePrefix(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if maxBytes >= len(s) {
+		return s
+	}
+	b := maxBytes
+	for b > 0 && !utf8.RuneStart(s[b]) {
+		b--
+	}
+	return s[:b]
+}
+
+// runeSafeSuffix returns the longest suffix of s within maxBytes that starts on a
+// UTF-8 rune boundary.
+func runeSafeSuffix(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if maxBytes >= len(s) {
+		return s
+	}
+	start := len(s) - maxBytes
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
 }
 
 func binaryPlaceholder(b []byte, max int) string {
@@ -334,7 +367,7 @@ func truncatePayload(data map[string]any, maxBytes int) map[string]any {
 	}
 	preview := string(b)
 	if len(preview) > maxBytes {
-		preview = preview[:maxBytes]
+		preview = runeSafePrefix(preview, maxBytes) // rune boundary, not a mid-rune byte cut (#386)
 	}
 	return map[string]any{
 		FieldPayloadTruncated: true,

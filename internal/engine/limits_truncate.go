@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/Terfyn/terfyn/internal/render"
 	"github.com/Terfyn/terfyn/internal/trace"
@@ -124,12 +125,16 @@ func walkAndTruncateStrings(v any, maxChars int) {
 	}
 }
 
+// truncateRunes shortens s to a byte budget of max, keeping a head and tail around
+// a "..." marker. Both cuts land on UTF-8 rune boundaries so the result is always
+// valid UTF-8 — this value is dispatched to the tool (inputs) and stored (outputs),
+// so a rune split here corrupts the data json.Marshal then patches with U+FFFD (#386).
 func truncateRunes(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
 	}
 	if max <= len(truncatedStringMark) {
-		return s[:max]
+		return runeSafePrefix(s, max)
 	}
 	keep := max - len(truncatedStringMark)
 	head := keep / 2
@@ -137,7 +142,39 @@ func truncateRunes(s string, max int) string {
 	if head+tail > len(s) {
 		return s
 	}
-	return s[:head] + truncatedStringMark + s[len(s)-tail:]
+	return runeSafePrefix(s, head) + truncatedStringMark + runeSafeSuffix(s, tail)
+}
+
+// runeSafePrefix returns the longest prefix of s that is at most maxBytes bytes and
+// ends on a rune boundary (never mid-rune).
+func runeSafePrefix(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if maxBytes >= len(s) {
+		return s
+	}
+	b := maxBytes
+	for b > 0 && !utf8.RuneStart(s[b]) {
+		b--
+	}
+	return s[:b]
+}
+
+// runeSafeSuffix returns the longest suffix of s that is at most maxBytes bytes and
+// starts on a rune boundary (never mid-rune).
+func runeSafeSuffix(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if maxBytes >= len(s) {
+		return s
+	}
+	start := len(s) - maxBytes
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
 }
 
 type stringRef struct {

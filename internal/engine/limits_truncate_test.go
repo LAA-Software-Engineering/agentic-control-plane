@@ -3,9 +3,44 @@ package engine
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Terfyn/terfyn/internal/trace"
 )
+
+// TestTruncateMapInPlace_keepsValidUTF8 proves the truncated tool input stays valid
+// UTF-8 (rune-boundary cuts) rather than being split mid-rune (#386). The truncated
+// value is what gets dispatched to the tool, so a mid-rune cut corrupts it.
+func TestTruncateMapInPlace_keepsValidUTF8(t *testing.T) {
+	s := strings.Repeat("日本語", 70)
+	in := map[string]any{"text": s}
+	out, _, truncated, err := truncateMapInPlace(in, 64, trace.DefaultRedactionOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !truncated {
+		t.Fatal("expected truncation")
+	}
+	got, _ := out["text"].(string)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated tool input is not valid UTF-8: %q", got)
+	}
+}
+
+// TestTruncateRunes_runeBoundaries checks the head/tail cuts land on rune boundaries
+// across a range of byte budgets over multi-byte text.
+func TestTruncateRunes_runeBoundaries(t *testing.T) {
+	s := strings.Repeat("🙂", 40) // 4 bytes each
+	for max := 1; max <= len(s); max++ {
+		got := truncateRunes(s, max)
+		if !utf8.ValidString(got) {
+			t.Fatalf("truncateRunes(max=%d) invalid UTF-8: %q", max, got)
+		}
+		if len(got) > max && max < len(s) {
+			t.Fatalf("truncateRunes(max=%d) exceeded budget: %d bytes", max, len(got))
+		}
+	}
+}
 
 func TestTruncateMapInPlace_preservesTopLevelKeys(t *testing.T) {
 	t.Parallel()
