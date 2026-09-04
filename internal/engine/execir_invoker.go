@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -419,7 +420,7 @@ func (a *engineInvoker) InvokeAgent(ctx context.Context, site execir.CallSite, a
 // that frame so its completed inner steps replay, never re-run. A subworkflow that
 // COMPLETED is instead replayed via the parent's own memo (invoke wraps this call),
 // so it is never re-entered at all.
-func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite, workflow string, args map[string]any) (any, error) {
+func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite, workflow string, args map[string]any) (result any, err error) {
 	key := execir.CallKey(site)
 	callee, err := lookupWorkflow(a.e.Graph, workflow)
 	if err != nil {
@@ -446,6 +447,35 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 	wfInJSON := a.redactStepJSON(args)
 	wfStarted := a.e.now()
 	_ = a.e.Store.UpsertRunStep(ctx, state.RunStep{RunID: a.in.RunID, StepID: wfQID, Status: "running", StartedAt: &wfStarted, InputJSON: string(wfInJSON)})
+
+	// The success path (below) overwrites this row to "succeeded", but every early return —
+	// evaluator/lowering/output errors, a callee failure from RunResumable, the second-nested
+	// refusal, and the ErrSuspend path — used to leave it "running" forever inside a finished run
+	// (#395/#401). Ordinary leaves get this finalization from engineInvoker.run; the subworkflow
+	// path bypasses that envelope, so finalize the row here: interrupted on suspend, failed on any
+	// other error, with a matching run_error trace event so run_steps is faithful for every kind.
+	wfRowFinal := false
+	defer func() {
+		if err == nil || wfRowFinal {
+			return
+		}
+		wfRowFinal = true
+		wfFinished := a.e.now()
+		if errors.Is(err, execir.ErrSuspend) {
+			_ = a.e.Store.UpsertRunStep(ctx, state.RunStep{
+				RunID: a.in.RunID, StepID: wfQID, Status: state.RunStatusInterrupted,
+				StartedAt: &wfStarted, FinishedAt: &wfFinished, InputJSON: string(wfInJSON),
+			})
+			return
+		}
+		_ = a.e.Store.UpsertRunStep(ctx, state.RunStep{
+			RunID: a.in.RunID, StepID: wfQID, Status: "failed",
+			StartedAt: &wfStarted, FinishedAt: &wfFinished, InputJSON: string(wfInJSON), ErrorText: err.Error(),
+		})
+		if a.e.Trace != nil {
+			_, _ = a.e.Trace.Append(ctx, a.in.RunID, wfQID, trace.EventRunError, trace.ActorSystem, runErrorTraceData(wfQID, err))
+		}
+	}()
 
 	calleePol, err := compiledWorkflowEvaluator(a.e.ProjectRoot, a.e.Graph, strings.TrimSpace(callee.Spec.Policy), a.e.PinnedGraph)
 	if err != nil {
