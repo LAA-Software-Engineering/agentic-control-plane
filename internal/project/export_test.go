@@ -61,7 +61,7 @@ workflow Review(input: PullRequest) -> Review {
 }
 `)
 
-	g1, err := LoadProjectAllowingYAML(root)
+	g1, _, err := LoadYAMLResources(root)
 	if err != nil {
 		t.Fatalf("initial load: %v", err)
 	}
@@ -71,7 +71,7 @@ workflow Review(input: PullRequest) -> Review {
 		t.Fatalf("export: %v", err)
 	}
 
-	g2, err := LoadProjectAllowingYAML(out)
+	g2, _, err := LoadYAMLResources(out)
 	if err != nil {
 		t.Fatalf("reload exported project: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestWriteProjectDir_ReExportSmallerGraphLeavesNoLeftovers(t *testing.T) {
 		t.Fatalf("re-export: %v", err)
 	}
 
-	g, err := LoadProjectAllowingYAML(out)
+	g, _, err := LoadYAMLResources(out)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -142,7 +142,7 @@ agent A { model openai/gpt-5 }
 agent B { model openai/gpt-5 }
 workflow W(input: X) { return input.x }
 `)
-	g, err := LoadProjectAllowingYAML(root)
+	g, _, err := LoadYAMLResources(root)
 	if err != nil {
 		t.Fatal(err)
 	}
