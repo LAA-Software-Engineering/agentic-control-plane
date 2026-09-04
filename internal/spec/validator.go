@@ -325,7 +325,7 @@ func validateHitlPolicy(p Pos, policyName string, hitl *HitlPolicy, g *ProjectGr
 			continue
 		}
 		if iv.Config != nil {
-			errs = append(errs, validateHitlInterruptConfig(p, prefix+".interruptOn["+toolName+"]", iv.Config, g)...)
+			errs = append(errs, validateHitlInterruptConfig(p, prefix+".interruptOn["+toolName+"]", tn, iv.Config, g)...)
 		}
 	}
 	if hitl.ToolSwitchMap != nil {
@@ -343,7 +343,7 @@ func validateHitlPolicy(p Pos, policyName string, hitl *HitlPolicy, g *ProjectGr
 	return errs
 }
 
-func validateHitlInterruptConfig(p Pos, prefix string, cfg *HitlInterruptConfig, g *ProjectGraph) []error {
+func validateHitlInterruptConfig(p Pos, prefix, gatedTool string, cfg *HitlInterruptConfig, g *ProjectGraph) []error {
 	if cfg == nil {
 		return nil
 	}
@@ -359,15 +359,21 @@ func validateHitlInterruptConfig(p Pos, prefix string, cfg *HitlInterruptConfig,
 		}
 		seenDecisions[d] = struct{}{}
 	}
-	for i, tn := range cfg.AllowedEditTools {
-		tn = strings.TrimSpace(tn)
-		if tn == "" {
+	for i, op := range cfg.AllowedEditTools {
+		op = strings.TrimSpace(op)
+		if op == "" {
 			errs = append(errs, p.Errorf("%s.allowedEditTools[%d] must be non-empty", prefix, i))
 			continue
 		}
-		if g != nil && g.Tools != nil {
-			if _, ok := g.Tools[tn]; !ok {
-				errs = append(errs, p.Errorf("%s.allowedEditTools[%q]: no Tool/%s in project", prefix, tn, tn))
+		// allowedEditTools entries are OPERATIONS on the gated tool, NOT Tool resource names: a
+		// `switch` decision rewrites the gated call to tool.<gatedTool>.<entry> (policy.switchUses),
+		// so validate each entry against the gated tool's declared operations (#399). A tool with an
+		// open manifest (no declared operations) permits any operation, so the check is skipped.
+		if g != nil && g.Tools != nil && gatedTool != "" {
+			if tr := g.Tools[gatedTool]; tr != nil && tr.Spec.OperationsDeclared {
+				if _, ok := tr.Spec.Operations[op]; !ok {
+					errs = append(errs, p.Errorf("%s.allowedEditTools[%q]: no operation %q on Tool/%s", prefix, op, op, gatedTool))
+				}
 			}
 		}
 	}

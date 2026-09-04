@@ -97,6 +97,53 @@ func TestValidatePolicySpecs_hitlUnknownTool(t *testing.T) {
 	}
 }
 
+// gatedToolGraph builds a policy that gates tool `publish` (with the given declared operations) and
+// sets allowedEditTools to editTools.
+func gatedToolGraph(ops []string, editTools []string) *spec.ProjectGraph {
+	opMap := make(map[string]spec.ToolOperation, len(ops))
+	for _, o := range ops {
+		opMap[o] = spec.ToolOperation{}
+	}
+	return &spec.ProjectGraph{
+		Tools: map[string]*spec.ToolResource{
+			"publish": {Metadata: spec.Metadata{Name: "publish"}, Spec: spec.ToolSpec{
+				Type: "native", Operations: opMap, OperationsDeclared: true,
+				Safety: &spec.ToolSafety{Trusted: spec.BoolPtr(true), SideEffects: spec.BoolPtr(false)},
+			}},
+		},
+		Policies: map[string]*spec.PolicyResource{
+			"gated": {Spec: spec.PolicySpec{
+				Hitl: &spec.HitlPolicy{InterruptOn: map[string]spec.HitlInterruptValue{
+					"publish": {Enabled: true, Config: &spec.HitlInterruptConfig{
+						AllowedDecisions: []spec.HitlDecisionKind{spec.HitlDecisionApprove, spec.HitlDecisionSwitch},
+						AllowedEditTools: editTools,
+					}},
+				}},
+			}},
+		},
+	}
+}
+
+// TestValidatePolicySpecs_allowedEditToolsOperationValid proves an allowedEditTools entry that is a
+// declared OPERATION on the gated tool validates — matching how the runtime rewrites a switch to
+// tool.<gatedTool>.<entry> — even though no Tool of that name exists (#399).
+func TestValidatePolicySpecs_allowedEditToolsOperationValid(t *testing.T) {
+	g := gatedToolGraph([]string{"default", "archive"}, []string{"archive"})
+	if err := spec.ValidateProjectGraph(g, t.TempDir()); err != nil {
+		t.Fatalf("a valid operation switch target must pass validation, got %v", err)
+	}
+}
+
+// TestValidatePolicySpecs_allowedEditToolsUnknownOperation proves an entry that is NOT an operation
+// on the gated tool is rejected as an operation error, not a Tool-name error (#399).
+func TestValidatePolicySpecs_allowedEditToolsUnknownOperation(t *testing.T) {
+	g := gatedToolGraph([]string{"default"}, []string{"nope"})
+	err := spec.ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `no operation "nope" on Tool/publish`) {
+		t.Fatalf("expected an unknown-operation error, got %v", err)
+	}
+}
+
 func TestValidatePolicySpecs_hitlOverlap(t *testing.T) {
 	t.Helper()
 	g := &spec.ProjectGraph{
