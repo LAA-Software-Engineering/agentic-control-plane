@@ -23,10 +23,14 @@ func MarshalPrograms(programs map[string]*Program) ([]byte, error) {
 		if p == nil {
 			continue
 		}
+		body, err := wireNodes(p.Body)
+		if err != nil {
+			return nil, fmt.Errorf("execir: encode program %q: %w", name, err)
+		}
 		w.Programs[name] = programWire{
 			Workflow: p.Workflow,
 			Params:   p.Params,
-			Body:     wireNodes(p.Body),
+			Body:     body,
 		}
 	}
 	return json.Marshal(w)
@@ -44,7 +48,11 @@ func UnmarshalPrograms(payload []byte) (map[string]*Program, error) {
 	}
 	out := make(map[string]*Program, len(w.Programs))
 	for name, pw := range w.Programs {
-		out[name] = &Program{Workflow: pw.Workflow, Params: pw.Params, Body: decodeNodes(pw.Body)}
+		body, err := decodeNodes(pw.Body)
+		if err != nil {
+			return nil, fmt.Errorf("execir: program %q: %w", name, err)
+		}
+		out[name] = &Program{Workflow: pw.Workflow, Params: pw.Params, Body: body}
 	}
 	return out, nil
 }
@@ -121,289 +129,502 @@ type exprWire struct {
 
 // --- encode -----------------------------------------------------------------
 
-func wireNodes(nodes []Node) []nodeWire {
+func wireNodes(nodes []Node) ([]nodeWire, error) {
 	if len(nodes) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]nodeWire, len(nodes))
 	for i, n := range nodes {
-		out[i] = wireNode(n)
+		w, err := wireNode(n)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = w
 	}
-	return out
+	return out, nil
 }
 
-func wireNode(n Node) nodeWire {
+func wireNode(n Node) (nodeWire, error) {
 	switch v := n.(type) {
 	case *InvokeTool:
-		return nodeWire{Kind: "invokeTool", Bind: v.Bind, Uses: v.Uses, Args: wireArgs(v.Args)}
+		args, err := wireArgs(v.Args)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "invokeTool", Bind: v.Bind, Uses: v.Uses, Args: args}, nil
 	case *InvokeAgent:
-		return nodeWire{Kind: "invokeAgent", Bind: v.Bind, Agent: v.Agent, Args: wireArgs(v.Args)}
+		args, err := wireArgs(v.Args)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "invokeAgent", Bind: v.Bind, Agent: v.Agent, Args: args}, nil
 	case *InvokeWorkflow:
-		return nodeWire{Kind: "invokeWorkflow", Bind: v.Bind, Workflow: v.Workflow, Args: wireArgs(v.Args)}
+		args, err := wireArgs(v.Args)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "invokeWorkflow", Bind: v.Bind, Workflow: v.Workflow, Args: args}, nil
 	case *Let:
-		vw := wireVal(v.Value)
-		return nodeWire{Kind: "let", Bind: v.Bind, Value: &vw}
+		vw, err := wireVal(v.Value)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "let", Bind: v.Bind, Value: &vw}, nil
 	case *Branch:
-		ew := wireExpr(v.Cond)
-		return nodeWire{Kind: "branch", Cond: &ew, Then: wireNodes(v.Then), Else: wireNodes(v.Else)}
+		ew, err := wireExpr(v.Cond)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		then, err := wireNodes(v.Then)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		els, err := wireNodes(v.Else)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "branch", Cond: &ew, Then: then, Else: els}, nil
 	case *Fork:
 		brs := make([]forkBranchWire, len(v.Branches))
 		for i, b := range v.Branches {
-			brs[i] = forkBranchWire{Bind: b.Bind, Nodes: wireNodes(b.Nodes)}
+			nodes, err := wireNodes(b.Nodes)
+			if err != nil {
+				return nodeWire{}, err
+			}
+			brs[i] = forkBranchWire{Bind: b.Bind, Nodes: nodes}
 		}
-		return nodeWire{Kind: "fork", Branches: brs}
+		return nodeWire{Kind: "fork", Branches: brs}, nil
 	case *Loop:
-		cw := wireVal(v.Collection)
-		return nodeWire{Kind: "loop", Var: v.Var, Parallel: v.Parallel, Collection: &cw, Body: wireNodes(v.Body)}
+		cw, err := wireVal(v.Collection)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		body, err := wireNodes(v.Body)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "loop", Var: v.Var, Parallel: v.Parallel, Collection: &cw, Body: body}, nil
 	case *While:
-		ew := wireExpr(v.Cond)
-		return nodeWire{Kind: "while", Cond: &ew, Limit: v.Limit, Body: wireNodes(v.Body)}
+		ew, err := wireExpr(v.Cond)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		body, err := wireNodes(v.Body)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "while", Cond: &ew, Limit: v.Limit, Body: body}, nil
 	case *Retry:
-		ew := wireExpr(v.Cond)
-		return nodeWire{Kind: "retry", Cond: &ew, Limit: v.Limit, Body: wireNodes(v.Body)}
+		ew, err := wireExpr(v.Cond)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		body, err := wireNodes(v.Body)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "retry", Cond: &ew, Limit: v.Limit, Body: body}, nil
 	case *Return:
-		vw := wireVal(v.Value)
-		return nodeWire{Kind: "return", Value: &vw}
+		vw, err := wireVal(v.Value)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "return", Value: &vw}, nil
 	case *Graph:
 		gns := make([]graphNodeWire, len(v.Nodes))
 		for i, gn := range v.Nodes {
-			gns[i] = graphNodeWire{ID: gn.ID, Needs: gn.Needs, Run: wireNode(gn.Run)}
+			run, err := wireNode(gn.Run)
+			if err != nil {
+				return nodeWire{}, err
+			}
+			gns[i] = graphNodeWire{ID: gn.ID, Needs: gn.Needs, Run: run}
 		}
-		return nodeWire{Kind: "graph", Nodes: gns}
+		return nodeWire{Kind: "graph", Nodes: gns}, nil
 	case *Approval:
-		return nodeWire{Kind: "approval", Bind: v.Bind, Desc: v.Description, RedactKeys: v.RedactKeys, Args: wireArgs(v.Args)}
+		args, err := wireArgs(v.Args)
+		if err != nil {
+			return nodeWire{}, err
+		}
+		return nodeWire{Kind: "approval", Bind: v.Bind, Desc: v.Description, RedactKeys: v.RedactKeys, Args: args}, nil
 	default:
-		return nodeWire{Kind: "unknown"}
+		// S8: a program containing a node we cannot faithfully encode must fail rather
+		// than be pinned lossy (a "{kind:unknown}" that the digest would not match).
+		return nodeWire{}, fmt.Errorf("execir: cannot encode unknown node type %T (S8 fail-closed)", n)
 	}
 }
 
-func wireArgs(args map[string]Value) map[string]valWire {
+func wireArgs(args map[string]Value) (map[string]valWire, error) {
 	if len(args) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make(map[string]valWire, len(args))
 	for k, v := range args {
-		out[k] = wireVal(v)
+		w, err := wireVal(v)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = w
 	}
-	return out
+	return out, nil
 }
 
-func wireVal(v Value) valWire {
+func wireVal(v Value) (valWire, error) {
 	switch x := v.(type) {
 	case Ref:
-		return valWire{Kind: "ref", Path: x.Path}
+		return valWire{Kind: "ref", Path: x.Path}, nil
 	case Lit:
 		return wireLit(x.V)
 	case Object:
 		fs := make([]fieldWire, len(x.Fields))
 		for i, f := range x.Fields {
-			fs[i] = fieldWire{Key: f.Key, Val: wireVal(f.Val)}
+			w, err := wireVal(f.Val)
+			if err != nil {
+				return valWire{}, err
+			}
+			fs[i] = fieldWire{Key: f.Key, Val: w}
 		}
-		return valWire{Kind: "object", Fields: fs}
+		return valWire{Kind: "object", Fields: fs}, nil
 	case List:
 		es := make([]valWire, len(x.Elems))
 		for i, e := range x.Elems {
-			es[i] = wireVal(e)
+			w, err := wireVal(e)
+			if err != nil {
+				return valWire{}, err
+			}
+			es[i] = w
 		}
-		return valWire{Kind: "list", Elems: es}
+		return valWire{Kind: "list", Elems: es}, nil
 	case Template:
 		ps := make([]valWire, len(x.Parts))
 		for i, p := range x.Parts {
-			ps[i] = wireVal(p)
+			w, err := wireVal(p)
+			if err != nil {
+				return valWire{}, err
+			}
+			ps[i] = w
 		}
-		return valWire{Kind: "template", Parts: ps}
+		return valWire{Kind: "template", Parts: ps}, nil
 	case nil:
-		return valWire{Kind: "lit", LitT: "nil"}
+		return valWire{Kind: "lit", LitT: "nil"}, nil
 	default:
-		return valWire{Kind: "lit", LitT: "nil"}
+		return valWire{}, fmt.Errorf("execir: cannot encode unknown value type %T (S8 fail-closed)", v)
 	}
 }
 
-func wireLit(v any) valWire {
+func wireLit(v any) (valWire, error) {
 	switch x := v.(type) {
 	case string:
-		return valWire{Kind: "lit", LitT: "s", LitV: x}
+		return valWire{Kind: "lit", LitT: "s", LitV: x}, nil
 	case int64:
 		// Encode as a decimal STRING, never a JSON number: json.Unmarshal decodes
 		// every JSON number into float64 when the target is `any`, rounding an
 		// int64 past 2^53 to the nearest double. That would silently hydrate a
 		// different program than was pinned (the content digest guards the bytes,
 		// not the decoded program). A string is lossless across the full int64.
-		return valWire{Kind: "lit", LitT: "i", LitV: strconv.FormatInt(x, 10)}
+		return valWire{Kind: "lit", LitT: "i", LitV: strconv.FormatInt(x, 10)}, nil
 	case float64:
-		return valWire{Kind: "lit", LitT: "f", LitV: x}
+		return valWire{Kind: "lit", LitT: "f", LitV: x}, nil
 	case bool:
-		return valWire{Kind: "lit", LitT: "b", LitV: x}
+		return valWire{Kind: "lit", LitT: "b", LitV: x}, nil
 	case nil:
-		return valWire{Kind: "lit", LitT: "nil"}
+		return valWire{Kind: "lit", LitT: "nil"}, nil
 	default:
-		// A non-canonical scalar should not reach here (lowering canonicalizes),
-		// but preserve it as a string so the payload stays total.
-		return valWire{Kind: "lit", LitT: "s", LitV: fmt.Sprintf("%v", x)}
+		// A non-canonical scalar must not be silently coerced (that would change the
+		// pinned program relative to its digest); fail closed (S8).
+		return valWire{}, fmt.Errorf("execir: cannot encode non-canonical literal of type %T (S8 fail-closed)", v)
 	}
 }
 
-func wireExpr(e Expr) exprWire {
+func wireExpr(e Expr) (exprWire, error) {
 	switch x := e.(type) {
 	case Leaf:
-		vw := wireVal(x.V)
-		return exprWire{Kind: "leaf", V: &vw}
+		vw, err := wireVal(x.V)
+		if err != nil {
+			return exprWire{}, err
+		}
+		return exprWire{Kind: "leaf", V: &vw}, nil
 	case Not:
-		xw := wireExpr(x.X)
-		return exprWire{Kind: "not", X: &xw}
+		xw, err := wireExpr(x.X)
+		if err != nil {
+			return exprWire{}, err
+		}
+		return exprWire{Kind: "not", X: &xw}, nil
 	case BinOp:
-		xw := wireExpr(x.X)
-		yw := wireExpr(x.Y)
-		return exprWire{Kind: "binop", Op: x.Op, X: &xw, Y: &yw}
+		xw, err := wireExpr(x.X)
+		if err != nil {
+			return exprWire{}, err
+		}
+		yw, err := wireExpr(x.Y)
+		if err != nil {
+			return exprWire{}, err
+		}
+		return exprWire{Kind: "binop", Op: x.Op, X: &xw, Y: &yw}, nil
 	default:
-		return exprWire{Kind: "leaf", V: &valWire{Kind: "lit", LitT: "nil"}}
+		return exprWire{}, fmt.Errorf("execir: cannot encode unknown expr type %T (S8 fail-closed)", e)
 	}
 }
 
 // --- decode -----------------------------------------------------------------
 
-func decodeNodes(nodes []nodeWire) []Node {
+func decodeNodes(nodes []nodeWire) ([]Node, error) {
 	if len(nodes) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]Node, 0, len(nodes))
 	for _, n := range nodes {
-		if dn := decodeNode(n); dn != nil {
-			out = append(out, dn)
+		dn, err := decodeNode(n)
+		if err != nil {
+			return nil, err
 		}
+		out = append(out, dn)
 	}
-	return out
+	return out, nil
 }
 
-func decodeNode(n nodeWire) Node {
+func decodeNode(n nodeWire) (Node, error) {
 	switch n.Kind {
 	case "invokeTool":
-		return &InvokeTool{Bind: n.Bind, Uses: n.Uses, Args: decodeArgs(n.Args)}
+		args, err := decodeArgs(n.Args)
+		if err != nil {
+			return nil, err
+		}
+		return &InvokeTool{Bind: n.Bind, Uses: n.Uses, Args: args}, nil
 	case "invokeAgent":
-		return &InvokeAgent{Bind: n.Bind, Agent: n.Agent, Args: decodeArgs(n.Args)}
+		args, err := decodeArgs(n.Args)
+		if err != nil {
+			return nil, err
+		}
+		return &InvokeAgent{Bind: n.Bind, Agent: n.Agent, Args: args}, nil
 	case "invokeWorkflow":
-		return &InvokeWorkflow{Bind: n.Bind, Workflow: n.Workflow, Args: decodeArgs(n.Args)}
+		args, err := decodeArgs(n.Args)
+		if err != nil {
+			return nil, err
+		}
+		return &InvokeWorkflow{Bind: n.Bind, Workflow: n.Workflow, Args: args}, nil
 	case "let":
-		return &Let{Bind: n.Bind, Value: decodeValPtr(n.Value)}
+		val, err := decodeValPtr(n.Value)
+		if err != nil {
+			return nil, err
+		}
+		return &Let{Bind: n.Bind, Value: val}, nil
 	case "branch":
-		return &Branch{Cond: decodeExprPtr(n.Cond), Then: decodeNodes(n.Then), Else: decodeNodes(n.Else)}
+		cond, err := decodeExprPtr(n.Cond)
+		if err != nil {
+			return nil, err
+		}
+		then, err := decodeNodes(n.Then)
+		if err != nil {
+			return nil, err
+		}
+		els, err := decodeNodes(n.Else)
+		if err != nil {
+			return nil, err
+		}
+		return &Branch{Cond: cond, Then: then, Else: els}, nil
 	case "fork":
 		brs := make([]ForkBranch, len(n.Branches))
 		for i, b := range n.Branches {
-			brs[i] = ForkBranch{Bind: b.Bind, Nodes: decodeNodes(b.Nodes)}
+			nodes, err := decodeNodes(b.Nodes)
+			if err != nil {
+				return nil, err
+			}
+			brs[i] = ForkBranch{Bind: b.Bind, Nodes: nodes}
 		}
-		return &Fork{Branches: brs}
+		return &Fork{Branches: brs}, nil
 	case "loop":
-		return &Loop{Var: n.Var, Parallel: n.Parallel, Collection: decodeValPtr(n.Collection), Body: decodeNodes(n.Body)}
+		coll, err := decodeValPtr(n.Collection)
+		if err != nil {
+			return nil, err
+		}
+		body, err := decodeNodes(n.Body)
+		if err != nil {
+			return nil, err
+		}
+		return &Loop{Var: n.Var, Parallel: n.Parallel, Collection: coll, Body: body}, nil
 	case "while":
-		return &While{Cond: decodeExprPtr(n.Cond), Limit: n.Limit, Body: decodeNodes(n.Body)}
+		cond, err := decodeExprPtr(n.Cond)
+		if err != nil {
+			return nil, err
+		}
+		body, err := decodeNodes(n.Body)
+		if err != nil {
+			return nil, err
+		}
+		return &While{Cond: cond, Limit: n.Limit, Body: body}, nil
 	case "retry":
-		return &Retry{Cond: decodeExprPtr(n.Cond), Limit: n.Limit, Body: decodeNodes(n.Body)}
+		cond, err := decodeExprPtr(n.Cond)
+		if err != nil {
+			return nil, err
+		}
+		body, err := decodeNodes(n.Body)
+		if err != nil {
+			return nil, err
+		}
+		return &Retry{Cond: cond, Limit: n.Limit, Body: body}, nil
 	case "return":
-		return &Return{Value: decodeValPtr(n.Value)}
+		val, err := decodeValPtr(n.Value)
+		if err != nil {
+			return nil, err
+		}
+		return &Return{Value: val}, nil
 	case "graph":
 		gns := make([]GraphNode, len(n.Nodes))
 		for i, gn := range n.Nodes {
-			gns[i] = GraphNode{ID: gn.ID, Needs: gn.Needs, Run: decodeNode(gn.Run)}
+			run, err := decodeNode(gn.Run)
+			if err != nil {
+				return nil, err
+			}
+			gns[i] = GraphNode{ID: gn.ID, Needs: gn.Needs, Run: run}
 		}
-		return &Graph{Nodes: gns}
+		return &Graph{Nodes: gns}, nil
 	case "approval":
-		return &Approval{Bind: n.Bind, Description: n.Desc, RedactKeys: n.RedactKeys, Args: decodeArgs(n.Args)}
+		args, err := decodeArgs(n.Args)
+		if err != nil {
+			return nil, err
+		}
+		return &Approval{Bind: n.Bind, Description: n.Desc, RedactKeys: n.RedactKeys, Args: args}, nil
 	default:
-		return nil
+		// S8: an unknown node kind must fail closed, not be dropped — a resumed program
+		// missing a step would execute something other than what was pinned.
+		return nil, fmt.Errorf("execir: unknown node kind %q (S8 fail-closed)", n.Kind)
 	}
 }
 
-func decodeArgs(args map[string]valWire) map[string]Value {
+func decodeArgs(args map[string]valWire) (map[string]Value, error) {
 	if len(args) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make(map[string]Value, len(args))
 	for k, v := range args {
-		out[k] = decodeVal(v)
+		dv, err := decodeVal(v)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = dv
 	}
-	return out
+	return out, nil
 }
 
-func decodeValPtr(v *valWire) Value {
+func decodeValPtr(v *valWire) (Value, error) {
 	if v == nil {
-		return nil
+		return nil, nil
 	}
 	return decodeVal(*v)
 }
 
-func decodeVal(v valWire) Value {
+func decodeVal(v valWire) (Value, error) {
 	switch v.Kind {
 	case "ref":
-		return Ref{Path: v.Path}
+		return Ref{Path: v.Path}, nil
 	case "lit":
-		return Lit{V: decodeLit(v)}
+		lit, err := decodeLit(v)
+		if err != nil {
+			return nil, err
+		}
+		return Lit{V: lit}, nil
 	case "object":
 		fs := make([]Field, len(v.Fields))
 		for i, f := range v.Fields {
-			fs[i] = Field{Key: f.Key, Val: decodeVal(f.Val)}
+			fv, err := decodeVal(f.Val)
+			if err != nil {
+				return nil, err
+			}
+			fs[i] = Field{Key: f.Key, Val: fv}
 		}
-		return Object{Fields: fs}
+		return Object{Fields: fs}, nil
 	case "list":
 		es := make([]Value, len(v.Elems))
 		for i, e := range v.Elems {
-			es[i] = decodeVal(e)
+			ev, err := decodeVal(e)
+			if err != nil {
+				return nil, err
+			}
+			es[i] = ev
 		}
-		return List{Elems: es}
+		return List{Elems: es}, nil
 	case "template":
 		ps := make([]Value, len(v.Parts))
 		for i, p := range v.Parts {
-			ps[i] = decodeVal(p)
+			pv, err := decodeVal(p)
+			if err != nil {
+				return nil, err
+			}
+			ps[i] = pv
 		}
-		return Template{Parts: ps}
+		return Template{Parts: ps}, nil
 	default:
-		return Lit{V: nil}
+		return nil, fmt.Errorf("execir: unknown value kind %q (S8 fail-closed)", v.Kind)
 	}
 }
 
-func decodeLit(v valWire) any {
+func decodeLit(v valWire) (any, error) {
 	switch v.LitT {
 	case "s":
 		if s, ok := v.LitV.(string); ok {
-			return s
+			return s, nil
 		}
+		return nil, fmt.Errorf("execir: string literal has non-string value %T", v.LitV)
 	case "i":
 		// Decimal string (see wireLit) — lossless across the full int64 range.
 		if s, ok := v.LitV.(string); ok {
-			if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-				return n
+			n, err := strconv.ParseInt(s, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("execir: int literal %q: %w", s, err)
 			}
+			return n, nil
 		}
+		return nil, fmt.Errorf("execir: int literal has non-string value %T", v.LitV)
 	case "f":
 		if f, ok := v.LitV.(float64); ok {
-			return f
+			return f, nil
 		}
+		return nil, fmt.Errorf("execir: float literal has non-number value %T", v.LitV)
 	case "b":
 		if b, ok := v.LitV.(bool); ok {
-			return b
+			return b, nil
 		}
+		return nil, fmt.Errorf("execir: bool literal has non-bool value %T", v.LitV)
 	case "nil":
-		return nil
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("execir: unknown literal type %q (S8 fail-closed)", v.LitT)
 	}
-	return nil
 }
 
-func decodeExprPtr(e *exprWire) Expr {
+func decodeExprPtr(e *exprWire) (Expr, error) {
 	if e == nil {
-		return nil
+		return nil, nil
 	}
 	return decodeExpr(*e)
 }
 
-func decodeExpr(e exprWire) Expr {
+func decodeExpr(e exprWire) (Expr, error) {
 	switch e.Kind {
 	case "leaf":
-		return Leaf{V: decodeValPtr(e.V)}
+		val, err := decodeValPtr(e.V)
+		if err != nil {
+			return nil, err
+		}
+		return Leaf{V: val}, nil
 	case "not":
-		return Not{X: decodeExprPtr(e.X)}
+		x, err := decodeExprPtr(e.X)
+		if err != nil {
+			return nil, err
+		}
+		return Not{X: x}, nil
 	case "binop":
-		return BinOp{Op: e.Op, X: decodeExprPtr(e.X), Y: decodeExprPtr(e.Y)}
+		x, err := decodeExprPtr(e.X)
+		if err != nil {
+			return nil, err
+		}
+		y, err := decodeExprPtr(e.Y)
+		if err != nil {
+			return nil, err
+		}
+		return BinOp{Op: e.Op, X: x, Y: y}, nil
 	default:
-		return Leaf{V: Lit{V: nil}}
+		// S8: an unknown expression kind must fail closed — decoding it as an
+		// always-false leaf would silently take a branch's else arm.
+		return nil, fmt.Errorf("execir: unknown expr kind %q (S8 fail-closed)", e.Kind)
 	}
 }
