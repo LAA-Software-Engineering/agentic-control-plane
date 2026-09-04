@@ -70,6 +70,11 @@ func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHand
 			Trusted: safety.Trusted, SideEffects: safety.SideEffects, RequiresApproval: safety.RequiresApproval,
 		})
 	}
+	// Bound the actual invocation by the remaining wall-clock budget, AFTER StartTool (which
+	// returns its own span context) so the deadline reaches the transport — otherwise a hung
+	// tool blocks the run forever despite maxWallClockSeconds (#394).
+	toolCtx, cancelWC := e.wallClockDeadline(toolCtx, pol, pctx)
+	defer cancelWC()
 	resp, err := e.Tools.Call(toolCtx, tools.ToolCallRequest{Uses: uses, With: withArgs})
 	if endTool != nil {
 		endTool(err)
@@ -108,6 +113,10 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 	}
 	ctx2, cancel := withSecondsTimeout(ctx, sec)
 	defer cancel()
+	// Also bound the model call by the remaining wall-clock budget, so an agent step without
+	// constraints.timeoutSeconds still cannot hang a run past maxWallClockSeconds (#394).
+	ctx2, cancelWC := e.wallClockDeadline(ctx2, pol, pctx)
+	defer cancelWC()
 
 	payload, err := json.Marshal(with)
 	if err != nil {
