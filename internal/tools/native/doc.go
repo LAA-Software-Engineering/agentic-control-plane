@@ -25,7 +25,8 @@
 // (chat.update — channel, ts, text). Slack replies HTTP 200 even on logical failures, so the client
 // checks the response ok field.
 //
-// Workspace (sandboxed filesystem + test runner): read_file, write_file, run_tests. The sandbox
+// Workspace (sandboxed filesystem + test runner): read_file, write_file, run_tests, plus the
+// read-only discovery ops list_dir, glob (recursive ** globstar), and grep (issue #452). The sandbox
 // root bounds every path via os.Root (symlink/`..` escapes refused); the run_tests command comes
 // from config, never from tool-call arguments. Config is either declared on the Tool resource
 // (spec.workspace.root / testCommand — a relative root resolves against the project root) or, when

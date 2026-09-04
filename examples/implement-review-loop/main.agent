@@ -28,6 +28,9 @@ tool workspace {
     }
     operations {
         read_file { effects { workspace.read } }
+        list_dir { effects { workspace.read } }
+        glob { effects { workspace.read } }
+        grep { effects { workspace.read } }
         run_tests { effects { process.exec } }
         write_file { effects { workspace.write } }
     }
@@ -75,6 +78,9 @@ agent Implementer {
 
     grants {
         tool.workspace.read_file
+        tool.workspace.list_dir
+        tool.workspace.glob
+        tool.workspace.grep
         tool.workspace.write_file
         tool.workspace.run_tests
     }
@@ -106,6 +112,9 @@ agent Reviewer {
 
     grants {
         tool.workspace.read_file
+        tool.workspace.list_dir
+        tool.workspace.glob
+        tool.workspace.grep
         tool.workspace.run_tests
     }
 
