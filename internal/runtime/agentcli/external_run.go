@@ -57,7 +57,18 @@ func RunExternalAgent(ctx context.Context, driver AgentRuntime, in ExternalAgent
 	if err != nil {
 		return Session{}, in.Run, err
 	}
-	disp := mcpserver.NewPolicyDispatcher(in.Eval, in.Exec, in.Run).WithTrace(in.Recorder, in.RunID)
+	// The external path MUST enforce the same per-call contract as the engine — operation input
+	// schema (#204) and tool I/O byte limits (#117). Enforcement is a required dependency, injected
+	// explicitly rather than sniffed off the executor: if the executor cannot enforce (e.g. it was
+	// wrapped in a decorator that forwards only Call), refuse to run the agent unprotected (#390)
+	// instead of silently dropping enforcement.
+	enforcer, ok := in.Exec.(mcpserver.ToolEnforcer)
+	if !ok {
+		return Session{}, in.Run, fmt.Errorf("agentcli: tool executor %T does not enforce operation schema/byte limits; refusing to run external agent unprotected (#390)", in.Exec)
+	}
+	disp := mcpserver.NewPolicyDispatcher(in.Eval, in.Exec, in.Run).
+		WithTrace(in.Recorder, in.RunID).
+		WithEnforcement(enforcer)
 	srv := mcpserver.NewServer(compiled, disp, "terfyn")
 
 	transport, stop, err := srv.ListenLocal()

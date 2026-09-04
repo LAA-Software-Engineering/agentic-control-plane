@@ -42,6 +42,13 @@ func (f *fakeExec) Call(_ context.Context, req tools.ToolCallRequest) (tools.Too
 	return tools.ToolCallResponse{Output: map[string]any{"read": req.With["path"]}}, nil
 }
 
+// fakeExec satisfies mcpserver.ToolEnforcer so RunExternalAgent's fail-closed enforcement is met
+// (no-op with no schemas/limits declared) (#390).
+func (f *fakeExec) ValidateInputSchema(string, map[string]any) error { return nil }
+func (f *fakeExec) ResolveToolExecutionLimits(string) spec.ResolvedExecutionLimits {
+	return spec.ResolveExecutionLimits(nil, nil, nil)
+}
+
 func reviewerGraph() *spec.ProjectGraph {
 	ws := &spec.ToolResource{
 		APIVersion: spec.APIVersionV0, Kind: spec.KindTool,
