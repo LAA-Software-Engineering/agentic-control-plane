@@ -20,9 +20,10 @@ import (
 
 // newMigrateCmd registers `terfyn migrate --to-agent` (issue #440, Phase 2b): convert a project's
 // YAML-authored resources into .agent source, the sole authoring surface (#430). It raises the YAML
-// declarative resources (providers/tools/policies/environments/agents) to a .agent file; any
-// construct with no .agent form — notably YAML-authored workflows — is reported as needing manual
-// migration rather than emitted lossily.
+// declarative resources (providers/tools/policies/environments/agents) AND workflows (steps,
+// interpolated args, approvals, object output — to behavioral equivalence, ADR 007) to a .agent file;
+// only a construct with no .agent form (a steps.<id>.meta reference, an array value) is reported as
+// needing manual migration rather than emitted lossily.
 func newMigrateCmd() *cobra.Command {
 	var toAgent bool
 	var output string
@@ -34,11 +35,12 @@ func newMigrateCmd() *cobra.Command {
 		Long: `Convert a project's YAML-authored resources into .agent source (ADR 003, issue #430).
 
 --to-agent raises the YAML declarative resources — custom provider aliases, tools, policies,
-environments, agents, and the project-wide defaults/limits — into a single .agent file, printed to
-stdout by default. Built-in model providers (anthropic, openai, mock, …) are implicit and dropped;
-imports are auto-discovered and dropped. Migration is lossless or it refuses: any construct with no
-.agent authoring form (notably a YAML-authored workflow) is listed as needing manual migration and the
-file is not written unless --force.
+environments, agents, and the project-wide defaults/limits — plus workflows (steps, interpolated args,
+approvals, and object output, to behavioral equivalence) into a single .agent file, printed to stdout
+by default. Built-in model providers (anthropic, openai, mock, …) are implicit and dropped; imports
+are auto-discovered and dropped. Migration is lossless-or-refuses: a construct with no .agent authoring
+form (a steps.<id>.meta reference, an array value) is listed as needing manual migration and the file
+is not written unless --force.
 
 Operator-local runtime config (spec.state / spec.traces / spec.telemetry) is not .agent source — it is
 machine configuration that lives in the user-local overlay. It is never written to the .agent output;

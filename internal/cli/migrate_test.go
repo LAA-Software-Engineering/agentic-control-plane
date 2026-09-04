@@ -248,11 +248,11 @@ func TestMigrate_writesOutputFile(t *testing.T) {
 	}
 }
 
-// TestMigrate_refusesYAMLWorkflow: a YAML-authored workflow has no lossless .agent form; migrate
-// reports it and exits non-zero (unless --force).
-func TestMigrate_refusesYAMLWorkflow(t *testing.T) {
+// TestMigrate_raisesYAMLWorkflow: a supported YAML workflow (uses/agent steps, interpolated args,
+// object output) now migrates cleanly to a .agent workflow (issue #440, ADR 007), and the output
+// re-loads as a .agent-only project.
+func TestMigrate_raisesYAMLWorkflow(t *testing.T) {
 	root := writeYAMLProject(t)
-	// Add a YAML workflow.
 	wf := `apiVersion: agentic.dev/v0
 kind: Workflow
 metadata:
@@ -261,11 +261,66 @@ spec:
   steps:
     - id: s
       uses: tool.lookup.default
+      with: {topic: "${input.topic}"}
+  output:
+    value:
+      out: "${steps.s.output}"
 `
 	if err := os.WriteFile(filepath.Join(root, "flow.yaml"), []byte(wf), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Import it.
+	proj := filepath.Join(root, "project.yaml")
+	b, _ := os.ReadFile(proj)
+	updated := strings.Replace(string(b), "    - ./policies/guarded.yaml\n", "    - ./policies/guarded.yaml\n    - ./flow.yaml\n", 1)
+	if err := os.WriteFile(proj, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, errOut, err := runMigrate(t, "migrate", "--to-agent", "--project", root)
+	if err != nil {
+		t.Fatalf("a raiseable workflow must migrate cleanly: %v\nstderr:\n%s", err, errOut)
+	}
+	if strings.Contains(errOut, "need manual migration") {
+		t.Fatalf("workflow should not be reported as unmigratable:\n%s", errOut)
+	}
+	for _, want := range []string{"workflow flow(input: any)", "s = lookup.default(topic: input.topic)", "return { out: s }"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("migrated .agent missing %q:\n%s", want, out)
+		}
+	}
+	// The migrated source re-loads as a .agent-only project with the workflow present.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.agent"), []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g, err := project.LoadProject(dir)
+	if err != nil {
+		t.Fatalf("migrated .agent did not load: %v\n%s", err, out)
+	}
+	if _, ok := g.Workflows["flow"]; !ok {
+		t.Fatalf("workflow flow missing from reloaded graph")
+	}
+}
+
+// TestMigrate_refusesUnraiseableWorkflow: a workflow with a construct that has no .agent form (a
+// steps.<id>.meta reference) is still refused — migrate reports it and exits non-zero unless --force.
+func TestMigrate_refusesUnraiseableWorkflow(t *testing.T) {
+	root := writeYAMLProject(t)
+	wf := `apiVersion: agentic.dev/v0
+kind: Workflow
+metadata:
+  name: flow
+spec:
+  steps:
+    - id: s
+      uses: tool.lookup.default
+  output:
+    value:
+      cost: "${steps.s.meta.cost}"
+`
+	if err := os.WriteFile(filepath.Join(root, "flow.yaml"), []byte(wf), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	proj := filepath.Join(root, "project.yaml")
 	b, _ := os.ReadFile(proj)
 	updated := strings.Replace(string(b), "    - ./policies/guarded.yaml\n", "    - ./policies/guarded.yaml\n    - ./flow.yaml\n", 1)
@@ -275,12 +330,12 @@ spec:
 
 	_, errOut, err := runMigrate(t, "migrate", "--to-agent", "--project", root)
 	if err == nil {
-		t.Fatal("migrate should refuse when a YAML workflow cannot be raised")
+		t.Fatal("migrate should refuse a workflow it cannot raise")
 	}
 	if !strings.Contains(errOut, "Workflow") || !strings.Contains(errOut, "flow") {
 		t.Fatalf("expected a Workflow migration warning naming 'flow', got:\n%s", errOut)
 	}
-	// --force writes the raiseable rest despite the workflow.
+	// --force writes the raiseable rest despite the refused workflow.
 	out, _, ferr := runMigrate(t, "migrate", "--to-agent", "--force", "--project", root)
 	if ferr != nil {
 		t.Fatalf("migrate --force failed: %v", ferr)
