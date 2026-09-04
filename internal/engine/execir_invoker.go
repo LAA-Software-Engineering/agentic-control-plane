@@ -625,15 +625,22 @@ func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args ma
 // the DAG's per-step failure bookkeeping (runDAGStep). The tool/agent executors
 // already emit their own system_error/limit_hit for denials before returning.
 // redactStepJSON marshals a run_steps input/output payload with the same redaction the trace recorder
-// applies, so a sensitive key (token/password/authorization/…) is masked in run_steps.input_json /
-// output_json instead of persisted in clear and served verbatim by inspect/logs (issue #408). run_steps
-// is a display surface, NOT the replay source — the checkpoint keeps raw args to dispatch on resume —
-// so redacting at the write layer is safe here. A map payload runs through trace.PrepareEventData; a
-// scalar (no keys to mask) is marshaled as is. Falls back to default redaction when no recorder is set.
+// applies, so a sensitive key (token/password/authorization/…) is masked instead of persisted in clear.
 func (a *engineInvoker) redactStepJSON(v any) []byte {
+	return redactPayloadJSON(v, a.e.Trace)
+}
+
+// redactPayloadJSON marshals a DISPLAY payload (a run_steps input/output, or the run's final output) with
+// the trace recorder's redaction, so a sensitive key (token/password/authorization/…) is masked instead
+// of stored in clear and served verbatim by inspect / state show (issue #408). These are display
+// surfaces, NOT the replay source — the checkpoint keeps raw args to dispatch on resume — so redacting
+// at the write layer is safe. A map payload runs through trace.PrepareEventData; a scalar (no keys to
+// mask) is marshaled as is. Falls back to default redaction when no recorder is set, so it never
+// persists raw.
+func redactPayloadJSON(v any, r *trace.Recorder) []byte {
 	opts := trace.NormalizeRedactionOptions(trace.DefaultRedactionOptions())
-	if a.e.Trace != nil {
-		opts = a.e.Trace.Redaction
+	if r != nil {
+		opts = r.Redaction
 	}
 	if m, ok := v.(map[string]any); ok {
 		b, _ := json.Marshal(trace.PrepareEventData(m, nil, opts))

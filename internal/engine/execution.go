@@ -178,10 +178,10 @@ func (e *Executor) Run(ctx context.Context, in RunInput) (err error) {
 // its output from the interpreter's Return value (execIROutput) because the
 // flattened resource output.value cannot address a taken arm (#259).
 func (e *Executor) finishRunWithOutput(ctx context.Context, in RunInput, wf *spec.WorkflowResource, ictx Context, totalCost float64, finalOut map[string]any) error {
-	outBytes, err := json.Marshal(finalOut)
-	if err != nil {
-		return e.failRun(ctx, in, err, totalCost)
-	}
+	// The runs table's output_json is a display value (served by inspect / state show), not a replay
+	// source — the final checkpoint below keeps the raw context for any resume. Redact it so a sensitive
+	// value flowing into output.value is not served in clear, the same leak class as run_steps (#408).
+	outBytes := redactPayloadJSON(finalOut, e.Trace)
 	if err := e.saveCheckpoint(ctx, wf, in.RunID, len(wf.Spec.Steps)-1, "", ictx, totalCost, state.CheckpointStatusCompleted); err != nil {
 		return e.failRun(ctx, in, fmt.Errorf("engine: final checkpoint: %w", err), totalCost)
 	}
