@@ -76,7 +76,9 @@ func (d *Decoded) ResourceID() ResourceID {
 }
 
 // ParseResourceFromBytes decodes exactly one YAML document from data with strict unknown-key rejection.
-// path is used only for error messages (e.g. when data did not come from a file).
+// path is used only for error messages (e.g. when data did not come from a file). Compat-only under
+// ADR 007 (see the codec note in loader.go): the retained YAML decode path for `terfyn migrate` and
+// codec tests, never a project-source ingress.
 func ParseResourceFromBytes(data []byte, path string) (*Decoded, error) {
 	kind, err := peekKind(data)
 	if err != nil {
