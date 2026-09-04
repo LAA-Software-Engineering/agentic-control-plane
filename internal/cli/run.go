@@ -326,6 +326,12 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 			var result runtime.RunResult
 			result, runErr = rtExec.Resume(ctx, activeRC, resOpts)
 			runID = result.RunID
+			// A CLI-provided --decision is one-shot: it resolves exactly the gate that was presented. Clear
+			// it now that this resume has consumed it, so a subsequent gate in the same run is NOT auto-
+			// resumed with the same decision (issue #406) — the loop below must re-prompt (TTY) or exit with
+			// the resume hint (non-interactive). --auto-approve is unaffected (it carries no decision), and
+			// the interactive path re-sets a fresh decision per gate before continuing.
+			decision, decisionEditJSON, decisionSwitchTarget = "", "", ""
 		} else {
 			invOpts := runtime.InvokeOptions{
 				Env:             env,
