@@ -47,6 +47,65 @@ func TestRiskSummary_costCeilingIncreased(t *testing.T) {
 	}
 }
 
+// TestRiskSummary_addingCeilingIsNotRelaxation proves that adding a cost/wall-clock
+// ceiling where none existed (0/unbounded → finite) is a tightening, not a
+// budget_relaxation — 0 means "unbounded", the most permissive value, so a CI gate
+// keyed on budget_relaxation must not block the safe change (#382).
+func TestRiskSummary_addingCeilingIsNotRelaxation(t *testing.T) {
+	oldG := graphWithPolicyBudget(0, 0, nil) // no execution ceilings at all
+	applied := appliedFromDesired(t, "dev", oldG)
+	newG := graphWithPolicyBudget(5, 60, nil)
+
+	p := NewPlanner(&fakeDeploy{list: applied})
+	pl, err := p.ComputePlan(context.Background(), "dev", newG, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range pl.Risk.Items {
+		if it.Category == RiskCategoryBudgetRelaxation {
+			t.Fatalf("adding a ceiling flagged as budget_relaxation [%s]: %s", it.Severity, it.Reason)
+		}
+	}
+}
+
+// TestRiskSummary_removingCeilingIsRelaxation proves the inverse: removing a ceiling
+// (finite → 0/unbounded) is a real relaxation and must flag as budget_relaxation,
+// which the old newCost>oldCost comparison missed because it read 0 as a low ceiling
+// (#382).
+func TestRiskSummary_removingCeilingIsRelaxation(t *testing.T) {
+	oldG := graphWithPolicyBudget(5, 60, nil)
+	applied := appliedFromDesired(t, "dev", oldG)
+	newG := graphWithPolicyBudget(0, 0, nil) // ceilings removed → unbounded
+
+	p := NewPlanner(&fakeDeploy{list: applied})
+	pl, err := p.ComputePlan(context.Background(), "dev", newG, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasRiskCategory(pl, RiskCategoryBudgetRelaxation) {
+		t.Fatalf("removing ceilings should flag budget_relaxation, got %#v", pl.Risk.Items)
+	}
+	var sawCost, sawWall bool
+	for _, it := range pl.Risk.Items {
+		if it.Category != RiskCategoryBudgetRelaxation {
+			continue
+		}
+		if it.Severity != RiskSeverityHigh {
+			t.Fatalf("relaxation severity %s, want high: %#v", it.Severity, it)
+		}
+		low := strings.ToLower(it.Reason)
+		if strings.Contains(low, "cost ceiling") {
+			sawCost = true
+		}
+		if strings.Contains(low, "wall-clock ceiling") {
+			sawWall = true
+		}
+	}
+	if !sawCost || !sawWall {
+		t.Fatalf("expected both cost and wall-clock removal flagged, cost=%v wall=%v: %#v", sawCost, sawWall, pl.Risk.Items)
+	}
+}
+
 func TestRiskSummary_effectPermitWidening(t *testing.T) {
 	oldG := graphWithPolicyBudget(3, 0, nil)
 	oldG.Policies["default"].Spec.Effects = &spec.PolicyEffects{Permit: []string{"github.read"}}
