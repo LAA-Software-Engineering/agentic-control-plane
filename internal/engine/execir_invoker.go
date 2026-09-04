@@ -63,6 +63,10 @@ type nestedSuspension struct {
 	callee string
 	ictx   Context
 	state  *execir.RunState
+	// child is THIS callee's own suspended subworkflow, when the gate lives another
+	// level deeper (outer→mid→inner, gate in inner): mid's frame carries inner's
+	// frame so resume can seed it instead of re-running inner fresh (issue #380).
+	child *nestedSuspension
 }
 
 // approvedActions returns the run's approved actions plus, for a resolved resume
@@ -495,6 +499,7 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 		}
 		childInv.ictx = Context{Input: in, Steps: steps, PendingHitl: ns.PendingHitl}
 		childInv.pendingSeed = ns.PendingHitl
+		childInv.nestedSeed = ns.Nested // resume a gate nested another level deeper (#380)
 		childSeed = &execir.RunState{Memo: ns.ExecMemo, Control: ns.ExecControl}
 	} else if a.e.Trace != nil {
 		_, _ = a.e.Trace.Append(ctx, a.in.RunID, a.e.qualID(site.Bind), trace.EventWorkflowCallStarted, trace.ActorSystem, map[string]any{
@@ -520,6 +525,10 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 			callee: workflow,
 			ictx:   Context{Input: snap.Input, Steps: snap.Steps, PendingHitl: childInv.getPending()},
 			state:  childState,
+			// When the gate is deeper still, childInv suspended because ITS own
+			// subworkflow suspended: carry that frame so resume seeds it recursively
+			// rather than re-running the inner pre-gate steps (S7, issue #380).
+			child: childInv.getNested(),
 		}) {
 			return nil, fmt.Errorf("engine: step %q: a second subworkflow suspended for human decision in the same concurrent group is not yet supported (issue #275); a single concurrent subworkflow, or independent direct gates, do resume", site.Bind)
 		}
@@ -678,17 +687,7 @@ func (e *Executor) suspendExecIR(ctx context.Context, in RunInput, wf *spec.Work
 		anchorStep = pending.StepID
 	}
 	if nested != nil {
-		ictx.Nested = &NestedRunState{
-			StepID:      nested.stepID,
-			Workflow:    nested.callee,
-			Input:       nested.ictx.Input,
-			Steps:       nested.ictx.Steps,
-			Completed:   completedStepIDs(nested.ictx.Steps),
-			PendingHitl: nested.ictx.PendingHitl,
-			ExecKey:     nested.key,
-			ExecMemo:    nested.state.Memo,
-			ExecControl: nested.state.Control,
-		}
+		ictx.Nested = nestedRunStateOf(nested)
 		anchorStep = nested.stepID
 	}
 	if inv.runHandle != nil {
@@ -709,6 +708,28 @@ func (e *Executor) suspendExecIR(ctx context.Context, in RunInput, wf *spec.Work
 		})
 	}
 	return ErrInterrupted
+}
+
+// nestedRunStateOf converts a suspended-subworkflow frame to its persisted
+// NestedRunState, recursing through child frames so a gate nested more than one
+// level deep (outer→mid→inner) is checkpointed with every intermediate frame's
+// memo intact. On resume each level is re-seeded rather than re-run (S7, #380).
+func nestedRunStateOf(n *nestedSuspension) *NestedRunState {
+	if n == nil {
+		return nil
+	}
+	return &NestedRunState{
+		StepID:      n.stepID,
+		Workflow:    n.callee,
+		Input:       n.ictx.Input,
+		Steps:       n.ictx.Steps,
+		Completed:   completedStepIDs(n.ictx.Steps),
+		PendingHitl: n.ictx.PendingHitl,
+		Nested:      nestedRunStateOf(n.child),
+		ExecKey:     n.key,
+		ExecMemo:    n.state.Memo,
+		ExecControl: n.state.Control,
+	}
 }
 
 // execStepIndex finds the workflow index of a step id (checkpoint metadata only).

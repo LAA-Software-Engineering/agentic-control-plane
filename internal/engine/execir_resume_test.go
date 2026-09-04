@@ -578,6 +578,62 @@ func TestExecIRResume_NestedSubworkflow(t *testing.T) {
 	}
 }
 
+// twoLevelNestedGraph nests the gated inner workflow one level deeper:
+// outer → mid → inner, with the HITL gate in inner. mid is a pure pass-through
+// (a single workflow: step calling inner), so the gate lives two subworkflow
+// levels below the run root.
+func twoLevelNestedGraph() *spec.ProjectGraph {
+	g := nestedSubworkflowGraph()
+	mid := &spec.WorkflowResource{
+		APIVersion: spec.APIVersionV0, Kind: spec.KindWorkflow, Metadata: spec.Metadata{Name: "mid"},
+		Spec: spec.WorkflowSpec{
+			Policy: "gate",
+			Steps:  []spec.WorkflowStep{{ID: "sub", Workflow: "inner", With: map[string]any{"topic": "${input.topic}"}}},
+			Output: &spec.WorkflowOutput{Value: map[string]any{"result": "${steps.sub.output}"}},
+		},
+	}
+	g.Workflows["mid"] = mid
+	g.Workflows["outer"].Spec.Steps[0].Workflow = "mid"
+	return g
+}
+
+// TestExecIRResume_TwoLevelNestedSubworkflow proves a HITL gate two subworkflow
+// levels deep (outer→mid→inner) resumes: the decision reaches the innermost gate,
+// each level's completed pre-gate steps replay from its memo, and the run succeeds
+// after a single approve — instead of re-running inner fresh on every resume and
+// re-suspending at the same gate forever (S7, issue #380).
+func TestExecIRResume_TwoLevelNestedSubworkflow(t *testing.T) {
+	t.Parallel()
+	ex, ct, runID, started := newResumeExecutor(t, twoLevelNestedGraph(), "outer")
+	ctx := context.Background()
+	if err := ex.Run(ctx, RunInput{RunID: runID, WorkflowName: "outer", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"}}); !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("fresh run should interrupt at the inner gate, got %v", err)
+	}
+	if got := ct.count("tool.helper.echo"); got != 1 {
+		t.Fatalf("inner prep should run once before suspend, got %d", got)
+	}
+	if got := ct.count("tool.publisher.echo"); got != 0 {
+		t.Fatalf("gated publisher must not run before approval, got %d", got)
+	}
+
+	err := ex.Run(ctx, RunInput{
+		RunID: runID, WorkflowName: "outer", Env: "dev", StartedAt: started, Input: map[string]any{"topic": "hi"},
+		Resume: true, Hitl: HitlRunOptions{Actor: "alice", Decision: &policy.HitlDecisionInput{Kind: spec.HitlDecisionApprove, Actor: "alice"}},
+	})
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if run, _ := ex.Store.GetRun(ctx, runID); run.Status != state.RunStatusSucceeded {
+		t.Fatalf("resume status = %q err=%q (a two-level nested gate must resume, not re-suspend forever)", run.Status, run.ErrorText)
+	}
+	if got := ct.count("tool.helper.echo"); got != 1 {
+		t.Fatalf("inner prep re-run on resume (%d): completed inner step must replay from the nested memo, not re-execute", got)
+	}
+	if got := ct.count("tool.publisher.echo"); got != 1 {
+		t.Fatalf("inner gated step should run exactly once after approval, got %d", got)
+	}
+}
+
 // TestExecIRResume_HitlGateInsideWhileInsideSubworkflow is the nested counterpart
 // of TestExecIRResume_HitlGateInsideWhileLoop (#290): the bounded `while` with a
 // gated body runs inside a `workflow:` callee. It carries through TWO suspend/resume
