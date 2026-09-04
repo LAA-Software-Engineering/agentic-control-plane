@@ -3,6 +3,7 @@ package plan
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -266,20 +267,36 @@ func summarizePolicyRisk(sink *riskSink, op Operation, oldJSON, newJSON string, 
 	oldWall := policyMaxWall(oldPol)
 	oldApprovals := policyApprovals(oldPol)
 
-	if newCost > oldCost+1e-9 {
+	// In PolicyExecution, 0/absent means "unbounded" — checkExecutionBudgets only
+	// enforces a positive ceiling — so 0 is the MOST permissive value, not a ceiling
+	// of zero. A budget relaxation is a move to a more permissive (higher, or newly
+	// unbounded) ceiling; adding a finite ceiling where none existed is a tightening
+	// and must NOT flag, while removing one (finite → unbounded) is a real relaxation
+	// that must (#382). Compare effective ceilings with 0 mapped to +Inf.
+	oldCostEff, newCostEff := effectiveCeiling(oldCost), effectiveCeiling(newCost)
+	if newCostEff > oldCostEff+1e-9 {
+		reason := fmt.Sprintf("Cost ceiling increased (Policy/%s).", name)
+		if math.IsInf(newCostEff, 1) {
+			reason = fmt.Sprintf("Cost ceiling removed — now unbounded (Policy/%s).", name)
+		}
 		sink.add(RiskItem{
 			Category: RiskCategoryBudgetRelaxation,
 			Severity: RiskSeverityHigh,
-			Reason:   fmt.Sprintf("Cost ceiling increased (Policy/%s).", name),
+			Reason:   reason,
 			Target:   target,
 			Witness:  wit,
 		})
 	}
-	if newWall > oldWall {
+	oldWallEff, newWallEff := effectiveCeiling(float64(oldWall)), effectiveCeiling(float64(newWall))
+	if newWallEff > oldWallEff+1e-9 {
+		reason := fmt.Sprintf("Wall-clock ceiling increased (Policy/%s).", name)
+		if math.IsInf(newWallEff, 1) {
+			reason = fmt.Sprintf("Wall-clock ceiling removed — now unbounded (Policy/%s).", name)
+		}
 		sink.add(RiskItem{
 			Category: RiskCategoryBudgetRelaxation,
 			Severity: RiskSeverityHigh,
-			Reason:   fmt.Sprintf("Wall-clock ceiling increased (Policy/%s).", name),
+			Reason:   reason,
 			Target:   target,
 			Witness:  wit,
 		})
@@ -581,6 +598,18 @@ func parseToolSpec(resourceJSON string) (*toolSpecRisk, bool) {
 		return nil, false
 	}
 	return &t, true
+}
+
+// effectiveCeiling maps a PolicyExecution budget to the bound it actually enforces:
+// 0/absent means "unbounded" (checkExecutionBudgets enforces only a positive value),
+// so it is the most permissive ceiling — returned as +Inf so a relaxation comparison
+// (a newer, more permissive ceiling) orders correctly instead of reading 0 as a
+// ceiling of zero (#382).
+func effectiveCeiling(v float64) float64 {
+	if v <= 0 {
+		return math.Inf(1)
+	}
+	return v
 }
 
 func policyMaxCost(p *policySpecRisk) float64 {
