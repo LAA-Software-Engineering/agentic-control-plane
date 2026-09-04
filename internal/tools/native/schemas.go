@@ -13,6 +13,9 @@ var operationInputSchemas = map[string]json.RawMessage{
 	"read_file":  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative path. A file returns its content; a directory (including \".\") returns its entries, so you can explore the tree."}},"required":["path"],"additionalProperties":false}`),
 	"write_file": json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative file path."},"content":{"type":"string","description":"Full new contents of the file."}},"required":["path","content"],"additionalProperties":false}`),
 	"run_tests":  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false,"description":"Runs the operator-configured test command; takes no arguments."}`),
+	"list_dir":   json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative directory to list; omit or \".\" for the workspace root."}},"additionalProperties":false}`),
+	"glob":       json.RawMessage(`{"type":"object","properties":{"pattern":{"type":"string","description":"Glob relative to the workspace root, e.g. \"framework/*_test.go\"."}},"required":["pattern"],"additionalProperties":false}`),
+	"grep":       json.RawMessage(`{"type":"object","properties":{"pattern":{"type":"string","description":"Go regexp (RE2) to search file contents for."},"path":{"type":"string","description":"Workspace-relative directory to search under; omit or \".\" for the whole workspace."}},"required":["pattern"],"additionalProperties":false}`),
 
 	// github adapter
 	"pull_request.get":          githubTripletSchema,

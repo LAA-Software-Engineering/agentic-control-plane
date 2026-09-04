@@ -47,6 +47,9 @@ var operationCatalog = map[string][]string{
 	"read_file":                  {"path"},
 	"write_file":                 {"path", "content"},
 	"run_tests":                  {}, // command comes from TERFYN_WORKSPACE_TEST_COMMAND, not tool args
+	"list_dir":                   {"path"},
+	"glob":                       {"pattern"},
+	"grep":                       {"pattern", "path"},
 }
 
 // OperationKnown reports whether operation is implemented by [Registry.Dispatch].
