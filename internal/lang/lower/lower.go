@@ -639,10 +639,24 @@ func (wl *workflowLowerer) lowerApproval(s *lang.ApprovalStmt, predNeeds []strin
 		ID:            id,
 		Pos:           s.Pos,
 		Approval:      &spec.WorkflowApprovalValue{Enabled: true, Config: cfg},
-		Needs:         mergeNeeds(predNeeds, nil),
 		NeedsDeclared: true,
 		Synthetic:     wl.synthetic,
 	}
+	// The review payload lowers exactly like a call's arguments (nested calls hoisted into their own
+	// SSA-temporary steps first), so a YAML approval's `with:` round-trips through the same path.
+	var tempNeeds []string
+	if len(s.With) > 0 {
+		with := make(map[string]any, len(s.With))
+		for i, arg := range s.With {
+			key := "arg" + strconv.Itoa(i)
+			if arg.Name != nil && arg.Name.Name != "" {
+				key = arg.Name.Name
+			}
+			with[key] = wl.lowerArg(arg.Value, id, i, predNeeds, &tempNeeds)
+		}
+		step.With = with
+	}
+	step.Needs = mergeNeeds(predNeeds, tempNeeds)
 	wl.steps = append(wl.steps, step)
 	wl.env.roots[id] = "steps." + id + ".output"
 	wl.l.sm.set(KeyStep(wl.wf, id), s.Pos)

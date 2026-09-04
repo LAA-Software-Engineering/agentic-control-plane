@@ -128,7 +128,7 @@ If          = "if" Cond Block [ "else" ( If | Block ) ] ;            (* #199 *)
 For         = [ "parallel" ] "for" Ident "in" Expr Block ;           (* #199 *)
 While       = "while" Cond "limit" Number Block ;                    (* bounded, #288 *)
 Retry       = "retry" "until" Cond "limit" Number Block ;            (* bounded, fail-on-exhaustion, #361 *)
-Approval    = "approval" Ident "{" [ "description" String ] [ "redactKeys" "{" { String } "}" ] "}" ;  (* human pause, #440 *)
+Approval    = "approval" Ident "{" [ "description" String ] [ "redactKeys" "{" { String } "}" ] [ "with" "{" { Arg } "}" ] "}" ;  (* human pause; with = the review payload, #440 *)
 Block       = "{" { Statement } "}" ;
 Return      = "return" Expr ;
 ExprStmt    = Expr ;                            (* a call for its effect *)

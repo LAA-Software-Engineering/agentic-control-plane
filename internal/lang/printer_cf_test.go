@@ -360,6 +360,10 @@ func TestPrint_ApprovalStmtRoundTrip(t *testing.T) {
     approval gate {
         description "Review before publishing"
         redactKeys { "secret" "token" }
+        with {
+            note: input.note
+            draft: a
+        }
     }
     b = svc.send(a: a)
     return b
@@ -377,7 +381,7 @@ func TestPrint_ApprovalStmtRoundTrip(t *testing.T) {
 	if twice := Print(f2); once != twice {
 		t.Fatalf("Print is not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", once, twice)
 	}
-	for _, want := range []string{"approval gate {", "description \"Review before publishing\"", "redactKeys { \"secret\" \"token\" }"} {
+	for _, want := range []string{"approval gate {", "description \"Review before publishing\"", "redactKeys { \"secret\" \"token\" }", "with {", "note: input.note", "draft: a"} {
 		if !strings.Contains(once, want) {
 			t.Fatalf("printed output missing %q:\n%s", want, once)
 		}

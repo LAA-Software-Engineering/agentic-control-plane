@@ -256,6 +256,10 @@ type ApprovalStmt struct {
 	Bind        *Ident
 	Description *StringLit
 	RedactKeys  []*StringLit
+	// With is the review payload (named args), the same load-bearing data a YAML approval step's `with:`
+	// carries: it is shown to the reviewer, gates the Edit decision (offered only when non-empty), and
+	// becomes the node's published output. Lowered through the same Args path as a call's arguments.
+	With []*Arg
 }
 
 func (s *ApprovalStmt) Position() Pos { return s.Pos }

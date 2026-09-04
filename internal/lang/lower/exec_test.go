@@ -111,6 +111,10 @@ workflow W(input: any) {
     approval gate {
         description "Review before publishing"
         redactKeys { "secret" "token" }
+        with {
+            note: input.note
+            draft: a
+        }
     }
     return a
 }
@@ -133,6 +137,17 @@ workflow W(input: any) {
 	if len(ap.RedactKeys) != 2 || ap.RedactKeys[0] != "secret" || ap.RedactKeys[1] != "token" {
 		t.Fatalf("approval redactKeys: %v", ap.RedactKeys)
 	}
+	// The review payload must lower into Args (the same path a YAML approval's with: takes) — it is the
+	// reviewed data, gates the Edit decision, and becomes the node output.
+	if len(ap.Args) != 2 {
+		t.Fatalf("approval payload not lowered into Args: %+v", ap.Args)
+	}
+	if _, ok := ap.Args["note"]; !ok {
+		t.Fatalf("approval Args missing 'note': %+v", ap.Args)
+	}
+	if _, ok := ap.Args["draft"]; !ok {
+		t.Fatalf("approval Args missing 'draft': %+v", ap.Args)
+	}
 }
 
 // TestLowerFile_ApprovalProjectsToWorkflowStep proves the resource projection of the .agent `approval`
@@ -145,6 +160,9 @@ workflow W(input: any) {
     a = svc.prepare(x: input.y)
     approval gate {
         description "Review"
+        with {
+            draft: a
+        }
     }
     return a
 }
@@ -177,6 +195,10 @@ workflow W(input: any) {
 	}
 	if len(step.Needs) != 1 || step.Needs[0] != "a" {
 		t.Fatalf("approval should depend on its predecessor 'a', got needs %v", step.Needs)
+	}
+	// The review payload projects into the step's With (the effect/plan surface), like a call's args.
+	if step.With == nil || step.With["draft"] == nil {
+		t.Fatalf("approval payload not projected into step.With: %+v", step.With)
 	}
 }
 

@@ -619,13 +619,37 @@ func (p *parser) parseApproval() *ApprovalStmt {
 			s.Description = p.parseStringLit("for description")
 		case "redactKeys":
 			s.RedactKeys = p.parseStringListBlock("redactKeys")
+		case "with":
+			s.With = p.parseApprovalWith()
 		default:
-			p.errorf(fpos, "unknown approval field %q (want description or redactKeys)", field)
+			p.errorf(fpos, "unknown approval field %q (want description, redactKeys, or with)", field)
 			p.syncLine()
 		}
 	}
 	p.expect(KindRBrace, "to close approval body")
 	return s
+}
+
+// parseApprovalWith parses the approval review-payload block `with { <name>: <expr> … }` — the same
+// named-argument shape a call takes, so it lowers through the identical Args path (#440).
+func (p *parser) parseApprovalWith() []*Arg {
+	if _, ok := p.expect(KindLBrace, "to open with block"); !ok {
+		return nil
+	}
+	var out []*Arg
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		a := p.parseArg()
+		if a == nil {
+			p.syncLine()
+			continue
+		}
+		out = append(out, a)
+		if p.cur.Kind == KindComma {
+			p.advance()
+		}
+	}
+	p.expect(KindRBrace, "to close with block")
+	return out
 }
 
 func (p *parser) parseParallel() *ParallelStmt {

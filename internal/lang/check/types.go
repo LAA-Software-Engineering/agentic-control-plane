@@ -250,10 +250,18 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 		_, diags := wc.checkExpr(s.X)
 		return diags
 	case *lang.ApprovalStmt:
-		// An approval binds the human decision (untyped/any); binding it lets a later step reference it
-		// without an unresolved-reference error. No sub-expressions to type-check.
+		// Type-check the review payload's argument expressions (they reference prior bindings), then bind
+		// the decision name (untyped/any) so a later step may reference it.
+		var diags lang.Diagnostics
+		for _, arg := range s.With {
+			if arg == nil {
+				continue
+			}
+			_, d := wc.checkExpr(arg.Value)
+			diags = append(diags, d...)
+		}
 		wc.env[identName(s.Bind)] = typeRef{}
-		return nil
+		return diags
 	case *lang.ParallelStmt:
 		var diags lang.Diagnostics
 		results := make(map[string]typeRef, len(s.Body))

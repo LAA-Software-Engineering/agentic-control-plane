@@ -173,7 +173,7 @@ func (el *execLowerer) lowerStmt(st lang.Stmt) []execir.Node {
 		val := el.lowerValue(s.Value, &pre)
 		return append(pre, &execir.Return{Pos: s.Pos, Value: val})
 	case *lang.ApprovalStmt:
-		node := &execir.Approval{Pos: s.Pos, Bind: identName(s.Bind)}
+		node := &execir.Approval{Pos: s.Pos, Bind: identName(s.Bind), Args: el.lowerArgs(s.With, &pre)}
 		if s.Description != nil {
 			node.Description = s.Description.Value
 		}
@@ -182,7 +182,7 @@ func (el *execLowerer) lowerStmt(st lang.Stmt) []execir.Node {
 				node.RedactKeys = append(node.RedactKeys, k.Value)
 			}
 		}
-		return []execir.Node{node}
+		return append(pre, node)
 	}
 	return nil
 }
