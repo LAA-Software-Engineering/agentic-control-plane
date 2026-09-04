@@ -134,6 +134,7 @@ func Check(f *lang.File, opts Options) (*Program, lang.Diagnostics) {
 	tu, typeDiags := resolveTypes(f, opts)
 	diags = append(diags, typeDiags...)
 	wireAgentSchemas(unit, tu, graph)
+	wireWorkflowSchemas(unit, tu, graph)
 	checkDiags, rebinds := checkTypes(unit, tu)
 	diags = append(diags, checkDiags...)
 	applyRebinds(lowered, rebinds)
@@ -182,6 +183,44 @@ func wireAgentSchemas(unit []*lang.File, tu *typeUniverse, graph *spec.ProjectGr
 			}
 			if ad.Output != nil && info.Output != nil {
 				ar.Spec.Output = &spec.AgentIO{Schema: lower.SchemaRef(ad.Output.Name), Resolved: info.Output}
+			}
+		}
+	}
+}
+
+// wireWorkflowSchemas records each .agent workflow's resolved input schema onto the resource
+// projection, so a .agent workflow gets the same runtime input validation a YAML `spec.input.schema`
+// gave (ADR 007 parity). The runtime validates the single InputJSON object against the workflow's
+// input schema; by universal convention a workflow's runtime input is its `input` parameter, so this
+// wires WorkflowSpec.Input from that parameter's resolved type. As with agents, an UNRESOLVED type
+// stays absent (lenient — a typed input with no schema file is not forced to fail), and a RESOLVED one
+// carries both the project-root-relative ref and the compiled document.
+func wireWorkflowSchemas(unit []*lang.File, tu *typeUniverse, graph *spec.ProjectGraph) {
+	if graph == nil || tu == nil {
+		return
+	}
+	for _, file := range unit {
+		if file == nil {
+			continue
+		}
+		for _, d := range file.Decls {
+			wd, ok := d.(*lang.WorkflowDecl)
+			if !ok {
+				continue
+			}
+			wr := graph.Workflows[identName(wd.Name)]
+			if wr == nil {
+				continue
+			}
+			info := tu.workflows[identName(wd.Name)]
+			for _, p := range wd.Params {
+				if identName(p.Name) != "input" || p.Type == nil {
+					continue
+				}
+				if doc := info.Params["input"]; doc != nil {
+					wr.Spec.Input = &spec.WorkflowInput{Schema: lower.SchemaRef(p.Type.Name), Resolved: doc}
+				}
+				break
 			}
 		}
 	}
