@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -159,6 +161,23 @@ func doRequest(ctx context.Context, cli *http.Client, method, urlStr string, hea
 		if hdr.Get("Content-Type") == "" {
 			hdr.Set("Content-Type", "application/json")
 		}
+	default:
+		// GET, DELETE, and any other verb carry no request body — many servers and
+		// proxies ignore or reject a body on these — so with-args become query
+		// parameters. Dropping them silently (the previous behavior) sent the wrong
+		// request and still reported success (#384). Nested values have no scalar
+		// query representation and are rejected rather than silently flattened.
+		q, err := encodeQueryParams(with)
+		if err != nil {
+			return nil, err
+		}
+		if q != "" {
+			if strings.Contains(urlStr, "?") {
+				urlStr += "&" + q
+			} else {
+				urlStr += "?" + q
+			}
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, urlStr, body)
@@ -186,6 +205,55 @@ func doRequest(ctx context.Context, cli *http.Client, method, urlStr string, hea
 	}
 
 	return decodeResponseBody(b, resp.Header.Get("Content-Type"))
+}
+
+// encodeQueryParams renders with-args as a URL query string for body-less methods
+// (GET/DELETE). Only scalar values have a query representation; a nested map or
+// slice is rejected so the call fails loudly instead of dropping data (#384). The
+// output key order is deterministic (url.Values.Encode sorts by key).
+func encodeQueryParams(with map[string]any) (string, error) {
+	if len(with) == 0 {
+		return "", nil
+	}
+	vals := url.Values{}
+	for k, v := range with {
+		s, err := scalarToQuery(v)
+		if err != nil {
+			return "", fmt.Errorf("httptool: with[%q]: %w", k, err)
+		}
+		if s == nil {
+			continue // a nil value carries nothing — omit rather than send "key="
+		}
+		vals.Set(k, *s)
+	}
+	return vals.Encode(), nil
+}
+
+// scalarToQuery formats a scalar with-arg as a query value, returning nil to omit a
+// null. A map or slice has no scalar form and is an error.
+func scalarToQuery(v any) (*string, error) {
+	var s string
+	switch x := v.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		s = x
+	case bool:
+		s = strconv.FormatBool(x)
+	case float64: // JSON numbers decode to float64; -1 precision avoids a trailing .0
+		s = strconv.FormatFloat(x, 'f', -1, 64)
+	case float32:
+		s = strconv.FormatFloat(float64(x), 'f', -1, 32)
+	case int:
+		s = strconv.Itoa(x)
+	case int64:
+		s = strconv.FormatInt(x, 10)
+	case json.Number:
+		s = x.String()
+	default:
+		return nil, fmt.Errorf("value of type %T is not a scalar and cannot be a query parameter", v)
+	}
+	return &s, nil
 }
 
 func decodeResponseBody(b []byte, contentType string) (map[string]any, error) {

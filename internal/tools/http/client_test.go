@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 
@@ -113,5 +114,74 @@ func TestParseOperation_postPath(t *testing.T) {
 	}
 	if m != "POST" || p != "/api/v1/items" {
 		t.Fatalf("%s %s", m, p)
+	}
+}
+
+// TestExecute_GET_encodesWithAsQuery proves GET with-args are sent as query
+// parameters rather than silently dropped (#384).
+func TestExecute_GET_encodesWithAsQuery(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	_, _, err := Execute(context.Background(), &spec.ToolHTTP{BaseURL: srv.URL}, nil, "get.users",
+		map[string]any{"id": "42", "q": "x y", "limit": float64(10), "active": true}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotQuery == "" {
+		t.Fatal("GET dropped with-args: no query string sent")
+	}
+	q, err := url.ParseQuery(gotQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Get("id") != "42" || q.Get("q") != "x y" || q.Get("limit") != "10" || q.Get("active") != "true" {
+		t.Fatalf("query %q missing/incorrect params: %v", gotQuery, q)
+	}
+}
+
+// TestExecute_DELETE_encodesWithAsQuery proves DELETE with-args are also sent as
+// query parameters (#384).
+func TestExecute_DELETE_encodesWithAsQuery(t *testing.T) {
+	var gotQuery string
+	var gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	_, _, err := Execute(context.Background(), &spec.ToolHTTP{BaseURL: srv.URL}, nil, "delete.session",
+		map[string]any{"token": "abc"}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != "DELETE" {
+		t.Fatalf("method %q", gotMethod)
+	}
+	if q, _ := url.ParseQuery(gotQuery); q.Get("token") != "abc" {
+		t.Fatalf("DELETE dropped with-args: query=%q", gotQuery)
+	}
+}
+
+// TestExecute_GET_rejectsNestedWith proves a nested with-arg is rejected rather
+// than silently flattened or dropped on a body-less method (#384).
+func TestExecute_GET_rejectsNestedWith(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("server must not be reached; request should fail before send")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, _, err := Execute(context.Background(), &spec.ToolHTTP{BaseURL: srv.URL}, nil, "get.users",
+		map[string]any{"filter": map[string]any{"role": "admin"}}, srv.Client())
+	if err == nil {
+		t.Fatal("expected error for nested query value, got nil")
 	}
 }
