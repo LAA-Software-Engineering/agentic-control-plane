@@ -6,8 +6,8 @@
     "Wall-clock ceiling increased (Policy/default).",
     "Agent/reviewer gained tool.github.default.",
     "Newly autonomous effect unknown (tool.github.default) (agent/reviewer).",
-    "Agent model changed (Agent/reviewer).",
-    "Agent tools list gained \"tool.github.default\" (Agent/reviewer)."
+    "Agent tools list gained write-capable tool \"tool.github.default\" (Agent/reviewer; declares side effects).",
+    "Agent model changed (Agent/reviewer)."
   ],
   "riskItems": [
     {
@@ -115,9 +115,9 @@
       ]
     },
     {
-      "category": "model_change",
-      "reason": "Agent model changed (Agent/reviewer).",
-      "severity": "medium",
+      "category": "tool_surface_change",
+      "reason": "Agent tools list gained write-capable tool \"tool.github.default\" (Agent/reviewer; declares side effects).",
+      "severity": "high",
       "target": {
         "kind": "agent",
         "name": "reviewer"
@@ -131,8 +131,8 @@
       ]
     },
     {
-      "category": "tool_surface_change",
-      "reason": "Agent tools list gained \"tool.github.default\" (Agent/reviewer).",
+      "category": "model_change",
+      "reason": "Agent model changed (Agent/reviewer).",
       "severity": "medium",
       "target": {
         "kind": "agent",

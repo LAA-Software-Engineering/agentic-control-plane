@@ -5,8 +5,8 @@ risk:
   - Wall-clock ceiling increased (Policy/default).
   - Agent/reviewer gained tool.github.default.
   - Newly autonomous effect unknown (tool.github.default) (agent/reviewer).
+  - Agent tools list gained write-capable tool "tool.github.default" (Agent/reviewer; declares side effects).
   - Agent model changed (Agent/reviewer).
-  - Agent tools list gained "tool.github.default" (Agent/reviewer).
 riskItems:
   - category: approval_removal
     severity: high
@@ -75,9 +75,9 @@ riskItems:
         reachability: autonomous
     ident: unknown (tool.github.default)
     reachability: autonomous
-  - category: model_change
-    severity: medium
-    reason: Agent model changed (Agent/reviewer).
+  - category: tool_surface_change
+    severity: high
+    reason: Agent tools list gained write-capable tool "tool.github.default" (Agent/reviewer; declares side effects).
     target:
       kind: agent
       name: reviewer
@@ -85,9 +85,9 @@ riskItems:
       - kind: agent
         name: reviewer
         reachability: static
-  - category: tool_surface_change
+  - category: model_change
     severity: medium
-    reason: Agent tools list gained "tool.github.default" (Agent/reviewer).
+    reason: Agent model changed (Agent/reviewer).
     target:
       kind: agent
       name: reviewer

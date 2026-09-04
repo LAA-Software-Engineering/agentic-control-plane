@@ -9,6 +9,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/policy"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/tools"
 )
 
 type policySpecRisk struct {
@@ -697,11 +698,20 @@ func agentTools(a *agentSpecRisk) []string {
 // the declared write-capability signal (ADR 007 step 1) that replaced the removed spec.permissions
 // allow-name heuristic. Side-effect metadata is materialized during normalization, so a native tool
 // with no explicit safety carries its derived default here.
-func toolHasSideEffects(g *spec.ProjectGraph, toolName string) bool {
+func toolHasSideEffects(g *spec.ProjectGraph, toolRef string) bool {
 	if g == nil {
 		return false
 	}
-	tr := g.Tools[toolName]
+	// A grant may be operation-pinned (tool.<name>.<op>, the `.agent` convention) or a bare tool name
+	// (legacy YAML `tools: [<name>]`). Resolve the pinned form to its base tool before the g.Tools
+	// lookup — exactly as the effect analysis does via tools.ParseUses — so a write-capable tool granted
+	// by its pinned reference is not silently missed (which would fail open, under-scoring a genuine
+	// tool-surface widening HIGH→MEDIUM).
+	name := strings.TrimSpace(toolRef)
+	if base, _, err := tools.ParseUses(toolRef); err == nil {
+		name = base
+	}
+	tr := g.Tools[name]
 	if tr == nil || tr.Spec.Safety == nil || tr.Spec.Safety.SideEffects == nil {
 		return false
 	}

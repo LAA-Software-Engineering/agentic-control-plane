@@ -35,9 +35,9 @@ high:
 - [high] authority_widening: AUTONOMOUS authority WIDENED.
 - [high] budget_relaxation: Cost ceiling increased (Policy/default).
 - [high] budget_relaxation: Wall-clock ceiling increased (Policy/default).
+- [high] tool_surface_change: Agent tools list gained write-capable tool "tool.github.default" (Agent/reviewer; declares side effects).
 medium:
 - [medium] model_change: Agent model changed (Agent/reviewer).
-- [medium] tool_surface_change: Agent tools list gained "tool.github.default" (Agent/reviewer).
 Effective policy (default):
 - Tool/github decision=requireApproval source=explicit_policy_rule
 - Tool/helper decision=allow source=safety_metadata
