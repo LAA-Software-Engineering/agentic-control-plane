@@ -239,6 +239,15 @@ func sanitizeReflect(v any, depth int, o RedactionOptions) any {
 	}
 }
 
+// RedactValue masks every sensitive key (opts.RedactKeys, matched case-insensitively as a substring)
+// at any depth of v, preserving structure and without truncating or sanitizing. It is the
+// display-layer redactor for data that must be stored raw but shown masked — notably a run checkpoint's
+// context (the completed steps' outputs and a pending gate's args), which the interpreter needs
+// verbatim to resume but which read surfaces (inspect, state show) must not serve in clear (issue #408).
+func RedactValue(v any, opts RedactionOptions) any {
+	return redactValue(v, opts.normalized().RedactKeys)
+}
+
 func redactValue(v any, keys []string) any {
 	switch x := v.(type) {
 	case map[string]any:

@@ -439,7 +439,7 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 	// on completion below), matching the DAG's per-step envelope so a subworkflow
 	// call is addressable in run_steps like any other step.
 	wfQID := a.e.qualID(site.Bind)
-	wfInJSON, _ := json.Marshal(args)
+	wfInJSON := a.redactStepJSON(args)
 	wfStarted := a.e.now()
 	_ = a.e.Store.UpsertRunStep(ctx, state.RunStep{RunID: a.in.RunID, StepID: wfQID, Status: "running", StartedAt: &wfStarted, InputJSON: string(wfInJSON)})
 
@@ -536,7 +536,7 @@ func (a *engineInvoker) InvokeWorkflow(ctx context.Context, site execir.CallSite
 		})
 	}
 	wfFinished := a.e.now()
-	wfOutJSON, _ := json.Marshal(out)
+	wfOutJSON := a.redactStepJSON(out)
 	_ = a.e.Store.UpsertRunStep(ctx, state.RunStep{
 		RunID: a.in.RunID, StepID: wfQID, Status: "succeeded",
 		StartedAt: &wfStarted, FinishedAt: &wfFinished, InputJSON: string(wfInJSON), OutputJSON: string(wfOutJSON),
@@ -561,7 +561,7 @@ func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args ma
 		}
 	}
 	qid := a.e.qualID(step.ID)
-	inJSON, _ := json.Marshal(args)
+	inJSON := a.redactStepJSON(args)
 
 	// Pre-admit against already-accumulated cost/elapsed (mirrors executeOneStep).
 	admitCtx := a.pctx(extraApproved)
@@ -611,7 +611,7 @@ func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args ma
 	}
 	a.mu.Unlock()
 
-	outJSON, _ := json.Marshal(out)
+	outJSON := a.redactStepJSON(out)
 	if err := a.e.Store.UpsertRunStep(ctx, state.RunStep{
 		RunID: a.in.RunID, StepID: qid, Status: "succeeded",
 		StartedAt: &started, FinishedAt: &finished, InputJSON: string(inJSON), OutputJSON: string(outJSON), CostUSD: stepCost,
@@ -624,6 +624,32 @@ func (a *engineInvoker) run(ctx context.Context, step spec.WorkflowStep, args ma
 // failStepRow records a failed run-step row and a run_error trace event, matching
 // the DAG's per-step failure bookkeeping (runDAGStep). The tool/agent executors
 // already emit their own system_error/limit_hit for denials before returning.
+// redactStepJSON marshals a run_steps input/output payload with the same redaction the trace recorder
+// applies, so a sensitive key (token/password/authorization/…) is masked instead of persisted in clear.
+func (a *engineInvoker) redactStepJSON(v any) []byte {
+	return redactPayloadJSON(v, a.e.Trace)
+}
+
+// redactPayloadJSON marshals a DISPLAY payload (a run_steps input/output, or the run's final output) with
+// the trace recorder's redaction, so a sensitive key (token/password/authorization/…) is masked instead
+// of stored in clear and served verbatim by inspect / state show (issue #408). These are display
+// surfaces, NOT the replay source — the checkpoint keeps raw args to dispatch on resume — so redacting
+// at the write layer is safe. A map payload runs through trace.PrepareEventData; a scalar (no keys to
+// mask) is marshaled as is. Falls back to default redaction when no recorder is set, so it never
+// persists raw.
+func redactPayloadJSON(v any, r *trace.Recorder) []byte {
+	opts := trace.NormalizeRedactionOptions(trace.DefaultRedactionOptions())
+	if r != nil {
+		opts = r.Redaction
+	}
+	if m, ok := v.(map[string]any); ok {
+		b, _ := json.Marshal(trace.PrepareEventData(m, nil, opts))
+		return b
+	}
+	b, _ := json.Marshal(v)
+	return b
+}
+
 func (a *engineInvoker) failStepRow(ctx context.Context, qid string, inJSON []byte, err error, stepCost float64) {
 	finished := a.e.now()
 	started := finished
