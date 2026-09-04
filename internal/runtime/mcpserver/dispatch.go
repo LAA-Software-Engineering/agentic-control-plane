@@ -11,15 +11,13 @@ import (
 	"github.com/Terfyn/terfyn/internal/trace"
 )
 
-// inputSchemaValidator and toolLimitsResolver are the enforcement seams the external-runtime path
-// shares with the internal engine (#390): tools.Registry implements both, so a dispatcher backed by
-// a real registry validates operation input schemas (#204) and enforces tool I/O byte limits (#117)
-// exactly as engine.runToolStep does. A test executor that implements neither keeps the old behavior.
-type inputSchemaValidator interface {
+// ToolEnforcer supplies the per-call contract the external-runtime path shares with the internal
+// engine (#390): operation input-schema validation (#204) and tool I/O byte-limit resolution (#117).
+// tools.Registry implements it. It is injected EXPLICITLY (WithEnforcement) rather than type-asserted
+// off the executor, so wrapping or swapping the executor cannot silently drop enforcement — the
+// production wiring (agentcli.RunExternalAgent) fails closed when its executor is not a ToolEnforcer.
+type ToolEnforcer interface {
 	ValidateInputSchema(uses string, with map[string]any) error
-}
-
-type toolLimitsResolver interface {
 	ResolveToolExecutionLimits(uses string) spec.ResolvedExecutionLimits
 }
 
@@ -40,12 +38,13 @@ type Dispatcher interface {
 // as an isError result), and wiring an interactive approval round-trip through the external
 // runtime is left to the live runtime integration (#341).
 type PolicyDispatcher struct {
-	eval  policy.PolicyEvaluator
-	exec  tools.ToolExecutor
-	run   policy.RunContext
-	seq   atomic.Int64
-	rec   *trace.Recorder
-	runID string
+	eval    policy.PolicyEvaluator
+	exec    tools.ToolExecutor
+	run     policy.RunContext
+	seq     atomic.Int64
+	rec     *trace.Recorder
+	runID   string
+	enforce ToolEnforcer // nil disables schema/limit enforcement (test-only; production wires it)
 }
 
 // NewPolicyDispatcher builds a dispatcher bound to a policy evaluator, a tool executor, and
@@ -61,6 +60,14 @@ func NewPolicyDispatcher(eval policy.PolicyEvaluator, exec tools.ToolExecutor, r
 func (d *PolicyDispatcher) WithTrace(rec *trace.Recorder, runID string) *PolicyDispatcher {
 	d.rec = rec
 	d.runID = runID
+	return d
+}
+
+// WithEnforcement injects the schema/byte-limit enforcer (#390). Production callers MUST set it (and
+// fail closed otherwise); it is a separate dependency from the executor so a wrapped/swapped executor
+// cannot drop enforcement. Returns the dispatcher for chaining.
+func (d *PolicyDispatcher) WithEnforcement(e ToolEnforcer) *PolicyDispatcher {
+	d.enforce = e
 	return d
 }
 
@@ -87,8 +94,8 @@ func (d *PolicyDispatcher) Call(ctx context.Context, uses string, args map[strin
 		}
 		args = enforced
 	}
-	if sv, ok := d.exec.(inputSchemaValidator); ok {
-		if err := sv.ValidateInputSchema(uses, args); err != nil {
+	if d.enforce != nil {
+		if err := d.enforce.ValidateInputSchema(uses, args); err != nil {
 			// Fail closed like the engine: the tool never runs on a schema violation.
 			d.traceDenied(ctx, stepID, err)
 			return nil, err
@@ -125,13 +132,12 @@ func (d *PolicyDispatcher) Call(ctx context.Context, uses string, args map[strin
 	return out, nil
 }
 
-// toolLimits resolves the tool's byte/policy limits when the executor exposes them.
+// toolLimits resolves the tool's byte/policy limits from the injected enforcer.
 func (d *PolicyDispatcher) toolLimits(uses string) (spec.ResolvedExecutionLimits, bool) {
-	lr, ok := d.exec.(toolLimitsResolver)
-	if !ok {
+	if d.enforce == nil {
 		return spec.ResolvedExecutionLimits{}, false
 	}
-	return lr.ResolveToolExecutionLimits(uses), true
+	return d.enforce.ResolveToolExecutionLimits(uses), true
 }
 
 // enforceBytes applies a maxBytes limit to a tool I/O map, mirroring engine.enforceMapLimit: emit a

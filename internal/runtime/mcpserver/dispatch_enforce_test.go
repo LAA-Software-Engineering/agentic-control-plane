@@ -42,7 +42,7 @@ func enforceGraph(t *testing.T, limits *spec.ExecutionLimits) (*spec.ProjectGrap
 func TestPolicyDispatcher_enforcesInputSchema(t *testing.T) {
 	g, root := enforceGraph(t, nil)
 	reg := tools.NewRegistryWithRoot(g, root)
-	d := NewPolicyDispatcher(policy.NewEvaluator(g, nil), reg, policy.RunContext{})
+	d := NewPolicyDispatcher(policy.NewEvaluator(g, nil), reg, policy.RunContext{}).WithEnforcement(reg)
 
 	// Schema forbids additional properties, so `bogus` must be rejected before dispatch.
 	_, err := d.Call(context.Background(), "tool.ws.read_file", map[string]any{"bogus": 1, "path": "x"})
@@ -64,7 +64,7 @@ func TestPolicyDispatcher_enforcesInputSchema(t *testing.T) {
 func TestPolicyDispatcher_enforcesInputByteLimit(t *testing.T) {
 	g, root := enforceGraph(t, &spec.ExecutionLimits{MaxToolInputBytes: 32, ToolInputExceedPolicy: spec.LimitExceedFail})
 	reg := tools.NewRegistryWithRoot(g, root)
-	d := NewPolicyDispatcher(policy.NewEvaluator(g, nil), reg, policy.RunContext{})
+	d := NewPolicyDispatcher(policy.NewEvaluator(g, nil), reg, policy.RunContext{}).WithEnforcement(reg)
 
 	big := map[string]any{"path": strings.Repeat("a", 500)}
 	_, err := d.Call(context.Background(), "tool.ws.read_file", big)
@@ -83,7 +83,7 @@ func TestPolicyDispatcher_enforcesOutputByteLimit(t *testing.T) {
 	reg := tools.NewRegistryWithRoot(g, root)
 	// A mock executor that returns a large output.
 	reg.Mock = &bigOutputExecutor{}
-	d := NewPolicyDispatcher(policy.NewEvaluator(g, nil), reg, policy.RunContext{})
+	d := NewPolicyDispatcher(policy.NewEvaluator(g, nil), reg, policy.RunContext{}).WithEnforcement(reg)
 
 	_, err := d.Call(context.Background(), "tool.ws.read_file", map[string]any{"path": "x"})
 	if err == nil {
@@ -91,6 +91,19 @@ func TestPolicyDispatcher_enforcesOutputByteLimit(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "exceeds limit") {
 		t.Fatalf("expected a byte-limit error, got %v", err)
+	}
+}
+
+// TestPolicyDispatcher_noEnforcerSkips documents that a dispatcher built without an enforcer does
+// NOT enforce (unit-test convenience). Production must never rely on this: RunExternalAgent fails
+// closed when its executor is not a ToolEnforcer (see agentcli.external_run). Here a schema-violating
+// call passes because enforcement was deliberately not wired.
+func TestPolicyDispatcher_noEnforcerSkips(t *testing.T) {
+	g, root := enforceGraph(t, nil)
+	reg := tools.NewRegistryWithRoot(g, root)
+	d := NewPolicyDispatcher(policy.NewEvaluator(g, nil), reg, policy.RunContext{}) // no WithEnforcement
+	if _, err := d.Call(context.Background(), "tool.ws.read_file", map[string]any{"bogus": 1, "path": "x"}); err != nil {
+		t.Fatalf("without an enforcer the dispatcher must not enforce schema: %v", err)
 	}
 }
 

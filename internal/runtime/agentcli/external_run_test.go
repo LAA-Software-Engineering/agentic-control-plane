@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Terfyn/terfyn/internal/policy"
@@ -36,6 +37,13 @@ type fakeExec struct{ calls []string }
 func (f *fakeExec) Call(_ context.Context, req tools.ToolCallRequest) (tools.ToolCallResponse, error) {
 	f.calls = append(f.calls, req.Uses)
 	return tools.ToolCallResponse{Output: map[string]any{"read": req.With["path"]}}, nil
+}
+
+// fakeExec also satisfies mcpserver.ToolEnforcer so RunExternalAgent's fail-closed enforcement
+// requirement is met; with no schemas/limits declared these are no-ops (#390).
+func (f *fakeExec) ValidateInputSchema(string, map[string]any) error { return nil }
+func (f *fakeExec) ResolveToolExecutionLimits(string) spec.ResolvedExecutionLimits {
+	return spec.ResolveExecutionLimits(nil, nil, nil)
 }
 
 func reviewerGraph() *spec.ProjectGraph {
@@ -183,6 +191,42 @@ func TestRunExternalAgent_endToEnd(t *testing.T) {
 		t.Fatalf("missing trace events: %v", kinds)
 	}
 	_ = run
+}
+
+// nonEnforcingExec forwards Call but does NOT implement mcpserver.ToolEnforcer, simulating a
+// decorator that wraps the registry for Call only (cache/metrics/retry) — the exact way enforcement
+// could be silently dropped.
+type nonEnforcingExec struct{}
+
+func (nonEnforcingExec) Call(_ context.Context, _ tools.ToolCallRequest) (tools.ToolCallResponse, error) {
+	return tools.ToolCallResponse{Output: map[string]any{}}, nil
+}
+
+// TestRunExternalAgent_refusesNonEnforcingExecutor proves the production path fails CLOSED rather
+// than running an external agent whose executor cannot enforce operation schema / byte limits — so
+// wrapping or swapping the executor can never silently drop the #390 enforcement.
+func TestRunExternalAgent_refusesNonEnforcingExecutor(t *testing.T) {
+	ctx := context.Background()
+	graph := reviewerGraph()
+	driver := fakeDriver{run: func(_ context.Context, _ RunSpec) (Session, error) {
+		t.Fatal("driver must not run when the executor cannot enforce")
+		return Session{}, nil
+	}}
+	_, _, err := RunExternalAgent(ctx, driver, ExternalAgentRun{
+		Graph:     graph,
+		Agent:     graph.Agents["Reviewer"],
+		Eval:      policy.NewEvaluator(graph, nil),
+		Exec:      nonEnforcingExec{},
+		RunID:     "r",
+		Run:       policy.RunContext{},
+		ConfigDir: t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected RunExternalAgent to refuse a non-enforcing executor")
+	}
+	if !strings.Contains(err.Error(), "does not enforce") {
+		t.Fatalf("expected a fail-closed enforcement error, got %v", err)
+	}
 }
 
 // A budget breach fails closed even though the driver reported success.
