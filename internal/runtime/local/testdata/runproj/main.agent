@@ -1,0 +1,58 @@
+// runproj — authored entirely in .agent (ADR 007): the helper tool, default/gate policies, the
+// reviewer agent, the demo and gated workflows, and the staging environment overlay. Traces
+// backend/retention are operator-local config (see .agentic/local.yaml). The built-in mock provider
+// and default local runtime are implicit.
+
+tool helper {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+policy default {
+}
+
+policy gate {
+    approvals {
+        requiredFor {
+            tool.helper.echo
+        }
+    }
+    hitl {
+        interruptOn {
+            helper {
+                allowedDecisions { approve reject }
+            }
+        }
+    }
+}
+
+agent reviewer {
+    model mock/gpt-4
+    instructions "Summarize the tool payload as JSON."
+    output AgentOut
+}
+
+workflow demo(input: DemoInput) {
+    fetch = helper.echo(topic: input.topic, extra: "x")
+    summarize = reviewer(echo: fetch.echo)
+    return { topic: input.topic, summary: summarize.summary }
+}
+
+workflow gated(input: DemoInput) policy gate {
+    publish = helper.echo(topic: input.topic)
+    return { published: publish.echo.topic }
+}
+
+environment staging {
+    overrides {
+        agents {
+            reviewer {
+                constraints {
+                    timeoutSeconds 99
+                }
+            }
+        }
+    }
+}

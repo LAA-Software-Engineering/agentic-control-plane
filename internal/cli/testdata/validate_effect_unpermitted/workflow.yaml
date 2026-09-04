@@ -1,9 +1,0 @@
-apiVersion: agentic.dev/v0
-kind: Workflow
-metadata:
-  name: deploy-production
-spec:
-  policy: staging-only
-  steps:
-    - id: remediate
-      agent: deploy-agent

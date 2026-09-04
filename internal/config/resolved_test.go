@@ -8,29 +8,39 @@ import (
 	"testing"
 
 	"fmt"
-
-	"github.com/Terfyn/terfyn/internal/spec"
 )
 
+// writeProject writes a minimal .agent project (ADR 007: .agent is the sole source). Project-level
+// defaults become a `defaults { … }` block; operator config (state) is no longer a source concern, so
+// it comes from the default state path or a user-local overlay, not the project. Model values are
+// coerced to the <provider>/<name> form the grammar requires.
 func writeProject(t *testing.T, root string, specDefaults map[string]string) {
 	t.Helper()
-	defaults := ""
-	if specDefaults != nil {
-		defaults = "  defaults:\n"
-		for k, v := range specDefaults {
-			defaults += fmt.Sprintf("    %s: %s\n", k, v)
+	var b strings.Builder
+	if len(specDefaults) > 0 {
+		b.WriteString("defaults {\n")
+		if v, ok := specDefaults["model"]; ok {
+			fmt.Fprintf(&b, "    model %s\n", ensureModelRef(v))
 		}
+		if v, ok := specDefaults["runtime"]; ok {
+			fmt.Fprintf(&b, "    runtime %s\n", v)
+		}
+		if v, ok := specDefaults["policy"]; ok {
+			fmt.Fprintf(&b, "    policy %s\n", v)
+		}
+		b.WriteString("}\n\n")
 	}
-	content := fmt.Sprintf(`apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: demo
-spec:
-%s  state:
-    backend: sqlite
-    dsn: .agentic/state.db
-`, defaults)
-	writeYAML(t, filepath.Join(root, "project.yaml"), content)
+	b.WriteString("agent assistant {\n    model mock/default\n}\n")
+	writeYAML(t, filepath.Join(root, "main.agent"), b.String())
+}
+
+// ensureModelRef coerces a bare model name to the <provider>/<name> form the .agent grammar requires,
+// so a test fixture can pass a plain label like "project-model".
+func ensureModelRef(v string) string {
+	if strings.Contains(v, "/") {
+		return v
+	}
+	return "mock/" + v
 }
 
 func TestResolve_precedenceLadder(t *testing.T) {
@@ -56,14 +66,18 @@ state:
 		t.Fatalf("Resolve: %v", err)
 	}
 	g := rc.Graph()
-	if g.Spec.Defaults.Model != "project-model" {
+	// defaults are .agent project source: the project value wins over both overlays (overlays only fill
+	// fields the project left unset).
+	if g.Spec.Defaults.Model != "mock/project-model" {
 		t.Fatalf("project model should win, got %q", g.Spec.Defaults.Model)
 	}
 	if g.Spec.Defaults.Runtime != "local" {
 		t.Fatalf("project runtime should remain local, got %q", g.Spec.Defaults.Runtime)
 	}
-	if !strings.HasSuffix(g.Spec.State.DSN, ".agentic/state.db") {
-		t.Fatalf("project state should win, got %q", g.Spec.State.DSN)
+	// state is operator-config with no project-source layer (ADR 007): the highest-precedence overlay —
+	// the project-local .agentic/local.yaml — wins over the user-global overlay.
+	if g.Spec.State.DSN != "/tmp/local-state.db" {
+		t.Fatalf("project-local overlay state should win, got %q", g.Spec.State.DSN)
 	}
 }
 
@@ -153,27 +167,24 @@ func TestResolve_unknownFieldInUserLocal(t *testing.T) {
 	}
 }
 
-func TestResolve_unknownFieldInProject(t *testing.T) {
+// TestResolve_rejectsYAMLProjectSource proves the ADR 007 reject reaches config.Resolve (the shared
+// load path for validate/plan/apply/run): a project.yaml manifest is refused with a migrate hint, so
+// no CLI command silently ingests a YAML project. (Strict unknown-field decoding still lives in the
+// retained YAML codec and is exercised at the internal/spec level.)
+func TestResolve_rejectsYAMLProjectSource(t *testing.T) {
 	root := t.TempDir()
 	writeYAML(t, filepath.Join(root, "project.yaml"), `
 apiVersion: agentic.dev/v0
 kind: Project
 metadata:
   name: demo
-spec:
-  defualts:
-    model: x
 `)
 	_, err := Resolve(ResolveOptions{ProjectRoot: root})
 	if err == nil {
-		t.Fatal("expected error")
+		t.Fatal("expected a YAML-source rejection")
 	}
-	var le *spec.LoadError
-	if !errors.As(err, &le) {
-		t.Fatalf("want LoadError, got %T: %v", err, err)
-	}
-	if !errors.Is(err, spec.ErrUnknownField) {
-		t.Fatalf("want ErrUnknownField: %v", err)
+	if !strings.Contains(err.Error(), "no longer an accepted project source") || !strings.Contains(err.Error(), "migrate --to-agent") {
+		t.Fatalf("want ADR 007 reject with migrate hint, got: %v", err)
 	}
 }
 
@@ -223,64 +234,36 @@ func TestSnapshotPath(t *testing.T) {
 
 func TestResolve_doesNotEnforceEffectBounds(t *testing.T) {
 	root := t.TempDir()
-	writeYAML(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: resolve-skips-effect-check
-spec:
-  imports:
-    - ./policy.yaml
-    - ./tool.yaml
-    - ./agent.yaml
-    - ./workflow.yaml
-  defaults:
-    policy: staging-only
-    model: mock/gpt-4
-  providers:
-    models:
-      mock:
-        type: mock
-`)
-	writeYAML(t, filepath.Join(root, "policy.yaml"), `apiVersion: agentic.dev/v0
-kind: Policy
-metadata:
-  name: staging-only
-spec:
-  effects:
-    permit:
-      - production.read
-`)
-	writeYAML(t, filepath.Join(root, "tool.yaml"), `apiVersion: agentic.dev/v0
-kind: Tool
-metadata:
-  name: kubernetes
-spec:
-  type: native
-  operations:
-    restart:
-      effects: [production.write]
-`)
-	writeYAML(t, filepath.Join(root, "agent.yaml"), `apiVersion: agentic.dev/v0
-kind: Agent
-metadata:
-  name: deploy-agent
-spec:
-  model: mock/gpt-4
-  policy: staging-only
-  tools:
-    - tool.kubernetes.restart
-  instructions: |
-    Restart the service when asked.
-`)
-	writeYAML(t, filepath.Join(root, "workflow.yaml"), `apiVersion: agentic.dev/v0
-kind: Workflow
-metadata:
-  name: deploy-production
-spec:
-  policy: staging-only
-  steps:
-    - id: remediate
-      agent: deploy-agent
+	// The agent reaches tool.kubernetes.restart (production.write) under a policy that permits only
+	// production.read — a policy-effect-bound violation (effects.Check's domain, run by validate/plan),
+	// NOT a workflow effects-clause violation (the loader's check.Check). So the project loads, and
+	// Resolve must return the graph without enforcing the bound.
+	writeYAML(t, filepath.Join(root, "main.agent"), `tool kubernetes {
+    type native
+    operations {
+        restart { effects { production.write } }
+    }
+}
+
+policy staging-only {
+    effects {
+        permit { production.read }
+    }
+}
+
+agent deploy-agent {
+    model mock/gpt-4
+    policy staging-only
+    instructions "Restart the service when asked."
+    grants {
+        tool.kubernetes.restart
+    }
+}
+
+workflow deploy-production(input: any) policy staging-only {
+    remediate = deploy-agent(input)
+    return remediate
+}
 `)
 	rc, err := Resolve(ResolveOptions{ProjectRoot: root})
 	if err != nil {
@@ -329,19 +312,10 @@ workflow hello(input: string) -> string {
 }
 
 // TestResolve_yamlSourceDeprecation is issue #440 Phase 2a: a project loaded from a hand-authored
-// YAML project file is flagged with a deprecation notice, while a .agent-only project is not.
+// .agent-only project (the only loadable kind under ADR 007) is not flagged as a deprecated source.
+// A YAML project is no longer merely deprecated — it is rejected outright (see
+// TestResolve_rejectsYAMLProjectSource).
 func TestResolve_yamlSourceDeprecation(t *testing.T) {
-	// YAML project (project.yaml present) → flagged.
-	yamlRoot := t.TempDir()
-	writeProject(t, yamlRoot, nil)
-	rcYAML, err := Resolve(ResolveOptions{ProjectRoot: yamlRoot})
-	if err != nil {
-		t.Fatalf("resolve YAML project: %v", err)
-	}
-	if w := rcYAML.SourceDeprecation(); w == "" || !strings.Contains(w, "deprecated") {
-		t.Fatalf("YAML project must be flagged as deprecated source, got %q", w)
-	}
-
 	// .agent-only project (no project.yaml) → not flagged.
 	agentRoot := t.TempDir()
 	writeYAML(t, filepath.Join(agentRoot, "main.agent"), `agent a {

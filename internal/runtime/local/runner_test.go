@@ -3,7 +3,6 @@ package local
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,14 +11,11 @@ import (
 	"time"
 
 	"github.com/Terfyn/terfyn/internal/config"
-	"github.com/Terfyn/terfyn/internal/engine"
-	"github.com/Terfyn/terfyn/internal/models"
 	"github.com/Terfyn/terfyn/internal/project"
 	"github.com/Terfyn/terfyn/internal/runtime"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
-	"github.com/Terfyn/terfyn/internal/tools"
 	"github.com/Terfyn/terfyn/internal/trace"
 )
 
@@ -298,36 +294,26 @@ func TestResume_preservesAttribution(t *testing.T) {
 
 	root := testRunProjRoot(t)
 	rc := testResolvedConfig(t, root, "staging")
-	graph := rc.Graph()
 
 	runID := "resume-attr-1"
 	started := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 	inputJSON := []byte(`{"topic":"resume-attr"}`)
-	if err := st.StartRun(ctx, state.Run{
-		RunID: runID, WorkflowName: "gated", Env: "dev", Status: state.RunStatusRunning,
-		StartedAt: started, InputJSON: string(inputJSON), TotalCostUSD: 0,
-		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot",
-		RequestID: "req-original", Source: "cli",
-		EnvironmentName: "staging",
-	}); err != nil {
-		t.Fatal(err)
-	}
 
-	var input map[string]any
-	if err := json.Unmarshal(inputJSON, &input); err != nil {
-		t.Fatal(err)
+	// Start through the runtime (not a hand-seeded run + bare executor) so the pinned .agent program is
+	// the SAME on the interrupting run and the resume — a mixed DAG-start / program-resume would not
+	// restore the checkpoint. The gate interrupts cleanly (nil err, status interrupted).
+	rtStart := NewRuntime(st)
+	rtStart.Now = func() time.Time { return started }
+	if _, err := rtStart.Invoke(ctx, rc, runtime.InvokeOptions{
+		RunID: runID, WorkflowName: "gated", Env: "dev", EnvironmentName: "staging",
+		InputJSON: inputJSON,
+		TenantID:  "acme", ThreadID: "thread-original", ActorID: "starter-bot",
+		RequestID: "req-original", Source: "cli",
+	}); err != nil {
+		t.Fatalf("gated invoke should interrupt cleanly at the gate, got %v", err)
 	}
-	ex := &engine.Executor{
-		Graph: graph, ProjectRoot: root,
-		Tools: tools.NewRegistry(graph), Models: models.NewRegistry(graph),
-		Store: st, Trace: trace.NewRecorder(st),
-		Now: func() time.Time { return started },
-	}
-	if err := ex.Run(ctx, engine.RunInput{
-		RunID: runID, WorkflowName: "gated", Env: "dev", StartedAt: started, Input: input,
-		TenantID: "acme", ThreadID: "thread-original", ActorID: "starter-bot", RequestID: "req-original",
-	}); !errors.Is(err, engine.ErrInterrupted) {
-		t.Fatalf("gated run should interrupt at the gate, got %v", err)
+	if r, err := st.GetRun(ctx, runID); err != nil || r.Status != state.RunStatusInterrupted {
+		t.Fatalf("gated run should be interrupted at the gate, got status=%q err=%v", r.Status, err)
 	}
 
 	rt := NewRuntime(st)

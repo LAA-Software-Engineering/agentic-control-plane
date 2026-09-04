@@ -29,7 +29,6 @@ metadata:
 
 func TestLoadProject_ingestsAgentSources(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "project.yaml", minimalProjectYAML)
 	writeFile(t, root, "src/review.agent", `
 agent Reviewer {
     model openai/gpt-5
@@ -239,7 +238,6 @@ func TestLoadProject_agentControlFlowLoadsAndLowers(t *testing.T) {
 	// projection merges (flattened arms, for effect analysis), and its execution
 	// IR is available to run on the interpreter.
 	root := t.TempDir()
-	writeFile(t, root, "project.yaml", minimalProjectYAML)
 	writeFile(t, root, "flow.agent", `
 agent Reviewer { model openai/gpt-5 }
 
@@ -273,7 +271,6 @@ func TestLoadProject_agentStraightLineExecutable(t *testing.T) {
 	// A straight-line workflow (incl. parallel { } static fan-out) is executable
 	// and loads.
 	root := t.TempDir()
-	writeFile(t, root, "project.yaml", minimalProjectYAML)
 	writeFile(t, root, "flow.agent", `
 agent Reviewer { model openai/gpt-5 }
 
@@ -299,7 +296,6 @@ workflow Review(input: PullRequest) {
 // load error.
 func TestLoadProject_agentUnresolvedReferenceFails(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "project.yaml", minimalProjectYAML)
 	writeFile(t, root, "w.agent", `workflow W(input: X) { return never_bound }`)
 
 	_, err := LoadProject(root)
@@ -317,7 +313,6 @@ func TestLoadProject_agentUnresolvedReferenceFails(t *testing.T) {
 // check.applyRebinds). A bare lower.LowerFile loader would leave arg0.
 func TestLoadProject_agentRebindsPositionalWorkflowArgs(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "project.yaml", minimalProjectYAML)
 	writeFile(t, root, "flows.agent", `
 workflow Inner(msg: Message) -> Message {
     return msg.body
@@ -355,7 +350,6 @@ workflow Outer(input: Ticket) {
 
 func TestLoadProject_agentParseErrorSurfaces(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "project.yaml", minimalProjectYAML)
 	writeFile(t, root, "broken.agent", `workflow W( {`)
 
 	_, err := LoadProject(root)
@@ -369,7 +363,8 @@ func TestLoadProject_agentParseErrorSurfaces(t *testing.T) {
 
 func TestLoadProject_skipsDotDirs(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "project.yaml", minimalProjectYAML)
+	// A real root .agent gives the project something loadable; the dot-dir file below must be ignored.
+	writeFile(t, root, "main.agent", `workflow Keep(input: string) -> string { return input }`)
 	// A .agent file under a dot-directory (e.g. deployment state) must be ignored.
 	writeFile(t, root, ".agentic/cached.agent", `workflow Ghost() { return }`)
 
@@ -389,29 +384,17 @@ func TestLoadProject_skipsDotDirs(t *testing.T) {
 // the union over both arms of the flattened projection.
 func TestLoadProject_agentControlFlowEffectViolationRejected(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "project.yaml", `apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: demo
-spec:
-  imports:
-    - ./tools/github.yaml
-`)
-	writeFile(t, root, "tools/github.yaml", `apiVersion: agentic.dev/v0
-kind: Tool
-metadata:
-  name: github
-spec:
-  type: native
-  operations:
-    get_pr:
-      effects: [github.read]
-    merge_pr:
-      effects: [github.write, destructive]
-`)
 	// The else arm reaches github.merge_pr (write/destructive), which the clause
 	// does not permit — a compile error even though it is conditional.
 	writeFile(t, root, "flow.agent", `
+tool github {
+    type native
+    operations {
+        get_pr { effects { github.read } }
+        merge_pr { effects { github.write destructive } }
+    }
+}
+
 workflow W(input: PR)
     effects { github.read }
 {

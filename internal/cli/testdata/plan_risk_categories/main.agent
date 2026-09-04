@@ -1,0 +1,43 @@
+defaults {
+    policy default
+}
+
+tool helper {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+tool github {
+    type native
+    safety {
+        trusted true
+        sideEffects false
+    }
+}
+
+policy default {
+    execution {
+        maxTotalCostUsd 3
+        maxWallClockSeconds 60
+    }
+    approvals {
+        requiredFor {
+            tool.helper.echo
+            tool.github.issues.write
+        }
+    }
+}
+
+agent reviewer {
+    model mock/gpt-4
+    policy default
+    constraints {
+        timeoutSeconds 60
+    }
+    instructions "You review changes."
+    grants {
+        tool.helper.echo
+    }
+}

@@ -273,6 +273,37 @@ func TestRiskSummary_agentToolsListGained(t *testing.T) {
 	}
 }
 
+// TestRiskSummary_agentToolsListGained_pinnedGrant is the regression for the pinned-reference
+// fail-open (review of #477): under ADR 007 agent grants are operation-pinned (tool.<name>.<op>), so
+// the tool-surface risk path must resolve that reference to its base tool before the safety lookup —
+// otherwise g.Tools["tool.github.default"] misses (tools are keyed "github"), sideEffects reads false,
+// and a genuinely write-capable tool-surface widening is under-scored HIGH→MEDIUM. The existing
+// TestRiskSummary_agentToolsListGained used bare names, which resolve trivially and hid this.
+func TestRiskSummary_agentToolsListGained_pinnedGrant(t *testing.T) {
+	oldG := graphWithAgentTools(false, false)
+	oldG.Agents["rev"].Spec.Tools = []string{"tool.helper.echo"}
+	applied := appliedFromDesired(t, "dev", oldG)
+	newG := graphWithAgentTools(true, true) // github is side-effecting
+	newG.Agents["rev"].Spec.Tools = []string{"tool.helper.echo", "tool.github.default"}
+
+	pl, err := NewPlanner(&fakeDeploy{list: applied}).ComputePlan(context.Background(), "dev", newG, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, it := range pl.Risk.Items {
+		if it.Category == RiskCategoryToolSurfaceChange {
+			found = true
+			if it.Severity != RiskSeverityHigh {
+				t.Fatalf("a write-capable tool granted by its pinned reference must be high, got %s", it.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected tool_surface_change, got %#v", pl.Risk.Items)
+	}
+}
+
 func TestRiskItem_witnessPathReadyForEffectDelta(t *testing.T) {
 	item := RiskItem{
 		Category: RiskCategorySafety,

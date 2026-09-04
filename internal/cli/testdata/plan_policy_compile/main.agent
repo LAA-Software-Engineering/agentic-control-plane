@@ -1,0 +1,35 @@
+defaults {
+    policy default
+}
+
+tool helper {
+    type native
+    safety {
+        trusted true
+        sideEffects false
+    }
+}
+
+tool reader {
+    type native
+    safety {
+        trusted true
+        sideEffects false
+    }
+}
+
+tool shell {
+    type native
+    safety {
+        sideEffects true
+    }
+}
+
+policy default {
+    preset shell_safe
+    approvals {
+        requiredFor {
+            tool.helper.echo
+        }
+    }
+}

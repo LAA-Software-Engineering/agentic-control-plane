@@ -36,7 +36,7 @@ func TestStateList_emptyStore(t *testing.T) {
 func TestStateList_afterApply_table(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "state-apply.db")
 
 	g := &Global{ProjectRoot: root}
@@ -67,12 +67,12 @@ func TestStateList_afterApply_table(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := out.String()
-	for _, needle := range []string{"Policy", "default", "Tool", "helper", "Project", "plan-fixture", "SPEC_HASH"} {
+	for _, needle := range []string{"Policy", "default", "Tool", "helper", "Project", "plan_project", "SPEC_HASH"} {
 		if !strings.Contains(s, needle) {
 			t.Fatalf("missing %q in:\n%s", needle, s)
 		}
 	}
-	if !strings.Contains(s, "Applied project: plan-fixture") {
+	if !strings.Contains(s, "Applied project: plan_project") {
 		t.Fatalf("missing applied project line:\n%s", s)
 	}
 }
@@ -80,7 +80,7 @@ func TestStateList_afterApply_table(t *testing.T) {
 func TestStateList_afterApply_json(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "state-json.db")
 
 	g := &Global{ProjectRoot: root}
@@ -122,7 +122,7 @@ func TestStateList_afterApply_json(t *testing.T) {
 		t.Fatalf("resources: %v", top["resources"])
 	}
 	ap, ok := top["appliedProject"].(map[string]any)
-	if !ok || ap["projectName"] != "plan-fixture" {
+	if !ok || ap["projectName"] != "plan_project" {
 		t.Fatalf("appliedProject: %v", top["appliedProject"])
 	}
 }
@@ -130,7 +130,7 @@ func TestStateList_afterApply_json(t *testing.T) {
 func TestStateShow_afterApply(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "state-show.db")
 
 	g := &Global{ProjectRoot: root}
@@ -175,7 +175,7 @@ func TestStateShow_afterApply(t *testing.T) {
 func TestStateShow_json_fullSpec(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "state-showj.db")
 
 	g := &Global{ProjectRoot: root}

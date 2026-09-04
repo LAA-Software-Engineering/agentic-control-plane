@@ -126,7 +126,14 @@ func compileAgentSources(g *spec.ProjectGraph, rootAbs string) (map[string]*exec
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", p, err)
 		}
-		f, d := lang.Parse(p, string(src))
+		// Parse with a project-root-relative filename so diagnostics carry stable relative paths (matching
+		// the YAML loader's relocateLoaded), rather than leaking an absolute path into user output and
+		// golden tests. The absolute p is still used to read instruction files below.
+		parseName := p
+		if rel, err := filepath.Rel(rootAbs, p); err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
+			parseName = filepath.ToSlash(rel)
+		}
+		f, d := lang.Parse(parseName, string(src))
 		diags = append(diags, d...)
 		if err := resolveInstructionFiles(f, p, rootAbs); err != nil {
 			return nil, err

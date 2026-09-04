@@ -144,7 +144,7 @@ func TestInspect_projectResource(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"inspect", "-o", "json", "Project/validate-ok", "--project", testdataPath(t, "validate_ok")})
+	cmd.SetArgs([]string{"inspect", "-o", "json", "Project/validate_ok", "--project", testdataPath(t, "validate_ok")})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}

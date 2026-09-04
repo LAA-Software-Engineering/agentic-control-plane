@@ -1,0 +1,33 @@
+defaults {
+    policy gate
+}
+
+tool helper {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+policy gate {
+    approvals {
+        requiredFor {
+            tool.helper.echo
+        }
+    }
+    hitl {
+        descriptionPrefix "Echo tool requires operator approval"
+        interruptOn {
+            helper {
+                allowedDecisions { approve reject edit }
+                allowedEditArgs { "topic" }
+                description "Review echo call (${uses})"
+            }
+        }
+    }
+}
+
+workflow gated(input: GatedInput) policy gate {
+    s1 = helper.echo(topic: input.topic)
+    return { out: s1.echo }
+}

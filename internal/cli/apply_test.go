@@ -15,7 +15,7 @@ import (
 
 func TestApply_autoApprove_updatesState(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "apply-auto.db")
 
 	ResetGlobalsForTest()
@@ -45,7 +45,7 @@ func TestApply_autoApprove_updatesState(t *testing.T) {
 func TestApply_envAutoApprove_updatesState(t *testing.T) {
 	t.Setenv(EnvAutoApprove, "1")
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "apply-env.db")
 
 	ResetGlobalsForTest()
@@ -76,7 +76,7 @@ func TestApply_nonInteractive_requiresApproval(t *testing.T) {
 	t.Setenv(EnvAutoApprove, "")
 
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "apply-no-tty.db")
 
 	ResetGlobalsForTest()
@@ -113,7 +113,7 @@ func TestApply_nonInteractive_requiresApproval(t *testing.T) {
 
 func TestApply_emptyPlan_afterFirstApply(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "apply-idem.db")
 
 	ResetGlobalsForTest()
@@ -141,7 +141,7 @@ func TestApply_emptyPlan_afterFirstApply(t *testing.T) {
 
 func TestApply_jsonNonEmpty_requiresAutoApprove(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "apply-json.db")
 
 	ResetGlobalsForTest()
@@ -160,7 +160,7 @@ func TestApply_jsonNonEmpty_requiresAutoApprove(t *testing.T) {
 
 func TestApply_jsonAutoApprove_validJSON(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "apply-json2.db")
 
 	ResetGlobalsForTest()

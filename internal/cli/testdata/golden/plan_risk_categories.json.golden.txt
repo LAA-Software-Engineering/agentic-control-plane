@@ -4,9 +4,9 @@
     "AUTONOMOUS authority WIDENED.",
     "Cost ceiling increased (Policy/default).",
     "Wall-clock ceiling increased (Policy/default).",
-    "Agent/reviewer gained tool.github.echo.",
-    "Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).",
-    "Agent tools list gained write-capable tool \"github\" (Agent/reviewer; declares side effects).",
+    "Agent/reviewer gained tool.github.default.",
+    "Newly autonomous effect unknown (tool.github.default) (agent/reviewer).",
+    "Agent tools list gained write-capable tool \"tool.github.default\" (Agent/reviewer; declares side effects).",
     "Agent model changed (Agent/reviewer)."
   ],
   "riskItems": [
@@ -70,9 +70,9 @@
     },
     {
       "category": "capability_delta",
-      "ident": "tool.github.echo",
+      "ident": "tool.github.default",
       "reachability": "autonomous",
-      "reason": "Agent/reviewer gained tool.github.echo.",
+      "reason": "Agent/reviewer gained tool.github.default.",
       "severity": "high",
       "target": {
         "kind": "agent",
@@ -86,16 +86,16 @@
         },
         {
           "kind": "tool_operation",
-          "name": "tool.github.echo",
+          "name": "tool.github.default",
           "reachability": "autonomous"
         }
       ]
     },
     {
       "category": "effect_delta",
-      "ident": "unknown (tool.github.echo)",
+      "ident": "unknown (tool.github.default)",
       "reachability": "autonomous",
-      "reason": "Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).",
+      "reason": "Newly autonomous effect unknown (tool.github.default) (agent/reviewer).",
       "severity": "high",
       "target": {
         "kind": "agent",
@@ -109,14 +109,14 @@
         },
         {
           "kind": "tool_operation",
-          "name": "tool.github.echo",
+          "name": "tool.github.default",
           "reachability": "autonomous"
         }
       ]
     },
     {
       "category": "tool_surface_change",
-      "reason": "Agent tools list gained write-capable tool \"github\" (Agent/reviewer; declares side effects).",
+      "reason": "Agent tools list gained write-capable tool \"tool.github.default\" (Agent/reviewer; declares side effects).",
       "severity": "high",
       "target": {
         "kind": "agent",

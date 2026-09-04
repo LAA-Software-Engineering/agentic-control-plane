@@ -122,7 +122,7 @@ func TestGolden_validate_effect_unpermitted_table(t *testing.T) {
 
 func TestGolden_plan_first_table(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-plan1.db")
 
 	ResetGlobalsForTest()
@@ -139,7 +139,7 @@ func TestGolden_plan_first_table(t *testing.T) {
 
 func TestGolden_plan_policy_compile_table(t *testing.T) {
 	root := t.TempDir()
-	copyPolicyCompileFixture(t, root)
+	root = copyPolicyCompileFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-policy-compile.db")
 
 	ResetGlobalsForTest()
@@ -157,7 +157,7 @@ func TestGolden_plan_policy_compile_table(t *testing.T) {
 func TestGolden_plan_noop_after_apply_table(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-plan2.db")
 
 	g := &Global{ProjectRoot: root}
@@ -192,7 +192,7 @@ func TestGolden_plan_noop_after_apply_table(t *testing.T) {
 
 func TestGolden_plan_risk_categories_table(t *testing.T) {
 	root := t.TempDir()
-	copyRiskCategoriesFixture(t, root)
+	root = copyRiskCategoriesFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-plan-risk.db")
 	applyProjectGraph(t, root, db)
 	mutateRiskCategories(t, root)
@@ -211,7 +211,7 @@ func TestGolden_plan_risk_categories_table(t *testing.T) {
 
 func TestGolden_plan_risk_categories_json_risk(t *testing.T) {
 	root := t.TempDir()
-	copyRiskCategoriesFixture(t, root)
+	root = copyRiskCategoriesFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-plan-risk-json.db")
 	applyProjectGraph(t, root, db)
 	mutateRiskCategories(t, root)
@@ -242,7 +242,7 @@ func TestGolden_plan_risk_categories_json_risk(t *testing.T) {
 
 func TestGolden_plan_risk_categories_yaml_risk(t *testing.T) {
 	root := t.TempDir()
-	copyRiskCategoriesFixture(t, root)
+	root = copyRiskCategoriesFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-plan-risk-yaml.db")
 	applyProjectGraph(t, root, db)
 	mutateRiskCategories(t, root)
@@ -273,14 +273,14 @@ func TestGolden_plan_risk_categories_yaml_risk(t *testing.T) {
 	assertGoldenOutput(t, "plan_risk_categories.yaml.golden.txt", buf.String())
 }
 
-func copyEffectBoundFixture(t *testing.T, dstDir string) {
+func copyEffectBoundFixture(t *testing.T, dstDir string) string {
 	t.Helper()
-	copyFixtureDir(t, dstDir, "plan_effect_bound")
+	return copyFixtureDir(t, dstDir, "plan_effect_bound")
 }
 
 func TestGolden_plan_effect_bound_table(t *testing.T) {
 	root := t.TempDir()
-	copyEffectBoundFixture(t, root)
+	root = copyEffectBoundFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-plan-effect-bound.db")
 
 	ResetGlobalsForTest()
@@ -297,7 +297,7 @@ func TestGolden_plan_effect_bound_table(t *testing.T) {
 
 func TestGolden_plan_effect_bound_json(t *testing.T) {
 	root := t.TempDir()
-	copyEffectBoundFixture(t, root)
+	root = copyEffectBoundFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-plan-effect-bound-json.db")
 
 	ResetGlobalsForTest()
@@ -330,7 +330,7 @@ func TestGolden_plan_effect_bound_json(t *testing.T) {
 
 func TestGolden_plan_effect_bound_yaml(t *testing.T) {
 	root := t.TempDir()
-	copyEffectBoundFixture(t, root)
+	root = copyEffectBoundFixture(t, root)
 	db := filepath.Join(t.TempDir(), "golden-plan-effect-bound-yaml.db")
 
 	ResetGlobalsForTest()

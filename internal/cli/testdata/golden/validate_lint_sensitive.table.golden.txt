@@ -1,4 +1,4 @@
-Project: validate-lint-sensitive
+Project: validate_lint_sensitive
 Environment: (none)
 
 * Loaded 3 resources
@@ -7,6 +7,6 @@ Environment: (none)
 * All workflows valid
 
 Policy lint (1 findings):
-! [high] policy.yaml:1:1: Policy/default: sensitive Tool/delete_records has no explicit approval rule (requiredFor or requireAllTools)
+! [high] main.agent:10:1: Policy/default: sensitive Tool/delete_records has no explicit approval rule (requiredFor or requireAllTools)
 
 Validation successful

@@ -1,0 +1,27 @@
+defaults {
+    policy guarded-writes
+    model mock/gpt-4
+}
+
+tool github {
+    type native
+    safety {
+        trusted true
+        sideEffects false
+    }
+    operations {
+        read_pr { effects { github.read } }
+        merge_pr { effects { github.write } }
+    }
+}
+
+policy guarded-writes {
+    effects {
+        permit { github.read }
+    }
+}
+
+workflow review() policy guarded-writes {
+    fetch = github.read_pr()
+    return fetch
+}

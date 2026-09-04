@@ -1,0 +1,4 @@
+# Operator-local runtime config (ADR 007): traces retention lives in the user-local overlay.
+traces:
+  backend: sqlite
+  retentionDays: 1

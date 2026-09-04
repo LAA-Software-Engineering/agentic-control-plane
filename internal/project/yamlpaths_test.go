@@ -7,7 +7,10 @@ import (
 )
 
 func TestListProjectYAMLFiles_planCLIFixture(t *testing.T) {
-	root := filepath.Join("..", "cli", "testdata", "plan_project")
+	// fmt_messy is a still-YAML fixture (project.yaml + policy.yaml + tool.yaml) — the codec-level
+	// ListProjectYAMLFiles helper (used by migrate) reads YAML directly, unaffected by the ADR 007
+	// source reject.
+	root := filepath.Join("..", "cli", "testdata", "fmt_messy")
 	paths, err := ListProjectYAMLFiles(root)
 	if err != nil {
 		t.Fatal(err)

@@ -18,7 +18,7 @@ import (
 
 func TestDiff_firstPlan_threeCreates(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff1.db")
 
 	ResetGlobalsForTest()
@@ -31,7 +31,7 @@ func TestDiff_firstPlan_threeCreates(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := out.String()
-	if !strings.Contains(s, "Project/plan-fixture (create)") {
+	if !strings.Contains(s, "Project/plan_project (create)") {
 		t.Fatalf("missing project create:\n%s", s)
 	}
 	if !strings.Contains(s, "Policy/default (create)") || !strings.Contains(s, "Tool/helper (create)") {
@@ -45,7 +45,7 @@ func TestDiff_firstPlan_threeCreates(t *testing.T) {
 func TestDiff_afterApply_noDifferences(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff2.db")
 
 	g := &Global{ProjectRoot: root}
@@ -83,7 +83,7 @@ func TestDiff_afterApply_noDifferences(t *testing.T) {
 func TestDiff_singleResource_inSync(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff3.db")
 
 	g := &Global{ProjectRoot: root}
@@ -122,7 +122,7 @@ func TestDiff_singleResource_inSync(t *testing.T) {
 func TestDiff_singleResource_policyUpdate(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff4.db")
 
 	g := &Global{ProjectRoot: root}
@@ -143,12 +143,12 @@ func TestDiff_singleResource_policyUpdate(t *testing.T) {
 	}
 	_ = st.Close()
 
-	policyPath := filepath.Join(root, "policy.yaml")
+	policyPath := filepath.Join(root, "main.agent")
 	b, err := os.ReadFile(policyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated := strings.Replace(string(b), "maxTotalCostUsd: 3", "maxTotalCostUsd: 10", 1)
+	updated := strings.Replace(string(b), "maxTotalCostUsd 3", "maxTotalCostUsd 10", 1)
 	if err := os.WriteFile(policyPath, []byte(updated), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestDiff_singleResource_policyUpdate(t *testing.T) {
 
 func TestDiff_unknownResource_exit2(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff5.db")
 
 	ResetGlobalsForTest()
@@ -195,7 +195,7 @@ func TestDiff_unknownResource_exit2(t *testing.T) {
 
 func TestDiff_badKindName_exit2(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff6.db")
 
 	ResetGlobalsForTest()
@@ -214,7 +214,7 @@ func TestDiff_badKindName_exit2(t *testing.T) {
 
 func TestDiff_tooManyArgs_exit2(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff7.db")
 
 	ResetGlobalsForTest()
@@ -233,7 +233,7 @@ func TestDiff_tooManyArgs_exit2(t *testing.T) {
 
 func TestDiff_json_firstPlan(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff8.db")
 
 	ResetGlobalsForTest()
@@ -265,7 +265,7 @@ func TestDiff_json_firstPlan(t *testing.T) {
 func TestDiff_json_inSyncSingleTarget(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "diff9.db")
 
 	g := &Global{ProjectRoot: root}
@@ -291,7 +291,7 @@ func TestDiff_json_inSyncSingleTarget(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"diff", "-o", "json", "Project/plan-fixture", "--project", root, "--state", db})
+	cmd.SetArgs([]string{"diff", "-o", "json", "Project/plan_project", "--project", root, "--state", db})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestDiff_json_inSyncSingleTarget(t *testing.T) {
 	if m["inSync"] != true {
 		t.Fatalf("inSync: %v", m)
 	}
-	if m["atTarget"] != "Project/plan-fixture" {
+	if m["atTarget"] != "Project/plan_project" {
 		t.Fatalf("atTarget: %v", m)
 	}
 }

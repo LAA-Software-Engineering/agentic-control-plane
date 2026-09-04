@@ -1,0 +1,35 @@
+defaults {
+    policy default
+    model mock/gpt-4
+}
+
+tool helper {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+policy default {
+    execution {
+        maxWallClockSeconds 300
+        maxTotalCostUsd 5
+    }
+}
+
+workflow demo() policy default {
+    ping = helper.echo(msg: "hi")
+    return ping
+}
+
+environment staging {
+    overrides {
+        policies {
+            default {
+                execution {
+                    maxWallClockSeconds 600
+                }
+            }
+        }
+    }
+}
