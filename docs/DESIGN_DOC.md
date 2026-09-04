@@ -547,10 +547,6 @@ spec:
         type: anthropic
         apiKeyFrom: env:ANTHROPIC_API_KEY
 
-    tools:
-      mcp:
-        enabled: true
-
   state:
     backend: sqlite
     dsn: .agentic/state.db

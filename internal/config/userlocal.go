@@ -277,9 +277,6 @@ func mergeProviders(dst, src *spec.ProjectProviders) *spec.ProjectProviders {
 			out.Models[k] = v
 		}
 	}
-	if src.Tools != nil {
-		out.Tools = src.Tools
-	}
 	return out
 }
 
@@ -301,9 +298,6 @@ func mergeProvidersUnder(dst, src *spec.ProjectProviders) *spec.ProjectProviders
 			}
 		}
 	}
-	if out.Tools == nil && src.Tools != nil {
-		out.Tools = src.Tools
-	}
 	return out
 }
 
@@ -317,10 +311,6 @@ func cloneProviders(p *spec.ProjectProviders) *spec.ProjectProviders {
 		for k, v := range p.Models {
 			out.Models[k] = v
 		}
-	}
-	if p.Tools != nil {
-		cp := *p.Tools
-		out.Tools = &cp
 	}
 	return out
 }

@@ -25,6 +25,9 @@ func legacyFieldWarning(kind, name, field string) string {
 	if kind == "Tool" && field == "permissions" {
 		return fmt.Sprintf("Tool/%s: spec.permissions is deprecated; its plan-only write heuristic has been superseded by operations/effects capability analysis and is omitted from generated .agent", name)
 	}
+	if kind == "Project" && field == "providers.tools" {
+		return fmt.Sprintf("Project/%s: spec.providers.tools is no longer part of the canonical model (its mcp.enabled flag was always a no-op) and has no runtime semantics; omitted from generated .agent", name)
+	}
 	return fmt.Sprintf("%s/%s: spec.%s is no longer part of the canonical model and has no runtime semantics; omitted from generated .agent", kind, name, field)
 }
 
@@ -123,9 +126,6 @@ func stripLegacyYAMLDoc(data []byte) (warnings []string, cleaned []byte) {
 	}
 	kind, _ := doc["kind"].(string)
 	fields := legacyRemovedFieldsByKind[kind]
-	if len(fields) == 0 {
-		return nil, data
-	}
 	spec, ok := doc["spec"].(map[string]any)
 	if !ok {
 		return nil, data
@@ -140,6 +140,18 @@ func stripLegacyYAMLDoc(data []byte) (warnings []string, cleaned []byte) {
 			delete(spec, f)
 			warnings = append(warnings, legacyFieldWarning(kind, name, f))
 			changed = true
+		}
+	}
+	// The one nested removed field: Project spec.providers.tools (its mcp.enabled flag was always a
+	// no-op). The strict loader would reject it as an unknown key, so strip it here too. Providers is
+	// kept (its models are canonical); only the tools sub-map is removed.
+	if kind == "Project" {
+		if providers, ok := spec["providers"].(map[string]any); ok {
+			if _, present := providers["tools"]; present {
+				delete(providers, "tools")
+				warnings = append(warnings, legacyFieldWarning(kind, name, "providers.tools"))
+				changed = true
+			}
 		}
 	}
 	if !changed {

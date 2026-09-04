@@ -117,9 +117,6 @@ func sampleProject() *ProjectResource {
 					"openai":    {Type: "openai", APIKeyFrom: "env:OPENAI_API_KEY"},
 					"anthropic": {Type: "anthropic", APIKeyFrom: "env:ANTHROPIC_API_KEY"},
 				},
-				Tools: &ProjectToolsProviders{
-					MCP: &MCPProviderConfig{Enabled: true},
-				},
 			},
 			State: &ProjectStateConfig{
 				Backend: "sqlite",
