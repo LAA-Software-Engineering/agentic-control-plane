@@ -123,3 +123,19 @@ func parseSQLiteTime(s string) (time.Time, error) {
 	}
 	return time.Parse(time.RFC3339, s)
 }
+
+// sqliteTimeLayout is a FIXED-WIDTH RFC3339 UTC layout: always nine fractional
+// digits, so lexical (text) order equals chronological order. time.RFC3339Nano
+// trims trailing zeros, which makes a whole-second value (…:00Z) sort AFTER a
+// fractional one in the same second (…:00.5Z) because 'Z' (0x5A) > '.' (0x2E) —
+// corrupting `ORDER BY started_at` and the `started_at < cutoff` retention compare
+// (#385). parseSQLiteTime already accepts this width (RFC3339Nano parsing is
+// fraction-length agnostic), so reads are unaffected.
+const sqliteTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+// formatSQLiteTime renders a timestamp for storage so text order matches time
+// order. Always call this (not time.RFC3339Nano) when writing a column that is
+// ordered or range-compared as text.
+func formatSQLiteTime(t time.Time) string {
+	return t.UTC().Format(sqliteTimeLayout)
+}
