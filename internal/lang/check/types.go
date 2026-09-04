@@ -249,6 +249,19 @@ func (wc *wfChecker) checkStmt(st lang.Stmt) lang.Diagnostics {
 	case *lang.ExprStmt:
 		_, diags := wc.checkExpr(s.X)
 		return diags
+	case *lang.ApprovalStmt:
+		// Type-check the review payload's argument expressions (they reference prior bindings), then bind
+		// the decision name (untyped/any) so a later step may reference it.
+		var diags lang.Diagnostics
+		for _, arg := range s.With {
+			if arg == nil {
+				continue
+			}
+			_, d := wc.checkExpr(arg.Value)
+			diags = append(diags, d...)
+		}
+		wc.env[identName(s.Bind)] = typeRef{}
+		return diags
 	case *lang.ParallelStmt:
 		var diags lang.Diagnostics
 		results := make(map[string]typeRef, len(s.Body))

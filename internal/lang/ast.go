@@ -247,6 +247,24 @@ type ReturnStmt struct {
 func (s *ReturnStmt) Position() Pos { return s.Pos }
 func (s *ReturnStmt) stmtNode()     {}
 
+// ApprovalStmt is `approval <Bind> { description "…" redactKeys { "k1" "k2" } }` (#440): a workflow
+// graph-node human pause, the `.agent` form of a YAML `approval:` step. It lowers to an
+// [execir.Approval] node (execution) and to a spec.WorkflowStep with an Approval value (the resource
+// projection effect analysis walks). Bind names the decision; Description and RedactKeys are optional.
+type ApprovalStmt struct {
+	Pos         Pos
+	Bind        *Ident
+	Description *StringLit
+	RedactKeys  []*StringLit
+	// With is the review payload (named args), the same load-bearing data a YAML approval step's `with:`
+	// carries: it is shown to the reviewer, gates the Edit decision (offered only when non-empty), and
+	// becomes the node's published output. Lowered through the same Args path as a call's arguments.
+	With []*Arg
+}
+
+func (s *ApprovalStmt) Position() Pos { return s.Pos }
+func (s *ApprovalStmt) stmtNode()     {}
+
 // IfStmt is `if <Cond> { <Then> } (else ({ <Else> } | <IfStmt>))?` (#199). Cond
 // is a boolean expression; Then and Else are statement lists. An `else if` chain
 // parses as an Else holding a single nested IfStmt. Control flow never becomes a

@@ -568,6 +568,12 @@ func (p *parser) parseStmt() Stmt {
 		if p.cur.Lit == "retry" && p.peekt.Kind == KindIdent && p.peekt.Lit == "until" {
 			return p.parseRetry()
 		}
+		// `approval <bind> { … }` is the workflow human-pause construct (#440). `approval` is a
+		// contextual keyword: only `approval <ident>` opens it, so `approval = …` (peek '=') and a bare
+		// call `approval(…)`/ref `approval.x` remain ordinary statements handled below.
+		if p.cur.Lit == "approval" && p.peekt.Kind == KindIdent {
+			return p.parseApproval()
+		}
 		// `name = expr` is an assignment; anything else is an expression
 		// statement (a bare call for its effect).
 		if p.peekt.Kind == KindEquals {
@@ -584,6 +590,66 @@ func (p *parser) parseStmt() Stmt {
 		p.errorf(p.cur.Pos, "expected statement (assignment, call, parallel, or return), got %s", p.cur)
 		return nil
 	}
+}
+
+// parseApproval parses `approval <bind> { description "…" redactKeys { "k1" "k2" } }` (#440). Both
+// fields are optional; each may appear at most once.
+func (p *parser) parseApproval() *ApprovalStmt {
+	s := &ApprovalStmt{Pos: p.cur.Pos}
+	p.advance() // consume 'approval'
+	s.Bind = p.ident("after 'approval'")
+	if _, ok := p.expect(KindLBrace, "to open approval body"); !ok {
+		return s
+	}
+	seen := map[string]bool{}
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		if p.cur.Kind != KindIdent {
+			p.errorf(p.cur.Pos, "expected an approval field (description, redactKeys), got %s", p.cur)
+			p.syncLine()
+			continue
+		}
+		field, fpos := p.cur.Lit, p.cur.Pos
+		p.advance()
+		if seen[field] {
+			p.errorf(fpos, "duplicate approval field %q", field)
+		}
+		seen[field] = true
+		switch field {
+		case "description":
+			s.Description = p.parseStringLit("for description")
+		case "redactKeys":
+			s.RedactKeys = p.parseStringListBlock("redactKeys")
+		case "with":
+			s.With = p.parseApprovalWith()
+		default:
+			p.errorf(fpos, "unknown approval field %q (want description, redactKeys, or with)", field)
+			p.syncLine()
+		}
+	}
+	p.expect(KindRBrace, "to close approval body")
+	return s
+}
+
+// parseApprovalWith parses the approval review-payload block `with { <name>: <expr> … }` — the same
+// named-argument shape a call takes, so it lowers through the identical Args path (#440).
+func (p *parser) parseApprovalWith() []*Arg {
+	if _, ok := p.expect(KindLBrace, "to open with block"); !ok {
+		return nil
+	}
+	var out []*Arg
+	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
+		a := p.parseArg()
+		if a == nil {
+			p.syncLine()
+			continue
+		}
+		out = append(out, a)
+		if p.cur.Kind == KindComma {
+			p.advance()
+		}
+	}
+	p.expect(KindRBrace, "to close with block")
+	return out
 }
 
 func (p *parser) parseParallel() *ParallelStmt {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Terfyn/terfyn/internal/execir"
 	"github.com/Terfyn/terfyn/internal/lang"
+	"github.com/Terfyn/terfyn/internal/spec"
 )
 
 // endToEndInvoker records tool calls and returns a per-uses canned result.
@@ -97,6 +98,108 @@ func lowerExecOrFatal(t *testing.T, src string, workflows map[string]bool) (*exe
 		t.Fatalf("first decl is not a workflow")
 	}
 	return LowerExec(wd, workflows)
+}
+
+// TestLowerExec_ApprovalLowersToApprovalNode proves the .agent `approval` step lowers to an
+// execir.Approval node carrying its bind, description, and redactKeys (#440) — the same node the YAML
+// `approval:` step produces, so execution (the HITL pause) is identical.
+func TestLowerExec_ApprovalLowersToApprovalNode(t *testing.T) {
+	t.Parallel()
+	prog, diags := lowerExecOrFatal(t, `
+workflow W(input: any) {
+    a = svc.prepare(x: input.y)
+    approval gate {
+        description "Review before publishing"
+        redactKeys { "secret" "token" }
+        with {
+            note: input.note
+            draft: a
+        }
+    }
+    return a
+}
+`, nil)
+	if diags.HasErrors() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	var ap *execir.Approval
+	for _, n := range prog.Body {
+		if a, ok := n.(*execir.Approval); ok {
+			ap = a
+		}
+	}
+	if ap == nil {
+		t.Fatalf("expected an execir.Approval node, got %#v", prog.Body)
+	}
+	if ap.Bind != "gate" || ap.Description != "Review before publishing" {
+		t.Fatalf("approval node fields: %+v", ap)
+	}
+	if len(ap.RedactKeys) != 2 || ap.RedactKeys[0] != "secret" || ap.RedactKeys[1] != "token" {
+		t.Fatalf("approval redactKeys: %v", ap.RedactKeys)
+	}
+	// The review payload must lower into Args (the same path a YAML approval's with: takes) — it is the
+	// reviewed data, gates the Edit decision, and becomes the node output.
+	if len(ap.Args) != 2 {
+		t.Fatalf("approval payload not lowered into Args: %+v", ap.Args)
+	}
+	if _, ok := ap.Args["note"]; !ok {
+		t.Fatalf("approval Args missing 'note': %+v", ap.Args)
+	}
+	if _, ok := ap.Args["draft"]; !ok {
+		t.Fatalf("approval Args missing 'draft': %+v", ap.Args)
+	}
+}
+
+// TestLowerFile_ApprovalProjectsToWorkflowStep proves the resource projection of the .agent `approval`
+// step is a spec.WorkflowStep carrying an Approval value — what effect analysis / plan risk walk. The
+// approval's Needs wire it after its predecessor, preserving the DAG position.
+func TestLowerFile_ApprovalProjectsToWorkflowStep(t *testing.T) {
+	t.Parallel()
+	f, diags := lang.Parse("t.agent", `
+workflow W(input: any) {
+    a = svc.prepare(x: input.y)
+    approval gate {
+        description "Review"
+        with {
+            draft: a
+        }
+    }
+    return a
+}
+`)
+	if diags.HasErrors() {
+		t.Fatalf("parse: %v", diags)
+	}
+	res, ld := LowerFile(f, Options{})
+	if ld.HasErrors() {
+		t.Fatalf("lower: %v", ld)
+	}
+	wr := res.ToGraph().Workflows["W"]
+	if wr == nil {
+		t.Fatalf("no workflow W")
+	}
+	var step *spec.WorkflowStep
+	for i := range wr.Spec.Steps {
+		if wr.Spec.Steps[i].ID == "gate" {
+			step = &wr.Spec.Steps[i]
+		}
+	}
+	if step == nil {
+		t.Fatalf("no approval step 'gate' in projection: %+v", wr.Spec.Steps)
+	}
+	if !spec.StepIsApproval(*step) {
+		t.Fatalf("step 'gate' is not an approval: %+v", step)
+	}
+	if step.Approval.Config == nil || step.Approval.Config.Description != "Review" {
+		t.Fatalf("approval config not projected: %+v", step.Approval)
+	}
+	if len(step.Needs) != 1 || step.Needs[0] != "a" {
+		t.Fatalf("approval should depend on its predecessor 'a', got needs %v", step.Needs)
+	}
+	// The review payload projects into the step's With (the effect/plan surface), like a call's args.
+	if step.With == nil || step.With["draft"] == nil {
+		t.Fatalf("approval payload not projected into step.With: %+v", step.With)
+	}
 }
 
 func TestLowerExec_IfLowersToBranch(t *testing.T) {

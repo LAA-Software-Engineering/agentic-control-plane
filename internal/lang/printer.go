@@ -223,6 +223,32 @@ func printStmt(b *strings.Builder, s Stmt, depth int) {
 			printStmt(b, st, depth+1)
 		}
 		fmt.Fprintf(b, "%s}\n", indent)
+	case *ApprovalStmt:
+		inner := indent + "    "
+		fmt.Fprintf(b, "%sapproval %s {\n", indent, identName(n.Bind))
+		if n.Description != nil {
+			printStringField(b, inner, "description", n.Description.Value)
+		}
+		if len(n.RedactKeys) > 0 {
+			fmt.Fprintf(b, "%sredactKeys {", inner)
+			for _, k := range n.RedactKeys {
+				fmt.Fprintf(b, " %s", strconv.Quote(k.Value))
+			}
+			b.WriteString(" }\n")
+		}
+		if len(n.With) > 0 {
+			fmt.Fprintf(b, "%swith {\n", inner)
+			arg := inner + "    "
+			for _, a := range n.With {
+				if a.Name != nil {
+					fmt.Fprintf(b, "%s%s: %s\n", arg, identName(a.Name), printExpr(a.Value))
+				} else {
+					fmt.Fprintf(b, "%s%s\n", arg, printExpr(a.Value))
+				}
+			}
+			fmt.Fprintf(b, "%s}\n", inner)
+		}
+		fmt.Fprintf(b, "%s}\n", indent)
 	default:
 		fmt.Fprintf(b, "%s/* unknown stmt %T */\n", indent, s)
 	}
