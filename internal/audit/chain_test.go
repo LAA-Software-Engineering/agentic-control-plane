@@ -152,6 +152,34 @@ func TestVerifyRunChain_unchainedIgnored(t *testing.T) {
 	}
 }
 
+// TestVerifyRunChain_rejectsAppendedUnchainedEvent proves a forged unchained row
+// appended after the chain's tip fails verification (#383) — the reported attack:
+// an inserted row with NULL hash/prev_hash used to pass as a tolerated "unchained"
+// row regardless of position.
+func TestVerifyRunChain_rejectsAppendedUnchainedEvent(t *testing.T) {
+	runID := "r1"
+	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	mk := func(seq int64, typ, prev string) state.TraceEvent {
+		e := state.TraceEvent{RunID: runID, Seq: seq, Timestamp: ts, Type: typ, ActorType: "agent", DataJSON: "{}", PrevHash: prev}
+		h, err := EventHash(e, prev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Hash = h
+		return e
+	}
+	e1 := mk(1, "run_started", GenesisHash(runID))
+	e2 := mk(2, "run_finished", e1.Hash)
+	forged := state.TraceEvent{RunID: runID, Seq: 3, Timestamp: ts, Type: "tool_execution", ActorType: "agent", DataJSON: `{"uses":"tool.x.y","success":true}`}
+	res := VerifyRunChain(runID, []state.TraceEvent{e1, e2, forged})
+	if res.Ok() {
+		t.Fatalf("forged unchained event appended after chained rows passed verification: %+v", res)
+	}
+	if res.BrokenSeq != 3 || res.BrokenField != BrokenFieldUnchainedInsertion {
+		t.Fatalf("res=%+v", res)
+	}
+}
+
 func TestPrevHashForChainTip(t *testing.T) {
 	gen := GenesisHash("r1")
 	if got := PrevHashForChainTip("r1", ""); got != gen {
@@ -162,7 +190,11 @@ func TestPrevHashForChainTip(t *testing.T) {
 	}
 }
 
-func TestVerifyRunChain_chainedAfterMiddleUnchainedGap(t *testing.T) {
+// TestVerifyRunChain_rejectsMiddleUnchainedInsertion proves an unchained row
+// sandwiched between chained rows (the chain links past it) is rejected as a forged
+// insertion, not silently skipped — every post-migration row is chained, so an
+// unchained row after a chained one can only be tampering (#383, #396).
+func TestVerifyRunChain_rejectsMiddleUnchainedInsertion(t *testing.T) {
 	runID := "r1"
 	ts := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
 	first := state.TraceEvent{
@@ -177,7 +209,8 @@ func TestVerifyRunChain_chainedAfterMiddleUnchainedGap(t *testing.T) {
 	first.PrevHash = prev
 	first.Hash = h1
 
-	unchained := state.TraceEvent{
+	// Forged: appended with empty hash columns, so the genuine chain links past it.
+	forged := state.TraceEvent{
 		RunID: runID, Seq: 2, Timestamp: ts.Add(time.Second),
 		Type: "tool_execution", ActorType: "agent", DataJSON: `{}`,
 	}
@@ -193,8 +226,8 @@ func TestVerifyRunChain_chainedAfterMiddleUnchainedGap(t *testing.T) {
 	third.PrevHash = h1
 	third.Hash = h3
 
-	res := VerifyRunChain(runID, []state.TraceEvent{first, unchained, third})
-	if !res.Ok() || res.Chained != 2 || res.Unchained != 1 {
+	res := VerifyRunChain(runID, []state.TraceEvent{first, forged, third})
+	if res.Ok() || res.BrokenSeq != 2 || res.BrokenField != BrokenFieldUnchainedInsertion {
 		t.Fatalf("res=%+v", res)
 	}
 }

@@ -12,10 +12,11 @@ var ErrChainBroken = errors.New("audit: chain broken")
 
 // Broken-field values reported by [VerifyRunResult.BrokenField] and audit verify JSON output.
 const (
-	BrokenFieldPartialChain = "partial_chain"
-	BrokenFieldPrevHash     = "prev_hash"
-	BrokenFieldHash         = "hash"
-	BrokenFieldHashCompute  = "hash_compute"
+	BrokenFieldPartialChain       = "partial_chain"
+	BrokenFieldPrevHash           = "prev_hash"
+	BrokenFieldHash               = "hash"
+	BrokenFieldHashCompute        = "hash_compute"
+	BrokenFieldUnchainedInsertion = "unchained_insertion"
 )
 
 // VerifyRunResult is the outcome of verifying one run's trace hash chain.
@@ -40,6 +41,19 @@ func VerifyRunChain(runID string, events []state.TraceEvent) VerifyRunResult {
 
 	for _, e := range events {
 		if e.Hash == "" && e.PrevHash == "" {
+			// An unchained row is tolerated ONLY as a leading prefix: rows written
+			// before migration 007 introduced chaining can only be a prefix of a run's
+			// events (e.g. a run interrupted pre-migration and resumed after it). Every
+			// row appended since then sets both hash and prev_hash (AppendTraceEvent),
+			// so an unchained row that appears AFTER a chained row can only be a forged
+			// insertion — reject it instead of silently skipping it regardless of
+			// position, which let an attacker append/insert an unhashed row past a green
+			// verify (#383, #396).
+			if res.Chained > 0 {
+				res.BrokenSeq = e.Seq
+				res.BrokenField = BrokenFieldUnchainedInsertion
+				return res
+			}
 			res.Unchained++
 			continue
 		}

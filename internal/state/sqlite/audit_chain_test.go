@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -172,7 +173,13 @@ SELECT prev_hash, hash FROM trace_events WHERE run_id = 'legacy-run' AND seq = 1
 	}
 }
 
-func TestAppendTraceEvent_chainsAfterMiddleUnchainedGap(t *testing.T) {
+// TestAppendTraceEvent_chainsPastGapButVerifyRejectsInsertion proves two things
+// about a manually inserted unchained row (empty hash columns) between chained
+// rows: AppendTraceEvent still chains the NEXT genuine row off the real tip (it
+// links past the gap), but audit verification now REJECTS the inserted row as a
+// forged insertion rather than tolerating it, so the tip-chaining cannot launder an
+// unhashed insert past a green verify (#383, #396).
+func TestAppendTraceEvent_chainsPastGapButVerifyRejectsInsertion(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, filepath.Join(t.TempDir(), "gap.db"))
 	if err != nil {
@@ -213,8 +220,11 @@ VALUES ('run-gap', 2, ?, 'tool_execution', '{}', 'tenant-1', 'thread-1', 'actor-
 	if events[2].PrevHash != tip {
 		t.Fatalf("seq3 prev=%q want tip %q", events[2].PrevHash, tip)
 	}
-	if err := audit.VerifyRunChainError("run-gap", events); err != nil {
-		t.Fatal(err)
+	// The inserted unchained row (seq 2) sits after a chained row, so verification
+	// must flag it rather than skip it — otherwise an unhashed insert passes.
+	err = audit.VerifyRunChainError("run-gap", events)
+	if err == nil || !errors.Is(err, audit.ErrChainBroken) {
+		t.Fatalf("expected chain-broken for the inserted unchained row, got %v", err)
 	}
 }
 
