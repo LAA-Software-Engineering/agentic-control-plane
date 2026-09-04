@@ -86,6 +86,48 @@ func TestValidateHitlEdit_denyWins(t *testing.T) {
 	}
 }
 
+// TestValidateHitlEdit_denyWinsAgainstRemovalAndParentOverwrite covers the "deny wins" fail-open
+// cases (#405): with an allow-all rule, a denied path must not be editable by removing it, by
+// overwriting its parent, or by changing it directly — while a legitimate sibling edit still passes.
+func TestValidateHitlEdit_denyWinsAgainstRemovalAndParentOverwrite(t *testing.T) {
+	t.Parallel()
+	argReview := ResolvedHitlReview{AllowedEditArgs: []string{"*"}, DeniedEditArgs: []string{"amount"}}
+	pathReview := ResolvedHitlReview{AllowedEditArgs: []string{"*"}, DeniedEditPaths: []string{"payment.amount"}}
+
+	cases := []struct {
+		name    string
+		review  ResolvedHitlReview
+		orig    map[string]any
+		edited  map[string]any
+		wantErr bool
+	}{
+		{"remove denied arg", argReview,
+			map[string]any{"amount": 5, "note": "x"}, map[string]any{"note": "x"}, true},
+		{"change denied arg", argReview,
+			map[string]any{"amount": 5, "note": "x"}, map[string]any{"amount": 9, "note": "x"}, true},
+		{"unchanged denied arg passes", argReview,
+			map[string]any{"amount": 5, "note": "x"}, map[string]any{"amount": 5, "note": "y"}, false},
+		{"overwrite parent of denied path with scalar", pathReview,
+			map[string]any{"payment": map[string]any{"amount": 5}}, map[string]any{"payment": "override"}, true},
+		{"change denied nested path", pathReview,
+			map[string]any{"payment": map[string]any{"amount": 5}}, map[string]any{"payment": map[string]any{"amount": 9}}, true},
+		{"edit sibling of denied nested path passes", pathReview,
+			map[string]any{"payment": map[string]any{"amount": 5, "currency": "usd"}},
+			map[string]any{"payment": map[string]any{"amount": 5, "currency": "eur"}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateHitlEdit(tc.orig, tc.edited, tc.review)
+			if tc.wantErr && (err == nil || !strings.Contains(err.Error(), "denied")) {
+				t.Fatalf("expected a denied-path error, got %v", err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected the edit to pass, got %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateHitlEdit_allowedPathOnly(t *testing.T) {
 	t.Helper()
 	review := ResolvedHitlReview{AllowedEditArgs: []string{"topic"}}

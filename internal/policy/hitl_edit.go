@@ -136,6 +136,13 @@ func ValidateHitlEdit(original, edited map[string]any, review ResolvedHitlReview
 	for path, origVal := range origFlat {
 		newVal, ok := editFlat[path]
 		if !ok {
+			// The path was REMOVED (or its parent was overwritten so this leaf no longer exists).
+			// Removing a denied path changes its value to the tool's default, so "deny wins" must
+			// reject it BEFORE consulting the allow rules — otherwise `allowedEditArgs: ["*"]` would
+			// let a denied arg be dropped (#405).
+			if pathDenied(path, review.DeniedEditPaths, review.DeniedEditArgs) {
+				return fmt.Errorf("policy: cannot edit denied path %q", path)
+			}
 			if pathAllowed(path, review.AllowedEditPaths, review.AllowedEditArgs) {
 				continue
 			}
@@ -213,7 +220,10 @@ func pathDenied(path string, deniedPaths, deniedArgs []string) bool {
 	}
 	for _, d := range deniedPaths {
 		d = strings.TrimSpace(d)
-		if d == "*" || d == path || strings.HasPrefix(path, d+".") {
+		// Match the exact denied path, any descendant of it (path under d), AND any ANCESTOR of it
+		// (d under path): editing a parent object shadows the denied child, so overwriting `payment`
+		// when `payment.amount` is denied must be treated as touching the denied path (#405).
+		if d == "*" || d == path || strings.HasPrefix(path, d+".") || strings.HasPrefix(d, path+".") {
 			return true
 		}
 	}
