@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -226,6 +227,76 @@ func TestRunExternalAgent_refusesNonEnforcingExecutor(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "does not enforce") {
 		t.Fatalf("expected a fail-closed enforcement error, got %v", err)
+	}
+}
+
+// TestRunExternalAgent_foldsCostOnError proves a failed/max-turns external run still folds the
+// session cost into the returned run context (so runs.total_cost_usd is not recorded as 0 for the
+// runs most likely to have spent the most), while the run error still propagates (#400).
+func TestRunExternalAgent_foldsCostOnError(t *testing.T) {
+	ctx := context.Background()
+	graph := reviewerGraph()
+	driver := fakeDriver{run: func(_ context.Context, _ RunSpec) (Session, error) {
+		return Session{StopReason: StopMaxTurns, CostUSD: 1.25, NumTurns: 8}, errors.New("max turns")
+	}}
+	_, run, err := RunExternalAgent(ctx, driver, ExternalAgentRun{
+		Graph:     graph,
+		Agent:     graph.Agents["Reviewer"],
+		Eval:      policy.NewEvaluator(graph, nil),
+		Exec:      &fakeExec{},
+		RunID:     "r",
+		Run:       policy.RunContext{},
+		ConfigDir: t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected the run error to propagate")
+	}
+	if run.AccumulatedCostUSD != 1.25 {
+		t.Fatalf("session cost not folded on error: got %v, want 1.25", run.AccumulatedCostUSD)
+	}
+}
+
+// TestRunExternalAgent_recordsOverspendOnError proves a failed run that also overspent the budget
+// records a limit_hit and still returns the folded cost and the original run error (#400).
+func TestRunExternalAgent_recordsOverspendOnError(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "run.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	const runID = "run-overspend"
+	if err := st.StartRun(ctx, state.Run{RunID: runID, WorkflowName: "review", Env: "dev", Status: "running", InputJSON: `{}`}); err != nil {
+		t.Fatal(err)
+	}
+	rec := trace.NewRecorder(st)
+	graph := reviewerGraph()
+	eval := policy.NewEvaluator(graph, &spec.PolicySpec{Execution: &spec.PolicyExecution{MaxTotalCostUsd: 0.5}})
+	driver := fakeDriver{run: func(_ context.Context, _ RunSpec) (Session, error) {
+		return Session{StopReason: StopMaxTurns, CostUSD: 1.25}, errors.New("max turns")
+	}}
+	_, run, runErr := RunExternalAgent(ctx, driver, ExternalAgentRun{
+		Graph: graph, Agent: graph.Agents["Reviewer"], Eval: eval, Exec: &fakeExec{},
+		Recorder: rec, RunID: runID, Run: policy.RunContext{}, ConfigDir: t.TempDir(),
+	})
+	if runErr == nil || !strings.Contains(runErr.Error(), "max turns") {
+		t.Fatalf("expected the max-turns run error, got %v", runErr)
+	}
+	if run.AccumulatedCostUSD != 1.25 {
+		t.Fatalf("cost not folded on error: got %v", run.AccumulatedCostUSD)
+	}
+	events, err := st.ListTraceEventsByRunID(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawLimit bool
+	for _, e := range events {
+		if e.Type == string(trace.EventLimitHit) {
+			sawLimit = true
+		}
+	}
+	if !sawLimit {
+		t.Fatal("expected a limit_hit event for the budget overspend on a failed run")
 	}
 }
 
