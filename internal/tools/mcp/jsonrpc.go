@@ -23,7 +23,11 @@ func jsonRPCIDMatches(rid any, want int64) bool {
 // Returns (nil, false, nil) when the message should be skipped (notification or id mismatch).
 // Returns (nil, false, err) on RPC error for matching id.
 func jsonRPCResultFromMap(msg map[string]any, wantID int64) (raw json.RawMessage, matched bool, err error) {
-	if _, hasMethod := msg["method"].(string); hasMethod && msg["id"] == nil {
+	// A message carrying a `method` is a request or notification directed AT the client (ping,
+	// roots/list, sampling/createMessage, …), never a response to our outstanding call — even when
+	// the server's id collides with ours (both sides commonly start at 1). Skip it regardless of id,
+	// so a server-initiated request is not consumed as our tools/call result (#397).
+	if _, hasMethod := msg["method"].(string); hasMethod {
 		return nil, false, nil
 	}
 	rid, ok := msg["id"]
@@ -36,7 +40,14 @@ func jsonRPCResultFromMap(msg map[string]any, wantID int64) (raw json.RawMessage
 	if errObj, ok := msg["error"]; ok && errObj != nil {
 		return nil, true, rpcErrorf("rpc error: %v", errObj)
 	}
-	out, err := json.Marshal(msg["result"])
+	// A JSON-RPC response carries exactly one of result/error. A matched message with neither is
+	// malformed: reject it rather than marshalling a missing result to `null` and reporting the tool
+	// call as a success with empty output (#397).
+	res, hasResult := msg["result"]
+	if !hasResult {
+		return nil, true, rpcErrorf("mcp: response for id %d has neither result nor error", wantID)
+	}
+	out, err := json.Marshal(res)
 	if err != nil {
 		return nil, true, err
 	}
