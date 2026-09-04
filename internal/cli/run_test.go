@@ -46,6 +46,11 @@ func runSafetyRoot(t *testing.T) string {
 	return clearSnapshotRoots(t, filepath.Join("testdata", "run_safety"))
 }
 
+func runTwoGatesRoot(t *testing.T) string {
+	t.Helper()
+	return clearSnapshotRoots(t, filepath.Join("testdata", "run_two_gates"))
+}
+
 func TestRun_demo_integration_succeeds(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "run-cli.db")
 	root := runProjRoot(t)
@@ -164,6 +169,69 @@ func TestRun_policyGated_interruptThenResumeApprove(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Status: succeeded") {
 		t.Fatalf("expected succeeded:\n%s", out.String())
+	}
+}
+
+// TestRun_decisionIsOneShot_secondGateReInterrupts proves a single --decision resolves exactly the
+// gate that was presented and is NOT replayed to a later gate in the same run (issue #406). The
+// workflow has two gated echo calls; resuming the first interrupt with --decision approve must land
+// on the SECOND gate (still interrupted, with the resume hint) instead of auto-approving the rest of
+// the run — otherwise --decision would be indistinguishable from --auto-approve.
+func TestRun_decisionIsOneShot_secondGateReInterrupts(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "run-2gate.db")
+	root := runTwoGatesRoot(t)
+
+	ResetGlobalsForTest()
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"run", "workflow/twogated",
+		"--project", root,
+		"--state", db,
+		"--input", "topic=x",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("first run: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Status: interrupted") {
+		t.Fatalf("expected first gate to interrupt:\n%s", out.String())
+	}
+	runID := ""
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Run ID:") {
+			runID = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "Run ID:"))
+		}
+	}
+	if runID == "" {
+		t.Fatal("missing run id")
+	}
+
+	out.Reset()
+	cmd2 := NewRootCmd()
+	cmd2.SetOut(&out)
+	cmd2.SetErr(&out)
+	cmd2.SetArgs([]string{
+		"run", "--resume", runID,
+		"--project", root,
+		"--state", db,
+		"--decision", "approve",
+	})
+	if err := cmd2.Execute(); err != nil {
+		t.Fatalf("resume: %v\n%s", err, out.String())
+	}
+	s := out.String()
+	// The one --decision approved the first gate; the second gate must re-interrupt, not be
+	// auto-approved. A non-interactive resume exits 0 with the "Resume with:" hint.
+	if !strings.Contains(s, "Status: interrupted") {
+		t.Fatalf("expected second gate to re-interrupt (decision must be one-shot):\n%s", s)
+	}
+	if strings.Contains(s, "Status: succeeded") {
+		t.Fatalf("single --decision was replayed to the second gate (run finished):\n%s", s)
+	}
+	if !strings.Contains(s, "--resume "+runID) {
+		t.Fatalf("expected resume hint for the still-gated run:\n%s", s)
 	}
 }
 
