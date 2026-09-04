@@ -7,11 +7,38 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
 )
+
+// TestTruncateString_keepsValidUTF8 proves the stored preview stays valid UTF-8
+// across byte budgets over multi-byte text (#386).
+func TestTruncateString_keepsValidUTF8(t *testing.T) {
+	s := strings.Repeat("日本語", 50)
+	for max := 1; max <= len(s); max += 3 {
+		got := truncateString(s, max)
+		if !utf8.ValidString(got) {
+			t.Fatalf("truncateString(max=%d) invalid UTF-8: %q", max, got)
+		}
+	}
+}
+
+// TestTruncatePayload_keepsValidUTF8 proves the JSON preview is cut on a rune
+// boundary, not mid-rune (#386).
+func TestTruncatePayload_keepsValidUTF8(t *testing.T) {
+	data := map[string]any{"text": strings.Repeat("😀", 100)}
+	out := truncatePayload(data, 64)
+	preview, ok := out[FieldPayloadPreview].(string)
+	if !ok {
+		t.Fatalf("expected a truncated preview, got %#v", out)
+	}
+	if !utf8.ValidString(preview) {
+		t.Fatalf("truncated payload preview is not valid UTF-8: %q", preview)
+	}
+}
 
 func TestPrepareEventData_redactsNestedKeys(t *testing.T) {
 	t.Parallel()
