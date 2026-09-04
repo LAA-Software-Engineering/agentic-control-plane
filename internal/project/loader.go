@@ -18,12 +18,23 @@ import (
 const yamlExt = ".yaml"
 const ymlExt = ".yml"
 
-// LoadProject loads root/project.yaml (or project.yml), expands spec.imports, parses
-// every YAML document with [internal/spec], and merges resources into a ProjectGraph.
-// Duplicate kind/metadata.name pairs are rejected (§9.1). Only the root project file
-// may define kind Project.
+// LoadProject loads a project from its `.agent` sources into a ProjectGraph. Under ADR 007 `.agent` is
+// the sole authoring surface: a project.yaml/project.yml manifest at the root is refused with a migrate
+// hint. Duplicate kind/metadata.name pairs are rejected (§9.1).
+//
+// LoadProjectAllowingYAML is the internal escape hatch that still ingests a YAML manifest; it exists
+// only for the retained YAML codec (migrate, codec tests) and disappears with the loader (ADR 007
+// steps 6–7). Production loading goes through LoadProject.
 func LoadProject(root string) (*spec.ProjectGraph, error) {
 	g, _, err := LoadProjectWithExecutables(root)
+	return g, err
+}
+
+// LoadProjectAllowingYAML is LoadProject without the ADR 007 YAML-source rejection: it still ingests a
+// project.yaml manifest. Reserved for the retained YAML codec path (migrate and codec tests); not a
+// production load path.
+func LoadProjectAllowingYAML(root string) (*spec.ProjectGraph, error) {
+	g, _, err := loadWithExecutables(root, false)
 	return g, err
 }
 
@@ -33,8 +44,19 @@ func LoadProject(root string) (*spec.ProjectGraph, error) {
 // use check.Check's checked program (positional-arg rebinds included); every
 // other workflow lowers via lower.LowerWorkflowResource (#256). A workflow that
 // cannot lower has no program (the DAG path still runs it); the map only omits it.
+// A project.yaml manifest is refused (ADR 007) — see LoadProject.
 func LoadProjectWithExecutables(root string) (*spec.ProjectGraph, map[string]*execir.Program, error) {
-	g, agentExecs, err := loadProjectGraph(root)
+	return loadWithExecutables(root, true)
+}
+
+// LoadProjectWithExecutablesAllowingYAML is LoadProjectWithExecutables without the ADR 007 YAML-source
+// rejection. Reserved for the retained YAML codec path (migrate and codec tests).
+func LoadProjectWithExecutablesAllowingYAML(root string) (*spec.ProjectGraph, map[string]*execir.Program, error) {
+	return loadWithExecutables(root, false)
+}
+
+func loadWithExecutables(root string, rejectYAML bool) (*spec.ProjectGraph, map[string]*execir.Program, error) {
+	g, agentExecs, err := loadProjectGraph(root, rejectYAML)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -65,7 +87,7 @@ func buildExecutables(g *spec.ProjectGraph, agentExecs map[string]*execir.Progra
 	return out
 }
 
-func loadProjectGraph(root string) (*spec.ProjectGraph, map[string]*execir.Program, error) {
+func loadProjectGraph(root string, rejectYAML bool) (*spec.ProjectGraph, map[string]*execir.Program, error) {
 	rootAbs, err := filepath.Abs(filepath.Clean(root))
 	if err != nil {
 		return nil, nil, fmt.Errorf("project root: %w", err)
@@ -85,6 +107,17 @@ func loadProjectGraph(root string) (*spec.ProjectGraph, map[string]*execir.Progr
 			return nil, nil, err
 		}
 		return loadAgentOnlyProject(rootAbs)
+	}
+
+	// A project.yaml/project.yml manifest is present. Under ADR 007 `.agent` is the sole authoring
+	// surface — YAML is no longer an accepted project source — so refuse it with a migrate hint. The
+	// codec-only escape hatch (LoadProjectAllowingYAML, used by migrate) passes rejectYAML=false.
+	if rejectYAML {
+		rel := projPath
+		if r, rerr := filepath.Rel(rootAbs, projPath); rerr == nil && r != "" {
+			rel = r
+		}
+		return nil, nil, fmt.Errorf("%s: YAML is no longer an accepted project source — .agent is the sole authoring surface (ADR 007). Convert this project with `terfyn migrate --to-agent`, then remove the YAML", rel)
 	}
 
 	g, _, err := loadYAMLGraph(rootAbs, projPath)

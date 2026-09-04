@@ -25,16 +25,15 @@ func writeFile(t *testing.T, path, content string) {
 func TestPrepareResolvedConfig_userLocalPrecedence(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
-	writeFile(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: demo
-spec:
-  defaults:
-    model: project-model
-  state:
-    backend: sqlite
-    dsn: .agentic/state.db
+	// defaults are .agent project source (win over overlays); state is operator-config with no project
+	// source layer (ADR 007), so the user-global overlay supplies it.
+	writeFile(t, filepath.Join(root, "main.agent"), `defaults {
+    model mock/project-model
+}
+
+agent assistant {
+    model mock/default
+}
 `)
 	writeFile(t, filepath.Join(home, ".config", "terfyn", "config.yaml"), `state:
   dsn: /tmp/user-global-state.db
@@ -49,32 +48,32 @@ spec:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rc.Graph().Spec.Defaults.Model != "project-model" {
-		t.Fatalf("model = %q, want project-model", rc.Graph().Spec.Defaults.Model)
+	if rc.Graph().Spec.Defaults.Model != "mock/project-model" {
+		t.Fatalf("model = %q, want mock/project-model", rc.Graph().Spec.Defaults.Model)
 	}
-	if !strings.HasSuffix(rc.StatePath(), filepath.Join(".agentic", "state.db")) {
-		t.Fatalf("project state should win, got %q", rc.StatePath())
+	if !strings.HasSuffix(rc.StatePath(), "user-global-state.db") {
+		t.Fatalf("user-global overlay state should apply, got %q", rc.StatePath())
 	}
 }
 
-func TestPrepareResolvedConfig_unknownProjectField(t *testing.T) {
+// TestPrepareResolvedConfig_rejectsYAMLProject: a project.yaml manifest is refused by the shared load
+// path with the ADR 007 migrate hint (the strict unknown-field decode that this test formerly exercised
+// now lives only in the retained YAML codec, tested at internal/spec).
+func TestPrepareResolvedConfig_rejectsYAMLProject(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
 kind: Project
 metadata:
   name: demo
-spec:
-  defualts:
-    model: x
 `)
 	ResetGlobalsForTest()
 	global = Global{ProjectRoot: root}
 	_, err := prepareResolvedConfig(&global)
 	if err == nil {
-		t.Fatal("expected validation error")
+		t.Fatal("expected a YAML-source rejection")
 	}
-	if !strings.Contains(err.Error(), "defualts") {
-		t.Fatalf("want typo in error: %v", err)
+	if !strings.Contains(err.Error(), "no longer an accepted project source") {
+		t.Fatalf("want ADR 007 reject, got: %v", err)
 	}
 }
 
@@ -116,14 +115,9 @@ func TestRun_afterValidate_stateDrift_exit3(t *testing.T) {
 
 func TestRun_resolvedConfigDrift_exit3(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: demo
-spec:
-  state:
-    backend: sqlite
-    dsn: .agentic/state.db
+	writeFile(t, filepath.Join(root, "main.agent"), `agent assistant {
+    model mock/default
+}
 `)
 	ResetGlobalsForTest()
 	global = Global{ProjectRoot: root}
@@ -154,24 +148,15 @@ spec:
 
 func TestRun_policySnapshotDrift_exit3(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: demo
-spec:
-  imports:
-    - ./policy.yaml
-  state:
-    backend: sqlite
-    dsn: .agentic/state.db
-`)
-	writeFile(t, filepath.Join(root, "policy.yaml"), `apiVersion: agentic.dev/v0
-kind: Policy
-metadata:
-  name: default
-spec:
-  execution:
-    maxTotalCostUsd: 3
+	writeFile(t, filepath.Join(root, "main.agent"), `policy default {
+    execution {
+        maxTotalCostUsd 3
+    }
+}
+
+agent assistant {
+    model mock/default
+}
 `)
 
 	ResetGlobalsForTest()
@@ -184,12 +169,12 @@ spec:
 		t.Fatal(err)
 	}
 
-	policyPath := filepath.Join(root, "policy.yaml")
+	policyPath := filepath.Join(root, "main.agent")
 	b, err := os.ReadFile(policyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated := strings.Replace(string(b), "maxTotalCostUsd: 3", "maxTotalCostUsd: 10", 1)
+	updated := strings.Replace(string(b), "maxTotalCostUsd 3", "maxTotalCostUsd 10", 1)
 	if err := os.WriteFile(policyPath, []byte(updated), 0o600); err != nil {
 		t.Fatal(err)
 	}

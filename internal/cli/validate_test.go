@@ -48,7 +48,7 @@ func TestValidate_successJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if !payload.Valid || payload.Project != "validate-ok" || payload.ResourceCount != 4 {
+	if !payload.Valid || payload.Project != "validate_ok" || payload.ResourceCount != 4 {
 		t.Fatalf("%+v", payload)
 	}
 	if payload.Message != "Validation successful" {
@@ -71,8 +71,8 @@ func TestValidate_unknownAgent_reportsPos(t *testing.T) {
 		t.Fatalf("got code %d err %v", ExitCodeOf(err), err)
 	}
 	msg := err.Error() + out.String()
-	if !strings.Contains(msg, "workflow.yaml:9:") {
-		t.Fatalf("want file:line:col from post-load resolve, got %q", msg)
+	if !strings.Contains(msg, "main.agent:14:") {
+		t.Fatalf("want file:line:col from the .agent source, got %q", msg)
 	}
 	if !strings.Contains(msg, "Workflow/demo references missing Agent/missing-bot") {
 		t.Fatalf("want missing agent diagnostic, got %q", msg)
@@ -229,26 +229,13 @@ func TestValidate_validateOk_strictPasses(t *testing.T) {
 
 func TestValidate_mcpDiscoveryWarning_advisory(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "project.yaml"), `apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: mcp-warn
-spec:
-  imports:
-    - tools/
-  state:
-    backend: sqlite
-    dsn: .agentic/state.db
-`)
-	writeFile(t, filepath.Join(root, "tools", "mc.yaml"), `apiVersion: agentic.dev/v0
-kind: Tool
-metadata:
-  name: mc
-spec:
-  type: mcp
-  mcp:
-    transport: stdio
-    command: /nonexistent/mcp-binary-for-validate-test
+	writeFile(t, filepath.Join(root, "main.agent"), `tool mc {
+    type mcp
+    mcp {
+        transport "stdio"
+        command "/nonexistent/mcp-binary-for-validate-test"
+    }
+}
 `)
 
 	ResetGlobalsForTest()

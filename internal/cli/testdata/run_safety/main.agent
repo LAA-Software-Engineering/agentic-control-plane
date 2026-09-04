@@ -1,0 +1,11 @@
+tool helper {
+    type native
+}
+
+policy default {
+}
+
+workflow echo(input: EchoInput) policy default {
+    s1 = helper.echo(topic: input.topic)
+    return { out: s1.echo }
+}

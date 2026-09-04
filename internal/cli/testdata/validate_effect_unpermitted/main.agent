@@ -1,0 +1,31 @@
+defaults {
+    policy staging-only
+    model mock/gpt-4
+}
+
+tool kubernetes {
+    type native
+    operations {
+        restart { effects { production.write } }
+    }
+}
+
+policy staging-only {
+    effects {
+        permit { production.read }
+    }
+}
+
+agent deploy-agent {
+    model mock/gpt-4
+    policy staging-only
+    instructions "Restart the service when asked."
+    grants {
+        tool.kubernetes.restart
+    }
+}
+
+workflow deploy-production(input: any) policy staging-only {
+    remediate = deploy-agent(input)
+    return remediate
+}

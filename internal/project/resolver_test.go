@@ -11,7 +11,7 @@ import (
 
 func TestResolveReferences_missingAgent(t *testing.T) {
 	root := filepath.Join("testdata", "refs_missing_agent")
-	g, err := LoadProject(root)
+	g, err := LoadProjectAllowingYAML(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestResolveReferences_missingAgent(t *testing.T) {
 
 func TestResolveReferences_unknownTool(t *testing.T) {
 	root := filepath.Join("testdata", "refs_unknown_tool")
-	g, err := LoadProject(root)
+	g, err := LoadProjectAllowingYAML(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestResolveReferences_unknownTool(t *testing.T) {
 
 func TestResolveReferences_forwardRefRejected(t *testing.T) {
 	root := filepath.Join("testdata", "refs_forward_bad")
-	g, err := LoadProject(root)
+	g, err := LoadProjectAllowingYAML(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestResolveReferences_forwardRefRejected(t *testing.T) {
 
 func TestResolveReferences_validInterpolationOrder(t *testing.T) {
 	root := filepath.Join("testdata", "refs_forward_ok")
-	g, err := LoadProject(root)
+	g, err := LoadProjectAllowingYAML(root)
 	if err != nil {
 		t.Fatal(err)
 	}

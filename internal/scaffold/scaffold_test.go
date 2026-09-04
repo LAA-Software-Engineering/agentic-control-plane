@@ -66,7 +66,7 @@ func TestGenerateTool_http(t *testing.T) {
 	if err := Apply(plan, Options{ProjectRoot: root}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := project.LoadProject(root); err != nil {
+	if _, err := project.LoadProjectAllowingYAML(root); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -84,7 +84,7 @@ func TestGenerateTool_kindsValidate(t *testing.T) {
 			if err := Apply(plan, Options{ProjectRoot: root}); err != nil {
 				t.Fatal(err)
 			}
-			g, err := project.LoadProject(root)
+			g, err := project.LoadProjectAllowingYAML(root)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +110,7 @@ func TestGeneratePolicy_presets(t *testing.T) {
 			if err := Apply(plan, Options{ProjectRoot: root}); err != nil {
 				t.Fatal(err)
 			}
-			g, err := project.LoadProject(root)
+			g, err := project.LoadProjectAllowingYAML(root)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -141,7 +141,7 @@ func TestGenerateAgent(t *testing.T) {
 	if err := Apply(plan, Options{ProjectRoot: root}); err != nil {
 		t.Fatal(err)
 	}
-	g, err := project.LoadProject(root)
+	g, err := project.LoadProjectAllowingYAML(root)
 	if err != nil {
 		t.Fatal(err)
 	}

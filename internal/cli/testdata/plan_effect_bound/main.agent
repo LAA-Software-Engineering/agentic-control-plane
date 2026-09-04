@@ -1,0 +1,41 @@
+defaults {
+    policy guarded-writes
+    model mock/gpt-4
+}
+
+tool github {
+    type native
+    safety {
+        trusted true
+        sideEffects false
+    }
+    operations {
+        read_pr { effects { github.read } }
+        post_comment { effects { github.write external.visible } }
+        merge_pr { effects { github.write destructive } }
+    }
+}
+
+policy guarded-writes {
+    execution {
+        maxTotalCostUsd 3
+    }
+    effects {
+        permit { github.read github.write external.visible }
+    }
+}
+
+agent reviewer {
+    model mock/gpt-4
+    policy guarded-writes
+    instructions "You review pull requests."
+    grants {
+        tool.github.post_comment
+    }
+}
+
+workflow pr-review() policy guarded-writes {
+    fetch_pr = github.read_pr()
+    review = reviewer()
+    return review
+}

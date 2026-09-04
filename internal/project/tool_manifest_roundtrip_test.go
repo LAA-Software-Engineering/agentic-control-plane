@@ -30,7 +30,7 @@ spec:
   operations: {}
 `)
 
-	g, err := LoadProject(root)
+	g, err := LoadProjectAllowingYAML(root)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -43,7 +43,7 @@ spec:
 	if err := WriteProjectDir(out, g); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	reloaded, err := LoadProject(out)
+	reloaded, err := LoadProjectAllowingYAML(out)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}

@@ -1,0 +1,19 @@
+defaults {
+    policy default
+    model mock/gpt-4
+}
+
+tool deploy {
+    type native
+}
+
+policy default {
+    hitl {
+        toolSwitchMap {
+            deploy_to_production { missing_operation }
+        }
+        interruptOn {
+            deploy
+        }
+    }
+}

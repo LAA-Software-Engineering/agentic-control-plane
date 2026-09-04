@@ -16,45 +16,66 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func copyFixtureDir(t *testing.T, dstDir, fixtureName string) {
+// copyFixtureDir copies testdata/<fixtureName> into a subdirectory of dstDir named after the fixture,
+// and returns that subdirectory. The subdir name matters: an .agent-only project takes its name from
+// its directory basename (issue #430), so copying into a fixture-named subdir (rather than the bare
+// temp dir, whose basename is "001") gives the project a stable, meaningful name. Recurses into
+// subdirectories so schema/ trees and workflow-test fixtures come along.
+func copyFixtureDir(t *testing.T, dstDir, fixtureName string) string {
 	t.Helper()
 	src := filepath.Join("testdata", fixtureName)
+	dst := filepath.Join(dstDir, fixtureName)
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyTreeInto(t, src, dst)
+	return dst
+}
+
+func copyTreeInto(t *testing.T, src, dst string) {
+	t.Helper()
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
+		s := filepath.Join(src, e.Name())
+		d := filepath.Join(dst, e.Name())
 		if e.IsDir() {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			copyTreeInto(t, s, d)
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(src, e.Name()))
+		b, err := os.ReadFile(s)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dstDir, e.Name()), b, 0o644); err != nil {
+		if err := os.WriteFile(d, b, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-func copyPlanFixture(t *testing.T, dstDir string) {
+func copyPlanFixture(t *testing.T, dstDir string) string {
 	t.Helper()
-	copyFixtureDir(t, dstDir, "plan_project")
+	return copyFixtureDir(t, dstDir, "plan_project")
 }
 
-func copyPolicyCompileFixture(t *testing.T, dstDir string) {
+func copyPolicyCompileFixture(t *testing.T, dstDir string) string {
 	t.Helper()
-	copyFixtureDir(t, dstDir, "plan_policy_compile")
+	return copyFixtureDir(t, dstDir, "plan_policy_compile")
 }
 
-func copyRiskCategoriesFixture(t *testing.T, dstDir string) {
+func copyRiskCategoriesFixture(t *testing.T, dstDir string) string {
 	t.Helper()
-	copyFixtureDir(t, dstDir, "plan_risk_categories")
+	return copyFixtureDir(t, dstDir, "plan_risk_categories")
 }
 
 func TestPlan_json_includesResolvedConfigDigest(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan-json.db")
 
 	ResetGlobalsForTest()
@@ -78,7 +99,7 @@ func TestPlan_json_includesResolvedConfigDigest(t *testing.T) {
 
 func TestPlan_json_includesPolicyDigest(t *testing.T) {
 	root := t.TempDir()
-	copyPolicyCompileFixture(t, root)
+	root = copyPolicyCompileFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan-policy-json.db")
 
 	ResetGlobalsForTest()
@@ -106,7 +127,7 @@ func TestPlan_json_includesPolicyDigest(t *testing.T) {
 
 func TestPlan_firstPlan_allCreates(t *testing.T) {
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan1.db")
 
 	ResetGlobalsForTest()
@@ -125,7 +146,7 @@ func TestPlan_firstPlan_allCreates(t *testing.T) {
 	if !strings.HasSuffix(s, "\n") {
 		t.Fatalf("expected trailing newline in:\n%s", s)
 	}
-	for _, line := range []string{"+ create Project/plan-fixture", "+ create Policy/default", "+ create Tool/helper"} {
+	for _, line := range []string{"+ create Project/plan_project", "+ create Policy/default", "+ create Tool/helper"} {
 		if !strings.Contains(s, line) {
 			t.Fatalf("missing %q in:\n%s", line, s)
 		}
@@ -135,7 +156,7 @@ func TestPlan_firstPlan_allCreates(t *testing.T) {
 func TestPlan_afterApply_noChanges(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan2.db")
 
 	g := &Global{ProjectRoot: root}
@@ -175,7 +196,7 @@ func TestPlan_afterApply_noChanges(t *testing.T) {
 func TestPlan_policyCostIncrease_riskDelta(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	copyPlanFixture(t, root)
+	root = copyPlanFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan3.db")
 
 	g := &Global{ProjectRoot: root}
@@ -196,12 +217,12 @@ func TestPlan_policyCostIncrease_riskDelta(t *testing.T) {
 	}
 	_ = st.Close()
 
-	policyPath := filepath.Join(root, "policy.yaml")
+	policyPath := filepath.Join(root, "main.agent")
 	b, err := os.ReadFile(policyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated := strings.Replace(string(b), "maxTotalCostUsd: 3", "maxTotalCostUsd: 10", 1)
+	updated := strings.Replace(string(b), "maxTotalCostUsd 3", "maxTotalCostUsd 10", 1)
 	if err := os.WriteFile(policyPath, []byte(updated), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -233,9 +254,9 @@ func TestPlan_policyCostIncrease_riskDelta(t *testing.T) {
 	}
 }
 
-func copyPlanEffectPermitFixture(t *testing.T, dstDir string) {
+func copyPlanEffectPermitFixture(t *testing.T, dstDir string) string {
 	t.Helper()
-	copyFixtureDir(t, dstDir, "plan_effect_permit")
+	return copyFixtureDir(t, dstDir, "plan_effect_permit")
 }
 
 func TestPlan_effectUnpermitted_exit2(t *testing.T) {
@@ -265,10 +286,10 @@ func TestPlan_effectUnpermitted_exit2(t *testing.T) {
 
 func TestPlan_effectPermitWidening_riskItem(t *testing.T) {
 	root := t.TempDir()
-	copyPlanEffectPermitFixture(t, root)
+	root = copyPlanEffectPermitFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan-effect-permit.db")
 	applyProjectGraph(t, root, db)
-	replaceFile(t, filepath.Join(root, "policy.yaml"), "      - github.read\n", "      - github.read\n      - github.write\n")
+	replaceFile(t, filepath.Join(root, "main.agent"), "permit { github.read }", "permit { github.read github.write }")
 
 	ResetGlobalsForTest()
 	var out bytes.Buffer
@@ -334,14 +355,18 @@ func applyProjectGraph(t *testing.T, root, db string) {
 
 func mutateRiskCategories(t *testing.T, root string) {
 	t.Helper()
-	replaceFile(t, filepath.Join(root, "policy.yaml"), "maxTotalCostUsd: 3", "maxTotalCostUsd: 10")
-	replaceFile(t, filepath.Join(root, "policy.yaml"), "maxWallClockSeconds: 60", "maxWallClockSeconds: 120")
-	replaceFile(t, filepath.Join(root, "policy.yaml"), "      - tool.helper.echo\n", "")
-	replaceFile(t, filepath.Join(root, "agent.yaml"), "  model: mock/gpt-4\n", "  model: mock/gpt-4o\n")
-	replaceFile(t, filepath.Join(root, "agent.yaml"), "    - helper\n", "    - helper\n    - github\n")
-	// The agent gaining the side-effecting `github` tool is the tool_surface_change signal (ADR 007 step
-	// 1 replaced the removed permission-widening heuristic); make github write-capable so it's high.
-	replaceFile(t, filepath.Join(root, "github.yaml"), "sideEffects: false", "sideEffects: true")
+	p := filepath.Join(root, "main.agent")
+	replaceFile(t, p, "maxTotalCostUsd 3", "maxTotalCostUsd 10")
+	replaceFile(t, p, "maxWallClockSeconds 60", "maxWallClockSeconds 120")
+	// Drop the tool.helper.echo approval requirement (12-space requiredFor entry, distinct from the
+	// 8-space agent grant of the same path).
+	replaceFile(t, p, "            tool.helper.echo\n", "")
+	replaceFile(t, p, "    model mock/gpt-4\n", "    model mock/gpt-4o\n")
+	// The agent gains the side-effecting `github` tool — the tool_surface_change signal (ADR 007 step 1
+	// replaced the removed permission-widening heuristic).
+	replaceFile(t, p, "    grants {\n        tool.helper.echo\n    }", "    grants {\n        tool.helper.echo\n        tool.github.default\n    }")
+	// Make github write-capable so the surface change is high (only github declares `trusted true`).
+	replaceFile(t, p, "trusted true\n        sideEffects false", "trusted true\n        sideEffects true")
 }
 
 func replaceFile(t *testing.T, path, old, new string) {
@@ -385,7 +410,7 @@ func TestReplaceFile_crlfNewlines(t *testing.T) {
 
 func TestPlan_json_riskItems_structuredAndStringList(t *testing.T) {
 	root := t.TempDir()
-	copyRiskCategoriesFixture(t, root)
+	root = copyRiskCategoriesFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan-risk-json.db")
 	applyProjectGraph(t, root, db)
 	mutateRiskCategories(t, root)
@@ -452,7 +477,7 @@ func TestPlan_json_riskItems_structuredAndStringList(t *testing.T) {
 
 func TestPlan_yaml_riskItems_structuredAndStringList(t *testing.T) {
 	root := t.TempDir()
-	copyRiskCategoriesFixture(t, root)
+	root = copyRiskCategoriesFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan-risk-yaml.db")
 	applyProjectGraph(t, root, db)
 	mutateRiskCategories(t, root)
@@ -494,7 +519,7 @@ func TestPlan_yaml_riskItems_structuredAndStringList(t *testing.T) {
 
 func TestPlan_json_effectBoundAndAuthority(t *testing.T) {
 	root := t.TempDir()
-	copyEffectBoundFixture(t, root)
+	root = copyEffectBoundFixture(t, root)
 	db := filepath.Join(t.TempDir(), "plan-effect-bound-json.db")
 
 	ResetGlobalsForTest()
@@ -542,11 +567,11 @@ func TestPlan_json_effectBoundAndAuthority(t *testing.T) {
 
 func TestPlan_addGrant_autonomousEffectDelta(t *testing.T) {
 	root := t.TempDir()
-	copyEffectBoundFixture(t, root)
-	replaceFile(t, filepath.Join(root, "agent.yaml"), "    - tool.github.post_comment\n", "")
+	root = copyEffectBoundFixture(t, root)
+	replaceFile(t, filepath.Join(root, "main.agent"), "        tool.github.post_comment\n", "")
 	db := filepath.Join(t.TempDir(), "plan-effect-grant.db")
 	applyProjectGraph(t, root, db)
-	replaceFile(t, filepath.Join(root, "agent.yaml"), "  tools:\n", "  tools:\n    - tool.github.post_comment\n")
+	replaceFile(t, filepath.Join(root, "main.agent"), "    grants {\n    }", "    grants {\n        tool.github.post_comment\n    }")
 
 	ResetGlobalsForTest()
 	var out bytes.Buffer
@@ -592,27 +617,32 @@ func TestPlan_addGrant_autonomousEffectDelta(t *testing.T) {
 
 func TestPlan_capabilityWidensEmptyEffectDelta(t *testing.T) {
 	root := t.TempDir()
-	copyEffectBoundFixture(t, root)
-	chat := `apiVersion: agentic.dev/v0
-kind: Tool
-metadata:
-  name: chat
-spec:
-  type: native
-  safety:
-    trusted: true
-    sideEffects: false
-  operations:
-    post:
-      effects: [github.write, external.visible]
+	root = copyEffectBoundFixture(t, root)
+	// Add a `chat` tool inline (present at baseline). Its post op has the same effects the agent already
+	// reaches via github.post_comment, so granting it later widens capability with an EMPTY effect delta.
+	chat := `
+tool chat {
+    type native
+    safety {
+        trusted true
+        sideEffects false
+    }
+    operations {
+        post { effects { github.write external.visible } }
+    }
+}
 `
-	if err := os.WriteFile(filepath.Join(root, "chat.yaml"), []byte(chat), 0o644); err != nil {
+	agentPath := filepath.Join(root, "main.agent")
+	b, err := os.ReadFile(agentPath)
+	if err != nil {
 		t.Fatal(err)
 	}
-	replaceFile(t, filepath.Join(root, "project.yaml"), "    - ./tool.yaml\n", "    - ./tool.yaml\n    - ./chat.yaml\n")
+	if err := os.WriteFile(agentPath, append(b, []byte(chat)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	db := filepath.Join(t.TempDir(), "plan-cap-only.db")
 	applyProjectGraph(t, root, db)
-	replaceFile(t, filepath.Join(root, "agent.yaml"), "    - tool.github.post_comment\n", "    - tool.github.post_comment\n    - tool.chat.post\n")
+	replaceFile(t, agentPath, "        tool.github.post_comment\n", "        tool.github.post_comment\n        tool.chat.post\n")
 
 	ResetGlobalsForTest()
 	var out bytes.Buffer

@@ -1,0 +1,23 @@
+defaults {
+    policy default
+    model mock/gpt-4
+}
+
+tool helper {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+policy default {
+    execution {
+        maxWallClockSeconds 300
+        maxTotalCostUsd 5
+    }
+}
+
+workflow demo(input: any) policy default {
+    ping = helper.echo(msg: input.topic)
+    return { topic: input.topic, echoed: ping.echo.msg }
+}

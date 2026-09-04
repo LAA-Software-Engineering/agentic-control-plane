@@ -1,0 +1,5 @@
+# Operator-local runtime config (ADR 007): traces backend/retention live in the user-local overlay,
+# not in .agent source. Mirrors what runproj/project.yaml previously declared under spec.traces.
+traces:
+  backend: sqlite
+  retentionDays: 30

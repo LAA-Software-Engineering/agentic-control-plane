@@ -1,0 +1,12 @@
+tool helper {
+    type native
+    safety {
+        sideEffects false
+    }
+}
+
+policy default {
+    execution {
+        maxTotalCostUsd 3
+    }
+}

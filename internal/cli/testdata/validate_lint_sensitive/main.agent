@@ -1,0 +1,19 @@
+defaults {
+    policy default
+    model mock/gpt-4
+}
+
+tool delete_records {
+    type native
+}
+
+policy default {
+    execution {
+        maxWallClockSeconds 300
+    }
+}
+
+workflow demo() policy default {
+    purge = delete_records.purge(id: "123")
+    return purge
+}

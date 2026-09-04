@@ -4,7 +4,7 @@ State: <STATE>
 Plan: 5 to add, 0 to change, 0 to delete
 + create Agent/reviewer
 + create Policy/guarded-writes
-+ create Project/plan-effect-bound
++ create Project/plan_effect_bound
 + create Tool/github
 + create Workflow/pr-review
 

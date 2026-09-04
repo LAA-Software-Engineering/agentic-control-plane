@@ -4,7 +4,7 @@ State: <STATE>
 Plan: 0 to add, 3 to change, 0 to delete
 ~ update Agent/reviewer
     spec.model: "mock/gpt-4" -> "mock/gpt-4o"
-    spec.tools.1:  -> "github"
+    spec.tools.1:  -> "tool.github.default"
 ~ update Policy/default
     spec.approvals.requiredFor.0: "tool.helper.echo" -> "tool.github.issues.write"
     spec.approvals.requiredFor.1: "tool.github.issues.write" -> 
@@ -15,15 +15,15 @@ Plan: 0 to add, 3 to change, 0 to delete
 
 Effect bound (Agent/reviewer):
 high:
-- [high] effect_bound: unknown            autonomous  Agent/reviewer may select tool.github.echo
+- [high] effect_bound: unknown            autonomous  Agent/reviewer may select tool.github.default
 - [high] effect_bound: unknown            autonomous  Agent/reviewer may select tool.helper.echo
 
 Capability delta:
 Agent/reviewer
-+ tool.github.echo
++ tool.github.default
 
 Effect delta:
-+ unknown (tool.github.echo)
++ unknown (tool.github.default)
 
 Authority:
   static      -> unchanged
@@ -35,9 +35,9 @@ high:
 - [high] authority_widening: AUTONOMOUS authority WIDENED.
 - [high] budget_relaxation: Cost ceiling increased (Policy/default).
 - [high] budget_relaxation: Wall-clock ceiling increased (Policy/default).
-- [high] tool_surface_change: Agent tools list gained write-capable tool "github" (Agent/reviewer; declares side effects).
 medium:
 - [medium] model_change: Agent model changed (Agent/reviewer).
+- [medium] tool_surface_change: Agent tools list gained "tool.github.default" (Agent/reviewer).
 Effective policy (default):
 - Tool/github decision=requireApproval source=explicit_policy_rule
 - Tool/helper decision=allow source=safety_metadata

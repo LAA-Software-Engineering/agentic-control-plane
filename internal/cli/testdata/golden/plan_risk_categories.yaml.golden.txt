@@ -3,10 +3,10 @@ risk:
   - AUTONOMOUS authority WIDENED.
   - Cost ceiling increased (Policy/default).
   - Wall-clock ceiling increased (Policy/default).
-  - Agent/reviewer gained tool.github.echo.
-  - Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).
-  - Agent tools list gained write-capable tool "github" (Agent/reviewer; declares side effects).
+  - Agent/reviewer gained tool.github.default.
+  - Newly autonomous effect unknown (tool.github.default) (agent/reviewer).
   - Agent model changed (Agent/reviewer).
+  - Agent tools list gained "tool.github.default" (Agent/reviewer).
 riskItems:
   - category: approval_removal
     severity: high
@@ -47,7 +47,7 @@ riskItems:
         reachability: static
   - category: capability_delta
     severity: high
-    reason: Agent/reviewer gained tool.github.echo.
+    reason: Agent/reviewer gained tool.github.default.
     target:
       kind: agent
       name: reviewer
@@ -56,13 +56,13 @@ riskItems:
         name: reviewer
         reachability: static
       - kind: tool_operation
-        name: tool.github.echo
+        name: tool.github.default
         reachability: autonomous
-    ident: tool.github.echo
+    ident: tool.github.default
     reachability: autonomous
   - category: effect_delta
     severity: high
-    reason: Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).
+    reason: Newly autonomous effect unknown (tool.github.default) (agent/reviewer).
     target:
       kind: agent
       name: reviewer
@@ -71,13 +71,13 @@ riskItems:
         name: reviewer
         reachability: static
       - kind: tool_operation
-        name: tool.github.echo
+        name: tool.github.default
         reachability: autonomous
-    ident: unknown (tool.github.echo)
+    ident: unknown (tool.github.default)
     reachability: autonomous
-  - category: tool_surface_change
-    severity: high
-    reason: Agent tools list gained write-capable tool "github" (Agent/reviewer; declares side effects).
+  - category: model_change
+    severity: medium
+    reason: Agent model changed (Agent/reviewer).
     target:
       kind: agent
       name: reviewer
@@ -85,9 +85,9 @@ riskItems:
       - kind: agent
         name: reviewer
         reachability: static
-  - category: model_change
+  - category: tool_surface_change
     severity: medium
-    reason: Agent model changed (Agent/reviewer).
+    reason: Agent tools list gained "tool.github.default" (Agent/reviewer).
     target:
       kind: agent
       name: reviewer
@@ -101,7 +101,7 @@ effectBound:
     items:
       - category: effect_bound
         severity: high
-        reason: unknown            autonomous  Agent/reviewer may select tool.github.echo
+        reason: unknown            autonomous  Agent/reviewer may select tool.github.default
         target:
           kind: agent
           name: reviewer
@@ -110,7 +110,7 @@ effectBound:
             name: reviewer
             reachability: static
           - kind: tool_operation
-            name: tool.github.echo
+            name: tool.github.default
             reachability: autonomous
         ident: unknown
         reachability: autonomous
@@ -132,7 +132,7 @@ effectBound:
 capabilityDelta:
   - category: capability_delta
     severity: high
-    reason: Agent/reviewer gained tool.github.echo.
+    reason: Agent/reviewer gained tool.github.default.
     target:
       kind: agent
       name: reviewer
@@ -141,14 +141,14 @@ capabilityDelta:
         name: reviewer
         reachability: static
       - kind: tool_operation
-        name: tool.github.echo
+        name: tool.github.default
         reachability: autonomous
-    ident: tool.github.echo
+    ident: tool.github.default
     reachability: autonomous
 effectDelta:
   - category: effect_delta
     severity: high
-    reason: Newly autonomous effect unknown (tool.github.echo) (agent/reviewer).
+    reason: Newly autonomous effect unknown (tool.github.default) (agent/reviewer).
     target:
       kind: agent
       name: reviewer
@@ -157,9 +157,9 @@ effectDelta:
         name: reviewer
         reachability: static
       - kind: tool_operation
-        name: tool.github.echo
+        name: tool.github.default
         reachability: autonomous
-    ident: unknown (tool.github.echo)
+    ident: unknown (tool.github.default)
     reachability: autonomous
 authority:
   static: unchanged

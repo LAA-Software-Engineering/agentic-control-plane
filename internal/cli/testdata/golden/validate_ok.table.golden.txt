@@ -1,4 +1,4 @@
-Project: validate-ok
+Project: validate_ok
 Environment: (none)
 
 * Loaded 4 resources

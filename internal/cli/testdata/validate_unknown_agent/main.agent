@@ -1,0 +1,16 @@
+defaults {
+    policy default
+    model mock/gpt-4
+}
+
+policy default {
+    execution {
+        maxWallClockSeconds 300
+        maxTotalCostUsd 5
+    }
+}
+
+workflow demo() policy default {
+    ping = missing-bot()
+    return ping
+}

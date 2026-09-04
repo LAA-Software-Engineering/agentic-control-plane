@@ -3,14 +3,14 @@ State: <STATE>
 
 Plan: 5 to add, 0 to change, 0 to delete
 + create Policy/default
-+ create Project/policy-compile-fixture
++ create Project/plan_policy_compile
 + create Tool/helper
 + create Tool/reader
 + create Tool/shell
 
 Risk delta:
 high:
-- [high] lint: policy.yaml:1:1: Policy/default: sensitive Tool/shell has no explicit approval rule (requiredFor or requireAllTools)
+- [high] lint: main.agent:28:1: Policy/default: sensitive Tool/shell has no explicit approval rule (requiredFor or requireAllTools)
 medium:
 - [medium] safety: Tool/helper will require approval at run (decision=requireApproval, source=explicit_policy_rule).
 - [medium] safety: Tool/shell will require approval at run (decision=requireApproval, source=explicit_policy_rule).

@@ -78,20 +78,18 @@ func TestResolve_mcpDiscoveryDigestVariesWithServerAvailability(t *testing.T) {
 func TestResolve_mcpDiscoveryDigestStableWhenAuthorPinsSafety(t *testing.T) {
 	srv := permissiveMCPServer(t)
 
-	pinned := `
-apiVersion: agentic.dev/v0
-kind: Tool
-metadata:
-  name: api
-spec:
-  type: mcp
-  mcp:
-    transport: http
-    url: ` + jsonString(srv.URL) + `
-  safety:
-    trusted: false
-    sideEffects: true
-    requiresApproval: true
+	pinned := `tool api {
+    type mcp
+    mcp {
+        transport "http"
+        url ` + jsonString(srv.URL) + `
+    }
+    safety {
+        trusted false
+        sideEffects true
+        requiresApproval true
+    }
+}
 `
 	root := t.TempDir()
 	writeMCPHTTPProject(t, root, srv.URL, pinned)
@@ -175,34 +173,22 @@ func permissiveMCPServer(t *testing.T) *httptest.Server {
 	}))
 }
 
-func writeMCPHTTPProject(t *testing.T, root, url, toolYAML string) {
+// writeMCPHTTPProject writes a .agent project (ADR 007) with an `api` MCP/HTTP tool. toolAgent, when
+// non-empty, is the full `.agent` tool block (e.g. one pinning safety); otherwise a default block is
+// written. State uses the default path — no project source state under ADR 007.
+func writeMCPHTTPProject(t *testing.T, root, url, toolAgent string) {
 	t.Helper()
-	if toolYAML == "" {
-		toolYAML = `
-apiVersion: agentic.dev/v0
-kind: Tool
-metadata:
-  name: api
-spec:
-  type: mcp
-  mcp:
-    transport: http
-    url: ` + jsonString(url) + `
+	if toolAgent == "" {
+		toolAgent = `tool api {
+    type mcp
+    mcp {
+        transport "http"
+        url ` + jsonString(url) + `
+    }
+}
 `
 	}
-	writeYAML(t, filepath.Join(root, "tools", "api.yaml"), toolYAML)
-	writeYAML(t, filepath.Join(root, "project.yaml"), `
-apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: demo
-spec:
-  imports:
-    - tools/
-  state:
-    backend: sqlite
-    dsn: .agentic/state.db
-`)
+	writeYAML(t, filepath.Join(root, "main.agent"), toolAgent)
 }
 
 func jsonString(s string) string {

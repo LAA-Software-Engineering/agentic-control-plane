@@ -126,7 +126,10 @@ func generate(opts Options, kind ResourceKind, name string, render func(defaultP
 		return nil, err
 	}
 
-	graph, err := project.LoadProject(root)
+	// The YAML scaffolder writes project.yaml + resource YAML — a pre-ADR-007 authoring flow with no
+	// live CLI command wired to it. It uses the codec escape hatch so it can still read the YAML manifest
+	// it maintains; it is not a production .agent load path (ADR 007).
+	graph, err := project.LoadProjectAllowingYAML(root)
 	if err != nil {
 		return nil, fmt.Errorf("scaffold: load project: %w", err)
 	}

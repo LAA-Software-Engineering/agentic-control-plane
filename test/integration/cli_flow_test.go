@@ -249,7 +249,7 @@ func TestCLI_ExampleMVPFlow(t *testing.T) {
 
 	t.Run("hitl_interrupt_awaiting_decision", func(t *testing.T) {
 		fixture := filepath.Join(repoRoot(t), "internal", "cli", "testdata", "run_policy")
-		if _, err := os.Stat(filepath.Join(fixture, "project.yaml")); err != nil {
+		if _, err := os.Stat(filepath.Join(fixture, "main.agent")); err != nil {
 			t.Fatalf("fixture: %v", err)
 		}
 		db := filepath.Join(t.TempDir(), "policy-denial.db")
