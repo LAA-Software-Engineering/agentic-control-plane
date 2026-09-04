@@ -190,11 +190,13 @@ func wireAgentSchemas(unit []*lang.File, tu *typeUniverse, graph *spec.ProjectGr
 
 // wireWorkflowSchemas records each .agent workflow's resolved input schema onto the resource
 // projection, so a .agent workflow gets the same runtime input validation a YAML `spec.input.schema`
-// gave (ADR 007 parity). The runtime validates the single InputJSON object against the workflow's
-// input schema; by universal convention a workflow's runtime input is its `input` parameter, so this
-// wires WorkflowSpec.Input from that parameter's resolved type. As with agents, an UNRESOLVED type
-// stays absent (lenient — a typed input with no schema file is not forced to fail), and a RESOLVED one
-// carries both the project-root-relative ref and the compiled document.
+// gave (ADR 007 parity). The runtime input's identity is arity-structural, exactly as lower.newEnv
+// binds it: a workflow with a SINGLE parameter (whatever its name) takes that parameter's type as the
+// whole input, so its type is the runtime input schema; a workflow with MULTIPLE parameters takes a
+// synthesized composite `{param: …}` object for which no single author-provided schema exists, so
+// nothing is wired (lenient — never validate the composite against one field's schema). As with
+// agents, an UNRESOLVED type also stays absent, and a RESOLVED one carries both the
+// project-root-relative ref and the compiled document.
 func wireWorkflowSchemas(unit []*lang.File, tu *typeUniverse, graph *spec.ProjectGraph) {
 	if graph == nil || tu == nil {
 		return
@@ -212,15 +214,16 @@ func wireWorkflowSchemas(unit []*lang.File, tu *typeUniverse, graph *spec.Projec
 			if wr == nil {
 				continue
 			}
+			// Mirror lower.newEnv: only a single parameter is the whole runtime input.
+			if len(wd.Params) != 1 || wd.Params[0].Type == nil {
+				continue
+			}
 			info := tu.workflows[identName(wd.Name)]
-			for _, p := range wd.Params {
-				if identName(p.Name) != "input" || p.Type == nil {
-					continue
-				}
-				if doc := info.Params["input"]; doc != nil {
-					wr.Spec.Input = &spec.WorkflowInput{Schema: lower.SchemaRef(p.Type.Name), Resolved: doc}
-				}
-				break
+			if len(info.ParamOrder) == 0 {
+				continue
+			}
+			if doc := info.Params[info.ParamOrder[0]]; doc != nil {
+				wr.Spec.Input = &spec.WorkflowInput{Schema: lower.SchemaRef(wd.Params[0].Type.Name), Resolved: doc}
 			}
 		}
 	}
