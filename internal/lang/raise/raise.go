@@ -47,10 +47,11 @@ func (r *raiser) reject(kind, name, field, detail string) {
 // assembled file plus any Unsupported findings; when findings are present the file is best-effort and
 // must not be written as a faithful migration.
 //
-// Workflows are intentionally not raised: a YAML-authored workflow's step DAG has no lossless .agent
-// form (the surface has no object-literal return for a multi-field output.value, and forward lowering
-// always stamps explicit DAG needs where YAML uses an implicit sequential chain). Each workflow yields
-// an Unsupported so callers never silently drop or mistranslate one; the body is migrated by hand.
+// Workflows are raised to behavioral/semantic equivalence, not byte-identical round-trip (ADR 007):
+// interpolation strings become .agent expressions, the step DAG is linearized into a topological
+// statement order, and the object-literal output becomes a `return { … }`. A construct with no .agent
+// form (a step with a steps.<id>.meta reference, an array value, or a non-object output) yields an
+// Unsupported so the workflow is refused rather than mistranslated (see workflows.go).
 func Graph(g *spec.ProjectGraph) (*lang.File, []Unsupported) {
 	r := &raiser{}
 	f := &lang.File{}
@@ -87,7 +88,9 @@ func Graph(g *spec.ProjectGraph) (*lang.File, []Unsupported) {
 		f.Decls = append(f.Decls, r.agent(g.Agents[name]))
 	}
 	for _, name := range sortedKeys(g.Workflows) {
-		r.reject("Workflow", name, "spec.steps", "a YAML-authored workflow has no lossless .agent form (object-literal returns and implicit-sequential step needs are unrepresentable) — migrate the workflow body by hand")
+		if wd, ok := r.workflow(g.Workflows[name]); ok {
+			f.Decls = append(f.Decls, wd)
+		}
 	}
 	return f, r.unsupported
 }

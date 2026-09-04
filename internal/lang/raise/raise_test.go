@@ -208,15 +208,22 @@ func TestRaise_AgentIO(t *testing.T) {
 	}
 }
 
-// TestRaise_WorkflowRefused: until workflow raising lands, a workflow yields an Unsupported so the
-// migrate tool never silently drops one.
-func TestRaise_WorkflowRefused(t *testing.T) {
+// TestRaise_WorkflowRaisesCleanly: a supported workflow (steps + output) now raises without any
+// Unsupported finding — the migrate tool emits it as .agent rather than refusing. Refusal is reserved
+// for genuinely unraiseable constructs (see raise_workflow_test.go).
+func TestRaise_WorkflowRaisesCleanly(t *testing.T) {
 	g := &spec.ProjectGraph{
-		Workflows: map[string]*spec.WorkflowResource{"w": {Metadata: spec.Metadata{Name: "w"}}},
+		Workflows: map[string]*spec.WorkflowResource{"w": {
+			Metadata: spec.Metadata{Name: "w"},
+			Spec: spec.WorkflowSpec{
+				Steps:  []spec.WorkflowStep{{ID: "a", Uses: "tool.helper.echo", With: map[string]any{"topic": "${input.topic}"}}},
+				Output: &spec.WorkflowOutput{Value: map[string]any{"out": "${steps.a.output.echo}"}},
+			},
+		}},
 	}
 	_, unsup := Graph(g)
-	if len(unsup) != 1 || unsup[0].Kind != "Workflow" {
-		t.Fatalf("expected one Workflow Unsupported, got %v", unsup)
+	if len(unsup) != 0 {
+		t.Fatalf("a supported workflow must raise without Unsupported, got %v", unsup)
 	}
 }
 
