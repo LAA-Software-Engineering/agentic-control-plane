@@ -33,7 +33,7 @@ func (s *Store) StartRun(ctx context.Context, r state.Run) error {
 	if attr.RequestID == "" {
 		attr.RequestID = util.NewRequestID()
 	}
-	at := r.StartedAt.UTC().Format(time.RFC3339Nano)
+	at := formatSQLiteTime(r.StartedAt) // fixed-width so ORDER BY started_at is chronological (#385)
 	var parent, idem any
 	if attr.ParentRunID != "" {
 		parent = attr.ParentRunID
@@ -51,7 +51,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
 // FinishRun updates status, finished_at, output_json, error_text, and total_cost_usd.
 func (s *Store) FinishRun(ctx context.Context, runID, status string, finishedAt time.Time, outputJSON, errorText string, totalCostUSD float64) error {
-	fin := finishedAt.UTC().Format(time.RFC3339Nano)
+	fin := formatSQLiteTime(finishedAt)
 	var out, et any
 	if outputJSON != "" {
 		out = outputJSON
@@ -461,7 +461,7 @@ func (s *Store) DeleteRunsStartedBefore(ctx context.Context, cutoff time.Time) (
 	if s == nil || s.db == nil {
 		return 0, fmt.Errorf("sqlite: nil store")
 	}
-	cut := cutoff.UTC().Format(time.RFC3339Nano)
+	cut := formatSQLiteTime(cutoff) // same fixed-width layout as stored started_at, so the compare is chronological (#385)
 	res, err := s.db.ExecContext(ctx, `DELETE FROM runs WHERE started_at < ?`, cut)
 	if err != nil {
 		return 0, err
