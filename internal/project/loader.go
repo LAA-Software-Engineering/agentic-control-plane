@@ -63,6 +63,14 @@ func loadWithExecutables(root string, rejectYAML bool) (*spec.ProjectGraph, map[
 	return g, buildExecutables(g, agentExecs), nil
 }
 
+// BuildExecutables lowers every workflow in a machine-built graph to its execution IR (issue #440, ADR
+// 007 step 4): the typed ResourceGraph ingress has no `.agent` source to check, so every workflow
+// lowers via lower.LowerWorkflowResource exactly as a YAML-authored workflow does on the load path. A
+// workflow that cannot lower has no program (the map omits it), matching LoadProjectWithExecutables.
+func BuildExecutables(g *spec.ProjectGraph) map[string]*execir.Program {
+	return buildExecutables(g, nil)
+}
+
 // buildExecutables unions the checked `.agent` programs with a lowered program for
 // every other (YAML) workflow.
 func buildExecutables(g *spec.ProjectGraph, agentExecs map[string]*execir.Program) map[string]*execir.Program {
