@@ -44,6 +44,10 @@ type Config struct {
 	ProjectName string
 	// TraceUIBaseURL, when set, enables deep links for runs that carry an OTel trace_id (issue #108).
 	TraceUIBaseURL string
+	// Redaction masks sensitive values when serving a checkpoint's raw context (issue #408). The CLI
+	// populates it from the project's traces config (trace.RedactionFromGraph); the zero value applies
+	// the default sensitive keys.
+	Redaction trace.RedactionOptions
 }
 
 // Server serves read-only JSON and static UI over HTTP.
@@ -281,7 +285,7 @@ func (s *Server) handleCheckpoints(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, CheckpointsResponse{
 		StatePath:   s.cfg.StatePath,
 		RunID:       runID,
-		Checkpoints: checkpointsToRecords(cps),
+		Checkpoints: checkpointsToRecords(cps, s.cfg.Redaction),
 	})
 }
 

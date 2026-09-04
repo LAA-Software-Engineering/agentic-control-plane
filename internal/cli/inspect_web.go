@@ -11,6 +11,7 @@ import (
 
 	"github.com/Terfyn/terfyn/internal/inspect"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/trace"
 	"github.com/spf13/cobra"
 )
 
@@ -53,6 +54,9 @@ func runInspectWeb(cmd *cobra.Command, port int, traceUIBase string) error {
 		Env:            env,
 		ProjectName:    strings.TrimSpace(graph.Meta.Name),
 		TraceUIBaseURL: traceBase,
+		// Redact a checkpoint's raw context (completed step outputs, pending gate args) with the project's
+		// trace redaction keys before serving it (issue #408).
+		Redaction: trace.RedactionFromGraph(graph),
 	}
 	srv, err := inspect.NewServer(st, cfg)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 func stepsToRecords(steps []state.RunStep) []StepRecord {
@@ -35,13 +36,17 @@ func stepsToRecords(steps []state.RunStep) []StepRecord {
 	return out
 }
 
-func checkpointsToRecords(cps []state.RunCheckpoint) []CheckpointRecord {
+func checkpointsToRecords(cps []state.RunCheckpoint, redaction trace.RedactionOptions) []CheckpointRecord {
 	out := make([]CheckpointRecord, 0, len(cps))
 	for _, cp := range cps {
 		ctxJ := cp.ContextJSON
 		if ctxJ == "" {
 			ctxJ = "{}"
 		}
+		// The checkpoint is stored raw so the interpreter can dispatch the pending call on resume, but a
+		// read surface must not serve a token/password/authorization in clear — the trace masks the same
+		// values (issue #408). Redact at display: every completed step's Output and the pending gate's args.
+		ctxJ = redactCheckpointContext(ctxJ, redaction)
 		out = append(out, CheckpointRecord{
 			Seq:       cp.Seq,
 			StepIndex: cp.StepIndex,
@@ -52,4 +57,19 @@ func checkpointsToRecords(cps []state.RunCheckpoint) []CheckpointRecord {
 		})
 	}
 	return out
+}
+
+// redactCheckpointContext masks sensitive values in a checkpoint context JSON for display, preserving
+// structure. Best-effort: malformed JSON is returned unchanged (checkpoint context is always valid
+// JSON we wrote, so this is a defensive fallback).
+func redactCheckpointContext(ctxJSON string, redaction trace.RedactionOptions) string {
+	var v any
+	if err := json.Unmarshal([]byte(ctxJSON), &v); err != nil {
+		return ctxJSON
+	}
+	b, err := json.Marshal(trace.RedactValue(v, redaction))
+	if err != nil {
+		return ctxJSON
+	}
+	return string(b)
 }
