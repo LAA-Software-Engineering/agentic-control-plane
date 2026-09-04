@@ -487,3 +487,42 @@ func TestUpdateRunStatus(t *testing.T) {
 		t.Fatalf("missing run: %v", err)
 	}
 }
+
+// TestClaimRunForResume_casLease is the #407 lease: only the first claim of an interrupted run wins;
+// a second claim (a concurrent --resume) sees 0 rows and returns false, so it must not execute the
+// remaining steps. A run that is not interrupted (running or terminal) is never claimable.
+func TestClaimRunForResume_casLease(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "claim.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	start := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
+	if err := st.StartRun(ctx, state.Run{RunID: "r1", WorkflowName: "wf", Env: "local", Status: "running", StartedAt: start, InputJSON: `{}`}); err != nil {
+		t.Fatal(err)
+	}
+	// A running run is not claimable (only interrupted is).
+	if won, err := st.ClaimRunForResume(ctx, "r1"); err != nil || won {
+		t.Fatalf("a running run must not be claimable: won=%v err=%v", won, err)
+	}
+	if err := st.UpdateRunStatus(ctx, "r1", "interrupted"); err != nil {
+		t.Fatal(err)
+	}
+	// First claim wins (interrupted → running).
+	if won, err := st.ClaimRunForResume(ctx, "r1"); err != nil || !won {
+		t.Fatalf("first claim of an interrupted run must win: won=%v err=%v", won, err)
+	}
+	// Second claim loses — the row is now running, not interrupted.
+	if won, err := st.ClaimRunForResume(ctx, "r1"); err != nil || won {
+		t.Fatalf("second concurrent claim must lose: won=%v err=%v", won, err)
+	}
+	got, err := st.GetRun(ctx, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "running" {
+		t.Fatalf("claimed run status = %q, want running", got.Status)
+	}
+}

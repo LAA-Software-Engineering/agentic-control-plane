@@ -154,8 +154,12 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		}
 		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: get run: %w", err)
 	}
+	// Only an interrupted run is resumable. A `running` run is either executing in another process or a
+	// resume already claimed it — resuming it again would re-execute the remaining (possibly
+	// side-effecting) steps once per process (issue #407, S7). The authoritative guard is the
+	// compare-and-set claim below; this is the early, friendly rejection.
 	switch run.Status {
-	case state.RunStatusRunning, state.RunStatusInterrupted:
+	case state.RunStatusInterrupted:
 	default:
 		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: run %q status %q is not resumable", runID, run.Status)
 	}
@@ -201,8 +205,16 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 		}
 	}
 
-	if err := r.Store.UpdateRunStatus(ctx, runID, state.RunStatusRunning); err != nil {
-		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: mark run running: %w", err)
+	// Claim the run with a compare-and-set (interrupted → running): only the first of two concurrent
+	// resumes wins, so the second is rejected here instead of both executing the remaining steps once
+	// each (issue #407). All the work above is read-only, so racing resumes reaching this point is safe;
+	// this is the single serialization point.
+	claimed, err := r.Store.ClaimRunForResume(ctx, runID)
+	if err != nil {
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: claim run for resume: %w", err)
+	}
+	if !claimed {
+		return runtime.RunResult{RunID: runID}, fmt.Errorf("local: run %q is already being resumed by another process (not resumable)", runID)
 	}
 
 	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
