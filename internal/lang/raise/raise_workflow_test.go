@@ -147,3 +147,21 @@ func TestRaise_WorkflowRefusesArrayValue(t *testing.T) {
 		t.Fatal("an array argument value must be refused")
 	}
 }
+
+// TestRaise_WorkflowRefusesNullValue proves a YAML null is refused, not silently downgraded to "".
+// .agent has no null literal, and null is observably distinct from an empty string.
+func TestRaise_WorkflowRefusesNullValue(t *testing.T) {
+	src := &spec.WorkflowResource{
+		Metadata: spec.Metadata{Name: "nul"},
+		Spec: spec.WorkflowSpec{
+			Steps: []spec.WorkflowStep{{ID: "a", Uses: "tool.helper.echo", With: map[string]any{"opt": nil}}},
+		},
+	}
+	_, unsup := Graph(yamlWorkflowGraph(src))
+	if len(unsup) == 0 {
+		t.Fatal("a null argument value must be refused, not mistranslated to \"\"")
+	}
+	if unsup[0].Kind != "Workflow" {
+		t.Fatalf("expected a Workflow Unsupported, got %v", unsup)
+	}
+}

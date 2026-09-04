@@ -205,7 +205,10 @@ func (r *raiser) raiseValue(wf string, v any) (lang.Expr, bool) {
 	case map[string]any:
 		return r.raiseObject(wf, val)
 	case nil:
-		return &lang.LitExpr{Kind: lang.KindString, Value: ""}, true
+		// .agent has no null literal, and null is observably distinct from "" (presence checks, nullable
+		// schema fields, additionalProperties). Refuse rather than mistranslate it to an empty string.
+		r.reject("Workflow", wf, "spec.steps", "null argument value has no .agent literal form")
+		return nil, false
 	default:
 		r.reject("Workflow", wf, "spec.steps", "unraiseable argument value (arrays and non-scalar/object literals have no .agent form)")
 		return nil, false
