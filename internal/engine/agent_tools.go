@@ -3,15 +3,44 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/Terfyn/terfyn/internal/models"
+	"github.com/Terfyn/terfyn/internal/schema"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/tools"
 	"github.com/Terfyn/terfyn/internal/tools/native"
 )
 
 var defaultAgentToolParameters = json.RawMessage(`{"type":"object","properties":{}}`)
+
+// operationInputSchemaJSON returns the raw JSON Schema declared for a tool operation's input (#204),
+// resolved from the pinned schema bundle on a resume or the on-disk file on a fresh run — the same
+// sources validateToolInputSchema enforces against. An empty ref, an unresolved pinned schema, or an
+// unreadable file returns (nil,false) so the caller falls back to a more permissive advertisement.
+func (e *Executor) operationInputSchemaJSON(sref string) (json.RawMessage, bool) {
+	sref = strings.TrimSpace(sref)
+	if e == nil || sref == "" {
+		return nil, false
+	}
+	if e.PinnedGraph {
+		content, ok := e.Schemas[sref]
+		if !ok || strings.TrimSpace(content) == "" {
+			return nil, false
+		}
+		return json.RawMessage(content), true
+	}
+	path, err := schema.ResolveSchemaPath(e.ProjectRoot, sref)
+	if err != nil {
+		return nil, false
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || len(b) == 0 {
+		return nil, false
+	}
+	return json.RawMessage(b), true
+}
 
 func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []models.ToolDef, usesByName map[string]string, err error) {
 	if agent == nil || len(agent.Spec.Tools) == 0 {
@@ -33,18 +62,27 @@ func (e *Executor) advertisedAgentTools(agent *spec.AgentResource) (defs []model
 		desc := "Project tool " + item.Name
 		params := defaultAgentToolParameters
 		// Resolve the backing Tool by the name parsed from the uses string (not the
-		// tool-def name) to keep the type in the description, and — for native tools,
-		// which have fixed argument shapes — to advertise the operation's input schema
-		// so the model passes required arguments. Without it the model gets an empty
-		// parameter schema and cannot supply e.g. `owner` / `path`, so native tool
-		// calls fail on real providers.
+		// tool-def name) to keep the type in the description and advertise the operation's
+		// input schema so the model passes the required arguments. The operation's DECLARED
+		// schema (#204) takes precedence: it is exactly what enforceToolInput validates
+		// against at call time, so advertising anything else (or an empty {} — #393) tells
+		// the model the tool takes no arguments and the call fails closed on a `required`
+		// property. Native tools without a declared schema fall back to their built-in
+		// fixed argument shape.
 		if toolName, operation, perr := tools.ParseUses(item.Uses); perr == nil {
 			if tr := e.Graph.Tools[toolName]; tr != nil {
 				if typ := strings.TrimSpace(tr.Spec.Type); typ != "" {
 					desc = "Project tool " + item.Name + " (" + typ + ")"
-					if strings.EqualFold(typ, "native") {
-						if schema, ok := native.OperationInputSchema(operation); ok {
-							params = schema
+					declared := false
+					if op, ok := tr.Spec.Operations[operation]; ok {
+						if sj, ok := e.operationInputSchemaJSON(op.Schema); ok {
+							params = sj
+							declared = true
+						}
+					}
+					if !declared && strings.EqualFold(typ, "native") {
+						if sc, ok := native.OperationInputSchema(operation); ok {
+							params = sc
 						}
 					}
 				}

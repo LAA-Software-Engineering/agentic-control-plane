@@ -2,11 +2,60 @@ package engine
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Terfyn/terfyn/internal/spec"
 )
+
+// TestAdvertisedAgentTools_DeclaredOperationSchema proves the operation's DECLARED input schema
+// (#204) is advertised to the model, from disk on a fresh run and from the pinned bundle on a
+// resume — so the model supplies the required arguments instead of being told the tool takes {} and
+// failing the call-time schema validation (#393).
+func TestAdvertisedAgentTools_DeclaredOperationSchema(t *testing.T) {
+	t.Parallel()
+	// A distinctive schema so we can tell the declared schema from the native built-in one.
+	schemaBody := `{"type":"object","required":["fileref"],"properties":{"fileref":{"type":"string"}},"additionalProperties":false}`
+
+	agent := &spec.AgentResource{Metadata: spec.Metadata{Name: "reader"}, Spec: spec.AgentSpec{Tools: []string{"tool.ws.read_file"}}}
+	graph := func() *spec.ProjectGraph {
+		return &spec.ProjectGraph{Tools: map[string]*spec.ToolResource{
+			"ws": {Metadata: spec.Metadata{Name: "ws"}, Spec: spec.ToolSpec{
+				Type:       "native",
+				Operations: map[string]spec.ToolOperation{"read_file": {Schema: "./schemas/read_file.json"}},
+			}},
+		}}
+	}
+
+	// Fresh run: schema resolved from disk under ProjectRoot.
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "schemas"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "schemas", "read_file.json"), []byte(schemaBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := &Executor{Graph: graph(), ProjectRoot: root}
+	defs, _, err := e.advertisedAgentTools(agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) != 1 || !strings.Contains(string(defs[0].Parameters), `"fileref"`) {
+		t.Fatalf("fresh run did not advertise the declared operation schema: %s", defs[0].Parameters)
+	}
+
+	// Resume: schema resolved from the pinned bundle (no disk access).
+	ep := &Executor{Graph: graph(), PinnedGraph: true, Schemas: map[string]string{"./schemas/read_file.json": schemaBody}}
+	defs, _, err = ep.advertisedAgentTools(agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) != 1 || !strings.Contains(string(defs[0].Parameters), `"fileref"`) {
+		t.Fatalf("resume did not advertise the pinned operation schema: %s", defs[0].Parameters)
+	}
+}
 
 func TestAgentMaxIterations(t *testing.T) {
 	t.Parallel()
