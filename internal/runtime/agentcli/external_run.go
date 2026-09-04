@@ -101,7 +101,16 @@ func RunExternalAgent(ctx context.Context, driver AgentRuntime, in ExternalAgent
 		_ = EmitSessionTurns(ctx, in.Recorder, in.RunID, agentName, session)
 	}
 	if runErr != nil {
-		return session, in.Run, runErr
+		// The run failed (max_turns, an error result, or a process failure after streaming) but the
+		// session still spent money — fold it in so runs.total_cost_usd is accurate for exactly the
+		// runs most likely to have burned the most, and still run the budget check so an overspend is
+		// recorded as a limit_hit (#400). runErr stays the run's outcome; the folded run context is
+		// returned so FinishRun records the real cost.
+		run, budgetErr := EnforceBudget(ctx, in.Eval, in.Run, session)
+		if budgetErr != nil && in.Recorder != nil {
+			_ = EmitLimitHit(ctx, in.Recorder, in.RunID, "budget", budgetErr)
+		}
+		return session, run, runErr
 	}
 
 	run, budgetErr := EnforceBudget(ctx, in.Eval, in.Run, session)
