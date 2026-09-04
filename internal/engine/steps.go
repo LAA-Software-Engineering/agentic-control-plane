@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/telemetry"
 	"github.com/Terfyn/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/tools/native"
 	"github.com/Terfyn/terfyn/internal/trace"
 )
 
@@ -234,30 +236,17 @@ func (e *Executor) runAgentToolLoop(
 
 		results := make([]models.ToolResult, 0, len(resp.ToolCalls))
 		for _, call := range resp.ToolCalls {
-			uses, err := resolveAgentToolCall(call.Name, advertised)
-			if err != nil {
-				return nil, acc, err
-			}
-			args, err := parseToolCallArgs(call.Arguments)
-			if err != nil {
-				return nil, acc, fmt.Errorf("engine: tool call %q: %w", call.Name, err)
-			}
-			if _, err := e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, acc); err != nil {
-				return nil, acc, err
-			}
-			out, tmeta, err := e.runToolStep(ctx2, runHandle, pol, wf, runID, step, args, loopPctx, uses, args)
-			if err != nil {
-				return nil, acc, err
+			content, tmeta, fatalErr := e.runAgentToolCall(ctx2, runHandle, pol, wf, runID, step, pctx, loopPctx, acc, advertised, call)
+			if fatalErr != nil {
+				return nil, acc, fatalErr
 			}
 			addToolMeta(&acc, tmeta)
+			var err error
 			loopPctx, err = e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, acc)
 			if err != nil {
 				return nil, acc, err
 			}
-			results = append(results, models.ToolResult{
-				ToolCallID: call.ID,
-				Content:    encodeToolResultContent(out),
-			})
+			results = append(results, models.ToolResult{ToolCallID: call.ID, Content: content})
 		}
 		messages = append(messages,
 			models.ChatMessage{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls},
@@ -265,6 +254,84 @@ func (e *Executor) runAgentToolLoop(
 		)
 	}
 	return nil, acc, fmt.Errorf("engine: agent %q reached maxIterations (%d)", agent.Metadata.Name, maxIter)
+}
+
+// runAgentToolCall executes one tool call from the agent loop. A per-call error — the model naming
+// an unadvertised tool, malformed arguments, or a tool MISS such as read_file on a path that does
+// not exist — is returned to the agent as a recoverable error OBSERVATION it can reason over (list
+// the directory, try a neighbor, narrow down), NOT propagated as a fatal run error (#451). Only
+// genuinely unrecoverable conditions abort the run (fatalErr non-nil): a policy/capability denial,
+// a run cancel/timeout, or an adapter misconfiguration (native.ErrFatalTool). The returned content
+// is the tool-result payload for the model (an {"error": …} object on a recoverable miss); tmeta is
+// the step metadata to fold into the loop's cost.
+func (e *Executor) runAgentToolCall(
+	ctx2 context.Context,
+	runHandle *telemetry.RunHandle,
+	pol policy.PolicyEvaluator,
+	wf *spec.WorkflowResource,
+	runID string,
+	step spec.WorkflowStep,
+	pctx, loopPctx policy.RunContext,
+	acc models.GenerateMeta,
+	advertised map[string]string,
+	call models.ToolCall,
+) (content string, tmeta tools.ToolCallMeta, fatalErr error) {
+	// Resolving the call name and parsing its arguments are PRE-execution: an unadvertised tool name
+	// is a capability-boundary violation (ADR 002 — no operation is agent-callable unless advertised)
+	// and malformed arguments are a broken call, both fatal. Only the tool EXECUTION below is a "tool
+	// error" #451 makes recoverable.
+	uses, err := resolveAgentToolCall(call.Name, advertised)
+	if err != nil {
+		return "", tools.ToolCallMeta{}, err
+	}
+	args, err := parseToolCallArgs(call.Arguments)
+	if err != nil {
+		return "", tools.ToolCallMeta{}, fmt.Errorf("engine: tool call %q: %w", call.Name, err)
+	}
+	if _, err := e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, acc); err != nil {
+		return "", tools.ToolCallMeta{}, err // run-level budget breach — fatal
+	}
+	out, tmeta, err := e.runToolStep(ctx2, runHandle, pol, wf, runID, step, args, loopPctx, uses, args)
+	if err != nil {
+		if isFatalToolError(err) {
+			return "", tmeta, err
+		}
+		return recoverableToolObservation(err), tmeta, nil
+	}
+	return encodeToolResultContent(out), tmeta, nil
+}
+
+// maxRecoverableObservationBytes bounds the error text handed back to the agent so a pathological
+// tool error cannot balloon the next prompt.
+const maxRecoverableObservationBytes = 4 << 10
+
+// recoverableToolObservation renders a tool error as the {"error": …} tool result an agent receives,
+// so it can correct course (list the directory, try a neighbor) instead of the run dying on the miss
+// (issue #451). The message is bounded; the tool_execution trace event for the failed call is still
+// emitted (with success=false and a redacted reason) by runToolStep, so the audit record is intact.
+func recoverableToolObservation(err error) string {
+	msg := err.Error()
+	if len(msg) > maxRecoverableObservationBytes {
+		msg = msg[:maxRecoverableObservationBytes] + "…"
+	}
+	return encodeToolResultContent(map[string]any{"error": msg})
+}
+
+// isFatalToolError reports whether a tool error must ABORT the run rather than be delivered to the
+// agent as a recoverable observation: a policy/capability denial, a run cancel/timeout, or an
+// adapter misconfiguration marked by the native adapter (issue #451). Everything else — a missing
+// file, a bad argument, a failed exec, an invalid-input schema rejection — is recoverable.
+func isFatalToolError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, denied := policy.AsDenied(err); denied {
+		return true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	return errors.Is(err, native.ErrFatalTool)
 }
 
 func (e *Executor) finishAgentTurn(

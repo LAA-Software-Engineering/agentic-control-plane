@@ -12,6 +12,13 @@ import (
 // ErrUnknownOperation indicates the operation name is not implemented by this registry.
 var ErrUnknownOperation = errors.New("native: unknown operation")
 
+// ErrFatalTool marks a native tool error that must ABORT the run rather than be delivered back to
+// an agent as a recoverable observation (issue #451): adapter misconfiguration (no workspace root /
+// test command) — a condition the agent cannot fix by trying again. An ordinary tool miss (a
+// missing file, a bad arg, a failed exec) is NOT marked and is recoverable, so the agent can correct
+// course within its iteration budget.
+var ErrFatalTool = errors.New("native: fatal tool error")
+
 // ExecMeta is timing/cost metadata for a native call (§13.2).
 type ExecMeta struct {
 	DurationMs int64

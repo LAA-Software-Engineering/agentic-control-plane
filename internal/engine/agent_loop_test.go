@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
 	"github.com/Terfyn/terfyn/internal/tools"
+	"github.com/Terfyn/terfyn/internal/tools/native"
 	"github.com/Terfyn/terfyn/internal/trace"
 )
 
@@ -607,20 +609,22 @@ func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 				Name:      "helper",
 				Arguments: json.RawMessage(`{"password":"s3cret","q":"weather"}`),
 			}}},
-			{Content: `{"summary":"should not run"}`},
+			{Content: `{"summary":"recovered"}`},
 		},
 	}
 	secretErr := errors.New("http 401 GET https://api.example.com/v1?api_key=sk-live-SECRET99 Authorization: Bearer tok_abc password=hunter2")
 	extra := &tools.MockExecutor{Err: secretErr}
 	got, events, err := runAgentLoop(t, graph, mock, extra)
-	if err == nil || !strings.Contains(err.Error(), "sk-live-SECRET99") {
-		t.Fatalf("runtime error should still include the tool failure: %v", err)
+	// A tool error is now a recoverable observation (#451): the run does not die on the miss, the
+	// loop hands the error back and proceeds to the next turn, and the run succeeds.
+	if err != nil {
+		t.Fatalf("a tool error must be recoverable, not fatal: %v", err)
 	}
-	if got.Status != "failed" {
-		t.Fatalf("status %q", got.Status)
+	if got.Status != "succeeded" {
+		t.Fatalf("status %q, want succeeded", got.Status)
 	}
-	if mock.CallCount() != 1 {
-		t.Fatalf("generates %d, want 1", mock.CallCount())
+	if mock.CallCount() != 2 {
+		t.Fatalf("generates %d, want 2 (the loop recovered and continued)", mock.CallCount())
 	}
 	sel, exec := requireToolTracePair(t, events, "helper", "tool.helper.default")
 	assertNoRawToolArgs(t, sel, "s3cret", "weather", `"password"`)
@@ -639,6 +643,28 @@ func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 		}
 	}
 	assertAuditChain(t, "run-loop", events)
+}
+
+// TestRun_agentToolLoop_fatalToolErrorStillAborts proves the recoverable-error change (#451) does
+// NOT swallow genuinely fatal conditions: an adapter misconfiguration (native.ErrFatalTool) aborts
+// the run on the first turn instead of being handed back as an observation.
+func TestRun_agentToolLoop_fatalToolErrorStillAborts(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"helper"}}, spec.PolicySpec{})
+	mock := &models.MockClient{Script: []models.MockTurn{
+		{ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}}},
+		{Content: `{"summary":"unreachable"}`},
+	}}
+	extra := &tools.MockExecutor{Err: fmt.Errorf("workspace root missing: %w", native.ErrFatalTool)}
+	got, _, err := runAgentLoop(t, graph, mock, extra)
+	if err == nil {
+		t.Fatal("a fatal tool error (adapter misconfiguration) must abort the run, not be recovered")
+	}
+	if got.Status != "failed" {
+		t.Fatalf("status %q, want failed", got.Status)
+	}
+	if mock.CallCount() != 1 {
+		t.Fatalf("generates %d, want 1 (aborted on the fatal error, did not continue)", mock.CallCount())
+	}
 }
 
 func eventData(t *testing.T, ev trace.Event) map[string]any {

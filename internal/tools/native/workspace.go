@@ -73,18 +73,18 @@ func workspaceRoot(ctx context.Context) (string, error) {
 		source = envWorkspaceRoot
 	}
 	if root == "" {
-		return "", fmt.Errorf("native: no workspace root (set spec.workspace.root or %s)", envWorkspaceRoot)
+		return "", fmt.Errorf("%w: no workspace root (set spec.workspace.root or %s)", ErrFatalTool, envWorkspaceRoot)
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
-		return "", fmt.Errorf("native: workspace root %q (%s): %w", root, source, err)
+		return "", fmt.Errorf("%w: workspace root %q (%s): %w", ErrFatalTool, root, source, err)
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
-		return "", fmt.Errorf("native: workspace root %q (%s): %w", abs, source, err)
+		return "", fmt.Errorf("%w: workspace root %q (%s): %w", ErrFatalTool, abs, source, err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("native: workspace root %q (%s) is not a directory", abs, source)
+		return "", fmt.Errorf("%w: workspace root %q (%s) is not a directory", ErrFatalTool, abs, source)
 	}
 	return abs, nil
 }
@@ -97,7 +97,7 @@ func workspaceTestCommand(ctx context.Context) (string, error) {
 		cmd = strings.TrimSpace(os.Getenv(envWorkspaceTestCommand))
 	}
 	if cmd == "" {
-		return "", fmt.Errorf("native: run_tests requires spec.workspace.testCommand or %s", envWorkspaceTestCommand)
+		return "", fmt.Errorf("%w: run_tests requires spec.workspace.testCommand or %s", ErrFatalTool, envWorkspaceTestCommand)
 	}
 	return cmd, nil
 }
