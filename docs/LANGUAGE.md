@@ -121,13 +121,14 @@ Param       = Ident ":" Ident ;                 (* name : Type *)
 Effects     = Effect { [ "," ] Effect } ;       (* commas optional *)
 Effect      = Ident { "." Ident } ;             (* bare dotted; no "tool." prefix *)
 
-Statement   = Assign | Parallel | If | For | While | Retry | Return | ExprStmt ;
+Statement   = Assign | Parallel | If | For | While | Retry | Approval | Return | ExprStmt ;
 Assign      = Ident "=" Expr ;
 Parallel    = "parallel" "{" { Assign } "}" ;   (* static fan-out, #192 *)
 If          = "if" Cond Block [ "else" ( If | Block ) ] ;            (* #199 *)
 For         = [ "parallel" ] "for" Ident "in" Expr Block ;           (* #199 *)
 While       = "while" Cond "limit" Number Block ;                    (* bounded, #288 *)
 Retry       = "retry" "until" Cond "limit" Number Block ;            (* bounded, fail-on-exhaustion, #361 *)
+Approval    = "approval" Ident "{" [ "description" String ] [ "redactKeys" "{" { String } "}" ] "}" ;  (* human pause, #440 *)
 Block       = "{" { Statement } "}" ;
 Return      = "return" Expr ;
 ExprStmt    = Expr ;                            (* a call for its effect *)

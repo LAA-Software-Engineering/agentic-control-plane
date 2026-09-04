@@ -509,6 +509,9 @@ func (wl *workflowLowerer) lowerBody(body []lang.Stmt) {
 			if len(next) > 0 {
 				frontier = next
 			}
+		case *lang.ApprovalStmt:
+			wl.lowerApproval(s, frontier)
+			frontier = []string{identName(s.Bind)}
 		case *lang.IfStmt, *lang.ForStmt, *lang.WhileStmt, *lang.RetryStmt:
 			// Control flow does not become a WorkflowStep field (ADR 002 §4); it
 			// lowers to the execution IR (LowerExec). The resource projection
@@ -615,6 +618,34 @@ func (wl *workflowLowerer) lowerAssign(s *lang.AssignStmt, predNeeds []string) (
 		wl.l.diag(s.Pos, "unsupported binding value")
 		return "", false
 	}
+}
+
+// lowerApproval projects an `approval <bind> { … }` statement into a spec.WorkflowStep carrying an
+// Approval value (the resource form effect analysis walks), and binds the decision name into the
+// workflow env so a later step may reference it. The exec IR gets the matching execir.Approval via
+// LowerExec (exec.go). Its needs are the current frontier — an approval pauses after its predecessors.
+func (wl *workflowLowerer) lowerApproval(s *lang.ApprovalStmt, predNeeds []string) {
+	id := identName(s.Bind)
+	cfg := &spec.WorkflowApprovalConfig{}
+	if s.Description != nil {
+		cfg.Description = s.Description.Value
+	}
+	for _, k := range s.RedactKeys {
+		if k != nil {
+			cfg.RedactKeys = append(cfg.RedactKeys, k.Value)
+		}
+	}
+	step := spec.WorkflowStep{
+		ID:            id,
+		Pos:           s.Pos,
+		Approval:      &spec.WorkflowApprovalValue{Enabled: true, Config: cfg},
+		Needs:         mergeNeeds(predNeeds, nil),
+		NeedsDeclared: true,
+		Synthetic:     wl.synthetic,
+	}
+	wl.steps = append(wl.steps, step)
+	wl.env.roots[id] = "steps." + id + ".output"
+	wl.l.sm.set(KeyStep(wl.wf, id), s.Pos)
 }
 
 // lowerCall lowers one call into a step, hoisting nested-call arguments into
