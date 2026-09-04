@@ -170,14 +170,22 @@ func readLine(r io.Reader) (string, error) {
 func hitlGateFromCheckpoint(contextJSON string) (*policy.HitlGate, error) {
 	var payload struct {
 		PendingHitl *engine.PendingHitlState `json:"pendingHitl,omitempty"`
+		Nested      *engine.NestedRunState   `json:"nested,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(contextJSON), &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal checkpoint: %w", err)
 	}
-	if payload.PendingHitl == nil {
+	// The gate may be at the top level or, when the suspension is inside a
+	// subworkflow, under the nested frame — the engine deliberately leaves the
+	// top-level pendingHitl nil and stores the gate at nested[.nested…].pendingHitl
+	// (suspendExecIR). Walk the nested chain to the innermost pending gate (#381).
+	p := payload.PendingHitl
+	for frame := payload.Nested; p == nil && frame != nil; frame = frame.Nested {
+		p = frame.PendingHitl
+	}
+	if p == nil {
 		return nil, nil
 	}
-	p := payload.PendingHitl
 	return &policy.HitlGate{
 		Uses:   p.Uses,
 		With:   p.With,
