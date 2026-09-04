@@ -687,7 +687,7 @@ func normResourceSpecJSON(t *testing.T, g *spec.ProjectGraph) map[string]string 
 func TestMigrate_lossless_supportedModel(t *testing.T) {
 	root := writeComprehensiveYAMLProject(t)
 
-	yamlGraph, err := project.LoadProjectAllowingYAML(root)
+	yamlGraph, _, err := project.LoadYAMLResources(root)
 	if err != nil {
 		t.Fatalf("load YAML project: %v", err)
 	}
@@ -730,7 +730,7 @@ func TestMigrate_lossless_supportedModel(t *testing.T) {
 // are omitted (with warnings). Proves "lossless modulo the intentionally-omitted legacy fields".
 func TestMigrate_lossless_moduloLegacyFields(t *testing.T) {
 	clean := writeComprehensiveYAMLProject(t)
-	cleanGraph, err := project.LoadProjectAllowingYAML(clean)
+	cleanGraph, _, err := project.LoadYAMLResources(clean)
 	if err != nil {
 		t.Fatal(err)
 	}

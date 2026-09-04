@@ -11,7 +11,7 @@ import (
 
 func TestLoadProject_duplicateKindName(t *testing.T) {
 	root := filepath.Join("testdata", "dup_agents")
-	_, err := LoadProjectAllowingYAML(root)
+	_, _, err := LoadYAMLResources(root)
 	if err == nil {
 		t.Fatal("expected duplicate Agent/foo error")
 	}
@@ -40,7 +40,7 @@ func TestLoadProject_duplicateKindName(t *testing.T) {
 
 func TestLoadProject_nestedImportDirectory(t *testing.T) {
 	root := filepath.Join("testdata", "nested_import")
-	g, err := LoadProjectAllowingYAML(root)
+	g, _, err := LoadYAMLResources(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestLoadProject_nestedImportDirectory(t *testing.T) {
 
 func TestLoadProject_minimalNoImports(t *testing.T) {
 	root := filepath.Join("testdata", "minimal")
-	g, err := LoadProjectAllowingYAML(root)
+	g, _, err := LoadYAMLResources(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestLoadProject_minimalNoImports(t *testing.T) {
 // checked .agent resources.
 func TestLoadProject_agentOnly(t *testing.T) {
 	root := filepath.Join("testdata", "agent_only")
-	g, execs, err := LoadProjectWithExecutablesAllowingYAML(root)
+	g, execs, err := LoadProjectWithExecutables(root)
 	if err != nil {
 		t.Fatalf("agent-only project must load without project.yaml: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestLoadProject_agentOnly(t *testing.T) {
 // (nothing to load), preserving the original "no project.yaml" diagnostic.
 func TestLoadProject_noSourceAtAll(t *testing.T) {
 	root := t.TempDir()
-	_, err := LoadProjectAllowingYAML(root)
+	_, err := LoadProject(root)
 	if err == nil {
 		t.Fatal("empty directory must not load")
 	}

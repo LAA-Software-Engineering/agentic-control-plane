@@ -72,7 +72,7 @@ func TestDifferential_AgentAndYAMLProduceIdenticalEffectBounds(t *testing.T) {
 		t.Fatalf(".agent side reported errors: %s", checkDiags.Error())
 	}
 
-	yamlGraph, err := project.LoadProjectAllowingYAML(filepath.Join("testdata", "differential", "yaml"))
+	yamlGraph, _, err := project.LoadYAMLResources(filepath.Join("testdata", "differential", "yaml"))
 	if err != nil {
 		t.Fatalf("LoadProject: %v", err)
 	}
