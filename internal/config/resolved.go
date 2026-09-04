@@ -142,12 +142,50 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 		return nil, err
 	}
 
+	return resolveFromGraph(graph, executables, root, userLocal, opts, yamlSourceDeprecation(root))
+}
+
+// ResolveGraph is the typed ResourceGraph machine ingress (ADR 007 step 4): a machine producer builds a
+// spec.ProjectGraph directly (the canonical typed IR) and resolves it WITHOUT any source file being
+// parsed. It runs the graph through exactly the same downstream pipeline as a loaded .agent project —
+// user-local overlay, MCP safety discovery, normalization, environment overlay, schema/reference/effect
+// validation, state-path resolution, and spec fingerprinting — so it is a construction boundary, never
+// an authority or validation bypass. opts.ProjectRoot locates schema files and the default state path;
+// the graph is cloned first so the producer's copy is never mutated. This is NOT a second source
+// format: there is no `terfyn run graph.json`; the graph is an in-process typed value.
+func ResolveGraph(graph *spec.ProjectGraph, opts ResolveOptions) (*ResolvedConfig, error) {
+	if graph == nil {
+		return nil, fmt.Errorf("config: ResolveGraph: nil graph")
+	}
+	root, err := filepath.Abs(filepath.Clean(opts.ProjectRoot))
+	if err != nil {
+		return nil, fmt.Errorf("config: project root: %w", err)
+	}
+	userLocal, err := loadMergedUserLocal(root, strings.TrimSpace(opts.HomeDir))
+	if err != nil {
+		return nil, err
+	}
+	// Clone so the ingress never mutates the producer's graph (normalize/overlay/environment mutate).
+	g, err := spec.CloneProjectGraph(graph)
+	if err != nil {
+		return nil, fmt.Errorf("config: ResolveGraph: clone graph: %w", err)
+	}
+	executables := project.BuildExecutables(g)
+	// A machine graph has no project.yaml, so no YAML-source deprecation notice applies.
+	return resolveFromGraph(g, executables, root, userLocal, opts, "")
+}
+
+// resolveFromGraph is the shared post-ingress pipeline for both the .agent loader (Resolve) and the
+// typed machine ingress (ResolveGraph): overlay, discovery, normalize, environment, validate, state
+// path, fingerprint, freeze. Both front doors converge here so they cannot diverge on the control
+// plane (ADR 007: "the machine ingress is not a safety bypass").
+func resolveFromGraph(graph *spec.ProjectGraph, executables map[string]*execir.Program, root string, userLocal *UserLocalOverlay, opts ResolveOptions, sourceDeprecation string) (*ResolvedConfig, error) {
 	ApplyUserLocalUnder(&graph.Spec, userLocal)
 
 	mcpWarnings := tools.ApplyMCPSafetyDiscovery(context.Background(), graph)
 	spec.NormalizeProjectGraph(graph)
 
-	graph, err = spec.ApplyEnvironment(graph, opts.Env)
+	graph, err := spec.ApplyEnvironment(graph, opts.Env)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +218,7 @@ func Resolve(opts ResolveOptions) (*ResolvedConfig, error) {
 		statePath:         statePath,
 		digest:            digest,
 		mcpWarnings:       mcpWarnings,
-		sourceDeprecation: yamlSourceDeprecation(root),
+		sourceDeprecation: sourceDeprecation,
 	}, nil
 }
 
