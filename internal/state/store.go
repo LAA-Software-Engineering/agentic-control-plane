@@ -90,4 +90,8 @@ type RuntimeStore interface {
 	GetLatestCheckpoint(ctx context.Context, runID string) (*RunCheckpoint, error)
 	// UpdateRunStatus sets runs.status without finishing the run (issue #105 interrupted).
 	UpdateRunStatus(ctx context.Context, runID, status string) error
+	// ClaimRunForResume atomically transitions a run from interrupted to running, returning whether THIS
+	// caller won the claim — a compare-and-set lease so only one of two concurrent --resume invocations
+	// executes the remaining steps (issue #407).
+	ClaimRunForResume(ctx context.Context, runID string) (bool, error)
 }

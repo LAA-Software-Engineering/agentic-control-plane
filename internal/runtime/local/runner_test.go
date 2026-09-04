@@ -281,6 +281,53 @@ func TestHealth_ok(t *testing.T) {
 	}
 }
 
+// TestResume_secondConcurrentResumeRejected is the #407 guard: once one --resume has claimed an
+// interrupted run (status → running), a second concurrent --resume must be rejected rather than
+// re-execute the remaining (possibly side-effecting) steps. We simulate the first resume's claim with
+// the CAS, then assert the runtime refuses the second.
+func TestResume_secondConcurrentResumeRejected(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "resume-race.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	root := testRunProjRoot(t)
+	rc := testResolvedConfig(t, root, "staging")
+	runID := "resume-race-1"
+	started := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+
+	rtStart := NewRuntime(st)
+	rtStart.Now = func() time.Time { return started }
+	if _, err := rtStart.Invoke(ctx, rc, runtime.InvokeOptions{
+		RunID: runID, WorkflowName: "gated", Env: "dev", EnvironmentName: "staging",
+		InputJSON: []byte(`{"topic":"race"}`),
+	}); err != nil {
+		t.Fatalf("gated invoke should interrupt at the gate, got %v", err)
+	}
+	if r, err := st.GetRun(ctx, runID); err != nil || r.Status != state.RunStatusInterrupted {
+		t.Fatalf("run should be interrupted, got status=%q err=%v", r.Status, err)
+	}
+
+	// First concurrent resume claims the run (interrupted → running).
+	if won, err := st.ClaimRunForResume(ctx, runID); err != nil || !won {
+		t.Fatalf("first claim must win: won=%v err=%v", won, err)
+	}
+	// The second resume must be refused — the run is already being resumed.
+	rt := NewRuntime(st)
+	_, err = rt.Resume(ctx, rc, runtime.ResumeOptions{
+		RunID: runID, EnvironmentName: "staging",
+		HitlDecision: &runtime.HitlDecisionOptions{Kind: spec.HitlDecisionApprove},
+	})
+	if err == nil {
+		t.Fatal("a second resume of an already-claimed (running) run must be rejected")
+	}
+	if !strings.Contains(err.Error(), "not resumable") {
+		t.Fatalf("want a not-resumable error, got: %v", err)
+	}
+}
+
 // TestResume_preservesAttribution proves resume reuses the run's ORIGINAL
 // attribution (run row + resume trace), ignoring resume-time overrides. The run
 // interrupts at a real HITL gate (the `gated` fixture workflow) — no test hook.

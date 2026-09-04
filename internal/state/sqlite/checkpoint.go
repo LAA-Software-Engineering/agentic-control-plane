@@ -95,6 +95,28 @@ LIMIT 1
 	return scanCheckpointRow(row)
 }
 
+// ClaimRunForResume atomically transitions a run from interrupted to running, returning whether THIS
+// caller won the claim (issue #407). It is a compare-and-set lease: the WHERE status='interrupted'
+// clause means only the first of two concurrent `--resume` invocations flips the row, so the second
+// sees 0 rows affected and must not execute the remaining (possibly side-effecting) steps. A run that
+// is already running (another resume in flight, or a crashed run) is not claimable here.
+func (s *Store) ClaimRunForResume(ctx context.Context, runID string) (bool, error) {
+	if s == nil || s.db == nil {
+		return false, fmt.Errorf("sqlite: nil store")
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET status = ? WHERE run_id = ? AND status = ?`,
+		"running", runID, "interrupted")
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
+}
+
 // UpdateRunStatus sets runs.status without updating finished_at or output.
 func (s *Store) UpdateRunStatus(ctx context.Context, runID, status string) error {
 	if s == nil || s.db == nil {
