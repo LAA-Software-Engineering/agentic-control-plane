@@ -1,8 +1,0 @@
-apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: forward-ok
-spec:
-  imports:
-    - ./agents
-    - ./workflows
