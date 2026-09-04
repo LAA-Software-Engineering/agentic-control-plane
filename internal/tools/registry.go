@@ -2,12 +2,14 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Terfyn/terfyn/internal/schema"
 	"github.com/Terfyn/terfyn/internal/spec"
 	httptool "github.com/Terfyn/terfyn/internal/tools/http"
 	"github.com/Terfyn/terfyn/internal/tools/mcp"
@@ -50,6 +52,58 @@ func (r *Registry) resolveWorkspaceRoot(root string) string {
 		return root
 	}
 	return filepath.Join(r.ProjectRoot, root)
+}
+
+// ValidateInputSchema validates a tool call's input against the operation's declared JSON Schema
+// (#204), resolving the ref against the registry's ProjectRoot. Absent tool/operation/schema means
+// gradual (any input), matching the engine's validateToolInputSchema. This lets the external-runtime
+// dispatch path enforce the same per-call contract the internal engine does (#390), since both run
+// through a *Registry that already holds the graph and project root.
+func (r *Registry) ValidateInputSchema(uses string, with map[string]any) error {
+	if r == nil || r.graph == nil {
+		return nil
+	}
+	toolName, operation, err := ParseUses(uses)
+	if err != nil {
+		return nil // malformed uses is handled by policy/dispatch, not this concern.
+	}
+	tr := r.graph.Tools[toolName]
+	if tr == nil {
+		return nil
+	}
+	op, ok := tr.Spec.Operations[operation]
+	if !ok || strings.TrimSpace(op.Schema) == "" {
+		return nil
+	}
+	raw, err := json.Marshal(with)
+	if err != nil {
+		return fmt.Errorf("tools: marshal tool input: %w", err)
+	}
+	path, err := schema.ResolveSchemaPath(r.ProjectRoot, op.Schema)
+	if err != nil {
+		return err
+	}
+	if err := schema.Validate(path, raw); err != nil {
+		return fmt.Errorf("tools: tool %q input: %w", uses, err)
+	}
+	return nil
+}
+
+// ResolveToolExecutionLimits resolves the byte/policy limits for a tool call from the project and the
+// tool spec (no workflow scope — the external runtime is agent-driven), the same source of truth the
+// engine uses. Callers on the external path enforce these to close the #117 gap (#390).
+func (r *Registry) ResolveToolExecutionLimits(uses string) spec.ResolvedExecutionLimits {
+	var project *spec.ProjectSpec
+	var toolSpec *spec.ToolSpec
+	if r != nil && r.graph != nil {
+		project = &r.graph.Spec
+		if tn, ok := spec.ParseToolUses(uses); ok {
+			if tr := r.graph.Tools[tn]; tr != nil {
+				toolSpec = &tr.Spec
+			}
+		}
+	}
+	return spec.ResolveExecutionLimits(project, nil, toolSpec)
 }
 
 // ParseUses splits tool.github.pull_request.get into tool name "github" and operation "pull_request.get".

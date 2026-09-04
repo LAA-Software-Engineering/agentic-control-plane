@@ -6,9 +6,22 @@ import (
 	"sync/atomic"
 
 	"github.com/Terfyn/terfyn/internal/policy"
+	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/tools"
 	"github.com/Terfyn/terfyn/internal/trace"
 )
+
+// inputSchemaValidator and toolLimitsResolver are the enforcement seams the external-runtime path
+// shares with the internal engine (#390): tools.Registry implements both, so a dispatcher backed by
+// a real registry validates operation input schemas (#204) and enforces tool I/O byte limits (#117)
+// exactly as engine.runToolStep does. A test executor that implements neither keeps the old behavior.
+type inputSchemaValidator interface {
+	ValidateInputSchema(uses string, with map[string]any) error
+}
+
+type toolLimitsResolver interface {
+	ResolveToolExecutionLimits(uses string) spec.ResolvedExecutionLimits
+}
 
 // Dispatcher runs one granted MCP tool call. The Server has already enforced the closed
 // world (the uses string corresponds to an advertised grant); the Dispatcher's job is to run
@@ -60,6 +73,28 @@ func (d *PolicyDispatcher) Call(ctx context.Context, uses string, args map[strin
 	stepID := fmt.Sprintf("mcp-%d", d.seq.Add(1))
 	toolName, _, _ := tools.ParseUses(uses)
 
+	// Enforce the per-call contract the internal engine applies in enforceToolInput BEFORE the
+	// policy check and dispatch (#390): first the input byte limit (#117) — which may truncate the
+	// payload actually dispatched — then the operation input schema (#204) against that same payload.
+	// A limits resolver / schema validator is present only when the executor is a real tools.Registry.
+	limits, hasLimits := d.toolLimits(uses)
+	if hasLimits {
+		enforced, err := d.enforceBytes(ctx, stepID, uses, spec.LimitKindToolInput, args,
+			limits.MaxToolInputBytes, limits.ToolInputExceedPolicy)
+		if err != nil {
+			d.traceDenied(ctx, stepID, err)
+			return nil, err
+		}
+		args = enforced
+	}
+	if sv, ok := d.exec.(inputSchemaValidator); ok {
+		if err := sv.ValidateInputSchema(uses, args); err != nil {
+			// Fail closed like the engine: the tool never runs on a schema violation.
+			d.traceDenied(ctx, stepID, err)
+			return nil, err
+		}
+	}
+
 	if err := d.eval.CheckToolCall(ctx, policy.ToolCallContext{
 		Run:    d.run,
 		StepID: stepID,
@@ -78,7 +113,61 @@ func (d *PolicyDispatcher) Call(ctx context.Context, uses string, args map[strin
 	if err != nil {
 		return nil, err
 	}
-	return resp.Output, nil
+	out := resp.Output
+	if hasLimits {
+		enforced, oerr := d.enforceBytes(ctx, stepID, uses, spec.LimitKindToolOutput, out,
+			limits.MaxToolOutputBytes, limits.ToolOutputExceedPolicy)
+		if oerr != nil {
+			return nil, oerr
+		}
+		out = enforced
+	}
+	return out, nil
+}
+
+// toolLimits resolves the tool's byte/policy limits when the executor exposes them.
+func (d *PolicyDispatcher) toolLimits(uses string) (spec.ResolvedExecutionLimits, bool) {
+	lr, ok := d.exec.(toolLimitsResolver)
+	if !ok {
+		return spec.ResolvedExecutionLimits{}, false
+	}
+	return lr.ResolveToolExecutionLimits(uses), true
+}
+
+// enforceBytes applies a maxBytes limit to a tool I/O map, mirroring engine.enforceMapLimit: emit a
+// limit_hit event, then fail closed or truncate per policy. Truncation uses the recorder's redaction
+// so a truncated value never leaks a secret (#117). A nil recorder simply skips the event.
+func (d *PolicyDispatcher) enforceBytes(ctx context.Context, stepID, uses string, kind spec.LimitKind, v map[string]any, maxBytes int, pol spec.LimitExceedPolicy) (map[string]any, error) {
+	if maxBytes <= 0 || v == nil {
+		return v, nil
+	}
+	orig, err := trace.JSONByteLen(v)
+	if err != nil {
+		return nil, fmt.Errorf("mcpserver: measure %s bytes: %w", kind, err)
+	}
+	if orig <= maxBytes {
+		return v, nil
+	}
+	truncated := pol == spec.LimitExceedTruncate
+	if d.rec != nil && d.runID != "" {
+		_, _ = d.rec.Append(ctx, d.runID, stepID, trace.EventLimitHit, trace.ActorSystem,
+			trace.LimitHitTraceData(kind, maxBytes, orig, pol, truncated, stepID, uses))
+	}
+	if pol == spec.LimitExceedFail {
+		return nil, fmt.Errorf("mcpserver: %s exceeds limit (%d > %d bytes)", kind, orig, maxBytes)
+	}
+	out, _, _, err := trace.TruncateMapValue(v, maxBytes, d.redactionOpts())
+	if err != nil {
+		return nil, fmt.Errorf("mcpserver: truncate %s: %w", kind, err)
+	}
+	return out, nil
+}
+
+func (d *PolicyDispatcher) redactionOpts() trace.RedactionOptions {
+	if d.rec != nil {
+		return d.rec.Redaction
+	}
+	return trace.DefaultRedactionOptions()
 }
 
 // traceSelection / traceExecution / traceDenied emit the inner-call events when a recorder is
