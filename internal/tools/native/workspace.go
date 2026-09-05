@@ -224,12 +224,12 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 		return out, meta, nil
 	}
 	// A line range (offset/limit) returns only the requested span so an agent that grep'd a hit at
-	// foo.go:412 can read lines 380-460 instead of the whole file (issue #512). It reads line by line
-	// up to the requested end so a deep range in a large file does not load the whole file, and never
-	// hits the 1 MiB whole-file cap for lines that live past it. Absent offset/limit preserves today's
-	// whole-file behavior below.
+	// foo.go:412 can read lines 380-460 instead of the whole file (issue #512). The scan is bounded and
+	// cancellable exactly like read_file's whole-file branch and grep: it reads in fixed-size chunks so
+	// a giant/minified line is never loaded whole, caps the RETURNED content at maxWorkspaceReadBytes,
+	// and honors ctx on every iteration. Absent offset/limit preserves today's whole-file behavior below.
 	if offset > 0 || limit > 0 {
-		out, rderr := readWorkspaceLineRange(f, rel, offset, limit)
+		out, rderr := readWorkspaceLineRange(ctx, f, rel, offset, limit)
 		if rderr != nil {
 			return nil, meta, fmt.Errorf("native: read_file %q: %w", rawPath, rderr)
 		}
@@ -281,41 +281,63 @@ func readFileRangeArgs(with map[string]any) (offset, limit int, err error) {
 	return offset, limit, nil
 }
 
+// lineRangeScanBufBytes is the fixed working buffer for a range read: ReadSlice returns at most this
+// many bytes per call, so a giant/minified line is consumed in bounded chunks instead of one alloc.
+const lineRangeScanBufBytes = 64 << 10
+
 // readWorkspaceLineRange returns the [offset, offset+limit) line span of f (offset 1-based; offset 0
-// means from line 1; limit 0 means to EOF), reading line by line so a deep range does not load the
-// whole file. Content is capped at maxWorkspaceReadBytes just like a whole-file read: exceeding it
-// sets truncated=true. start_line/end_line report the actual span returned (end_line < start_line
-// when the offset is past EOF, i.e. no lines matched).
-func readWorkspaceLineRange(f fs.File, rel string, offset, limit int) (map[string]any, error) {
+// means from line 1; limit 0 means to EOF). It is bounded and cancellable like the whole-file branch:
+// lines are read in fixed-size chunks (never a single unbounded alloc for a giant line), bytes before
+// offset are discarded rather than retained, the RETURNED content is capped at maxWorkspaceReadBytes
+// (exceeding it sets truncated=true), and ctx is checked on every iteration. start_line/end_line
+// report the span returned (end_line < start_line when the offset is past EOF, i.e. no lines matched).
+func readWorkspaceLineRange(ctx context.Context, f fs.File, rel string, offset, limit int) (map[string]any, error) {
 	if offset < 1 {
 		offset = 1
 	}
-	br := bufio.NewReader(f)
+	br := bufio.NewReaderSize(f, lineRangeScanBufBytes)
 	var b strings.Builder
-	lineNo := 0
+	lineNo := 1
 	returned := 0
 	truncated := false
 	for {
-		line, rderr := br.ReadString('\n')
-		if len(line) > 0 {
-			lineNo++
-			if lineNo >= offset {
-				if limit > 0 && returned >= limit {
-					break
-				}
-				if b.Len()+len(line) > maxWorkspaceReadBytes {
-					truncated = true
-					break
-				}
-				b.WriteString(line)
-				returned++
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		// ReadSlice returns a fragment of the current line: nil err at the newline, io.EOF for a final
+		// line with no newline, or ErrBufferFull mid-line (the line is longer than the buffer). A
+		// trailing empty read at a clean EOF (file ends in "\n") is not a line.
+		frag, rderr := br.ReadSlice('\n')
+		if rderr == io.EOF && len(frag) == 0 {
+			break
+		}
+		if rderr != nil && rderr != bufio.ErrBufferFull && rderr != io.EOF {
+			return nil, rderr
+		}
+		collecting := lineNo >= offset && (limit == 0 || returned < limit)
+		if collecting && !truncated {
+			switch room := maxWorkspaceReadBytes - b.Len(); {
+			case room <= 0:
+				truncated = true
+			case len(frag) > room:
+				b.Write(frag[:room])
+				truncated = true
+			default:
+				b.Write(frag)
 			}
 		}
-		if rderr != nil {
-			if rderr == io.EOF {
-				break
+		lineComplete := rderr != bufio.ErrBufferFull // nil (newline) or io.EOF
+		if lineComplete {
+			if collecting {
+				returned++
 			}
-			return nil, rderr
+			lineNo++
+		}
+		if truncated || rderr == io.EOF {
+			break
+		}
+		if lineComplete && limit > 0 && returned >= limit {
+			break
 		}
 	}
 	out := map[string]any{
@@ -414,7 +436,12 @@ func dispatchWorkspaceEdit(ctx context.Context, with map[string]any, start time.
 	if err != nil {
 		return nil, meta, classifyWorkspacePathErr("edit", rel, err)
 	}
-	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
+	info, statErr := f.Stat()
+	if statErr != nil {
+		f.Close()
+		return nil, meta, fmt.Errorf("native: edit %q: %w", rawPath, statErr)
+	}
+	if info.IsDir() {
 		f.Close()
 		return nil, meta, fmt.Errorf("native: edit %q: is a directory", rawPath)
 	}
@@ -440,20 +467,55 @@ func dispatchWorkspaceEdit(ctx context.Context, with map[string]any, start time.
 	}
 	updated := strings.Replace(content, oldStr, newStr, 1)
 
-	wf, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
+	// Write atomically: a fresh sibling temp, then Rename over the target. Unlike write_file, edit's
+	// replacement bytes are NOT in the tool args, so truncating the original in place (O_TRUNC) would
+	// make a failed/short write unrecoverable data loss. The original inode is untouched until the new
+	// bytes are durably closed and the rename swaps it in; any failure leaves the file exactly as it
+	// was (issue #512 review). Rename resolves through os.Root, so it cannot escape the sandbox.
+	if err := writeFileAtomically(root, rel, []byte(updated), info.Mode().Perm()); err != nil {
 		return nil, meta, fmt.Errorf("native: edit %q: %w", rawPath, err)
-	}
-	_, writeErr := wf.Write([]byte(updated))
-	closeErr := wf.Close()
-	if writeErr != nil {
-		return nil, meta, fmt.Errorf("native: edit %q: %w", rawPath, writeErr)
-	}
-	if closeErr != nil {
-		return nil, meta, fmt.Errorf("native: edit %q: %w", rawPath, closeErr)
 	}
 	meta.DurationMs = time.Since(start).Milliseconds()
 	return map[string]any{"path": rel, "bytes": len(updated), "replaced": 1, "ok": true}, meta, nil
+}
+
+// writeFileAtomically replaces rel's contents with data without ever truncating rel in place: it
+// writes a new O_EXCL sibling temp in the same directory (so the Rename is a same-filesystem atomic
+// swap), fsyncs and closes it, then renames it over rel. On any error the temp is removed and rel is
+// left untouched. perm is applied to the replacement so an executable/mode is preserved. All paths
+// resolve through os.Root, so neither the temp nor the rename can escape the sandbox.
+func writeFileAtomically(root *os.Root, rel string, data []byte, perm os.FileMode) error {
+	dir := path.Dir(rel)
+	tmpRel := path.Join(dir, fmt.Sprintf(".%s.terfyn-edit-%d.tmp", path.Base(rel), time.Now().UnixNano()))
+	tf, err := root.OpenFile(tmpRel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := tf.Write(data); err != nil {
+		tf.Close()
+		_ = root.Remove(tmpRel)
+		return err
+	}
+	if err := tf.Sync(); err != nil {
+		tf.Close()
+		_ = root.Remove(tmpRel)
+		return err
+	}
+	if err := tf.Close(); err != nil {
+		_ = root.Remove(tmpRel)
+		return err
+	}
+	// perm was requested at create time but is subject to umask; set it explicitly so the replacement
+	// keeps the original file's mode.
+	if err := root.Chmod(tmpRel, perm); err != nil {
+		_ = root.Remove(tmpRel)
+		return err
+	}
+	if err := root.Rename(tmpRel, rel); err != nil {
+		_ = root.Remove(tmpRel)
+		return err
+	}
+	return nil
 }
 
 // requiredEditString reads a required string arg for edit. An explicitly empty string is valid for

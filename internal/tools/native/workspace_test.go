@@ -568,3 +568,113 @@ func TestWorkspaceEdit_pathEscapeRejected(t *testing.T) {
 		t.Fatalf("outside file must be untouched, got %q", got)
 	}
 }
+
+// A range read over a giant single line (larger than both the scan buffer and the 1 MiB result cap)
+// must bound the RETURNED content at the cap and flag truncation, not load the whole line (issue #512
+// review). This is the case the "x\n"-lines deep-range test cannot reach.
+func TestWorkspaceReadFile_giantLineIsBounded(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	giant := strings.Repeat("a", maxWorkspaceReadBytes*2) // one line, no newline, 2x the cap
+	writeWorkspaceFile(t, root, "min.js", giant)
+	out, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "min.js", "offset": 1, "limit": 1})
+	if err != nil {
+		t.Fatalf("range read: %v", err)
+	}
+	if out["truncated"] != true {
+		t.Fatalf("a giant line must be truncated: %#v keys", out["truncated"])
+	}
+	if got := len(out["content"].(string)); got != maxWorkspaceReadBytes {
+		t.Fatalf("returned content = %d bytes, want the cap %d", got, maxWorkspaceReadBytes)
+	}
+}
+
+// A cancelled context stops the range scan instead of reading to EOF (issue #512 review).
+func TestWorkspaceReadFile_rangeHonorsContext(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "a\nb\nc\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := NewRegistry().Dispatch(ctx, "read_file", map[string]any{"path": "f.txt", "offset": 1, "limit": 2})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled range read err = %v, want context.Canceled", err)
+	}
+}
+
+// A failed edit write must not destroy the original file (issue #512 review): edit writes a temp then
+// renames, so if the write cannot happen (here the parent directory is not writable) the original is
+// left exactly as it was — unlike an in-place O_TRUNC, which would have zeroed it first.
+func TestWorkspaceEdit_failedWriteLeavesOriginalIntact(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix directory permissions")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions")
+	}
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	const original = "func A() int { return 1 }\n"
+	writeWorkspaceFile(t, root, "sub/x.go", original)
+	// Make the containing directory non-writable so creating the sibling temp fails.
+	dir := filepath.Join(root, "sub")
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	_, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "sub/x.go", "old_string": "return 1", "new_string": "return 2",
+	})
+	if err == nil {
+		t.Fatal("expected the edit to fail on a non-writable directory")
+	}
+	// Restore write access to read the file back and prove it is byte-for-byte the original.
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, rerr := os.ReadFile(filepath.Join(dir, "x.go"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if string(got) != original {
+		t.Fatalf("original must survive a failed edit, got %q", got)
+	}
+}
+
+// A successful edit leaves no temp file behind and preserves the original file's mode (issue #512).
+func TestWorkspaceEdit_atomicNoLeftoverAndPreservesMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file mode")
+	}
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "run.sh", "echo one\n")
+	target := filepath.Join(root, "run.sh")
+	if err := os.Chmod(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "run.sh", "old_string": "one", "new_string": "two",
+	}); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	// The executable bit survives the rewrite.
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("mode = %v, want 0755 preserved", info.Mode().Perm())
+	}
+	// No sibling temp files linger in the workspace root.
+	ents, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if strings.Contains(e.Name(), "terfyn-edit") || strings.HasSuffix(e.Name(), ".tmp") {
+			t.Fatalf("leftover temp file: %s", e.Name())
+		}
+	}
+}
