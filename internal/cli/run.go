@@ -20,6 +20,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/trace"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
@@ -42,6 +43,7 @@ func newRunCmd() *cobra.Command {
 	var source string
 	var requireAttribution bool
 	var runtimeName string
+	var verbose bool
 
 	cmd := &cobra.Command{
 		Use:          "run workflow/<name>",
@@ -126,6 +128,7 @@ Exit codes (section 11.2):
 	cmd.Flags().StringVar(&source, "source", "", "run origin label (default: cli)")
 	cmd.Flags().StringVar(&runtimeName, "runtime", "", "runtime target: 'local' (default, the workflow's spec.runtime) or an external adapter such as 'claude-code'")
 	cmd.Flags().BoolVar(&requireAttribution, "require-attribution", false, "require explicit --tenant-id, --thread-id, and --actor-id (or set TERFYN_REQUIRE_ATTRIBUTION=1)")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "stream each trace event (tool calls, completions, limits) to stderr as it happens")
 	return cmd
 }
 
@@ -220,6 +223,13 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 	tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source string, requireAttribution bool) error {
 	ctx := context.Background()
 	g := Globals()
+
+	// --verbose (-v) streams each trace event to stderr as it is appended (#450), so an agent run is
+	// watchable in real time. stdout stays clean for -o json. nil sink = today's behavior.
+	var eventSink trace.EventSink
+	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+		eventSink = newVerboseSink(cmd.ErrOrStderr(), g != nil && g.NoColor)
+	}
 
 	resumeID := strings.TrimSpace(resumeRunID)
 	if resumeID == "" && wfName == "" {
@@ -319,6 +329,7 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 				EnvironmentName: strings.TrimSpace(g.Env),
 				ApprovedActions: approves,
 				AutoApprove:     autoApprove,
+				EventSink:       eventSink,
 			}
 			if err := applyHitlResumeOptions(&resOpts, autoApprove, decision, decisionEditJSON, decisionSwitchTarget); err != nil {
 				return NewExitError(ExitValidationError, err)
@@ -340,6 +351,7 @@ func runRun(cmd *cobra.Command, wfName, resumeRunID, inputFile string, inputPair
 				ApprovedActions: approves,
 				AutoApprove:     autoApprove,
 				WorkflowName:    wfName,
+				EventSink:       eventSink,
 			}
 			applyRunAttributionInvokeOpts(&invOpts, tenantID, threadID, actorID, parentRunID, requestID, idempotencyKey, source, requireAttribution)
 			warnAttributionDefaults(cmd.ErrOrStderr(), state.RunAttribution{
