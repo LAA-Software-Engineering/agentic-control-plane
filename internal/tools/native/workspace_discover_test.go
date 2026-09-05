@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -136,6 +137,51 @@ func TestWorkspace_Glob_badPatternErrors(t *testing.T) {
 	_, _, err := NewRegistry().Dispatch(context.Background(), "glob", map[string]any{"pattern": "[bad"})
 	if err == nil {
 		t.Fatal("expected a bad-pattern error")
+	}
+}
+
+// TestWorkspace_Glob_prunesDependencyDirs proves glob prunes the same VCS/dependency trees grep
+// does, so `**/*` on a real checkout enumerates source instead of filling the match cap from `.git`
+// (which sorts first in the lexical walk). Scoping the pattern at one of those names overrides it.
+func TestWorkspace_Glob_prunesDependencyDirs(t *testing.T) {
+	root := t.TempDir()
+	for _, p := range []string{
+		".git/objects/aa/1111", ".git/objects/bb/2222", ".git/HEAD",
+		"vendor/pkg/dep.go", "node_modules/lib/index.js",
+		"framework/app.go",
+	} {
+		abs := filepath.Join(root, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(envWorkspaceRoot, root)
+
+	out, _, err := NewRegistry().Dispatch(context.Background(), "glob", map[string]any{"pattern": "**/*"})
+	if err != nil {
+		t.Fatalf("glob **/*: %v", err)
+	}
+	got := out["matches"].([]string)
+	if !containsStr(got, "framework/app.go") {
+		t.Fatalf("glob **/* must enumerate source, missing framework/app.go: %v", got)
+	}
+	for _, m := range got {
+		if strings.HasPrefix(m, ".git/") || strings.HasPrefix(m, "vendor/") || strings.HasPrefix(m, "node_modules/") ||
+			m == ".git" || m == "vendor" || m == "node_modules" {
+			t.Fatalf("glob **/* must prune dependency trees, got %q in %v", m, got)
+		}
+	}
+
+	// Scoping the pattern at a pruned tree overrides the prune and searches it.
+	out, _, err = NewRegistry().Dispatch(context.Background(), "glob", map[string]any{"pattern": "vendor/**/*.go"})
+	if err != nil {
+		t.Fatalf("glob vendor/**/*.go: %v", err)
+	}
+	if scoped := out["matches"].([]string); !containsStr(scoped, "vendor/pkg/dep.go") {
+		t.Fatalf("glob scoped at vendor must search it, got %v", scoped)
 	}
 }
 

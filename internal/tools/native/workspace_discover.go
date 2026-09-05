@@ -38,10 +38,12 @@ const (
 	maxGrepLineRunes = 240
 )
 
-// grepSkipDirs are directory names grep prunes by default: VCS metadata and vendored/dependency
-// trees that are large and rarely the search target. A caller can still search one by scoping grep
-// directly at it (the `path` arg), so pruning applies only below the scope root.
-var grepSkipDirs = map[string]bool{
+// discoverySkipDirs are directory names the recursive discovery ops (grep, glob) prune by default:
+// VCS metadata and vendored/dependency trees that are large and rarely the target. Both ops let a
+// caller override the prune by scoping directly at one — grep via its `path` arg, glob via a literal
+// leading pattern segment (see globScopedSkip) — so pruning applies only when the walk was not aimed
+// at that tree.
+var discoverySkipDirs = map[string]bool{
 	".git":         true,
 	"node_modules": true,
 	"vendor":       true,
@@ -131,6 +133,7 @@ func dispatchWorkspaceGlob(ctx context.Context, with map[string]any, start time.
 	// wildcard (io/fs.Glob is path.Match: `*` never crosses `/` and `**` is not globstar, which
 	// silently returns a one-level subset for the `**/*.go` a coding agent will send).
 	fsys := root.FS()
+	scopedSkip := globScopedSkip(segs)
 	matches := make([]string, 0, 16)
 	truncated := false
 	walkErr := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
@@ -142,6 +145,13 @@ func dispatchWorkspaceGlob(ctx context.Context, with map[string]any, start time.
 		}
 		if p == "." {
 			return nil
+		}
+		if d.IsDir() && discoverySkipDirs[d.Name()] && d.Name() != scopedSkip {
+			// Prune VCS metadata and vendored/dependency trees, same as grep, so `**/*` on a real
+			// checkout enumerates source instead of filling the match cap from `.git` (which sorts
+			// first in the lexical walk). The caller can still target one by naming it as the
+			// leading literal pattern segment (globScopedSkip).
+			return fs.SkipDir
 		}
 		if globMatch(segs, strings.Split(p, "/")) {
 			matches = append(matches, p)
@@ -213,6 +223,24 @@ func globMatch(pat, name []string) bool {
 	return globMatch(pat[1:], name[1:])
 }
 
+// globScopedSkip returns the discoverySkipDirs name a pattern is explicitly scoped at, so the walk
+// does not prune a tree the caller asked to descend into (mirrors grep's "scope directly at one"
+// override). The rule is the first non-"**" segment: when it is a literal skip name — the pattern
+// begins e.g. "node_modules/…" or ".git/…" — that name is honored; otherwise "" prunes every skip
+// dir. A pattern that leads with "**" (or a wildcard) does not target a skip tree, so all are pruned.
+func globScopedSkip(segs []string) string {
+	for _, s := range segs {
+		if s == "**" {
+			continue
+		}
+		if discoverySkipDirs[s] {
+			return s
+		}
+		return ""
+	}
+	return ""
+}
+
 func dispatchWorkspaceGrep(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
 	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
 	root, err := openWorkspaceRoot(ctx)
@@ -254,7 +282,7 @@ func dispatchWorkspaceGrep(ctx context.Context, with map[string]any, start time.
 		if d.IsDir() {
 			// Prune VCS metadata and vendored/dependency trees (large, rarely the target) unless
 			// the caller scoped the search directly at one, so grep stays a bounded code search.
-			if p != scope && grepSkipDirs[d.Name()] {
+			if p != scope && discoverySkipDirs[d.Name()] {
 				return fs.SkipDir
 			}
 			return nil
