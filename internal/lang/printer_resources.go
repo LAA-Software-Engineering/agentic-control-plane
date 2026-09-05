@@ -16,6 +16,7 @@ func printTool(p *printer, d *ToolDecl) {
 		p.field("    ", "type "+d.Type.Name, d.Type.Pos.Line)
 	}
 	if m := d.MCP; m != nil {
+		p.leadingBefore(m.Pos.Line, "    ")
 		p.WriteString("    mcp {\n")
 		printStringLitField(p, "        ", "transport", m.Transport)
 		printStringLitField(p, "        ", "command", m.Command)
@@ -28,40 +29,51 @@ func printTool(p *printer, d *ToolDecl) {
 		}
 		printStringLitField(p, "        ", "url", m.URL)
 		printHeadersBlock(p, "        ", m.Headers)
+		p.blockTail(m.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if h := d.HTTP; h != nil {
+		p.leadingBefore(h.Pos.Line, "    ")
 		p.WriteString("    http {\n")
 		printStringLitField(p, "        ", "baseUrl", h.BaseURL)
 		printHeadersBlock(p, "        ", h.Headers)
+		p.blockTail(h.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if w := d.Workspace; w != nil {
+		p.leadingBefore(w.Pos.Line, "    ")
 		p.WriteString("    workspace {\n")
 		printStringLitField(p, "        ", "root", w.Root)
 		printStringLitField(p, "        ", "testCommand", w.TestCommand)
+		p.blockTail(w.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if r := d.Retry; r != nil {
+		p.leadingBefore(r.Pos.Line, "    ")
 		p.WriteString("    retry {\n")
 		if r.MaxAttempts != nil {
 			fmt.Fprintf(p, "        maxAttempts %d\n", *r.MaxAttempts)
 		}
 		printStringLitField(p, "        ", "backoff", r.Backoff)
+		p.blockTail(r.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if lim := d.Limits; lim != nil {
+		p.leadingBefore(lim.Pos.Line, "    ")
 		printLimitsBlockAt(p, "    ", lim)
 	}
 	if s := d.Safety; s != nil {
+		p.leadingBefore(s.Pos.Line, "    ")
 		p.WriteString("    safety {\n")
 		printBoolField(p, "        ", "trusted", s.Trusted)
 		printBoolField(p, "        ", "sideEffects", s.SideEffects)
 		printBoolField(p, "        ", "requiresApproval", s.RequiresApproval)
+		p.blockTail(s.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if d.Operations != nil {
 		if len(d.Operations.Ops) == 0 {
+			p.leadingBefore(d.Operations.Pos.Line, "    ")
 			p.WriteString("    operations {}\n") // an explicit empty block: a closed, deny-all manifest
 		} else {
 			p.leadingBefore(d.Operations.Pos.Line, "    ")
@@ -78,9 +90,11 @@ func printTool(p *printer, d *ToolDecl) {
 				line += " }"
 				p.field("        ", line, op.Pos.Line)
 			}
+			p.blockTail(d.Operations.Pos.Line, "        ")
 			p.WriteString("    }\n")
 		}
 	}
+	p.blockTail(d.Pos.Line, "    ")
 	p.WriteString("}\n")
 }
 
@@ -90,7 +104,7 @@ func printStringLitField(p *printer, indent, name string, s *StringLit) {
 	if s == nil {
 		return
 	}
-	printStringField(p, indent, name, s.Value)
+	printStringField(p, indent, name, s.Value, s.Pos.Line)
 }
 
 // printHeadersBlock renders a `headers { "<key>" "<value>" … }` block in author order.
@@ -131,6 +145,7 @@ func printPolicy(p *printer, d *PolicyDecl) {
 			fmt.Fprintf(p, "        maxWallClockSeconds %d\n", *e.MaxWallClockSeconds)
 		}
 		printBoolField(p, "        ", "requireStructuredOutput", e.RequireStructuredOutput)
+		p.blockTail(e.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if a := d.Approvals; a != nil {
@@ -145,6 +160,7 @@ func printPolicy(p *printer, d *PolicyDecl) {
 		}
 		printBoolField(p, "        ", "requireAllTools", a.RequireAllTools)
 		printBoolField(p, "        ", "permissive", a.Permissive)
+		p.blockTail(a.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if e := d.Effects; e != nil {
@@ -158,16 +174,21 @@ func printPolicy(p *printer, d *PolicyDecl) {
 			p.leadingBefore(e.PermitWithApproval[0].Pos.Line, "        ")
 			p.field("        ", fmt.Sprintf("permitWithApproval { %s }", joinEffects(e.PermitWithApproval)), e.PermitWithApproval[0].Pos.Line)
 		}
+		p.blockTail(e.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if h := d.Hitl; h != nil {
+		p.leadingBefore(h.Pos.Line, "    ")
 		printHitlAt(p, "    ", h)
 	}
 	if t := d.Tools; t != nil {
+		p.leadingBefore(t.Pos.Line, "    ")
 		p.WriteString("    tools {\n")
 		printBoolField(p, "        ", "forbidUnknownTools", t.ForbidUnknownTools)
+		p.blockTail(t.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
+	p.blockTail(d.Pos.Line, "    ")
 	p.WriteString("}\n")
 }
 
@@ -331,6 +352,7 @@ func printEnvironment(p *printer, d *EnvironmentDecl) {
 		}
 		p.WriteString("    }\n")
 	}
+	p.blockTail(d.Pos.Line, "    ")
 	p.WriteString("}\n")
 }
 
@@ -349,6 +371,7 @@ func printProvider(p *printer, d *ProviderDecl) {
 		p.leadingBefore(d.WorkspaceIDFrom.Pos.Line, "    ")
 	}
 	printStringLitField(p, "    ", "workspaceIdFrom", d.WorkspaceIDFrom)
+	p.blockTail(d.Pos.Line, "    ")
 	p.WriteString("}\n")
 }
 
@@ -366,6 +389,7 @@ func printLimitsBlockAt(p *printer, indent string, lim *ToolLimitsBlock) {
 	printIdentField(p, inner, "toolInputExceedPolicy", lim.ToolInputExceedPolicy)
 	printIdentField(p, inner, "toolOutputExceedPolicy", lim.ToolOutputExceedPolicy)
 	printIdentField(p, inner, "checkpointExceedPolicy", lim.CheckpointExceedPolicy)
+	p.blockTail(lim.Pos.Line, inner)
 	fmt.Fprintf(p, "%s}\n", indent)
 }
 
@@ -394,6 +418,7 @@ func printDefaults(p *printer, d *DefaultsDecl) {
 		p.leadingBefore(d.Runtime.Pos.Line, "    ")
 		p.field("    ", "runtime "+identName(d.Runtime), d.Runtime.Pos.Line)
 	}
+	p.blockTail(d.Pos.Line, "    ")
 	p.WriteString("}\n")
 }
 

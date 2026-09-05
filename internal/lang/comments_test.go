@@ -120,3 +120,55 @@ func TestLexer_commentClassification(t *testing.T) {
 		t.Fatalf("comment 1 = %+v", f.Comments[1])
 	}
 }
+
+// Regression for the PR #516 review: comment attachment must follow SOURCE structure, not canonical
+// print order. A comment inside a block must not leak to the next declaration, a doc comment above a
+// field that canonical order prints later must stay with that field, and trailing comments on
+// leaf/inline-block lines must stay attached — none may end up dumped after the enclosing block.
+func TestFormat_attachmentFollowsSourceNotPrintOrder(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string // a substring the output MUST contain
+		deny string // a substring the output must NOT contain ("" to skip)
+	}{
+		{
+			name: "interior comment does not leak to next decl",
+			src:  "tool t {\n    type native\n    // safety note\n    safety { trusted true }\n}\npolicy p {\n    preset shell_safe\n}\n",
+			want: "// safety note\n    safety {",
+			deny: "// safety note\npolicy p",
+		},
+		{
+			name: "doc comment stays with the field canonical order prints later",
+			// grants is before model in source; canonical order prints model first. The comment must
+			// stay above grants, not jump onto model.
+			src:  "agent a {\n    // grants doc\n    grants { tool.x.y }\n    model mock/x\n}\n",
+			want: "// grants doc\n    grants {",
+			deny: "// grants doc\n    model",
+		},
+		{
+			name: "trailing comment on description stays inline",
+			src:  "agent a {\n    model m/x\n    description \"d\" // why\n}\n",
+			want: "description \"d\" // why",
+			deny: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, diags := Format("m.agent", tc.src)
+			if len(diags) > 0 {
+				t.Fatalf("diags: %s", diags.Error())
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Fatalf("missing %q in:\n%s", tc.want, out)
+			}
+			if tc.deny != "" && strings.Contains(out, tc.deny) {
+				t.Fatalf("unexpected %q in:\n%s", tc.deny, out)
+			}
+			// Idempotent.
+			if out2, _ := Format("m.agent", out); out2 != out {
+				t.Fatalf("not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", out, out2)
+			}
+		})
+	}
+}

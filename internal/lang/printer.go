@@ -15,7 +15,7 @@ func Print(f *File) string {
 	if f == nil {
 		return ""
 	}
-	p := &printer{comments: f.Comments}
+	p := newPrinter(f.cidx)
 	for i, d := range f.Decls {
 		// Blank-line separator first, then the comments that sit above this declaration (the file
 		// header and per-decl doc comments), so a leading comment stays glued to what it documents:
@@ -58,16 +58,6 @@ func declLine(d Decl) int {
 	return d.Position().Line
 }
 
-// grantsLine approximates the `grants {` header line by the first grant entry's line (the block
-// keyword position is not retained on the AST). Comments authored above the block are flushed here at
-// the block indent before the loop attaches per-grant comments.
-func grantsLine(grants []*Grant) int {
-	if len(grants) == 0 {
-		return 0
-	}
-	return grants[0].Pos.Line
-}
-
 // Format parses src and returns canonical .agent source plus any diagnostics.
 // When parsing reports errors the returned source is best-effort (formatted from
 // the partial AST) and callers should surface the diagnostics rather than write
@@ -89,11 +79,11 @@ func printAgent(p *printer, a *AgentDecl) {
 	}
 	if a.Description != nil {
 		p.leadingBefore(a.Description.Pos.Line, "    ")
-		printStringField(p, "    ", "description", a.Description.Value)
+		printStringField(p, "    ", "description", a.Description.Value, a.Description.Pos.Line)
 	}
 	if a.Instructions != nil {
 		p.leadingBefore(a.Instructions.Pos.Line, "    ")
-		printInstructions(p, a.Instructions.Value)
+		printInstructions(p, a.Instructions.Value, a.Instructions.Pos.Line)
 	}
 	if a.InstructionsFile != nil && a.InstructionsFile.Path != nil {
 		p.leadingBefore(a.InstructionsFile.Pos.Line, "    ")
@@ -106,12 +96,13 @@ func printAgent(p *printer, a *AgentDecl) {
 		printConstraints(p, a.Constraints)
 	}
 	if len(a.Grants) > 0 {
-		p.leadingBefore(grantsLine(a.Grants), "    ")
+		p.leadingBefore(a.GrantsPos.Line, "    ")
 		p.WriteString("    grants {\n")
 		for _, g := range a.Grants {
 			p.leadingBefore(g.Pos.Line, "        ")
 			p.field("        ", dottedName(g.Segments), g.Pos.Line)
 		}
+		p.blockTail(a.GrantsPos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	if a.Input != nil {
@@ -122,6 +113,7 @@ func printAgent(p *printer, a *AgentDecl) {
 		p.leadingBefore(a.Output.Pos.Line, "    ")
 		p.field("    ", "output "+a.Output.Name, a.Output.Pos.Line)
 	}
+	p.blockTail(a.Pos.Line, "    ")
 	p.WriteString("}\n")
 }
 
@@ -133,8 +125,8 @@ func printAgent(p *printer, a *AgentDecl) {
 // the raw multiline body cannot represent (it would read as a premature close and
 // corrupt the file) — falls back to the escaped single-quoted form, which escapes
 // newlines and quotes and always re-parses.
-func printInstructions(p *printer, v string) {
-	printStringField(p, "    ", "instructions", v)
+func printInstructions(p *printer, v string, line int) {
+	printStringField(p, "    ", "instructions", v, line)
 }
 
 // printStringField renders a string-valued field (instructions, description) at the
@@ -142,9 +134,10 @@ func printInstructions(p *printer, v string) {
 // containing a `"""`, which the raw block cannot hold) as a canonical `"""…"""` block
 // whose body lines carry the field indent — the exact shape normalizeMultiline strips
 // back, so parse -> print -> parse is stable.
-func printStringField(p *printer, indent, name, v string) {
+func printStringField(p *printer, indent, name, v string, line int) {
 	if !strings.Contains(v, "\n") || strings.Contains(v, `"""`) {
-		fmt.Fprintf(p, "%s%s %s\n", indent, name, strconv.Quote(v))
+		// Single-line value: it can carry a trailing comment on its source line.
+		p.field(indent, fmt.Sprintf("%s %s", name, strconv.Quote(v)), line)
 		return
 	}
 	fmt.Fprintf(p, "%s%s \"\"\"\n", indent, name)
@@ -161,7 +154,11 @@ func printStringField(p *printer, indent, name, v string) {
 // printConstraints renders the `constraints { }` block, one field per line in a
 // stable order, omitting fields the author did not set.
 func printConstraints(p *printer, c *Constraints) {
-	p.WriteString("    constraints {\n")
+	// A trailing comment on a single-line source block (`constraints { … } // note`) attaches to the
+	// opening line, which fmt keeps even as it expands the block onto multiple lines.
+	p.WriteString("    constraints {")
+	p.trailingOn(c.Pos.Line)
+	p.WriteString("\n")
 	if c.MaxIterations != nil {
 		fmt.Fprintf(p, "        maxIterations %d\n", *c.MaxIterations)
 	}
@@ -177,6 +174,7 @@ func printConstraints(p *printer, c *Constraints) {
 	if c.RequireStructuredOutput != nil {
 		fmt.Fprintf(p, "        requireStructuredOutput %s\n", strconv.FormatBool(*c.RequireStructuredOutput))
 	}
+	p.blockTail(c.Pos.Line, "        ")
 	p.WriteString("    }\n")
 }
 
@@ -204,7 +202,7 @@ func printWorkflow(p *printer, w *WorkflowDecl) {
 		// A description (possibly multiline) does not fit the inline header, so the
 		// header clauses go on their own indented lines before the opening brace.
 		p.WriteString("\n")
-		printStringField(p, "    ", "description", w.Description.Value)
+		printStringField(p, "    ", "description", w.Description.Value, w.Description.Pos.Line)
 		for _, c := range clauses {
 			fmt.Fprintf(p, "    %s\n", c)
 		}
@@ -218,6 +216,7 @@ func printWorkflow(p *printer, w *WorkflowDecl) {
 	for _, s := range w.Body {
 		printStmt(p, s, 1)
 	}
+	p.blockTail(w.Pos.Line, "    ")
 	p.WriteString("}\n")
 }
 
@@ -237,6 +236,7 @@ func printStmt(p *printer, s Stmt, depth int) {
 		for _, a := range n.Body {
 			printStmt(p, a, depth+1)
 		}
+		p.blockTail(n.Pos.Line, indent+"    ")
 		fmt.Fprintf(p, "%s}\n", indent)
 	case *IfStmt:
 		printIf(p, n, depth)
@@ -249,24 +249,27 @@ func printStmt(p *printer, s Stmt, depth int) {
 		for _, st := range n.Body {
 			printStmt(p, st, depth+1)
 		}
+		p.blockTail(n.Pos.Line, indent+"    ")
 		fmt.Fprintf(p, "%s}\n", indent)
 	case *WhileStmt:
 		fmt.Fprintf(p, "%swhile %s limit %d {\n", indent, printExpr(n.Cond), n.Limit)
 		for _, st := range n.Body {
 			printStmt(p, st, depth+1)
 		}
+		p.blockTail(n.Pos.Line, indent+"    ")
 		fmt.Fprintf(p, "%s}\n", indent)
 	case *RetryStmt:
 		fmt.Fprintf(p, "%sretry until %s limit %d {\n", indent, printExpr(n.Cond), n.Limit)
 		for _, st := range n.Body {
 			printStmt(p, st, depth+1)
 		}
+		p.blockTail(n.Pos.Line, indent+"    ")
 		fmt.Fprintf(p, "%s}\n", indent)
 	case *ApprovalStmt:
 		inner := indent + "    "
 		fmt.Fprintf(p, "%sapproval %s {\n", indent, identName(n.Bind))
 		if n.Description != nil {
-			printStringField(p, inner, "description", n.Description.Value)
+			printStringField(p, inner, "description", n.Description.Value, n.Description.Pos.Line)
 		}
 		if len(n.RedactKeys) > 0 {
 			fmt.Fprintf(p, "%sredactKeys {", inner)
@@ -305,12 +308,11 @@ func printIf(p *printer, n *IfStmt, depth int) {
 		if elif, ok := n.Else[0].(*IfStmt); ok {
 			fmt.Fprintf(p, "%s} else ", indent)
 			// Render the nested if without its leading indent, on the same line. The nested printer
-			// shares the comment cursor so comments inside the else-if body are emitted once and in
-			// order; sync the cursor back afterward.
-			nested := &printer{comments: p.comments, ci: p.ci}
+			// shares the comment index and the emitted-flags slice, so a comment inside the else-if
+			// body is emitted exactly once.
+			nested := &printer{idx: p.idx, emitted: p.emitted}
 			printIf(nested, elif, depth)
 			p.WriteString(strings.TrimLeft(nested.String(), " "))
-			p.ci = nested.ci
 			return
 		}
 	}
@@ -320,6 +322,7 @@ func printIf(p *printer, n *IfStmt, depth int) {
 			printStmt(p, st, depth+1)
 		}
 	}
+	p.blockTail(n.Pos.Line, indent+"    ")
 	fmt.Fprintf(p, "%s}\n", indent)
 }
 

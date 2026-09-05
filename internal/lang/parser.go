@@ -20,6 +20,7 @@ func Parse(file, src string) (*File, Diagnostics) {
 	// consumed, so l.Comments() holds every comment in source order for the formatter (issue #509).
 	if f != nil {
 		f.Comments = p.lex.Comments()
+		f.cidx = buildCommentIndex(src, f.Comments)
 	}
 	diags := append(p.lex.Diagnostics(), p.diags...)
 	return f, diags.Sorted()
@@ -209,6 +210,7 @@ func (p *parser) parseAgent() *AgentDecl {
 			p.advance()
 			if g := p.parseGrants(); !dup(field, fpos) {
 				decl.Grants = g
+				decl.GrantsPos = fpos // the `grants` keyword line, so the formatter can anchor a doc comment above the block (issue #509)
 			}
 		case "input":
 			p.advance()
