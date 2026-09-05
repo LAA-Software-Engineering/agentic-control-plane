@@ -14,7 +14,11 @@ import (
 const (
 	defaultBaseURL = "https://api.anthropic.com"
 	apiVersion     = "2023-06-01"
-	defaultMaxTok  = 4096
+	// defaultMaxTok is the max_tokens sent when a request does not set one. Raised from the chat-era
+	// 4096 to a realistic agent default that stays under non-streaming HTTP timeouts (issue #514); the
+	// engine normally sets Request.MaxTokens from the agent's constraints, so this only applies to a
+	// direct adapter call that leaves it unset.
+	defaultMaxTok = 16384
 )
 
 // Client calls POST /v1/messages.

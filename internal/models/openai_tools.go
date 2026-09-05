@@ -46,6 +46,7 @@ type openaiChatRequest struct {
 	Messages       []openaiMessage       `json:"messages"`
 	Tools          []openaiTool          `json:"tools,omitempty"`
 	ToolChoice     string                `json:"tool_choice,omitempty"`
+	MaxTokens      int                   `json:"max_tokens,omitempty"`
 	Temperature    *float64              `json:"temperature,omitempty"`
 	ResponseFormat *openaiResponseFormat `json:"response_format,omitempty"`
 }
@@ -85,6 +86,7 @@ func buildOpenAIChatPayload(req GenerateRequest) ([]byte, error) {
 	payload := openaiChatRequest{
 		Model:       req.Model,
 		Messages:    msgs,
+		MaxTokens:   req.MaxTokens, // omitempty: unset leaves the API default (issue #514)
 		Temperature: req.Temperature,
 	}
 	if req.ResponseFormat != nil {

@@ -23,3 +23,21 @@ func ResolveMaxIterations(c *AgentConstraints) int {
 	}
 	return n
 }
+
+// DefaultAgentMaxTokens is the per-completion output-token cap when constraints.maxTokens is unset
+// (issue #514). It replaces the old hardcoded 4096, which was a chat-era default that truncated any
+// agent writing real content (a coding agent's whole-file write_file exceeds it). 16384 is a
+// realistic agent default that still stays under non-streaming HTTP timeouts; an author raises it
+// per agent with constraints.maxTokens for larger outputs. There is no hard clamp — a value the
+// provider cannot honor is rejected loudly at request time rather than silently capped here.
+const DefaultAgentMaxTokens = 16384
+
+// ResolveMaxTokens returns the effective output-token cap for the given agent constraints. A nil
+// constraints block (or an unset/zero maxTokens) resolves to DefaultAgentMaxTokens; any positive
+// value is used verbatim.
+func ResolveMaxTokens(c *AgentConstraints) int {
+	if c != nil && c.MaxTokens > 0 {
+		return c.MaxTokens
+	}
+	return DefaultAgentMaxTokens
+}

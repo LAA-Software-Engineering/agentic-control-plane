@@ -192,6 +192,10 @@ func constraints(c *spec.AgentConstraints) *lang.Constraints {
 		v := c.MaxIterations
 		out.MaxIterations = &v
 	}
+	if c.MaxTokens != 0 {
+		v := c.MaxTokens
+		out.MaxTokens = &v
+	}
 	if c.TimeoutSeconds != 0 {
 		v := c.TimeoutSeconds
 		out.TimeoutSeconds = &v

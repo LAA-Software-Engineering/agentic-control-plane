@@ -22,6 +22,7 @@ func mapToAnthropicRequest(req GenerateRequest) (anthropic.Request, error) {
 		Model:       req.Model,
 		System:      system,
 		Messages:    msgs,
+		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
 	}
 	if req.ResponseFormat != nil {

@@ -66,6 +66,7 @@ type AgentDecl struct {
 type Constraints struct {
 	Pos                     Pos
 	MaxIterations           *int
+	MaxTokens               *int
 	TimeoutSeconds          *int
 	Temperature             *float64
 	RequireStructuredOutput *bool

@@ -448,6 +448,9 @@ func validateAgentSpecs(g *ProjectGraph) []error {
 			if c.MaxIterations < 0 {
 				errs = append(errs, ar.Pos.Errorf("Agent/%s: constraints.maxIterations must be non-negative", name))
 			}
+			if c.MaxTokens < 0 {
+				errs = append(errs, ar.Pos.Errorf("Agent/%s: constraints.maxTokens must be non-negative", name))
+			}
 			if c.TimeoutSeconds < 0 {
 				errs = append(errs, ar.Pos.Errorf("Agent/%s: constraints.timeoutSeconds must be non-negative", name))
 			}

@@ -384,6 +384,9 @@ func printConstraintsAt(b *strings.Builder, indent string, c *Constraints) {
 	if c.MaxIterations != nil {
 		fmt.Fprintf(b, "%smaxIterations %d\n", inner, *c.MaxIterations)
 	}
+	if c.MaxTokens != nil {
+		fmt.Fprintf(b, "%smaxTokens %d\n", inner, *c.MaxTokens)
+	}
 	if c.TimeoutSeconds != nil {
 		fmt.Fprintf(b, "%stimeoutSeconds %d\n", inner, *c.TimeoutSeconds)
 	}

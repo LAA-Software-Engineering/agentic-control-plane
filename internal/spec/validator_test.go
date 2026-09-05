@@ -48,6 +48,22 @@ func TestValidateProjectGraph_negativePolicyBudgets(t *testing.T) {
 	}
 }
 
+func TestValidateProjectGraph_maxTokensNegative(t *testing.T) {
+	g := &ProjectGraph{
+		Agents: map[string]*AgentResource{
+			"a": {
+				Kind:     KindAgent,
+				Metadata: Metadata{Name: "a"},
+				Spec:     AgentSpec{Constraints: &AgentConstraints{MaxTokens: -1}},
+			},
+		},
+	}
+	err := ValidateProjectGraph(g, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "constraints.maxTokens must be non-negative") {
+		t.Fatalf("expected maxTokens non-negative error, got %v", err)
+	}
+}
+
 func TestValidateProjectGraph_temperatureOutOfRange(t *testing.T) {
 	for _, temp := range []float64{-0.1, 2.5} {
 		g := &ProjectGraph{

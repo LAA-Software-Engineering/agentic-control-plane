@@ -21,6 +21,8 @@ type Request struct {
 	Messages   []ChatMessage
 	Tools      []Tool
 	ToolChoice *ToolChoice
+	// MaxTokens is the max_tokens sent; a non-positive value falls back to defaultMaxTok (issue #514).
+	MaxTokens int
 	// Temperature is sent verbatim when non-nil; nil leaves the Messages API default (issue #388).
 	Temperature *float64
 	// OutputConfig requests structured output (output_config.format); nil leaves it unset (issue #510).
@@ -133,6 +135,15 @@ func (m ChatMessage) MarshalJSON() ([]byte, error) {
 	}{Role: role, Content: content})
 }
 
+// resolveMaxTokens returns the max_tokens to send: the request's value when positive, else the
+// adapter default (issue #514).
+func resolveMaxTokens(n int) int {
+	if n > 0 {
+		return n
+	}
+	return defaultMaxTok
+}
+
 func marshalRequest(req Request) ([]byte, error) {
 	if strings.TrimSpace(req.Model) == "" {
 		return nil, fmt.Errorf("anthropic: empty model")
@@ -148,7 +159,7 @@ func marshalRequest(req Request) ([]byte, error) {
 		OutputConfig *OutputConfig `json:"output_config,omitempty"`
 	}{
 		Model:        req.Model,
-		MaxTokens:    defaultMaxTok,
+		MaxTokens:    resolveMaxTokens(req.MaxTokens),
 		System:       strings.TrimSpace(req.System),
 		Tools:        req.Tools,
 		ToolChoice:   req.ToolChoice,

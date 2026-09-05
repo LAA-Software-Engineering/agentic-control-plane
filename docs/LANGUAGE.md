@@ -105,7 +105,7 @@ AgentField  = "model"  ModelRef
             | "grants" "{" { Grant } "}"
             | "input"  Ident
             | "output" Ident ;
-ConstraintField = "maxIterations" Number | "timeoutSeconds" Number   (* positive ints *)
+ConstraintField = "maxIterations" Number | "maxTokens" Number | "timeoutSeconds" Number   (* positive ints *)
             | "temperature" Number | "requireStructuredOutput" ( "true" | "false" ) ;
 StringLiteral = String | MultilineString ;      (* both decode to one string value *)
 FileRef     = "file" "(" String ")" ;           (* load-time UTF-8 file reference, #360 *)
@@ -185,10 +185,12 @@ Notes:
   occurrence and yields a duplicate-field diagnostic rather than silently overwriting.
 - `description` (agent and workflow) lowers to `AgentSpec.Description` / `WorkflowSpec.Description`;
   `constraints { … }` lowers to `AgentSpec.Constraints` (the agent tool-loop bound
-  `maxIterations`, `timeoutSeconds`, `temperature`, `requireStructuredOutput`) (#310). Each
-  constraint field appears at most once; `maxIterations`/`timeoutSeconds` are positive integer
-  literals. A workflow's `description` and `effects` clauses may appear in either order before
-  the body.
+  `maxIterations`, the per-completion output cap `maxTokens` (#514), `timeoutSeconds`, `temperature`,
+  `requireStructuredOutput`) (#310). Each constraint field appears at most once;
+  `maxIterations`/`maxTokens`/`timeoutSeconds` are positive integer literals. `maxTokens` is sent to
+  the provider as `max_tokens`; unset resolves to a realistic agent default (`DefaultAgentMaxTokens`,
+  far above the old 4096 chat-era cap). A workflow's `description` and `effects` clauses may appear in
+  either order before the body.
 - `instructions` is the agent prompt. It lowers verbatim into `AgentSpec.Instructions`
   (the existing runtime field) — no new prompt abstraction and no new runtime semantics —
   and is the reason for the multiline string form above. It also accepts a **load-time file

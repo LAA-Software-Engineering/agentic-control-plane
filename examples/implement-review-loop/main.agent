@@ -80,6 +80,12 @@ agent Implementer {
     unless you actually ran them successfully.
     """
 
+    // A coding agent's write_file carries the whole new file as output tokens, so it
+    // needs far more than the old 4096 default; raise the per-completion cap (issue #514).
+    constraints {
+        maxTokens 32000
+    }
+
     grants {
         tool.workspace.read_file
         tool.workspace.list_dir
