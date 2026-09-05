@@ -38,6 +38,9 @@ var dispatchHandlers = map[string]dispatchHandler{
 	"read_file":                  dispatchWorkspaceReadFile,
 	"write_file":                 dispatchWorkspaceWriteFile,
 	"run_tests":                  dispatchWorkspaceRunTests,
+	"list_dir":                   dispatchWorkspaceListDir,
+	"glob":                       dispatchWorkspaceGlob,
+	"grep":                       dispatchWorkspaceGrep,
 }
 
 // dispatchGitHubJSON adapts a (ctx, with) GitHub write op to the dispatchHandler shape, attaching

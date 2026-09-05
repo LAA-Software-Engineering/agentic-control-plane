@@ -136,6 +136,31 @@ func cleanWorkspaceRel(rel string) (string, error) {
 	return rel, nil
 }
 
+// readWorkspaceDirEntries reads a directory handle's entries as sorted names (sub-directories
+// suffixed "/"), bounded at maxWorkspaceDirEntries so a pathological tree (a big node_modules, a
+// generated tree) degrades to truncated=true rather than an unbounded read + oversized tool result.
+// Shared by read_file's directory branch and list_dir so a cap change lands in one place.
+func readWorkspaceDirEntries(f *os.File) (names []string, truncated bool, err error) {
+	ents, rderr := f.ReadDir(maxWorkspaceDirEntries + 1)
+	if rderr != nil && !errors.Is(rderr, io.EOF) {
+		return nil, false, rderr
+	}
+	if len(ents) > maxWorkspaceDirEntries {
+		ents = ents[:maxWorkspaceDirEntries]
+		truncated = true
+	}
+	names = make([]string, 0, len(ents))
+	for _, e := range ents {
+		name := e.Name()
+		if e.IsDir() {
+			name += "/"
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, truncated, nil
+}
+
 // classifyWorkspacePathErr turns a filesystem error from a workspace path op into either a
 // recoverable observation the agent can act on or a plain (fatal-by-default) error. Only a genuine
 // MISS — the path does not exist (fs.ErrNotExist) — is recoverable, so `read_file` on a guessed
@@ -171,30 +196,14 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 		return nil, meta, classifyWorkspacePathErr("read_file", rel, err)
 	}
 	defer f.Close()
-	// A directory is not an error: return its entries so an agent can explore the tree
-	// (there is no separate list operation). Sub-directories are marked with a trailing "/".
-	// Bounded like the file branch: read at most maxWorkspaceDirEntries+1 so a pathological
-	// directory (a big node_modules, a generated tree) degrades gracefully with truncated=true
-	// rather than an unbounded read + oversized tool result.
+	// A directory is not an error: return its entries so an agent can explore the tree even via
+	// read_file (list_dir is the dedicated op; this branch shares readWorkspaceDirEntries with it).
+	// Sub-directories are marked with a trailing "/".
 	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
-		ents, rderr := f.ReadDir(maxWorkspaceDirEntries + 1)
-		if rderr != nil && !errors.Is(rderr, io.EOF) {
+		names, truncated, rderr := readWorkspaceDirEntries(f)
+		if rderr != nil {
 			return nil, meta, fmt.Errorf("native: read_file %q (directory): %w", rawPath, rderr)
 		}
-		truncated := false
-		if len(ents) > maxWorkspaceDirEntries {
-			ents = ents[:maxWorkspaceDirEntries]
-			truncated = true
-		}
-		names := make([]string, 0, len(ents))
-		for _, e := range ents {
-			name := e.Name()
-			if e.IsDir() {
-				name += "/"
-			}
-			names = append(names, name)
-		}
-		sort.Strings(names)
 		meta.DurationMs = time.Since(start).Milliseconds()
 		out := map[string]any{"path": rel, "is_directory": true, "entries": names}
 		if truncated {
