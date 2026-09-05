@@ -58,13 +58,21 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 	var spans []span
 	var openStack []int
 	depth := 0
-	// Comment depth is the brace depth at the comment's position; compute it by walking comments in
-	// lockstep with the tokens (both are in source order).
+	// Comment depth is the brace depth at the comment's position, and commentDecl is the KEYWORD line
+	// of the top-level declaration a comment sits inside (0 when at file scope). Both are computed by
+	// walking comments in lockstep with the tokens. commentDecl is the key `Print` passes to the
+	// outermost blockTail, so registering an in-declaration comment under it guarantees a drain even
+	// when a block's opening `{` is on a different line than its keyword (a split-brace workflow/agent
+	// body), where the `{`-token-keyed span never matches (issue #509 / PR #516 review).
 	commentDepth := make([]int, len(comments))
+	commentDecl := make([]int, len(comments))
+	curDecl := 0
+	atDeclStart := true // the next depth-0 non-`}` token begins a new top-level declaration
 	ck := 0
 	assignCommentsBefore := func(pos Pos) {
 		for ck < len(comments) && posBefore(comments[ck].Pos, pos) {
 			commentDepth[ck] = depth
+			commentDecl[ck] = curDecl
 			ck++
 		}
 	}
@@ -84,6 +92,13 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 			if depth > 0 {
 				depth--
 			}
+			if depth == 0 {
+				atDeclStart = true // this closed a top-level declaration; the next token starts a new one
+			}
+		}
+		if depth == 0 && atDeclStart && t.Kind != KindRBrace {
+			curDecl = t.Pos.Line
+			atDeclStart = false
 		}
 		if !seen[t.Pos.Line] {
 			seen[t.Pos.Line] = true
@@ -97,6 +112,7 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 	}
 	for ; ck < len(comments); ck++ {
 		commentDepth[ck] = depth
+		commentDecl[ck] = curDecl
 	}
 	sort.Ints(anchorLines)
 
@@ -128,6 +144,14 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 				idx.byBlock[s.open] = append(idx.byBlock[s.open], id)
 				enclosed = true
 			}
+		}
+		// Also register under the enclosing top-level declaration's keyword line — the key Print passes
+		// to the outermost blockTail — so the drain fires even when a body's `{` is on its own line and
+		// no span key matches what the printer passes (split-brace layouts). commentDecl is 0 at file
+		// scope; a comment at depth 0 (between declarations, a header/footer) is left for flushRemaining.
+		if commentDepth[id] > 0 && commentDecl[id] > 0 {
+			idx.byBlock[commentDecl[id]] = append(idx.byBlock[commentDecl[id]], id)
+			enclosed = true
 		}
 		if !enclosed {
 			// No enclosing block: a top-level comment (e.g. a footer), left for flushRemaining.

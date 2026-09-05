@@ -279,3 +279,38 @@ func TestFormat_deepBlockWithoutTailStillContained(t *testing.T) {
 		})
 	}
 }
+
+// Regression for the PR #516 sixth review: in a split-brace layout the body's `{` is on its own line
+// (a workflow with header clauses, or `agent a\n{`), so the `{`-token key never matches the keyword
+// line the printer passes to blockTail. A leftover body comment must still stay inside its resource —
+// caught by registration under the enclosing top-level declaration's keyword line.
+func TestFormat_splitBraceBodyCommentStaysInResource(t *testing.T) {
+	cases := map[string]struct{ src, needle, next string }{
+		"workflow": {
+			src:    "workflow hello(input: string) -> string\n    policy default\n{\n    return hello(input)\n    // leftover\n}\npolicy default {\n    preset shell_safe\n}\n",
+			needle: "leftover", next: "preset shell_safe",
+		},
+		"agent": {
+			src:    "agent a\n{\n    model m/x\n    // leftover\n}\npolicy p {\n    preset shell_safe\n}\n",
+			needle: "leftover", next: "policy p",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, diags := Format("m.agent", tc.src)
+			if len(diags) > 0 {
+				t.Fatalf("diags: %s", diags.Error())
+			}
+			ci := strings.Index(out, "// "+tc.needle)
+			if ci < 0 {
+				t.Fatalf("comment %q dropped:\n%s", tc.needle, out)
+			}
+			if di := strings.Index(out, tc.next); di >= 0 && ci > di {
+				t.Fatalf("comment leaked past %q:\n%s", tc.next, out)
+			}
+			if out2, _ := Format("m.agent", out); out2 != out {
+				t.Fatalf("not idempotent:\n%s", out)
+			}
+		})
+	}
+}
