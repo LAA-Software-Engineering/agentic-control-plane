@@ -33,6 +33,7 @@ tool workspace {
         grep { effects { workspace.read } }
         run_tests { effects { process.exec } }
         write_file { effects { workspace.write } }
+        edit { effects { workspace.write } }
     }
 }
 
@@ -67,7 +68,10 @@ agent Implementer {
     attempts, review feedback from a previous implementation.
 
     Implement the requested change in the provided workspace. You may inspect files,
-    modify files, and run tests using the capabilities granted to you.
+    modify files, and run tests using the capabilities granted to you. Prefer the cheap
+    primitives: grep/glob to locate code, read_file with offset/limit to read just the
+    relevant span, and edit (exact old_string -> new_string) for a small change rather
+    than rewriting the whole file with write_file.
 
     If review feedback is present, address it before making unrelated changes.
 
@@ -82,6 +86,7 @@ agent Implementer {
         tool.workspace.glob
         tool.workspace.grep
         tool.workspace.write_file
+        tool.workspace.edit
         tool.workspace.run_tests
     }
 

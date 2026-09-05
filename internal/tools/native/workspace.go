@@ -1,7 +1,9 @@
 package native
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +43,10 @@ const (
 	// maxWorkspaceDirEntries caps a read_file directory listing the same way (a big
 	// node_modules or generated tree degrades to truncated=true rather than unbounded).
 	maxWorkspaceDirEntries = 1000
+	// maxWorkspaceEditBytes caps the file an `edit` op will load and rewrite. A str_replace edit must
+	// read the whole file, so a file larger than this is refused rather than loaded unbounded — the
+	// same 1 MiB ceiling read_file uses for a whole-file read.
+	maxWorkspaceEditBytes = maxWorkspaceReadBytes
 )
 
 // WorkspaceConfig is the declarative workspace config resolved from a Tool resource. Root is
@@ -191,6 +198,10 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 	if err != nil {
 		return nil, meta, fmt.Errorf("native: read_file: %w", err)
 	}
+	offset, limit, err := readFileRangeArgs(with)
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: read_file: %w", err)
+	}
 	f, err := root.Open(rel)
 	if err != nil {
 		return nil, meta, classifyWorkspacePathErr("read_file", rel, err)
@@ -198,7 +209,8 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 	defer f.Close()
 	// A directory is not an error: return its entries so an agent can explore the tree even via
 	// read_file (list_dir is the dedicated op; this branch shares readWorkspaceDirEntries with it).
-	// Sub-directories are marked with a trailing "/".
+	// Sub-directories are marked with a trailing "/". offset/limit are line bounds for a file, so a
+	// directory ignores them.
 	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
 		names, truncated, rderr := readWorkspaceDirEntries(f)
 		if rderr != nil {
@@ -209,6 +221,19 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 		if truncated {
 			out["truncated"] = true
 		}
+		return out, meta, nil
+	}
+	// A line range (offset/limit) returns only the requested span so an agent that grep'd a hit at
+	// foo.go:412 can read lines 380-460 instead of the whole file (issue #512). It reads line by line
+	// up to the requested end so a deep range in a large file does not load the whole file, and never
+	// hits the 1 MiB whole-file cap for lines that live past it. Absent offset/limit preserves today's
+	// whole-file behavior below.
+	if offset > 0 || limit > 0 {
+		out, rderr := readWorkspaceLineRange(f, rel, offset, limit)
+		if rderr != nil {
+			return nil, meta, fmt.Errorf("native: read_file %q: %w", rawPath, rderr)
+		}
+		meta.DurationMs = time.Since(start).Milliseconds()
 		return out, meta, nil
 	}
 	// Bound the read itself, not just the result: read at most one byte past the cap so a larger
@@ -232,6 +257,79 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 	}
 	meta.DurationMs = time.Since(start).Milliseconds()
 	return out, meta, nil
+}
+
+// readFileRangeArgs reads read_file's optional line-range args. offset is a 1-based starting line
+// (0 = unset, meaning from the first line); limit is a max line count (0 = unset, meaning to EOF).
+// A present-but-out-of-range value (offset < 1, limit < 1) is a bad-input error rather than a silent
+// clamp, so a mistyped bound is reported instead of quietly returning the wrong span.
+func readFileRangeArgs(with map[string]any) (offset, limit int, err error) {
+	offset, _, err = optionalIntFromWith(with, "offset")
+	if err != nil {
+		return 0, 0, err
+	}
+	if offset < 0 || (hasKey(with, "offset") && offset < 1) {
+		return 0, 0, fmt.Errorf("field %q must be a line number >= 1", "offset")
+	}
+	limit, _, err = optionalIntFromWith(with, "limit")
+	if err != nil {
+		return 0, 0, err
+	}
+	if limit < 0 || (hasKey(with, "limit") && limit < 1) {
+		return 0, 0, fmt.Errorf("field %q must be a line count >= 1", "limit")
+	}
+	return offset, limit, nil
+}
+
+// readWorkspaceLineRange returns the [offset, offset+limit) line span of f (offset 1-based; offset 0
+// means from line 1; limit 0 means to EOF), reading line by line so a deep range does not load the
+// whole file. Content is capped at maxWorkspaceReadBytes just like a whole-file read: exceeding it
+// sets truncated=true. start_line/end_line report the actual span returned (end_line < start_line
+// when the offset is past EOF, i.e. no lines matched).
+func readWorkspaceLineRange(f fs.File, rel string, offset, limit int) (map[string]any, error) {
+	if offset < 1 {
+		offset = 1
+	}
+	br := bufio.NewReader(f)
+	var b strings.Builder
+	lineNo := 0
+	returned := 0
+	truncated := false
+	for {
+		line, rderr := br.ReadString('\n')
+		if len(line) > 0 {
+			lineNo++
+			if lineNo >= offset {
+				if limit > 0 && returned >= limit {
+					break
+				}
+				if b.Len()+len(line) > maxWorkspaceReadBytes {
+					truncated = true
+					break
+				}
+				b.WriteString(line)
+				returned++
+			}
+		}
+		if rderr != nil {
+			if rderr == io.EOF {
+				break
+			}
+			return nil, rderr
+		}
+	}
+	out := map[string]any{
+		"path":       rel,
+		"content":    b.String(),
+		"bytes":      b.Len(),
+		"start_line": offset,
+		"end_line":   offset + returned - 1,
+		"lines":      returned,
+	}
+	if truncated {
+		out["truncated"] = true
+	}
+	return out, nil
 }
 
 func dispatchWorkspaceWriteFile(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
@@ -273,6 +371,145 @@ func dispatchWorkspaceWriteFile(ctx context.Context, with map[string]any, start 
 	}
 	meta.DurationMs = time.Since(start).Milliseconds()
 	return map[string]any{"path": rel, "bytes": len(content), "ok": true}, meta, nil
+}
+
+// dispatchWorkspaceEdit performs a surgical, in-place edit: it replaces the single exact occurrence
+// of old_string with new_string (issue #512). Unlike write_file — which rewrites the whole file, so
+// changing three lines means the model must reproduce the entire file — an edit lets an agent alter a
+// span by quoting only it. old_string must match EXACTLY ONCE: zero matches is an error the agent can
+// correct (re-read and re-quote), and two-or-more is an error asking for more surrounding context, so
+// an edit never silently changes the wrong occurrence. It carries workspace.write, exactly like
+// write_file; granting stays per-op, so an author can hand out the range read without the edit.
+func dispatchWorkspaceEdit(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
+	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
+	root, err := openWorkspaceRoot(ctx)
+	if err != nil {
+		return nil, meta, err
+	}
+	defer root.Close()
+	rawPath, err := stringFromWith(with, "path")
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: edit: %w", err)
+	}
+	oldStr, err := requiredEditString(with, "old_string")
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: edit: %w", err)
+	}
+	newStr, err := requiredEditString(with, "new_string")
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: edit: %w", err)
+	}
+	if oldStr == "" {
+		return nil, meta, fmt.Errorf("native: edit: field %q must not be empty (it locates the text to replace)", "old_string")
+	}
+	if oldStr == newStr {
+		return nil, meta, fmt.Errorf("native: edit: old_string and new_string are identical; the edit would change nothing")
+	}
+	rel, err := cleanWorkspaceRel(rawPath)
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: edit: %w", err)
+	}
+
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, meta, classifyWorkspacePathErr("edit", rel, err)
+	}
+	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
+		f.Close()
+		return nil, meta, fmt.Errorf("native: edit %q: is a directory", rawPath)
+	}
+	// A str_replace must read the whole file; refuse one past the cap rather than load it unbounded.
+	data, err := io.ReadAll(io.LimitReader(f, maxWorkspaceEditBytes+1))
+	f.Close()
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: edit %q: %w", rawPath, err)
+	}
+	if len(data) > maxWorkspaceEditBytes {
+		return nil, meta, fmt.Errorf("native: edit %q: file exceeds %d bytes; edit a smaller file or use write_file", rawPath, maxWorkspaceEditBytes)
+	}
+
+	content := string(data)
+	switch n := strings.Count(content, oldStr); {
+	case n == 0:
+		// Recoverable: the agent can re-read and re-quote rather than the run dying (issue #451).
+		full := fmt.Errorf("native: edit %q: old_string not found", rawPath)
+		return nil, meta, toolerr.Recoverable(fmt.Sprintf("edit: old_string not found in %q; re-read the file and quote the exact current text", rel), full)
+	case n > 1:
+		full := fmt.Errorf("native: edit %q: old_string matches %d times", rawPath, n)
+		return nil, meta, toolerr.Recoverable(fmt.Sprintf("edit: old_string matches %d times in %q; include more surrounding context so it is unique", n, rel), full)
+	}
+	updated := strings.Replace(content, oldStr, newStr, 1)
+
+	wf, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return nil, meta, fmt.Errorf("native: edit %q: %w", rawPath, err)
+	}
+	_, writeErr := wf.Write([]byte(updated))
+	closeErr := wf.Close()
+	if writeErr != nil {
+		return nil, meta, fmt.Errorf("native: edit %q: %w", rawPath, writeErr)
+	}
+	if closeErr != nil {
+		return nil, meta, fmt.Errorf("native: edit %q: %w", rawPath, closeErr)
+	}
+	meta.DurationMs = time.Since(start).Milliseconds()
+	return map[string]any{"path": rel, "bytes": len(updated), "replaced": 1, "ok": true}, meta, nil
+}
+
+// requiredEditString reads a required string arg for edit. An explicitly empty string is valid for
+// new_string (a deletion); the caller enforces old_string non-emptiness separately. An absent field
+// is an error.
+func requiredEditString(with map[string]any, key string) (string, error) {
+	v, ok := with[key]
+	if !ok || v == nil {
+		return "", fmt.Errorf("field %q is required", key)
+	}
+	s, err := scalarToString(v)
+	if err != nil {
+		return "", fmt.Errorf("field %q: %w", key, err)
+	}
+	return s, nil
+}
+
+// hasKey reports whether with carries key with a non-nil value.
+func hasKey(with map[string]any, key string) bool {
+	v, ok := with[key]
+	return ok && v != nil
+}
+
+// optionalIntFromWith reads an optional integer arg. Absent/nil returns (0, false, nil). A present
+// value may arrive as a JSON number (float64/json.Number over the wire), a Go int, or a numeric
+// string; a non-integer or non-numeric value is a bad-input error, not a silent zero.
+func optionalIntFromWith(with map[string]any, key string) (int, bool, error) {
+	v, ok := with[key]
+	if !ok || v == nil {
+		return 0, false, nil
+	}
+	switch x := v.(type) {
+	case int:
+		return x, true, nil
+	case int64:
+		return int(x), true, nil
+	case float64:
+		if x != float64(int64(x)) {
+			return 0, false, fmt.Errorf("field %q must be an integer, got %v", key, x)
+		}
+		return int(x), true, nil
+	case json.Number:
+		n, err := x.Int64()
+		if err != nil {
+			return 0, false, fmt.Errorf("field %q must be an integer: %w", key, err)
+		}
+		return int(n), true, nil
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(x))
+		if err != nil {
+			return 0, false, fmt.Errorf("field %q must be an integer: %w", key, err)
+		}
+		return n, true, nil
+	default:
+		return 0, false, fmt.Errorf("field %q must be an integer, got %T", key, v)
+	}
 }
 
 // contentFromWith reads the required string `content` arg. An explicitly empty string is a valid

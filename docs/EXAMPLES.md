@@ -308,8 +308,8 @@ It demonstrates *deterministic bounded control around nondeterministic agents*:
 
 - the loop runs **at most three** implement/review rounds (the bound is explicit in source and
   enforced by the runtime);
-- the Reviewer is granted `read_file` + `run_tests` but **not** `write_file`, so a Reviewer that
-  attempts to write is **denied by capability, not by its prompt**;
+- the Reviewer is granted the read ops + `run_tests` but **neither** write op (`write_file`, `edit`),
+  so a Reviewer that attempts to modify the workspace is **denied by capability, not by its prompt**;
 - `terfyn plan` surfaces granting the Reviewer `write_file` as an **`AUTONOMOUS authority WIDENED`**
   risk — reviewable before `apply`.
 

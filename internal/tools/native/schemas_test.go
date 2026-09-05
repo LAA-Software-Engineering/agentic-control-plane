@@ -11,6 +11,7 @@ func TestOperationInputSchema(t *testing.T) {
 	wantRequired := map[string][]string{
 		"read_file":                 {"path"},
 		"write_file":                {"path", "content"},
+		"edit":                      {"path", "old_string", "new_string"},
 		"pull_request.get":          {"owner", "repo", "number"},
 		"pull_request.diff":         {"owner", "repo", "number"},
 		"pull_request.post_comment": {"owner", "repo", "number", "body"},
