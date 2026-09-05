@@ -17,6 +17,9 @@ type Node interface {
 type File struct {
 	Pos   Pos
 	Decls []Decl
+	// Comments are the // line comments recovered by the lexer in source order, so the
+	// formatter can round-trip them (issue #509). They are not part of the resource model.
+	Comments []Comment
 }
 
 func (f *File) Position() Pos { return f.Pos }

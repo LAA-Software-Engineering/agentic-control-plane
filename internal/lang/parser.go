@@ -16,6 +16,11 @@ import (
 func Parse(file, src string) (*File, Diagnostics) {
 	p := newParser(file, src)
 	f := p.parseFile()
+	// Comments are collected by the lexer as it scans; by parse end the whole stream has been
+	// consumed, so l.Comments() holds every comment in source order for the formatter (issue #509).
+	if f != nil {
+		f.Comments = p.lex.Comments()
+	}
 	diags := append(p.lex.Diagnostics(), p.diags...)
 	return f, diags.Sorted()
 }
