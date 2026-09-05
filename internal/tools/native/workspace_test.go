@@ -587,6 +587,47 @@ func TestWorkspaceReadFile_giantLineIsBounded(t *testing.T) {
 	if got := len(out["content"].(string)); got != maxWorkspaceReadBytes {
 		t.Fatalf("returned content = %d bytes, want the cap %d", got, maxWorkspaceReadBytes)
 	}
+	// The span fields must describe the bytes returned: a truncated PREFIX of line 1 is still line 1.
+	if out["lines"] != 1 || out["start_line"] != 1 || out["end_line"] != 1 {
+		t.Fatalf("span for a truncated line 1 = lines %v [%v,%v], want lines 1 [1,1]", out["lines"], out["start_line"], out["end_line"])
+	}
+}
+
+// Complete lines that fill the byte cap exactly, then one more short line: the short line contributes
+// no bytes (room<=0), so it must NOT be counted — otherwise offset=end_line+1 pagination would skip it
+// (issue #512 review).
+func TestWorkspaceReadFile_capFilledExactlyDoesNotCountEmptyLine(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	nLines := maxWorkspaceReadBytes / 2 // "x\n" is 2 bytes, so nLines lines == the cap exactly
+	var sb strings.Builder
+	for i := 0; i < nLines; i++ {
+		sb.WriteString("x\n")
+	}
+	sb.WriteString("y\n") // the line that must not be counted
+	writeWorkspaceFile(t, root, "f.txt", sb.String())
+
+	out, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt", "offset": 1})
+	if err != nil {
+		t.Fatalf("range read: %v", err)
+	}
+	if out["truncated"] != true {
+		t.Fatalf("filling the cap should truncate: %#v", out["truncated"])
+	}
+	if out["lines"] != nLines || out["end_line"] != nLines {
+		t.Fatalf("span = lines %v end_line %v, want %d/%d (the y line must not count)", out["lines"], out["end_line"], nLines, nLines)
+	}
+	if strings.Contains(out["content"].(string), "y") {
+		t.Fatalf("content should not include the uncounted line")
+	}
+	// Paging from end_line+1 must resume at the dropped short line, not past it.
+	next, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt", "offset": out["end_line"].(int) + 1, "limit": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next["content"] != "y\n" {
+		t.Fatalf("pagination resumed at %q, want the dropped y line", next["content"])
+	}
 }
 
 // A cancelled context stops the range scan instead of reading to EOF (issue #512 review).

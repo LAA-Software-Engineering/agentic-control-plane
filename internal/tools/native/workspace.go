@@ -300,6 +300,12 @@ func readWorkspaceLineRange(ctx context.Context, f fs.File, rel string, offset, 
 	lineNo := 1
 	returned := 0
 	truncated := false
+	// wroteCurrentLine tracks whether any byte of the line now being read reached content, so returned
+	// counts lines that actually CONTRIBUTED bytes — not loop iterations. A line whose first collected
+	// fragment hits the byte cap (room<=0, nothing written) must not count; a truncated PREFIX of a
+	// line must count so end_line names it. Otherwise lines/end_line would misdescribe content and
+	// break offset=end_line+1 pagination (issue #512 review).
+	wroteCurrentLine := false
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -321,19 +327,31 @@ func readWorkspaceLineRange(ctx context.Context, f fs.File, rel string, offset, 
 				truncated = true
 			case len(frag) > room:
 				b.Write(frag[:room])
+				wroteCurrentLine = true
 				truncated = true
-			default:
+			case len(frag) > 0:
 				b.Write(frag)
+				wroteCurrentLine = true
 			}
 		}
 		lineComplete := rderr != bufio.ErrBufferFull // nil (newline) or io.EOF
 		if lineComplete {
-			if collecting {
+			if wroteCurrentLine {
 				returned++
 			}
 			lineNo++
+			wroteCurrentLine = false
 		}
-		if truncated || rderr == io.EOF {
+		if truncated {
+			// A mid-line truncation (line did not complete) still contributed a prefix: count it so
+			// end_line names that line. A line that completed already counted above (wroteCurrentLine
+			// is reset), and a room<=0 line that wrote nothing correctly does not count.
+			if wroteCurrentLine {
+				returned++
+			}
+			break
+		}
+		if rderr == io.EOF {
 			break
 		}
 		if lineComplete && limit > 0 && returned >= limit {
