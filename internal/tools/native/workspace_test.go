@@ -2,12 +2,15 @@ package native
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Terfyn/terfyn/internal/tools/toolerr"
 )
 
 // TestWorkspace_WriteReadRoundTrip exercises the registered ops through Dispatch: a write_file
@@ -66,6 +69,46 @@ func TestWorkspace_PathEscapeRejected(t *testing.T) {
 		if _, _, err := r.Dispatch(context.Background(), "read_file", map[string]any{"path": p}); err == nil {
 			t.Fatalf("path %q should be rejected as an escape", p)
 		}
+	}
+}
+
+// TestWorkspace_ReadMissIsRecoverable proves a read_file on a path that does not exist is a
+// RECOVERABLE tool error (issue #451): it carries the ErrRecoverable marker and a model-safe
+// observation that names the agent's own path but not the underlying OS error text, so the agent
+// can try another path instead of the run dying on the miss.
+func TestWorkspace_ReadMissIsRecoverable(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	_, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "framework/nope.go"})
+	if err == nil {
+		t.Fatal("read_file on a missing path must error")
+	}
+	if !errors.Is(err, toolerr.ErrRecoverable) {
+		t.Fatalf("a read miss must be recoverable, got %v", err)
+	}
+	obs, ok := toolerr.SafeObservation(err)
+	if !ok {
+		t.Fatalf("SafeObservation must report the miss recoverable: %v", err)
+	}
+	if !strings.Contains(obs, "framework/nope.go") {
+		t.Fatalf("observation should name the agent's path: %q", obs)
+	}
+	if strings.Contains(obs, "no such file") {
+		t.Fatalf("observation must not echo the raw OS error: %q", obs)
+	}
+}
+
+// TestWorkspace_EscapeIsNotRecoverable proves a sandbox-escape rejection is FATAL, not a
+// recoverable observation: it must not carry the ErrRecoverable marker (only a genuine miss does).
+func TestWorkspace_EscapeIsNotRecoverable(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	_, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "../secret.txt"})
+	if err == nil {
+		t.Fatal("a .. escape must error")
+	}
+	if errors.Is(err, toolerr.ErrRecoverable) {
+		t.Fatalf("a sandbox escape must stay fatal, not be recoverable: %v", err)
 	}
 }
 

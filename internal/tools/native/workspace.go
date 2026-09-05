@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -12,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Terfyn/terfyn/internal/tools/toolerr"
 )
 
 // Workspace adapter (issue #323): a sandboxed filesystem + test-runner native tool.
@@ -133,6 +136,21 @@ func cleanWorkspaceRel(rel string) (string, error) {
 	return rel, nil
 }
 
+// classifyWorkspacePathErr turns a filesystem error from a workspace path op into either a
+// recoverable observation the agent can act on or a plain (fatal-by-default) error. Only a genuine
+// MISS — the path does not exist (fs.ErrNotExist) — is recoverable, so `read_file` on a guessed
+// path that isn't there lets the agent try another path instead of killing the run (issue #451). A
+// sandbox-escape rejection from os.Root is NOT fs.ErrNotExist, and a permission error the agent
+// cannot fix is not a miss, so both stay fatal. The observation echoes only rel — the agent's own
+// input — never the underlying OS error text, which the fatal/trace path keeps for the operator.
+func classifyWorkspacePathErr(op, rel string, err error) error {
+	full := fmt.Errorf("native: %s %q: %w", op, rel, err)
+	if errors.Is(err, fs.ErrNotExist) {
+		return toolerr.Recoverable(fmt.Sprintf("%s: %q does not exist in the workspace", op, rel), full)
+	}
+	return full
+}
+
 func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start time.Time) (map[string]any, ExecMeta, error) {
 	meta := ExecMeta{DurationMs: time.Since(start).Milliseconds()}
 	root, err := openWorkspaceRoot(ctx)
@@ -150,7 +168,7 @@ func dispatchWorkspaceReadFile(ctx context.Context, with map[string]any, start t
 	}
 	f, err := root.Open(rel)
 	if err != nil {
-		return nil, meta, fmt.Errorf("native: read_file %q: %w", rawPath, err)
+		return nil, meta, classifyWorkspacePathErr("read_file", rel, err)
 	}
 	defer f.Close()
 	// A directory is not an error: return its entries so an agent can explore the tree
