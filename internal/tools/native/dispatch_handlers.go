@@ -37,6 +37,7 @@ var dispatchHandlers = map[string]dispatchHandler{
 	"push_branch":                dispatchGitPushBranch,
 	"read_file":                  dispatchWorkspaceReadFile,
 	"write_file":                 dispatchWorkspaceWriteFile,
+	"edit":                       dispatchWorkspaceEdit,
 	"run_tests":                  dispatchWorkspaceRunTests,
 	"list_dir":                   dispatchWorkspaceListDir,
 	"glob":                       dispatchWorkspaceGlob,

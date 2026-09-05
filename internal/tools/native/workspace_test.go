@@ -309,3 +309,413 @@ func TestWorkspaceReadFile_directoryTruncates(t *testing.T) {
 		t.Fatalf("entries len = %d, want %d", len(ents), maxWorkspaceDirEntries)
 	}
 }
+
+// --- read_file line range (offset/limit), issue #512 ---
+
+func writeWorkspaceFile(t *testing.T, root, rel, content string) {
+	t.Helper()
+	p := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkspaceReadFile_lineRange(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "one\ntwo\nthree\nfour\nfive\n")
+	r := NewRegistry()
+
+	// offset + limit returns exactly the requested span, with 1-based line bounds.
+	out, _, err := r.Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt", "offset": 2, "limit": 2})
+	if err != nil {
+		t.Fatalf("read_file range: %v", err)
+	}
+	if out["content"] != "two\nthree\n" {
+		t.Fatalf("content = %q, want two/three", out["content"])
+	}
+	if out["start_line"] != 2 || out["end_line"] != 3 || out["lines"] != 2 {
+		t.Fatalf("bounds = start %v end %v lines %v", out["start_line"], out["end_line"], out["lines"])
+	}
+
+	// offset alone reads to EOF from that line.
+	out, _, err = r.Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt", "offset": 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["content"] != "four\nfive\n" || out["lines"] != 2 {
+		t.Fatalf("offset-only = %q lines %v", out["content"], out["lines"])
+	}
+
+	// limit alone starts at line 1.
+	out, _, err = r.Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt", "limit": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["content"] != "one\n" || out["start_line"] != 1 || out["end_line"] != 1 {
+		t.Fatalf("limit-only = %q [%v,%v]", out["content"], out["start_line"], out["end_line"])
+	}
+}
+
+func TestWorkspaceReadFile_wholeFileUnchangedWithoutRange(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "a\nb\n")
+	out, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No range keys → today's whole-file shape (content + bytes, no start_line).
+	if out["content"] != "a\nb\n" || out["bytes"] != 4 {
+		t.Fatalf("whole-file = %#v", out)
+	}
+	if _, ok := out["start_line"]; ok {
+		t.Fatalf("whole-file read should not carry line bounds: %#v", out)
+	}
+}
+
+func TestWorkspaceReadFile_offsetPastEOF(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "a\nb\n")
+	out, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt", "offset": 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["content"] != "" || out["lines"] != 0 {
+		t.Fatalf("past EOF should be empty, got %#v", out)
+	}
+	// end_line < start_line signals no lines matched.
+	if out["start_line"] != 10 || out["end_line"] != 9 {
+		t.Fatalf("bounds = [%v,%v]", out["start_line"], out["end_line"])
+	}
+}
+
+func TestWorkspaceReadFile_rangeReachesPastByteCap(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	// A file larger than the whole-file byte cap; the target line lives past the cap. A range read
+	// must still reach it (it reads line by line, not a single capped slurp).
+	var b strings.Builder
+	deep := maxWorkspaceReadBytes/2 + 1000 // line number well past 1 MiB of "x\n"
+	for i := 1; i <= deep; i++ {
+		if i == deep {
+			b.WriteString("NEEDLE\n")
+		} else {
+			b.WriteString("x\n")
+		}
+	}
+	writeWorkspaceFile(t, root, "big.txt", b.String())
+	out, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "big.txt", "offset": deep, "limit": 1})
+	if err != nil {
+		t.Fatalf("deep range: %v", err)
+	}
+	if out["content"] != "NEEDLE\n" {
+		t.Fatalf("deep range content = %q, want NEEDLE", out["content"])
+	}
+}
+
+func TestWorkspaceReadFile_badRangeArgs(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "a\nb\n")
+	r := NewRegistry()
+	for _, with := range []map[string]any{
+		{"path": "f.txt", "offset": 0},
+		{"path": "f.txt", "limit": 0},
+		{"path": "f.txt", "offset": -1},
+		{"path": "f.txt", "offset": "notanint"},
+		{"path": "f.txt", "limit": 1.5},
+	} {
+		if _, _, err := r.Dispatch(context.Background(), "read_file", with); err == nil {
+			t.Fatalf("expected bad-input error for %v", with)
+		}
+	}
+}
+
+// --- edit (str_replace), issue #512 ---
+
+func TestWorkspaceEdit_replacesUniqueOccurrence(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "pkg/x.go", "package x\n\nfunc A() int { return 1 }\n")
+	r := NewRegistry()
+
+	out, _, err := r.Dispatch(context.Background(), "edit", map[string]any{
+		"path": "pkg/x.go", "old_string": "return 1", "new_string": "return 2",
+	})
+	if err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if out["ok"] != true || out["replaced"] != 1 {
+		t.Fatalf("edit result: %#v", out)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "pkg", "x.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "package x\n\nfunc A() int { return 2 }\n" {
+		t.Fatalf("file after edit = %q", got)
+	}
+}
+
+func TestWorkspaceEdit_deletionWithEmptyNewString(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "keep REMOVE keep\n")
+	out, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "f.txt", "old_string": " REMOVE", "new_string": "",
+	})
+	if err != nil {
+		t.Fatalf("edit deletion: %v", err)
+	}
+	if out["ok"] != true {
+		t.Fatalf("edit result: %#v", out)
+	}
+	got, _ := os.ReadFile(filepath.Join(root, "f.txt"))
+	if string(got) != "keep keep\n" {
+		t.Fatalf("after deletion = %q", got)
+	}
+}
+
+func TestWorkspaceEdit_notFoundIsRecoverable(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "hello world\n")
+	_, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "f.txt", "old_string": "absent", "new_string": "x",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing old_string")
+	}
+	if !errors.Is(err, toolerr.ErrRecoverable) {
+		t.Fatalf("old_string-not-found should be recoverable, got %v", err)
+	}
+	// The file is unchanged.
+	got, _ := os.ReadFile(filepath.Join(root, "f.txt"))
+	if string(got) != "hello world\n" {
+		t.Fatalf("file must be untouched on a failed edit, got %q", got)
+	}
+}
+
+func TestWorkspaceEdit_ambiguousMatchIsRecoverable(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "x = 1\nx = 1\n")
+	_, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "f.txt", "old_string": "x = 1", "new_string": "x = 2",
+	})
+	if err == nil {
+		t.Fatal("expected error for non-unique old_string")
+	}
+	if !errors.Is(err, toolerr.ErrRecoverable) {
+		t.Fatalf("non-unique old_string should be recoverable, got %v", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(root, "f.txt"))
+	if string(got) != "x = 1\nx = 1\n" {
+		t.Fatalf("file must be untouched on an ambiguous edit, got %q", got)
+	}
+}
+
+func TestWorkspaceEdit_rejectsEmptyOldOrIdentical(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "abc\n")
+	r := NewRegistry()
+	if _, _, err := r.Dispatch(context.Background(), "edit", map[string]any{"path": "f.txt", "old_string": "", "new_string": "x"}); err == nil {
+		t.Fatal("empty old_string should be rejected")
+	}
+	if _, _, err := r.Dispatch(context.Background(), "edit", map[string]any{"path": "f.txt", "old_string": "abc", "new_string": "abc"}); err == nil {
+		t.Fatal("identical old/new should be rejected")
+	}
+}
+
+func TestWorkspaceEdit_missingFileIsRecoverable(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	_, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "nope.txt", "old_string": "a", "new_string": "b",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if !errors.Is(err, toolerr.ErrRecoverable) {
+		t.Fatalf("edit on a missing path should be recoverable (a miss), got %v", err)
+	}
+}
+
+func TestWorkspaceEdit_pathEscapeRejected(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(filepath.Dir(root), "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspaceRoot, root)
+	_, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "../secret.txt", "old_string": "secret", "new_string": "leaked",
+	})
+	if err == nil {
+		t.Fatal("edit through a traversal must be refused")
+	}
+	if errors.Is(err, toolerr.ErrRecoverable) {
+		t.Fatalf("a sandbox escape is not a recoverable miss: %v", err)
+	}
+	got, _ := os.ReadFile(outside)
+	if string(got) != "secret" {
+		t.Fatalf("outside file must be untouched, got %q", got)
+	}
+}
+
+// A range read over a giant single line (larger than both the scan buffer and the 1 MiB result cap)
+// must bound the RETURNED content at the cap and flag truncation, not load the whole line (issue #512
+// review). This is the case the "x\n"-lines deep-range test cannot reach.
+func TestWorkspaceReadFile_giantLineIsBounded(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	giant := strings.Repeat("a", maxWorkspaceReadBytes*2) // one line, no newline, 2x the cap
+	writeWorkspaceFile(t, root, "min.js", giant)
+	out, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "min.js", "offset": 1, "limit": 1})
+	if err != nil {
+		t.Fatalf("range read: %v", err)
+	}
+	if out["truncated"] != true {
+		t.Fatalf("a giant line must be truncated: %#v keys", out["truncated"])
+	}
+	if got := len(out["content"].(string)); got != maxWorkspaceReadBytes {
+		t.Fatalf("returned content = %d bytes, want the cap %d", got, maxWorkspaceReadBytes)
+	}
+	// The span fields must describe the bytes returned: a truncated PREFIX of line 1 is still line 1.
+	if out["lines"] != 1 || out["start_line"] != 1 || out["end_line"] != 1 {
+		t.Fatalf("span for a truncated line 1 = lines %v [%v,%v], want lines 1 [1,1]", out["lines"], out["start_line"], out["end_line"])
+	}
+}
+
+// Complete lines that fill the byte cap exactly, then one more short line: the short line contributes
+// no bytes (room<=0), so it must NOT be counted — otherwise offset=end_line+1 pagination would skip it
+// (issue #512 review).
+func TestWorkspaceReadFile_capFilledExactlyDoesNotCountEmptyLine(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	nLines := maxWorkspaceReadBytes / 2 // "x\n" is 2 bytes, so nLines lines == the cap exactly
+	var sb strings.Builder
+	for i := 0; i < nLines; i++ {
+		sb.WriteString("x\n")
+	}
+	sb.WriteString("y\n") // the line that must not be counted
+	writeWorkspaceFile(t, root, "f.txt", sb.String())
+
+	out, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt", "offset": 1})
+	if err != nil {
+		t.Fatalf("range read: %v", err)
+	}
+	if out["truncated"] != true {
+		t.Fatalf("filling the cap should truncate: %#v", out["truncated"])
+	}
+	if out["lines"] != nLines || out["end_line"] != nLines {
+		t.Fatalf("span = lines %v end_line %v, want %d/%d (the y line must not count)", out["lines"], out["end_line"], nLines, nLines)
+	}
+	if strings.Contains(out["content"].(string), "y") {
+		t.Fatalf("content should not include the uncounted line")
+	}
+	// Paging from end_line+1 must resume at the dropped short line, not past it.
+	next, _, err := NewRegistry().Dispatch(context.Background(), "read_file", map[string]any{"path": "f.txt", "offset": out["end_line"].(int) + 1, "limit": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next["content"] != "y\n" {
+		t.Fatalf("pagination resumed at %q, want the dropped y line", next["content"])
+	}
+}
+
+// A cancelled context stops the range scan instead of reading to EOF (issue #512 review).
+func TestWorkspaceReadFile_rangeHonorsContext(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "f.txt", "a\nb\nc\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := NewRegistry().Dispatch(ctx, "read_file", map[string]any{"path": "f.txt", "offset": 1, "limit": 2})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled range read err = %v, want context.Canceled", err)
+	}
+}
+
+// A failed edit write must not destroy the original file (issue #512 review): edit writes a temp then
+// renames, so if the write cannot happen (here the parent directory is not writable) the original is
+// left exactly as it was — unlike an in-place O_TRUNC, which would have zeroed it first.
+func TestWorkspaceEdit_failedWriteLeavesOriginalIntact(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix directory permissions")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions")
+	}
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	const original = "func A() int { return 1 }\n"
+	writeWorkspaceFile(t, root, "sub/x.go", original)
+	// Make the containing directory non-writable so creating the sibling temp fails.
+	dir := filepath.Join(root, "sub")
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	_, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "sub/x.go", "old_string": "return 1", "new_string": "return 2",
+	})
+	if err == nil {
+		t.Fatal("expected the edit to fail on a non-writable directory")
+	}
+	// Restore write access to read the file back and prove it is byte-for-byte the original.
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, rerr := os.ReadFile(filepath.Join(dir, "x.go"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if string(got) != original {
+		t.Fatalf("original must survive a failed edit, got %q", got)
+	}
+}
+
+// A successful edit leaves no temp file behind and preserves the original file's mode (issue #512).
+func TestWorkspaceEdit_atomicNoLeftoverAndPreservesMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file mode")
+	}
+	root := t.TempDir()
+	t.Setenv(envWorkspaceRoot, root)
+	writeWorkspaceFile(t, root, "run.sh", "echo one\n")
+	target := filepath.Join(root, "run.sh")
+	if err := os.Chmod(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := NewRegistry().Dispatch(context.Background(), "edit", map[string]any{
+		"path": "run.sh", "old_string": "one", "new_string": "two",
+	}); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	// The executable bit survives the rewrite.
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("mode = %v, want 0755 preserved", info.Mode().Perm())
+	}
+	// No sibling temp files linger in the workspace root.
+	ents, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if strings.Contains(e.Name(), "terfyn-edit") || strings.HasSuffix(e.Name(), ".tmp") {
+			t.Fatalf("leftover temp file: %s", e.Name())
+		}
+	}
+}

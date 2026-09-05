@@ -44,8 +44,9 @@ var operationCatalog = map[string][]string{
 	"message.update":             {"channel", "ts", "text"},
 	"create_branch":              {"name"},
 	"push_branch":                {"branch"},
-	"read_file":                  {"path"},
+	"read_file":                  {"path", "offset", "limit"},
 	"write_file":                 {"path", "content"},
+	"edit":                       {"path", "old_string", "new_string"},
 	"run_tests":                  {}, // command comes from TERFYN_WORKSPACE_TEST_COMMAND, not tool args
 	"list_dir":                   {"path"},
 	"glob":                       {"pattern"},
