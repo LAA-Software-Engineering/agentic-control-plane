@@ -45,6 +45,21 @@ func TestFormatVerboseEvent(t *testing.T) {
 			wantSub: []string{"approval required", "tool.github.pull_request.create"},
 		},
 		{
+			name:    "run_error shows the reason code",
+			ev:      trace.StreamEvent{StepID: "publish", Type: trace.EventRunError, Actor: trace.ActorSystem, Data: map[string]any{"reason": "max_cost"}},
+			wantSub: []string{"run_error", "max_cost"},
+		},
+		{
+			name:    "run_error without a reason falls back to a stable token",
+			ev:      trace.StreamEvent{StepID: "publish", Type: trace.EventRunError, Actor: trace.ActorSystem, Data: map[string]any{"error": "boom"}},
+			wantSub: []string{"run_error", "run_failed"},
+		},
+		{
+			name:    "system_error without a reason falls back to a stable token",
+			ev:      trace.StreamEvent{StepID: "publish", Type: trace.EventSystemError, Actor: trace.ActorSystem, Data: map[string]any{"error": "boom"}},
+			wantSub: []string{"system_error"},
+		},
+		{
 			name: "run_started is skipped",
 			ev:   trace.StreamEvent{Type: trace.EventRunStarted, Actor: trace.ActorAgent},
 			skip: true,
@@ -72,7 +87,13 @@ func TestFormatVerboseEvent(t *testing.T) {
 }
 
 func TestFormatVerboseEvent_noColorUsesAscii(t *testing.T) {
-	ev := trace.StreamEvent{StepID: "s1", Type: trace.EventToolSelection, Data: map[string]any{"uses": "tool.x.y"}}
+	// A label longer than the 18-rune column forces the truncation marker, which must be ASCII
+	// under --no-color (the "…" glyph would otherwise leak past it).
+	ev := trace.StreamEvent{
+		StepID: "a-very-long-step-identifier-that-overflows",
+		Type:   trace.EventToolSelection,
+		Data:   map[string]any{"uses": "tool.x.y"},
+	}
 	line, ok := formatVerboseEvent(ev, true)
 	if !ok {
 		t.Fatal("should render")
@@ -82,5 +103,25 @@ func TestFormatVerboseEvent_noColorUsesAscii(t *testing.T) {
 	}
 	if !strings.HasPrefix(line, "-") {
 		t.Fatalf("no-color step mark should be '-': %q", line)
+	}
+	if !strings.Contains(line, "...") {
+		t.Fatalf("no-color truncation marker should be ASCII '...': %q", line)
+	}
+}
+
+// TestFormatVerboseEvent_errorLineDoesNotLeakRawError proves the live error line never streams the
+// raw "error" field (which stores err.Error() and can embed URLs/secrets): only the stable reason
+// code or a fallback token is shown.
+func TestFormatVerboseEvent_errorLineDoesNotLeakRawError(t *testing.T) {
+	secret := "http 401 GET https://api.example.com?api_key=sk-live-SECRET99"
+	for _, typ := range []trace.EventType{trace.EventRunError, trace.EventSystemError} {
+		ev := trace.StreamEvent{StepID: "publish", Type: typ, Actor: trace.ActorSystem, Data: map[string]any{"error": secret}}
+		line, ok := formatVerboseEvent(ev, false)
+		if !ok {
+			t.Fatalf("%s should render", typ)
+		}
+		if strings.Contains(line, "sk-live-SECRET99") || strings.Contains(line, "api_key=") {
+			t.Fatalf("%s leaked the raw error into the live line: %q", typ, line)
+		}
 	}
 }

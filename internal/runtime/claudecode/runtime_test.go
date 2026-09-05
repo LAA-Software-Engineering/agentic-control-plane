@@ -11,6 +11,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/runtime/agentcli"
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 func TestRegistered(t *testing.T) {
@@ -84,6 +85,58 @@ func TestInvoke_endToEnd(t *testing.T) {
 	}
 	if len(events) < 2 || events[0].Type != "run_started" || events[len(events)-1].Type != "run_finished" {
 		t.Fatalf("run should be bracketed by run_started..run_finished, got %+v", events)
+	}
+}
+
+// TestInvoke_streamsEventsToEventSink is the regression for the #450 review: the external runtime
+// must honor opts.EventSink, not silently drop it (a field the shared options accept and one adapter
+// ignores is not support). `terfyn run --runtime claude-code -v` is the long-hang case #450 was
+// filed for. The sink must see the same events the store records, streamed live.
+func TestInvoke_streamsEventsToEventSink(t *testing.T) {
+	ctx := context.Background()
+	root, err := filepath.Abs(filepath.Join("..", "..", "..", "examples", "external-runtime-reviewer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Resolve(config.ResolveOptions{ProjectRoot: root, Env: ""})
+	if err != nil {
+		t.Fatalf("resolve flagship project: %v", err)
+	}
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "sink.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	var streamed []trace.StreamEvent
+	rt := agentcli.NewRuntimeAdapter(Name, ClaudeCodeRuntime{Run: fakeRunner(successStream, nil, nil)}, runtime.Deps{Store: st})
+	res, err := rt.Invoke(ctx, cfg, runtime.InvokeOptions{
+		WorkflowName: "review",
+		InputJSON:    []byte(`{"change":"add a null check"}`),
+		EventSink:    func(ev trace.StreamEvent) { streamed = append(streamed, ev) },
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(streamed) == 0 {
+		t.Fatal("EventSink was never called: the external runtime dropped opts.EventSink")
+	}
+	// The very first appended event is run_started; the stream must lead with it.
+	if streamed[0].Type != trace.EventRunStarted {
+		t.Fatalf("first streamed event = %q, want run_started", streamed[0].Type)
+	}
+	// The stream mirrors what the store recorded (same count, same run).
+	stored, err := st.ListTraceEventsByRunID(ctx, res.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(streamed) != len(stored) {
+		t.Fatalf("streamed %d events, store recorded %d — stream must mirror storage", len(streamed), len(stored))
+	}
+	for _, ev := range streamed {
+		if ev.RunID != res.RunID {
+			t.Fatalf("streamed event for wrong run: %q want %q", ev.RunID, res.RunID)
+		}
 	}
 }
 

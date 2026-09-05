@@ -74,7 +74,19 @@ func formatVerboseEvent(ev trace.StreamEvent, noColor bool) (string, bool) {
 	case trace.EventLimitHit:
 		return verboseLine(noColor, markWarn, label, "limit_hit", stringField(ev.Data, "kind")), true
 	case trace.EventRunError, trace.EventSystemError:
-		return verboseLine(noColor, markErr, label, string(ev.Type), stringField(ev.Data, "reason", "error")), true
+		// Show the stable denial/failure REASON code when present. Never stream the raw "error"
+		// field: run_error/system_error store err.Error() (local finish and runErrorTraceData both
+		// do), and key-based redaction does not scrub a value under a key named "error" — so an
+		// adapter string with api_key=/a URL would become a stderr/CI line. Fall back to a stable
+		// token, mirroring how tool_execution refuses to persist Error() (ToolCallFailedReason).
+		detail := stringField(ev.Data, "reason")
+		if detail == "" {
+			detail = "run_failed"
+			if ev.Type == trace.EventSystemError {
+				detail = "system_error"
+			}
+		}
+		return verboseLine(noColor, markErr, label, string(ev.Type), detail), true
 	case trace.EventHitlRequestCreated:
 		uses := stringField(ev.Data, "uses")
 		return verboseLine(noColor, markPause, label, "approval", strings.TrimSpace("approval required: "+uses)), true
@@ -96,7 +108,7 @@ func verboseLabel(ev trace.StreamEvent) string {
 }
 
 func verboseLine(noColor bool, m verboseMark, label, typ, detail string) string {
-	line := fmt.Sprintf("%s %s %s", markGlyph(m, noColor), padRight(truncate(label, 18), 18), padRight(typ, 16))
+	line := fmt.Sprintf("%s %s %s", markGlyph(m, noColor), padRight(truncate(label, 18, noColor), 18), padRight(typ, 16))
 	if detail = strings.TrimSpace(detail); detail != "" {
 		line += " " + detail
 	}
@@ -155,10 +167,19 @@ func padRight(s string, n int) string {
 	return s + strings.Repeat(" ", n-len([]rune(s)))
 }
 
-func truncate(s string, n int) string {
+// truncate shortens s to at most n runes, marking elision with an ellipsis. Under noColor the marker
+// is ASCII "..." so the whole line stays ASCII (the "…" glyph would otherwise leak past --no-color);
+// the result is still bounded by n runes in both cases, keeping column alignment.
+func truncate(s string, n int, noColor bool) string {
 	r := []rune(s)
 	if len(r) <= n {
 		return s
+	}
+	if noColor {
+		if n <= 3 {
+			return string(r[:n])
+		}
+		return string(r[:n-3]) + "..."
 	}
 	if n <= 1 {
 		return string(r[:n])

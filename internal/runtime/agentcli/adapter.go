@@ -125,6 +125,7 @@ func (a *RuntimeAdapter) Invoke(ctx context.Context, cfg *config.ResolvedConfig,
 	}
 
 	rec := trace.NewRecorderForGraph(a.deps.Store, graph)
+	rec.Sink = opts.EventSink // stream events live when the caller opted in (terfyn run --verbose, #450)
 	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, trace.ActorAgent,
 		map[string]any{"workflow": wfName, "environment": cfg.Environment(), "runtime": a.name, "agent": agent.Metadata.Name}); err != nil {
 		return runtime.RunResult{RunID: runID}, fmt.Errorf("agentcli: trace run_started: %w", err)

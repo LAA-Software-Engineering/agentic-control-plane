@@ -119,8 +119,10 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID string, eventType E
 	seq, err = r.RT.AppendTraceEvent(ctx, runID, ts, eventType.String(), actorType.String(), strings.TrimSpace(stepID), dataJSON)
 	if err == nil && r.Sink != nil {
 		// Best-effort live stream (--verbose #450): emit the REDACTED data so the stream matches
-		// storage. It never affects what is persisted or the returned seq/err.
-		r.Sink(StreamEvent{
+		// storage. It runs only after a successful persist and never affects the returned seq/err —
+		// emitToSink recovers from a panicking sink so a misbehaving hook cannot turn a committed
+		// append into a failure.
+		r.emitToSink(StreamEvent{
 			RunID:  runID,
 			StepID: strings.TrimSpace(stepID),
 			Type:   eventType,
@@ -131,4 +133,12 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID string, eventType E
 		})
 	}
 	return seq, err
+}
+
+// emitToSink delivers a persisted event to the live-stream Sink, recovering from a panic so a
+// misbehaving sink cannot turn a successful append (the row is already committed) into a returned
+// error. The event is dropped from the stream on panic; persistence is unaffected.
+func (r *Recorder) emitToSink(ev StreamEvent) {
+	defer func() { _ = recover() }()
+	r.Sink(ev)
 }
