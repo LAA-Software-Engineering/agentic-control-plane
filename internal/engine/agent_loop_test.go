@@ -204,7 +204,9 @@ func TestRun_agentToolLoop_happyPath(t *testing.T) {
 	assertAuditChain(t, "run-loop", events)
 }
 
-func TestRun_agentToolLoop_maxIterations(t *testing.T) {
+// At maxIterations the run no longer dies: the engine forces one final tool-free completion so the
+// agent returns its best output, records the limit_hit, and the run succeeds (issue #518).
+func TestRun_agentToolLoop_maxIterationsFinalizes(t *testing.T) {
 	graph := agentLoopGraph(t, spec.AgentSpec{
 		Tools:       []string{"helper"},
 		Constraints: &spec.AgentConstraints{MaxIterations: 2},
@@ -212,19 +214,30 @@ func TestRun_agentToolLoop_maxIterations(t *testing.T) {
 	mock := &models.MockClient{
 		Script: []models.MockTurn{
 			{ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}}},
-			{ToolCalls: []models.ToolCall{{ID: "c2", Name: "helper", Arguments: json.RawMessage(`{}`)}}},
-			{Content: `{"summary":"should not run"}`},
+			{ToolCalls: []models.ToolCall{{ID: "c2", Name: "helper", Arguments: json.RawMessage(`{}`)}}}, // 2nd turn is the cap, still tool_use
+			{Content: `{"summary":"finalized at cap"}`},                                                  // forced tool-free finalize turn
 		},
 	}
 	got, events, err := runAgentLoop(t, graph, mock, nil)
-	if err == nil || !strings.Contains(err.Error(), "maxIterations") {
-		t.Fatalf("err = %v", err)
+	if err != nil {
+		t.Fatalf("expected graceful finalize, got err %v", err)
 	}
-	if got.Status != "failed" {
-		t.Fatalf("status %q", got.Status)
+	if got.Status != "succeeded" {
+		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
 	}
-	if mock.CallCount() != 2 {
-		t.Fatalf("generates %d, want 2", mock.CallCount())
+	var out map[string]any
+	if err := json.Unmarshal([]byte(got.OutputJSON), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["summary"] != "finalized at cap" {
+		t.Fatalf("output %+v, want the finalize turn's result", out)
+	}
+	if mock.CallCount() != 3 {
+		t.Fatalf("generates %d, want 3 (2 loop turns + 1 finalize)", mock.CallCount())
+	}
+	// The forced final turn is tool-free: no tools advertised, so the agent must answer.
+	if last := mock.Requests()[2]; len(last.Tools) != 0 {
+		t.Fatalf("finalize turn must be tool-free, got %d tools", len(last.Tools))
 	}
 	var sawLimit bool
 	for _, ev := range events {
@@ -233,7 +246,7 @@ func TestRun_agentToolLoop_maxIterations(t *testing.T) {
 		}
 	}
 	if !sawLimit {
-		t.Fatalf("expected limit_hit max_iterations, events=%+v", events)
+		t.Fatalf("expected limit_hit max_iterations still recorded, events=%+v", events)
 	}
 }
 
@@ -336,7 +349,9 @@ func TestRun_agentToolLoop_rejectsUnadvertisedOperation(t *testing.T) {
 	}
 }
 
-func TestRun_agentToolLoop_maxIterationsDoesNotExecuteLastToolUse(t *testing.T) {
+// If the forced final completion still cannot produce a valid output, the run fails — finalization is
+// a best-effort wrap-up, not a way to accept an unusable result (issue #518).
+func TestRun_agentToolLoop_maxIterationsFinalizeInvalidOutputFails(t *testing.T) {
 	graph := agentLoopGraph(t, spec.AgentSpec{
 		Tools:       []string{"helper"},
 		Constraints: &spec.AgentConstraints{MaxIterations: 1},
@@ -344,6 +359,32 @@ func TestRun_agentToolLoop_maxIterationsDoesNotExecuteLastToolUse(t *testing.T) 
 	mock := &models.MockClient{
 		Script: []models.MockTurn{
 			{ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}}},
+			{Content: "sorry, I could not finish"}, // finalize turn returns prose, not the output object
+		},
+	}
+	got, _, err := runAgentLoop(t, graph, mock, nil)
+	if err == nil {
+		t.Fatalf("expected failure when the finalize turn returns no valid output, status %q", got.Status)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("status %q", got.Status)
+	}
+	if mock.CallCount() != 2 {
+		t.Fatalf("generates %d, want 2 (cap turn + finalize attempt)", mock.CallCount())
+	}
+}
+
+// The pending tool_use on the capped turn is never executed — finalization forces a tool-free answer
+// instead. With maxIterations 1 the first turn IS the cap, so no tool ever runs (issue #518).
+func TestRun_agentToolLoop_maxIterationsDoesNotExecuteLastToolUse(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{
+		Tools:       []string{"helper"},
+		Constraints: &spec.AgentConstraints{MaxIterations: 1},
+	}, spec.PolicySpec{})
+	mock := &models.MockClient{
+		Script: []models.MockTurn{
+			{ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}}}, // the cap turn (tool_use, never executed)
+			{Content: `{"summary":"finalized"}`}, // forced tool-free finalize turn
 		},
 	}
 	calls := 0
@@ -352,17 +393,17 @@ func TestRun_agentToolLoop_maxIterationsDoesNotExecuteLastToolUse(t *testing.T) 
 		return tools.ToolCallResponse{Output: map[string]any{"used": req.Uses}}, nil
 	}}
 	got, events, err := runAgentLoop(t, graph, mock, extra)
-	if err == nil || !strings.Contains(err.Error(), "maxIterations") {
-		t.Fatalf("err = %v", err)
+	if err != nil {
+		t.Fatalf("expected graceful finalize, got err %v", err)
 	}
-	if got.Status != "failed" {
-		t.Fatalf("status %q", got.Status)
+	if got.Status != "succeeded" {
+		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
 	}
-	if mock.CallCount() != 1 {
-		t.Fatalf("generates %d, want 1", mock.CallCount())
+	if mock.CallCount() != 2 {
+		t.Fatalf("generates %d, want 2 (cap turn + finalize)", mock.CallCount())
 	}
 	if calls != 0 {
-		t.Fatalf("Tools.Call ran %d times; last-turn tool_use must not execute", calls)
+		t.Fatalf("Tools.Call ran %d times; the capped turn's tool_use must not execute", calls)
 	}
 	var sawLimit bool
 	for _, ev := range events {

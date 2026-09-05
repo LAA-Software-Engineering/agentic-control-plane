@@ -47,9 +47,9 @@ Each listed Tool becomes one `ToolDef` whose **name is the Tool metadata name**.
 
 | Knob | Implemented behavior |
 |---|---|
-| `ToolChoice` | Engine always sends `auto`. (The model contract also defines `none` / `required`; the loop does not set those.) |
+| `ToolChoice` | The loop sends `auto`. The final graceful-finalization turn (below) sends no tools at all. |
 | `constraints.maxIterations` | Counts **Generate** turns. Default **8**; unset/zero uses the default; values above **32** are clamped. |
-| Last-turn `tool_use` | **Not executed.** Emits `limit_hit` (`kind: max_iterations`) and fails the step. `maxIterations: 1` is one completion; tools never run. |
+| Last-turn `tool_use` | **Not executed.** Emits `limit_hit` (`kind: max_iterations`), then the engine **finalizes gracefully** (issue #518): it appends a "return your final answer, no more tools" instruction and runs **one final tool-free completion**, so the agent returns its best output from what it has gathered and the run **continues** with that value. `maxIterations: 1` is a single tool-capable turn plus this finalize turn; the capped turn's tools never run. Only if that forced final turn still produces no valid output (a `max_tokens` stop, or output that fails to parse/validate) does the step fail. |
 
 After each Generate and each inner tool turn, `CheckRun` re-evaluates `execution.maxTotalCostUsd` / wall-clock against accumulated loop cost (prior workflow steps included). Exceeding the cost ceiling records `limit_hit` (`kind: max_cost`) plus `system_error` and fails the step (exit **5**). Loop model + tool cost accumulates into the step meta.
 
