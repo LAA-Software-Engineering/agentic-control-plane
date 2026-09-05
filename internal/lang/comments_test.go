@@ -206,3 +206,41 @@ func TestFormat_innerTrailingDoesNotLeakPastResource(t *testing.T) {
 		})
 	}
 }
+
+// Regression for the PR #516 third/fourth review: standalone comments inside environment overlay
+// wrappers (overrides/agents/<agent>/model) and inside hitl must stay inside their resource — the
+// byBlock backstop drains any comment a precise hook missed, so none leaks to file scope.
+func TestFormat_overlayAndHitlStandaloneStayInResource(t *testing.T) {
+	cases := map[string]struct{ src, needle, next string }{
+		"overlay-model": {
+			src:    "environment e {\n    overrides {\n        agents {\n            a {\n                // use mock\n                model mock/x\n            }\n        }\n    }\n}\nagent a {\n    model m/x\n}\n",
+			needle: "use mock", next: "agent a",
+		},
+		"overlay-agent-name": {
+			src:    "environment e {\n    overrides {\n        agents {\n            // override a\n            a {\n                model mock/x\n            }\n        }\n    }\n}\nagent a {\n    model m/x\n}\n",
+			needle: "override a", next: "agent a",
+		},
+		"hitl": {
+			src:    "policy p {\n    hitl {\n        // prefix note\n        descriptionPrefix \"x\"\n    }\n    preset shell_safe\n}\nagent a {\n    model m/x\n}\n",
+			needle: "prefix note", next: "agent a",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, diags := Format("m.agent", tc.src)
+			if len(diags) > 0 {
+				t.Fatalf("diags: %s", diags.Error())
+			}
+			ci := strings.Index(out, "// "+tc.needle)
+			if ci < 0 {
+				t.Fatalf("comment %q dropped:\n%s", tc.needle, out)
+			}
+			if di := strings.Index(out, tc.next); di >= 0 && ci > di {
+				t.Fatalf("comment leaked past %q:\n%s", tc.next, out)
+			}
+			if out2, _ := Format("m.agent", out); out2 != out {
+				t.Fatalf("not idempotent:\n%s", out)
+			}
+		})
+	}
+}

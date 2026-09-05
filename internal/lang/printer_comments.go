@@ -21,22 +21,25 @@ import (
 //
 // A safety net (flushRemaining) emits anything an anchor never printed, so a comment is never dropped.
 type commentIndex struct {
-	texts      []string      // comment content by id, source order
-	leading    map[int][]int // anchor line -> comment ids emitted before that line's construct
-	trailing   map[int]int   // source line -> comment id emitted inline on that line (leaf lines)
-	tail       map[int][]int // block open line -> standalone comment ids emitted before its closing brace
-	tailTrail  map[int][]int // block open line -> trailing comment ids in the block, drained (as own-line) at its closing brace when no leaf line emitted them inline (inner scalar fields have no Pos to hang a trailing comment on) — so a trailing comment never escapes to the next declaration (issue #509 / PR #516 review)
-	unattached []int         // ids with no anchor (e.g. malformed input) — flushed at the end
+	texts    []string      // comment content by id, source order
+	leading  map[int][]int // anchor line -> comment ids for precise inline placement before that line
+	trailing map[int]int   // source line -> comment id for inline placement on a leaf line
+	// byBlock maps a block's open line to EVERY comment inside that block, in source order. It is the
+	// leak-proof backstop: a block's blockTail drains every one of its comments that a precise
+	// leading/trailing hook did not already emit (as an own-line comment before the `}`), so no comment
+	// can escape its block to file scope — regardless of which inner fields have print hooks
+	// (issue #509 / PR #516 review). leading/trailing only refine WHERE inside the block a comment lands.
+	byBlock    map[int][]int
+	unattached []int // ids with no enclosing block (top-level, e.g. a footer) — flushed at the end
 }
 
 // buildCommentIndex attaches every comment to an anchor by source position and brace scope. src is the
 // original source (for the brace scan); comments are the lexer's collected comments in source order.
 func buildCommentIndex(src string, comments []Comment) *commentIndex {
 	idx := &commentIndex{
-		leading:   map[int][]int{},
-		trailing:  map[int]int{},
-		tail:      map[int][]int{},
-		tailTrail: map[int][]int{},
+		leading:  map[int][]int{},
+		trailing: map[int]int{},
+		byBlock:  map[int][]int{},
 	}
 	if len(comments) == 0 {
 		return idx
@@ -114,32 +117,31 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 	}
 
 	for id, c := range comments {
+		encl, hasEncl := enclosing(c.Pos.Line)
+		// Every comment inside a block is registered under that block, so blockTail is a leak-proof
+		// backstop no matter which inner fields have hooks. A comment with no enclosing block is
+		// top-level and left for flushRemaining (it belongs at file scope).
+		if hasEncl {
+			idx.byBlock[encl.open] = append(idx.byBlock[encl.open], id)
+		} else {
+			idx.unattached = append(idx.unattached, id)
+		}
+
 		if !c.Standalone {
-			// Inline: attach to its own line. Keep the first when two share a line (rare).
+			// Inline: refine placement onto its own line. Keep the first when two share a line (rare).
 			if _, exists := idx.trailing[c.Pos.Line]; !exists {
 				idx.trailing[c.Pos.Line] = id
-			} else {
-				idx.unattached = append(idx.unattached, id)
-			}
-			// Also register it under its enclosing block, so if no leaf line emits it inline (an inner
-			// scalar field with no source position) the block's tail drains it before its `}` rather
-			// than letting it leak past the block. A trailing comment with no enclosing block (e.g. on a
-			// top-level decl's own line) is left for flushRemaining.
-			if encl, ok := enclosing(c.Pos.Line); ok {
-				idx.tailTrail[encl.open] = append(idx.tailTrail[encl.open], id)
 			}
 			continue
 		}
+		// Standalone: refine placement to lead the next construct on a later line, at the same depth,
+		// still inside this block. If found, a leadingBefore hook there emits it above that construct;
+		// otherwise blockTail drains it. Either way byBlock guarantees emission within the block.
 		d := commentDepth[id]
-		encl, hasEncl := enclosing(c.Pos.Line)
 		closeLine := 1<<62 - 1
-		openLine := 0
 		if hasEncl {
 			closeLine = encl.close
-			openLine = encl.open
 		}
-		// Leading: the next construct on a later line, same depth, still inside this block.
-		target := -1
 		for _, a := range anchorLines {
 			if a <= c.Pos.Line {
 				continue
@@ -148,20 +150,10 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 				break
 			}
 			if lineDepth[a] == d {
-				target = a
+				idx.leading[a] = append(idx.leading[a], id)
 				break
 			}
 		}
-		if target >= 0 {
-			idx.leading[target] = append(idx.leading[target], id)
-			continue
-		}
-		// No following construct in this block -> a block tail comment, emitted before the block's `}`.
-		if hasEncl {
-			idx.tail[openLine] = append(idx.tail[openLine], id)
-			continue
-		}
-		idx.unattached = append(idx.unattached, id)
 	}
 	return idx
 }
@@ -184,7 +176,7 @@ type printer struct {
 
 func newPrinter(idx *commentIndex) *printer {
 	if idx == nil {
-		idx = &commentIndex{leading: map[int][]int{}, trailing: map[int]int{}, tail: map[int][]int{}}
+		idx = &commentIndex{leading: map[int][]int{}, trailing: map[int]int{}, byBlock: map[int][]int{}}
 	}
 	return &printer{idx: idx, emitted: make([]bool, len(idx.texts))}
 }
@@ -196,16 +188,12 @@ func (p *printer) leadingBefore(line int, indent string) {
 	}
 }
 
-// blockTail emits, before a block's closing brace and at the block's inner indent, the comments that
-// belong at the block's end: standalone dangling comments, and any trailing comment inside the block
-// that no leaf line emitted inline (an inner scalar field carries no source position, so its trailing
-// comment degrades to an own-line comment here rather than escaping to the next declaration). Every
-// emit is guarded by `emitted`, so a trailing comment already written inline is not repeated.
+// blockTail drains, before a block's closing brace and at the block's inner indent, every comment
+// inside that block that a precise leading/trailing hook did not already emit — so no comment can
+// escape its block to file scope, whatever inner fields lack hooks. Each emit is guarded by `emitted`,
+// so comments already placed inline are not repeated; the rest degrade to own-line comments here.
 func (p *printer) blockTail(openLine int, indent string) {
-	for _, id := range p.idx.tail[openLine] {
-		p.emitComment(id, indent)
-	}
-	for _, id := range p.idx.tailTrail[openLine] {
+	for _, id := range p.idx.byBlock[openLine] {
 		p.emitComment(id, indent)
 	}
 }

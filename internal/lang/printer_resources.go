@@ -218,6 +218,7 @@ func printHitlAt(p *printer, indent string, h *HitlBlock) {
 		}
 		fmt.Fprintf(p, "%s}\n", inner)
 	}
+	p.blockTail(h.Pos.Line, inner)
 	fmt.Fprintf(p, "%s}\n", indent)
 }
 
@@ -321,17 +322,22 @@ func grantPath(g *Grant) string {
 func printEnvironment(p *printer, d *EnvironmentDecl) {
 	fmt.Fprintf(p, "environment %s {\n", identName(d.Name))
 	if ov := d.Overrides; ov != nil {
+		p.leadingBefore(ov.Pos.Line, "    ")
 		p.WriteString("    overrides {\n")
 		if len(ov.Agents) > 0 {
 			p.WriteString("        agents {\n")
 			for _, a := range ov.Agents {
+				p.leadingBefore(a.Pos.Line, "            ")
 				fmt.Fprintf(p, "            %s {\n", identName(a.Name))
 				if a.Model != nil {
-					fmt.Fprintf(p, "                model %s\n", a.Model.Raw)
+					p.leadingBefore(a.Model.Pos.Line, "                ")
+					p.field("                ", "model "+a.Model.Raw, a.Model.Pos.Line)
 				}
 				if a.Constraints != nil {
+					p.leadingBefore(a.Constraints.Pos.Line, "                ")
 					printConstraintsAt(p, "                ", a.Constraints)
 				}
+				p.blockTail(a.Pos.Line, "                ")
 				p.WriteString("            }\n")
 			}
 			p.WriteString("        }\n")
@@ -339,17 +345,22 @@ func printEnvironment(p *printer, d *EnvironmentDecl) {
 		if len(ov.Policies) > 0 {
 			p.WriteString("        policies {\n")
 			for _, pol := range ov.Policies {
+				p.leadingBefore(pol.Pos.Line, "            ")
 				fmt.Fprintf(p, "            %s {\n", identName(pol.Name))
 				if pol.Execution != nil {
+					p.leadingBefore(pol.Execution.Pos.Line, "                ")
 					printExecutionAt(p, "                ", pol.Execution)
 				}
 				if pol.Approvals != nil {
+					p.leadingBefore(pol.Approvals.Pos.Line, "                ")
 					printApprovalsAt(p, "                ", pol.Approvals)
 				}
+				p.blockTail(pol.Pos.Line, "                ")
 				p.WriteString("            }\n")
 			}
 			p.WriteString("        }\n")
 		}
+		p.blockTail(ov.Pos.Line, "        ")
 		p.WriteString("    }\n")
 	}
 	p.blockTail(d.Pos.Line, "    ")
