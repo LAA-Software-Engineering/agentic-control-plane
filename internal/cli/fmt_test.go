@@ -158,6 +158,20 @@ func TestFmt_agentOnlyProjectFormats(t *testing.T) {
 	}
 }
 
+// TestFmt_emptyProjectErrors proves a directory with neither .agent sources nor a project.yaml
+// (almost always a mistyped --project) fails loudly rather than reporting a 0-file success.
+func TestFmt_emptyProjectErrors(t *testing.T) {
+	root := t.TempDir()
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"fmt", "--project", root})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("fmt on a directory with no .agent sources and no project.yaml must error")
+	}
+}
+
 func TestFmt_caseFoldedAgentExtensionFormatsAsAgent(t *testing.T) {
 	// Discovery matches .agent case-insensitively; the formatter must use the
 	// same predicate, or a well-formed .AGENT file would be mangled as YAML.

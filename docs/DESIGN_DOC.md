@@ -1156,7 +1156,6 @@ my-agent-system/
 ## 9.3 Tool validation
 
 * exactly one transport block for the selected `type`
-* permission actions must be valid strings
 * retry values must be non-negative
 * `spec.operations` keys and `effects` identifiers match `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*`
 * effect identifiers must not begin with `tool.`

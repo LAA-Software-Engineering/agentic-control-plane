@@ -17,10 +17,11 @@ func newFmtCmd() *cobra.Command {
 	var check bool
 	cmd := &cobra.Command{
 		Use:   "fmt",
-		Short: "Format .agent sources and normalize project YAML",
-		Long: `Format every .agent source under the project root (the authoring surface, ADR 003) and
-normalize every YAML file in the project closure (root project.yaml or project.yml plus all
-paths from spec.imports), using the same discovery rules as validate/load (design doc §10.2).
+		Short: "Format .agent sources (and normalize a legacy YAML closure if present)",
+		Long: `Format every .agent source under the project root — the authoring surface (ADR 007).
+An .agent-only project is the normal case: a missing project.yaml is not an error. If a legacy
+root project.yaml/project.yml is present, its YAML closure (that file plus all spec.imports paths)
+is also normalized. A directory with neither .agent sources nor a project.yaml is an error.
 
 .agent files are reformatted to canonical form (4-space indent, single spaces around
 operators); YAML is written 2-space indented. Running fmt twice makes no further changes
@@ -66,6 +67,11 @@ func runFmt(cmd *cobra.Command, check bool) error {
 		return NewExitError(ExitValidationError, fmt.Errorf("fmt: %w", err))
 	}
 	paths := append(append([]string{}, yamlPaths...), agentPaths...)
+	if len(paths) == 0 {
+		// Neither .agent sources nor a project.yaml: almost certainly a mistyped --project. Fail
+		// loudly rather than reporting "Formatted 0 file(s)" success.
+		return NewExitError(ExitValidationError, fmt.Errorf("fmt: no .agent sources or project.yaml under %q", root))
+	}
 
 	wouldChange := 0
 	written := 0
