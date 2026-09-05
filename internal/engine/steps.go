@@ -29,6 +29,74 @@ func parseAgentJSONObject(content string) (map[string]any, error) {
 	return m, nil
 }
 
+// extractAgentJSONObject recovers the JSON object from an agent completion that may carry a prose
+// preamble (a leading "Perfect…") or a ```json code fence around the object (issue #510). Providers
+// do not guarantee bare JSON even for a schema-bound output, so a single stray character must not
+// fail an otherwise-successful run — the same spirit as #451, where a recoverable observation
+// replaces a hard failure. It returns the trimmed content unchanged when that already parses as JSON
+// (the clean fast path, unchanged behavior); otherwise the first balanced, string-aware {…} object in
+// the content; otherwise the trimmed content unchanged, so the caller reports the original error.
+func extractAgentJSONObject(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" || json.Valid([]byte(trimmed)) {
+		return trimmed
+	}
+	if obj, ok := firstJSONObject(trimmed); ok {
+		return obj
+	}
+	return trimmed
+}
+
+// firstJSONObject returns the first brace-balanced {…} span in s that is itself valid JSON, scanning
+// candidate '{' positions left to right so a stray brace in a preamble ("use {x} format") is skipped
+// in favor of the real object that follows.
+func firstJSONObject(s string) (string, bool) {
+	for i := 0; i < len(s); i++ {
+		if s[i] != '{' {
+			continue
+		}
+		if obj, ok := balancedObject(s[i:]); ok && json.Valid([]byte(obj)) {
+			return obj, true
+		}
+	}
+	return "", false
+}
+
+// balancedObject returns the shortest prefix of s that is a brace-balanced {…} span, treating s[0] as
+// the opening '{' and ignoring braces that appear inside JSON string literals (so a `}` in a string
+// value does not close the object). ok is false when the braces never balance.
+func balancedObject(s string) (string, bool) {
+	depth := 0
+	inStr := false
+	esc := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			switch {
+			case esc:
+				esc = false
+			case c == '\\':
+				esc = true
+			case c == '"':
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[:i+1], true
+			}
+		}
+	}
+	return "", false
+}
+
 func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, wf *spec.WorkflowResource, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, usesOverride string, withOverride map[string]any) (map[string]any, tools.ToolCallMeta, error) {
 	uses := strings.TrimSpace(usesOverride)
 	if uses == "" {
@@ -455,6 +523,9 @@ func costLimitHitData(d *policy.DeniedError, stepID string) map[string]any {
 }
 
 func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {
+	// Recover the JSON object from any prose preamble / code fence before validating and parsing, so
+	// both operate on the same bytes and a stray leading character does not fail the run (issue #510).
+	content = extractAgentJSONObject(content)
 	// Validates against the pinned schema bundle on resume, or the on-disk schema on a fresh run.
 	if err := e.validateAgentOutputSchema(agent, content); err != nil {
 		return nil, meta, err
