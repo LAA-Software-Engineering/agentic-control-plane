@@ -172,3 +172,36 @@ func TestFormat_attachmentFollowsSourceNotPrintOrder(t *testing.T) {
 		})
 	}
 }
+
+// Regression for the PR #516 second review: a trailing comment on an inner SCALAR line (a
+// pointer-typed field with no source position — constraints/safety/execution) has no leaf hook to
+// emit it inline, so it must be drained at its enclosing block's tail (as an own-line comment) and
+// NEVER leak past the resource to a file-scope dump after the next declaration.
+func TestFormat_innerTrailingDoesNotLeakPastResource(t *testing.T) {
+	cases := map[string]string{
+		"constraints": "agent a {\n    model m/x\n    constraints {\n        maxTokens 32000 // raise\n    }\n}\npolicy p {\n    preset shell_safe\n}\n",
+		"safety":      "tool t {\n    safety {\n        trusted true // note\n    }\n}\npolicy p {\n    preset shell_safe\n}\n",
+		"execution":   "policy p {\n    execution {\n        maxTotalCostUsd 5 // budget\n    }\n    preset shell_safe\n}\nagent a {\n    model m/x\n}\n",
+	}
+	needle := map[string]string{"constraints": "raise", "safety": "note", "execution": "budget"}
+	nextDecl := map[string]string{"constraints": "policy p", "safety": "policy p", "execution": "agent a"}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, diags := Format("m.agent", src)
+			if len(diags) > 0 {
+				t.Fatalf("diags: %s", diags.Error())
+			}
+			ci := strings.Index(out, "// "+needle[name])
+			if ci < 0 {
+				t.Fatalf("comment %q dropped:\n%s", needle[name], out)
+			}
+			// The comment must appear BEFORE the next top-level declaration, i.e. inside its resource.
+			if di := strings.Index(out, nextDecl[name]); di >= 0 && ci > di {
+				t.Fatalf("trailing comment leaked past %q:\n%s", nextDecl[name], out)
+			}
+			if out2, _ := Format("m.agent", out); out2 != out {
+				t.Fatalf("not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", out, out2)
+			}
+		})
+	}
+}

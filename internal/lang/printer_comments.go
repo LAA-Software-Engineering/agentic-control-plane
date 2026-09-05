@@ -23,8 +23,9 @@ import (
 type commentIndex struct {
 	texts      []string      // comment content by id, source order
 	leading    map[int][]int // anchor line -> comment ids emitted before that line's construct
-	trailing   map[int]int   // source line -> comment id emitted inline on that line
-	tail       map[int][]int // block open line -> comment ids emitted before that block's closing brace
+	trailing   map[int]int   // source line -> comment id emitted inline on that line (leaf lines)
+	tail       map[int][]int // block open line -> standalone comment ids emitted before its closing brace
+	tailTrail  map[int][]int // block open line -> trailing comment ids in the block, drained (as own-line) at its closing brace when no leaf line emitted them inline (inner scalar fields have no Pos to hang a trailing comment on) — so a trailing comment never escapes to the next declaration (issue #509 / PR #516 review)
 	unattached []int         // ids with no anchor (e.g. malformed input) — flushed at the end
 }
 
@@ -32,9 +33,10 @@ type commentIndex struct {
 // original source (for the brace scan); comments are the lexer's collected comments in source order.
 func buildCommentIndex(src string, comments []Comment) *commentIndex {
 	idx := &commentIndex{
-		leading:  map[int][]int{},
-		trailing: map[int]int{},
-		tail:     map[int][]int{},
+		leading:   map[int][]int{},
+		trailing:  map[int]int{},
+		tail:      map[int][]int{},
+		tailTrail: map[int][]int{},
 	}
 	if len(comments) == 0 {
 		return idx
@@ -119,6 +121,13 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 			} else {
 				idx.unattached = append(idx.unattached, id)
 			}
+			// Also register it under its enclosing block, so if no leaf line emits it inline (an inner
+			// scalar field with no source position) the block's tail drains it before its `}` rather
+			// than letting it leak past the block. A trailing comment with no enclosing block (e.g. on a
+			// top-level decl's own line) is left for flushRemaining.
+			if encl, ok := enclosing(c.Pos.Line); ok {
+				idx.tailTrail[encl.open] = append(idx.tailTrail[encl.open], id)
+			}
 			continue
 		}
 		d := commentDepth[id]
@@ -187,10 +196,16 @@ func (p *printer) leadingBefore(line int, indent string) {
 	}
 }
 
-// blockTail emits the dangling comments attached to the block that opens on `openLine`, at the block's
-// inner indent, just before its closing brace — so a comment at a block's end stays inside it.
+// blockTail emits, before a block's closing brace and at the block's inner indent, the comments that
+// belong at the block's end: standalone dangling comments, and any trailing comment inside the block
+// that no leaf line emitted inline (an inner scalar field carries no source position, so its trailing
+// comment degrades to an own-line comment here rather than escaping to the next declaration). Every
+// emit is guarded by `emitted`, so a trailing comment already written inline is not repeated.
 func (p *printer) blockTail(openLine int, indent string) {
 	for _, id := range p.idx.tail[openLine] {
+		p.emitComment(id, indent)
+	}
+	for _, id := range p.idx.tailTrail[openLine] {
 		p.emitComment(id, indent)
 	}
 }
