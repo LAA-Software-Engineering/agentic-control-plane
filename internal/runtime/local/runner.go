@@ -122,6 +122,7 @@ func (r *Runtime) Invoke(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	}
 
 	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
+	rec.Sink = opts.EventSink // stream events live when the caller opted in (terfyn run --verbose, #450)
 	startedData := map[string]any{"workflow": wfName, "environment": cfg.Environment()}
 	if snapshotDigest != "" {
 		// Cover the pinned deployment identity by the run's tamper-evident audit chain (#207): the
@@ -218,6 +219,7 @@ func (r *Runtime) Resume(ctx context.Context, cfg *config.ResolvedConfig, opts r
 	}
 
 	rec := trace.NewRecorderForGraph(r.Store, prep.graph)
+	rec.Sink = opts.EventSink // stream events live when the caller opted in (terfyn run --verbose, #450)
 	if _, err := rec.Append(ctx, runID, "", trace.EventRunStarted, trace.ActorAgent, map[string]any{
 		"workflow": wfName,
 		"resumed":  true,

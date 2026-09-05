@@ -7,6 +7,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/config"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/state"
+	"github.com/Terfyn/terfyn/internal/trace"
 )
 
 // HealthState reports runtime readiness.
@@ -70,6 +71,9 @@ type InvokeOptions struct {
 	Source         string
 	// RequireAttribution rejects runs when tenant_id, thread_id, or actor_id is omitted.
 	RequireAttribution bool
+	// EventSink, when set, streams each trace event live as it is appended (issue #450, terfyn run
+	// --verbose). Nil is today's behavior (events only persisted). It never changes what is stored.
+	EventSink trace.EventSink
 }
 
 // ResumeOptions continues an existing run from its latest checkpoint.
@@ -90,6 +94,8 @@ type ResumeOptions struct {
 	TenantID string
 	ThreadID string
 	ActorID  string
+	// EventSink streams each trace event live as it is appended (issue #450). Nil = persist only.
+	EventSink trace.EventSink
 }
 
 // HitlDecisionOptions configures a non-interactive HITL resolution on resume.

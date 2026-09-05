@@ -15,11 +15,32 @@ import (
 // ErrRunNotFound is returned when appending events for a run_id that has no row in runs.
 var ErrRunNotFound = errors.New("trace: run not found")
 
+// StreamEvent is one appended event surfaced live to a [Recorder.Sink] (issue #450). Data is the
+// REDACTED event data (identical to what is stored), so a live stream never reveals a secret the
+// store would redact.
+type StreamEvent struct {
+	RunID  string
+	StepID string
+	Type   EventType
+	Actor  ActorType
+	Data   map[string]any
+	Seq    int64
+	Time   time.Time
+}
+
+// EventSink receives each event as it is appended. Set it on a [Recorder] to stream events live
+// (e.g. `terfyn run --verbose` renders one line per event to stderr). Nil disables streaming — the
+// default, so no plumbing changes for callers that do not opt in.
+type EventSink func(StreamEvent)
+
 // Recorder appends trace_events rows via [state.RuntimeStore] (design doc §12.2 I, §14.2).
 type Recorder struct {
 	RT        state.RuntimeStore
 	Clock     func() time.Time
 	Redaction RedactionOptions
+	// Sink, when non-nil, is called with every successfully-appended event (redacted), in addition
+	// to persisting it — the live-stream hook for --verbose (#450). It never changes what is stored.
+	Sink      EventSink
 	callStack []string
 }
 
@@ -84,8 +105,9 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID string, eventType E
 		data["callStack"] = append([]string(nil), r.callStack...)
 		data["workflow"] = r.callStack[len(r.callStack)-1]
 	}
+	var prepared map[string]any
 	if len(data) > 0 {
-		prepared := PrepareEventData(data, nil, r.Redaction)
+		prepared = PrepareEventData(data, nil, r.Redaction)
 		b, err := json.Marshal(prepared)
 		if err != nil {
 			return 0, fmt.Errorf("trace: marshal event data: %w", err)
@@ -93,5 +115,30 @@ func (r *Recorder) Append(ctx context.Context, runID, stepID string, eventType E
 		dataJSON = string(b)
 	}
 
-	return r.RT.AppendTraceEvent(ctx, runID, r.now(), eventType.String(), actorType.String(), strings.TrimSpace(stepID), dataJSON)
+	ts := r.now()
+	seq, err = r.RT.AppendTraceEvent(ctx, runID, ts, eventType.String(), actorType.String(), strings.TrimSpace(stepID), dataJSON)
+	if err == nil && r.Sink != nil {
+		// Best-effort live stream (--verbose #450): emit the REDACTED data so the stream matches
+		// storage. It runs only after a successful persist and never affects the returned seq/err —
+		// emitToSink recovers from a panicking sink so a misbehaving hook cannot turn a committed
+		// append into a failure.
+		r.emitToSink(StreamEvent{
+			RunID:  runID,
+			StepID: strings.TrimSpace(stepID),
+			Type:   eventType,
+			Actor:  actorType,
+			Data:   prepared,
+			Seq:    seq,
+			Time:   ts,
+		})
+	}
+	return seq, err
+}
+
+// emitToSink delivers a persisted event to the live-stream Sink, recovering from a panic so a
+// misbehaving sink cannot turn a successful append (the row is already committed) into a returned
+// error. The event is dropped from the stream on panic; persistence is unaffected.
+func (r *Recorder) emitToSink(ev StreamEvent) {
+	defer func() { _ = recover() }()
+	r.Sink(ev)
 }
