@@ -212,6 +212,11 @@ func cloneGenerateRequest(req GenerateRequest) GenerateRequest {
 		}
 	}
 	out.Tools = cloneToolDefs(req.Tools)
+	if req.ResponseFormat != nil {
+		rf := *req.ResponseFormat
+		rf.Schema = cloneRawMessage(req.ResponseFormat.Schema)
+		out.ResponseFormat = &rf
+	}
 	return out
 }
 

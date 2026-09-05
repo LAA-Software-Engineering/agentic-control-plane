@@ -29,6 +29,104 @@ func parseAgentJSONObject(content string) (map[string]any, error) {
 	return m, nil
 }
 
+// recoverAgentJSONObject recovers the single JSON object from an agent completion that may carry a
+// prose preamble (a leading "Perfect…") or a ```json code fence around the object (issue #510).
+// Providers do not guarantee bare JSON even for a schema-bound output, so a stray leading character
+// must not fail an otherwise-successful run. But typed agent output feeds workflow state, so recovery
+// must be UNAMBIGUOUS — it never guesses which of several objects is the state:
+//
+//   - content that already parses as JSON is returned verbatim (the clean fast path);
+//   - otherwise the completion is scanned for non-overlapping, brace-balanced, string-aware {…} spans
+//     that are valid JSON objects, and:
+//   - exactly one   → that object is used;
+//   - zero          → the trimmed content is returned unchanged, so the caller reports the original
+//     parse error (recovery adds nothing to offer);
+//   - two or more   → an ambiguity error, failing closed rather than shipping the leftmost span
+//     (which could be an example object, a bare "{}", or a schema-satisfying decoy) as state.
+//
+// The #510 repro — a prose preamble or a single fenced object around one object — is exactly the
+// one-object case and still recovers. This is deliberately stricter than #451's recoverable-tool
+// observation: there an adapter marks an error recoverable; here we refuse to invent state.
+func recoverAgentJSONObject(content string) (string, error) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" || json.Valid([]byte(trimmed)) {
+		return trimmed, nil
+	}
+	objs := topLevelJSONObjects(trimmed)
+	switch len(objs) {
+	case 0:
+		return trimmed, nil
+	case 1:
+		return objs[0], nil
+	default:
+		return "", fmt.Errorf("engine: agent response is ambiguous: found %d candidate JSON objects in the completion; a schema-bound output must be a single JSON object with no other objects around it", len(objs))
+	}
+}
+
+// topLevelJSONObjects returns every non-overlapping, brace-balanced {…} span in s that is valid JSON,
+// left to right. Braces inside JSON string literals are ignored (a `}` in a value does not close the
+// object), and each returned span is a maximal top-level region — a nested object is part of its
+// parent span and is never counted separately.
+func topLevelJSONObjects(s string) []string {
+	var out []string
+	for i := 0; i < len(s); {
+		if s[i] != '{' {
+			i++
+			continue
+		}
+		span, end, ok := balancedObject(s[i:])
+		if !ok {
+			// No complete object starts at i (braces never balance from here); a later, independent
+			// '{' may still open one, so advance by a single byte rather than giving up.
+			i++
+			continue
+		}
+		if json.Valid([]byte(span)) {
+			out = append(out, span)
+		}
+		// Skip the whole balanced span (valid or not) so a nested object is not counted separately and
+		// an invalid span's interior is not rescanned.
+		i += end
+	}
+	return out
+}
+
+// balancedObject returns the shortest prefix of s that is a brace-balanced {…} span, treating s[0] as
+// the opening '{' and ignoring braces inside JSON string literals (so a `}` in a string value does
+// not close the object). end is the index just past the closing brace; ok is false when the braces
+// never balance.
+func balancedObject(s string) (span string, end int, ok bool) {
+	depth := 0
+	inStr := false
+	esc := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			switch {
+			case esc:
+				esc = false
+			case c == '\\':
+				esc = true
+			case c == '"':
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[:i+1], i + 1, true
+			}
+		}
+	}
+	return "", 0, false
+}
+
 func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, wf *spec.WorkflowResource, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, usesOverride string, withOverride map[string]any) (map[string]any, tools.ToolCallMeta, error) {
 	uses := strings.TrimSpace(usesOverride)
 	if uses == "" {
@@ -136,14 +234,70 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		return nil, models.GenerateMeta{}, err
 	}
 	temperature := agentTemperature(agent)
+	respFormat, err := e.agentResponseFormat(agent)
+	if err != nil {
+		return nil, models.GenerateMeta{}, err
+	}
 	if len(toolDefs) == 0 {
 		return e.finishAgentTurn(ctx, ctx2, runHandle, pol, cli, modelRef, modelID, runID, step, pctx, agent, models.GenerateRequest{
-			Model:       modelID,
-			Messages:    messages,
-			Temperature: temperature,
+			Model:          modelID,
+			Messages:       messages,
+			Temperature:    temperature,
+			ResponseFormat: respFormat,
 		})
 	}
-	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName, temperature)
+	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName, temperature, respFormat)
+}
+
+// agentResponseFormat returns the provider structured-output request for agent, or nil when the agent
+// does not require it. It is set only when constraints.requireStructuredOutput is true, wiring that
+// flag — previously a silent no-op — to provider structured outputs so the model cannot emit a
+// non-conforming completion (issue #510). The schema the provider must enforce is the agent's output
+// schema; requireStructuredOutput without an output schema has nothing to constrain and is a run
+// error rather than a silent skip. On a pinned resume whose snapshot did not capture the schema,
+// resolveSchemaContent returns nil (gradual/absent) and structured output is left off.
+func (e *Executor) agentResponseFormat(agent *spec.AgentResource) (*models.ResponseFormat, error) {
+	if agent == nil || agent.Spec.Constraints == nil || !agent.Spec.Constraints.RequireStructuredOutput {
+		return nil, nil
+	}
+	sref := ""
+	if agent.Spec.Output != nil {
+		sref = strings.TrimSpace(agent.Spec.Output.Schema)
+	}
+	if sref == "" {
+		return nil, fmt.Errorf("engine: agent %q sets constraints.requireStructuredOutput but declares no output schema to enforce", agent.Metadata.Name)
+	}
+	content, err := e.resolveSchemaContent(sref)
+	if err != nil {
+		return nil, fmt.Errorf("engine: agent %q structured output: %w", agent.Metadata.Name, err)
+	}
+	if len(content) == 0 {
+		return nil, nil
+	}
+	return &models.ResponseFormat{Name: structuredOutputName(agent.Metadata.Name), Schema: content}, nil
+}
+
+// structuredOutputName renders an agent name as a provider-safe schema identifier (OpenAI requires
+// json_schema.name to match ^[a-zA-Z0-9_-]+$). Disallowed runes collapse to '_'; an empty result
+// falls back to "output".
+func structuredOutputName(agentName string) string {
+	var b strings.Builder
+	for _, r := range agentName {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	name := strings.Trim(b.String(), "_")
+	if name == "" {
+		return "output"
+	}
+	if len(name) > 64 {
+		name = name[:64]
+	}
+	return name
 }
 
 // agentTemperature returns the sampling temperature to send for agent, or nil to leave the provider
@@ -174,6 +328,7 @@ func (e *Executor) runAgentToolLoop(
 	toolDefs []models.ToolDef,
 	advertised map[string]string,
 	temperature *float64,
+	respFormat *models.ResponseFormat,
 ) (map[string]any, models.GenerateMeta, error) {
 	// maxIter counts Generate turns. tool_use on the last turn fails without executing those calls
 	// (maxIterations: 1 is a single completion; tools never run). HITL interrupt is not consulted
@@ -189,11 +344,12 @@ func (e *Executor) runAgentToolLoop(
 			return nil, acc, err
 		}
 		req := models.GenerateRequest{
-			Model:       modelID,
-			Messages:    messages,
-			Tools:       toolDefs,
-			ToolChoice:  models.ToolChoiceAuto,
-			Temperature: temperature,
+			Model:          modelID,
+			Messages:       messages,
+			Tools:          toolDefs,
+			ToolChoice:     models.ToolChoiceAuto,
+			Temperature:    temperature,
+			ResponseFormat: respFormat,
 		}
 		resp, err := e.generateAgentTurn(ctx, ctx2, runHandle, cli, modelRef, runID, step, req)
 		if err != nil {
@@ -455,6 +611,13 @@ func costLimitHitData(d *policy.DeniedError, stepID string) map[string]any {
 }
 
 func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {
+	// Recover the single JSON object from any prose preamble / code fence before validating and
+	// parsing, so both operate on the same bytes and a stray leading character does not fail the run;
+	// an ambiguous completion (two+ candidate objects) fails closed rather than guessing (issue #510).
+	content, err := recoverAgentJSONObject(content)
+	if err != nil {
+		return nil, meta, err
+	}
 	// Validates against the pinned schema bundle on resume, or the on-disk schema on a fresh run.
 	if err := e.validateAgentOutputSchema(agent, content); err != nil {
 		return nil, meta, err

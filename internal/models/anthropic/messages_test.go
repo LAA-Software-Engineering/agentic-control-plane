@@ -75,6 +75,52 @@ func TestMarshalRequest_temperature(t *testing.T) {
 	}
 }
 
+func TestMarshalRequest_outputConfig(t *testing.T) {
+	t.Parallel()
+	schema := json.RawMessage(`{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"additionalProperties":false}`)
+	body, err := marshalRequest(Request{
+		Model:        "claude-opus-4-8",
+		Messages:     []ChatMessage{{Role: "user", Content: "hi"}},
+		OutputConfig: &OutputConfig{Format: &OutputFormat{Type: "json_schema", Schema: schema}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		OutputConfig *struct {
+			Format *struct {
+				Type   string          `json:"type"`
+				Schema json.RawMessage `json:"schema"`
+			} `json:"format"`
+		} `json:"output_config"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.OutputConfig == nil || got.OutputConfig.Format == nil {
+		t.Fatalf("output_config.format missing: %s", body)
+	}
+	if got.OutputConfig.Format.Type != "json_schema" {
+		t.Fatalf("format.type = %q, want json_schema", got.OutputConfig.Format.Type)
+	}
+	if string(got.OutputConfig.Format.Schema) != string(schema) {
+		t.Fatalf("format.schema = %s, want %s", got.OutputConfig.Format.Schema, schema)
+	}
+
+	// Unset leaves output_config absent so ordinary completions are unchanged.
+	body, err = marshalRequest(Request{Model: "claude-opus-4-8", Messages: []ChatMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unset map[string]any
+	if err := json.Unmarshal(body, &unset); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := unset["output_config"]; ok {
+		t.Fatalf("output_config present when unset: %v", unset["output_config"])
+	}
+}
+
 func TestParseResponse_toolUse(t *testing.T) {
 	t.Parallel()
 	body := []byte(`{"content":[{"type":"tool_use","id":"toolu_1","name":"search","input":{"q":"go"}}],"stop_reason":"tool_use","usage":{"input_tokens":2,"output_tokens":3}}`)

@@ -42,11 +42,25 @@ type openaiMessage struct {
 }
 
 type openaiChatRequest struct {
-	Model       string          `json:"model"`
-	Messages    []openaiMessage `json:"messages"`
-	Tools       []openaiTool    `json:"tools,omitempty"`
-	ToolChoice  string          `json:"tool_choice,omitempty"`
-	Temperature *float64        `json:"temperature,omitempty"`
+	Model          string                `json:"model"`
+	Messages       []openaiMessage       `json:"messages"`
+	Tools          []openaiTool          `json:"tools,omitempty"`
+	ToolChoice     string                `json:"tool_choice,omitempty"`
+	Temperature    *float64              `json:"temperature,omitempty"`
+	ResponseFormat *openaiResponseFormat `json:"response_format,omitempty"`
+}
+
+// openaiResponseFormat is the Chat Completions response_format for JSON structured outputs
+// (issue #510): type "json_schema" with a named, strict JSON Schema.
+type openaiResponseFormat struct {
+	Type       string           `json:"type"`
+	JSONSchema openaiJSONSchema `json:"json_schema"`
+}
+
+type openaiJSONSchema struct {
+	Name   string          `json:"name"`
+	Schema json.RawMessage `json:"schema"`
+	Strict bool            `json:"strict"`
 }
 
 type openaiChatResponse struct {
@@ -72,6 +86,20 @@ func buildOpenAIChatPayload(req GenerateRequest) ([]byte, error) {
 		Model:       req.Model,
 		Messages:    msgs,
 		Temperature: req.Temperature,
+	}
+	if req.ResponseFormat != nil {
+		schema, err := normalizeStructuredOutputSchema(req.ResponseFormat.Schema)
+		if err != nil {
+			return nil, err
+		}
+		name := strings.TrimSpace(req.ResponseFormat.Name)
+		if name == "" {
+			name = "output"
+		}
+		payload.ResponseFormat = &openaiResponseFormat{
+			Type:       "json_schema",
+			JSONSchema: openaiJSONSchema{Name: name, Schema: schema, Strict: true},
+		}
 	}
 	// tool_choice is only valid alongside tools; a stray ToolChoice on a
 	// plain completion is ignored so existing two-field call sites stay valid.

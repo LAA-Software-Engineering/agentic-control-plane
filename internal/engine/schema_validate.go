@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/Terfyn/terfyn/internal/schema"
@@ -32,6 +33,31 @@ func (e *Executor) validateAgainstSchema(sref string, instance []byte) error {
 		return err
 	}
 	return schema.Validate(path, instance)
+}
+
+// resolveSchemaContent returns the raw JSON Schema bytes for sref, mirroring the source-selection of
+// [Executor.validateAgainstSchema]: on a pinned resume it reads the content captured in the run's
+// deployment snapshot (never a possibly-changed file); otherwise it reads the schema file under
+// ProjectRoot. It returns (nil, nil) when sref is empty, or when a pinned run has no captured content
+// for sref (treated as gradual/absent, exactly like validation). Used to hand the provider a
+// structured-output schema (issue #510).
+func (e *Executor) resolveSchemaContent(sref string) ([]byte, error) {
+	sref = strings.TrimSpace(sref)
+	if sref == "" {
+		return nil, nil
+	}
+	if e.PinnedGraph {
+		content, ok := e.Schemas[sref]
+		if !ok {
+			return nil, nil
+		}
+		return []byte(content), nil
+	}
+	path, err := schema.ResolveSchemaPath(e.ProjectRoot, sref)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
 }
 
 // validateWorkflowInputSchema validates a workflow's input against its declared input schema,
