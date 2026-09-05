@@ -117,13 +117,20 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 	}
 
 	for id, c := range comments {
-		encl, hasEncl := enclosing(c.Pos.Line)
-		// Every comment inside a block is registered under that block, so blockTail is a leak-proof
-		// backstop no matter which inner fields have hooks. A comment with no enclosing block is
-		// top-level and left for flushRemaining (it belongs at file scope).
-		if hasEncl {
-			idx.byBlock[encl.open] = append(idx.byBlock[encl.open], id)
-		} else {
+		// Register the comment under EVERY enclosing block (not just the innermost), so an ancestor's
+		// blockTail drains it even when an inner block's printer never calls blockTail. Every top-level
+		// declaration calls blockTail, so this is leak-proof by construction: no comment can escape its
+		// outermost enclosing declaration to file scope. The innermost block that does call blockTail
+		// drains it first (inner blocks close before outer); `emitted` skips it in every ancestor.
+		enclosed := false
+		for _, s := range spans {
+			if s.open < c.Pos.Line && c.Pos.Line <= s.close {
+				idx.byBlock[s.open] = append(idx.byBlock[s.open], id)
+				enclosed = true
+			}
+		}
+		if !enclosed {
+			// No enclosing block: a top-level comment (e.g. a footer), left for flushRemaining.
 			idx.unattached = append(idx.unattached, id)
 		}
 
@@ -135,11 +142,11 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 			continue
 		}
 		// Standalone: refine placement to lead the next construct on a later line, at the same depth,
-		// still inside this block. If found, a leadingBefore hook there emits it above that construct;
-		// otherwise blockTail drains it. Either way byBlock guarantees emission within the block.
+		// still inside its innermost block. If found, a leadingBefore hook there emits it above that
+		// construct; otherwise blockTail drains it. Either way byBlock guarantees emission in the block.
 		d := commentDepth[id]
 		closeLine := 1<<62 - 1
-		if hasEncl {
+		if encl, ok := enclosing(c.Pos.Line); ok {
 			closeLine = encl.close
 		}
 		for _, a := range anchorLines {

@@ -244,3 +244,38 @@ func TestFormat_overlayAndHitlStandaloneStayInResource(t *testing.T) {
 		})
 	}
 }
+
+// Regression for the PR #516 fifth review: byBlock registers each comment under EVERY enclosing block,
+// so a comment inside a block whose printer never calls blockTail (headers, requiredFor) is still
+// drained by an ancestor that does — it can never reach file scope. Leak-proof by construction: every
+// top-level declaration calls blockTail.
+func TestFormat_deepBlockWithoutTailStillContained(t *testing.T) {
+	cases := map[string]struct{ src, needle, next string }{
+		"headers": {
+			src:    "tool t {\n    type mcp\n    mcp {\n        transport \"stdio\"\n        headers {\n            // auth\n            \"Authorization\" \"Bearer x\"\n        }\n    }\n}\nagent a {\n    model m/x\n}\n",
+			needle: "auth", next: "agent a",
+		},
+		"requiredFor": {
+			src:    "policy p {\n    approvals {\n        requiredFor {\n            // gate\n            tool.x.y\n        }\n    }\n    preset shell_safe\n}\nagent a {\n    model m/x\n}\n",
+			needle: "gate", next: "agent a",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, diags := Format("m.agent", tc.src)
+			if len(diags) > 0 {
+				t.Fatalf("diags: %s", diags.Error())
+			}
+			ci := strings.Index(out, "// "+tc.needle)
+			if ci < 0 {
+				t.Fatalf("comment %q dropped:\n%s", tc.needle, out)
+			}
+			if di := strings.Index(out, tc.next); di >= 0 && ci > di {
+				t.Fatalf("comment leaked past %q:\n%s", tc.next, out)
+			}
+			if out2, _ := Format("m.agent", out); out2 != out {
+				t.Fatalf("not idempotent:\n%s", out)
+			}
+		})
+	}
+}
