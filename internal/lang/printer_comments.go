@@ -66,6 +66,7 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 	// body), where the `{`-token-keyed span never matches (issue #509 / PR #516 review).
 	commentDepth := make([]int, len(comments))
 	commentDecl := make([]int, len(comments))
+	commentInDecl := make([]bool, len(comments)) // true once a decl's keyword is seen and its `{` is not yet closed
 	curDecl := 0
 	atDeclStart := true // the next depth-0 non-`}` token begins a new top-level declaration
 	ck := 0
@@ -73,6 +74,11 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 		for ck < len(comments) && posBefore(comments[ck].Pos, pos) {
 			commentDepth[ck] = depth
 			commentDecl[ck] = curDecl
+			// A comment belongs to the current declaration once its keyword has been consumed
+			// (atDeclStart == false) — including header clauses at depth 0, between the keyword and `{`.
+			// A comment while atDeclStart is still true sits between declarations (file scope) and leads
+			// the next one instead.
+			commentInDecl[ck] = !atDeclStart
 			ck++
 		}
 	}
@@ -113,6 +119,7 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 	for ; ck < len(comments); ck++ {
 		commentDepth[ck] = depth
 		commentDecl[ck] = curDecl
+		commentInDecl[ck] = !atDeclStart
 	}
 	sort.Ints(anchorLines)
 
@@ -147,9 +154,11 @@ func buildCommentIndex(src string, comments []Comment) *commentIndex {
 		}
 		// Also register under the enclosing top-level declaration's keyword line — the key Print passes
 		// to the outermost blockTail — so the drain fires even when a body's `{` is on its own line and
-		// no span key matches what the printer passes (split-brace layouts). commentDecl is 0 at file
-		// scope; a comment at depth 0 (between declarations, a header/footer) is left for flushRemaining.
-		if commentDepth[id] > 0 && commentDecl[id] > 0 {
+		// no span key matches what the printer passes (split-brace layouts), AND for header-clause
+		// comments that sit at depth 0 between the keyword and `{`. commentInDecl is true once the
+		// declaration's keyword is seen and before it closes; a comment between declarations (file
+		// scope) has it false and is left to lead the next declaration / flushRemaining.
+		if commentInDecl[id] && commentDecl[id] > 0 {
 			idx.byBlock[commentDecl[id]] = append(idx.byBlock[commentDecl[id]], id)
 			enclosed = true
 		}

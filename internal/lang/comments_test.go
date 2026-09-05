@@ -314,3 +314,32 @@ func TestFormat_splitBraceBodyCommentStaysInResource(t *testing.T) {
 		})
 	}
 }
+
+// Regression for the PR #516 seventh review: a comment on a split-header clause (between the keyword
+// and `{`, at depth 0) belongs to that declaration, not file scope — it must not leak past the next
+// resource. A comment BETWEEN declarations still leads the next one.
+func TestFormat_headerClauseCommentStaysInResource(t *testing.T) {
+	src := "workflow hello(input: string) -> string\n    // which policy\n    policy default\n{\n    return hello(input)\n}\npolicy default {\n    preset shell_safe\n}\n"
+	out, diags := Format("m.agent", src)
+	if len(diags) > 0 {
+		t.Fatalf("diags: %s", diags.Error())
+	}
+	ci := strings.Index(out, "// which policy")
+	if ci < 0 {
+		t.Fatalf("header-clause comment dropped:\n%s", out)
+	}
+	// Must stay inside the workflow, i.e. before the policy body (`preset shell_safe` is unique to it;
+	// `policy default` also appears as the workflow's own header clause).
+	if di := strings.Index(out, "preset shell_safe"); di >= 0 && ci > di {
+		t.Fatalf("header-clause comment leaked past the workflow:\n%s", out)
+	}
+	if out2, _ := Format("m.agent", out); out2 != out {
+		t.Fatalf("not idempotent:\n%s", out)
+	}
+
+	// A comment BETWEEN declarations still leads the following declaration (not captured by the prior).
+	between, _ := Format("m.agent", "agent a {\n    model m/x\n}\n\n// leads policy\npolicy p {\n    preset shell_safe\n}\n")
+	if !strings.Contains(between, "// leads policy\npolicy p {") {
+		t.Fatalf("between-declarations comment must lead the next decl:\n%s", between)
+	}
+}
