@@ -33,10 +33,10 @@ The uncopyable capability is a **plan-time effect bound**: a sound static upper 
 
 **What `terfyn plan` diffs today:**
 
-- Tool **permissions** (`spec.permissions.allow`)
+- Agent **capabilities** (`grants` — the `tool.<name>.<operation>` set) and **tool surface**
 - Policy **approvals** (`approvals.requiredFor`) and **budgets** (cost / wall-clock)
-- Agent **models** and **tool surface**
-- C1 **risk items** (`permission_widening`, `approval_removal`, `budget_relaxation`, `model_change`, `tool_surface_change`, plus safety/lint)
+- Agent **models**
+- C1 **risk items** (`approval_removal`, `budget_relaxation`, `model_change`, `tool_surface_change`, `runtime_target_change`, plus safety/lint; `tool.permissions` and its `permission_widening` heuristic were removed in favor of the effects/safety model)
 - **Effect bound** and **authority delta** (`effect_bound`, `effect_delta`, `capability_delta`, `authority_widening`; JSON `authority.static` / `authority.autonomous`)
 
 See the sample `plan` table in the [README](../README.md#the-differentiator-plan-time-bounds-on-authority).

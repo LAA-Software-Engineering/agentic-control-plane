@@ -501,18 +501,19 @@ End goal later:
 > end-to-end, **including conditionals, loops, and dynamic fan-out (#199/#259)**: a control-flow
 > workflow lowers to the execution IR, is pinned into the deployment snapshot (#260), and runs on
 > the `execir` interpreter (the taken arm only) rather than the resource DAG, whose flattened arms
-> are kept only for effect analysis. **YAML is the compilation output and interchange
-> format**, not the primary authoring surface: the loader still accepts it (machine-generated
-> resources, existing fixtures, and interchange all depend on it), `terfyn export --format yaml`
-> materializes the compiled graph on demand, and nothing generated is written to disk by default.
-> Tools, policies, environments, and custom providers now all have first-class `.agent` surfaces
-> (issue #440), so a project is authored entirely in `.agent`; the `Project` config below is derived
-> (project name from the directory, built-in providers, discovered `.agent` files) rather than
-> hand-authored. The kinds and fields in this section describe the resource model both surfaces
-> compile to. A few rarely-used resource fields may still lack a `.agent` surface and remain reachable
-> only through the YAML non-authoring ingress; the common resource model — agents, workflows, tools
-> (including `mcp`/`http`/`workspace` config), policies (including `hitl`), environments, and providers
-> — is fully authorable in `.agent`.
+> are kept only for effect analysis. **YAML is a one-way output serialization**, not a source: under
+> [ADR 007](adr/007-remove-yaml-ingestion.md) `.agent` is the **only executable source** — a
+> `project.yaml` handed to `validate`/`plan`/`apply`/`run` is refused with a `terfyn migrate --to-agent`
+> hint. Machine producers build the graph through the **typed ResourceGraph ingress** (the same
+> normalization/validation/effect pipeline as `.agent`), not a YAML frontend. `terfyn export --format yaml`
+> materializes the compiled graph on demand for inspection/handoff, and nothing generated is written to
+> disk by default. Tools, policies, environments, custom providers, and workflows all have first-class
+> `.agent` surfaces (issues #440/#478/#479), so a project is authored entirely in `.agent`; the `Project`
+> config below is derived (project name from the directory, built-in providers, discovered `.agent` files)
+> rather than hand-authored. The kinds and fields in this section describe the resource model both the
+> `.agent` compiler and the typed ingress produce — agents, workflows, tools (including
+> `mcp`/`http`/`workspace` config), policies (including `hitl`), environments, and providers — which is
+> fully authorable in `.agent`.
 
 ## 7.1 Project
 
@@ -1230,7 +1231,7 @@ demand, never written to disk by default.
 
 ```bash
 terfyn export --format yaml            # multi-document YAML stream to stdout
-terfyn export --format yaml --output out/   # a loadable project (round-trips through the loader)
+terfyn export --format yaml --output out/   # a YAML project directory (interchange output; NOT executable source — ADR 007)
 ```
 
 The generated YAML is not the trustworthy record (applied deployment state plus the audit chain
@@ -1655,11 +1656,11 @@ type Operation struct {
 
 Structured `RiskItem` list (category, severity, reason, target, witness path; issue #165):
 
-* permission widening — new `tool.permissions.allow` entries (write-like is high)
 * approval removal — entries removed from `policy.approvals.requiredFor`
 * budget relaxation — `maxTotalCostUsd` / `maxWallClockSeconds` increased
 * model changes — agent `model` provider or id
-* tool surface change — tools added to an agent's `tools` list
+* tool surface change — tools added to an agent's `tools` list (write-capability risk is derived from the tool's declared `safety.sideEffects`; the removed `tool.permissions` `permission_widening` name heuristic no longer applies)
+* runtime target change — a workflow's `runtime` target changed (e.g. `local` → `claude-code`)
 
 C1 witness hops are resource-level (static). Effect-bound Workflow→step→Agent→tool.operation hops land on the same `Witness` field and table/JSON/YAML render path (`FormatPlanSection` / `ExportRisk`). Capability delta and effect delta are separate `RiskItem` categories; `authority.static` / `authority.autonomous` (`unchanged` | `widened`) are structural JSON/YAML fields so CI can gate on `AUTONOMOUS` `WIDENED`. `RiskSummary.Messages` remains the item reasons for string consumers; JSON/YAML keep `"risk": []string` and expose structured `"riskItems"`. Table output groups items under `high:` / `medium:` / `low:` (issue #166) and prints the desired effect bound plus authority delta (issue #191).
 
