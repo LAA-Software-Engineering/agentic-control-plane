@@ -119,6 +119,45 @@ func TestFmt_formatsAgentSources(t *testing.T) {
 	}
 }
 
+// TestFmt_agentOnlyProjectFormats is the regression for an .agent-only project (no project.yaml —
+// the normal shape under ADR 007): fmt must format the .agent sources, not fail with
+// "no project.yaml or project.yml".
+func TestFmt_agentOnlyProjectFormats(t *testing.T) {
+	root := t.TempDir()
+	agentPath := filepath.Join(root, "main.agent")
+	messy := "workflow hello(input:any){return input}\n"
+	if err := os.WriteFile(agentPath, []byte(messy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetGlobalsForTest()
+	cmd := NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"fmt", "--project", root})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("fmt on an .agent-only project must succeed, got: %v", err)
+	}
+
+	got, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "workflow hello(input: any) {") {
+		t.Fatalf("expected canonical .agent formatting, got:\n%s", got)
+	}
+
+	// Idempotent: a second run with --check is clean.
+	ResetGlobalsForTest()
+	cmd = NewRootCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"fmt", "--check", "--project", root})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("formatted .agent-only project must pass --check, got: %v", err)
+	}
+}
+
 func TestFmt_caseFoldedAgentExtensionFormatsAsAgent(t *testing.T) {
 	// Discovery matches .agent case-insensitively; the formatter must use the
 	// same predicate, or a well-formed .AGENT file would be mangled as YAML.

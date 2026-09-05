@@ -300,9 +300,9 @@ Fixture-style **`terfyn test`** (no API keys) is **[`examples/regression-test/`]
 
 [**`examples/implement-review-loop/`**](../examples/implement-review-loop/README.md) is the flagship
 `.agent` program: an **Implementer** and an independent **Reviewer** pass a structured `CodingState`
-through a bounded `while … limit 3`, authored entirely in **`.agent`** (agent prompts in
-`instructions`, typed `CodingState` input/output, and per-agent capability grants) with only tool /
-policy / project **configuration** left in YAML.
+through a bounded `while … limit 3`, authored **entirely in `.agent`** (agent prompts in
+`instructions`, typed `CodingState` input/output, the `workspace` tool, both policies, and per-agent
+capability grants) — `main.agent` plus a `schemas/CodingState.json`, no `project.yaml`.
 
 It demonstrates *deterministic bounded control around nondeterministic agents*:
 

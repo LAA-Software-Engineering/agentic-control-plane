@@ -497,7 +497,7 @@ End goal later:
 > **Authoring surface (ADR 002 / ADR 003).** Agents and workflows are authored in
 > [`.agent`](LANGUAGE.md). `.agent` files anywhere under the project root are discovered and
 > compiled through the checker (type/effect checking plus the workflow-argument rebind) into the
-> resource graph by the loader, alongside any YAML resources. `.agent` workflows execute
+> resource graph by the loader (a `project.yaml` is refused, ADR 007). `.agent` workflows execute
 > end-to-end, **including conditionals, loops, and dynamic fan-out (#199/#259)**: a control-flow
 > workflow lowers to the execution IR, is pinned into the deployment snapshot (#260), and runs on
 > the `execir` interpreter (the taken arm only) rather than the resource DAG, whose flattened arms
@@ -776,9 +776,11 @@ into the normalized spec hash, plan diffs, `NormalizedSpecJSON`, and the deploye
 reconstructed from applied spec (`graphFromApplied`, and the #207 snapshot). So deleting the
 `operations:` key from a locked tool is a visible plan change, and the deployed world matches what
 `CheckToolCall` enforces — closed-empty is not distinguishable from open only at runtime. The YAML
-interchange path preserves it too (ADR 003): `ToolSpec.MarshalYAML` emits an explicit
-`operations: {}` for a declared-but-empty manifest, so `terfyn export` → load round-trips to the
-same closed world rather than dropping the empty mapping.
+interchange codec preserves it too (ADR 003): `ToolSpec.MarshalYAML` emits an explicit
+`operations: {}` for a declared-but-empty manifest — so a `terfyn export` and the deployment
+snapshot both carry the closed world rather than dropping the empty mapping and silently reopening
+the callable set. (`terfyn export` is one-way output; the round-trip is through the private YAML
+codec and the applied-spec reconstruction, not a re-load of exported YAML as project source — ADR 007.)
 
 Runtime enforcement is on the policy path
 (`[policy.PolicyEvaluator.CheckToolCall]` → `ReasonOperationNotInManifest`, in **both** the
@@ -1111,33 +1113,24 @@ spec:
 
 # 8. File Layout for a User Project
 
+A project is authored **entirely in `.agent`** (ADR 007) — there is no `project.yaml` and no YAML
+resources. Every `.agent` file anywhere under the project root is discovered and compiled into one
+graph, so the split across files is organizational, not semantic; the smallest project is a single
+`main.agent`. A larger project might group declarations by concern:
+
 ```text
 my-agent-system/
-  project.yaml
-
-  agents/
-    reviewer.yaml
-    incident.yaml
-
-  tools/
-    github.yaml
-    slack.yaml
-
-  workflows/
-    pr-review.yaml
-    incident-triage.yaml
-
-  policies/
-    default.yaml
-    strict.yaml
-
-  env/
-    dev.yaml
-    prod.yaml
+  main.agent            # project `defaults` / `limits`, and the top-level workflow(s)
+  agents.agent          # agent declarations (reviewer, incident, …)
+  tools.agent           # tool declarations (github, slack, workspace, …)
+  policies.agent        # policy declarations (default, strict, …)
+  environments.agent    # environment overlays (dev, prod, …)
 
   schemas/
     pr-review-input.json
     review-output.json
+
+  .agentic/             # generated: state.db, resolved-config.json, snapshots (git-ignored)
 ```
 
 ---
@@ -1212,11 +1205,11 @@ Create starter project.
 terfyn init my-agent-system
 ```
 
-Creates:
+Creates an **`.agent`-only** project (ADR 007 — no `project.yaml`, no YAML resources):
 
-* `project.yaml` (config)
-* `main.agent` — the workflow, authored in the `.agent` surface (ADR 003)
-* YAML `policies/` and `tools/`
+* `main.agent` — a starter agent, a `default` policy, and the `hello` workflow, all `.agent` declarations
+
+Add tools, agents, policies, and project `defaults`/`limits` as more `.agent` declarations under the root.
 
 ### MVP
 
@@ -1235,8 +1228,9 @@ terfyn export --format yaml --output out/   # a YAML project directory (intercha
 ```
 
 The generated YAML is not the trustworthy record (applied deployment state plus the audit chain
-is) and is not committed. It round-trips: `export --output` writes a project that
-`LoadProject` reconstructs to an identical graph (positions and the import list are not identity).
+is) and is not committed. It is a **one-way output**: under [ADR 007](adr/007-remove-yaml-ingestion.md)
+`.agent` is the only executable source, so `LoadProject` refuses a `project.yaml` (`internal/project/loader.go`)
+and an exported directory is for inspection/interchange, not re-execution — see #507.
 
 ### MVP
 
@@ -2552,13 +2546,12 @@ Keep dependencies conservative.
 
 ## Author
 
-User writes:
+User writes `.agent` source (ADR 007 — no `project.yaml`), e.g.:
 
-* `project.yaml`
-* `agents/reviewer.yaml`
-* `tools/github.yaml`
-* `workflows/pr-review.yaml`
-* `policies/default.yaml`
+* `main.agent` — the `pr-review` workflow (and any project `defaults`/`limits`)
+* `reviewer.agent` — the reviewer agent, the `github` tool, and the `default` policy
+
+(split across files however you like — every `.agent` file under the root compiles into one graph)
 
 ## Validate
 

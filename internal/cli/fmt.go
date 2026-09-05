@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,7 +54,12 @@ func runFmt(cmd *cobra.Command, check bool) error {
 	}
 	yamlPaths, err := project.ListProjectYAMLFiles(root)
 	if err != nil {
-		return NewExitError(ExitValidationError, fmt.Errorf("fmt: %w", err))
+		// An .agent-only project (no project.yaml) is the normal case under ADR 007 — there is just
+		// no YAML to normalize, so fall through and format the .agent sources below.
+		if !errors.Is(err, project.ErrNoProjectManifest) {
+			return NewExitError(ExitValidationError, fmt.Errorf("fmt: %w", err))
+		}
+		yamlPaths = nil
 	}
 	agentPaths, err := project.ListAgentFiles(root)
 	if err != nil {

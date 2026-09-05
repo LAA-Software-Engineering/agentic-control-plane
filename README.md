@@ -97,19 +97,21 @@ This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule w
 **Today** `terfyn plan` diffs **capabilities (grants)**, **approvals**, **models**, **budgets**, **C1 risk items**, and **effect/capability/authority** against SQLite desired state:
 
 ```text
-Plan: 0 to add, 2 to change, 0 to delete
+Plan: 0 to add, 3 to change, 0 to delete
 ~ update Agent/reviewer
     spec.model: "mock/gpt-4" -> "mock/gpt-4o"
-    spec.tools.1:  -> "github"
+    spec.tools.1:  -> "tool.github.default"
 ~ update Policy/default
     spec.approvals.requiredFor.0: "tool.helper.echo" -> "tool.github.issues.write"
     spec.execution.maxTotalCostUsd: 3 -> 10
+~ update Tool/github
+    spec.safety.sideEffects: false -> true
 
 Risk delta:
 high:
 - [high] approval_removal: Approval requirements removed for "tool.helper.echo" (Policy/default).
 - [high] budget_relaxation: Cost ceiling increased (Policy/default).
-- [high] tool_surface_change: Agent tools list gained write-like tool "github" (Agent/reviewer).
+- [high] tool_surface_change: Agent tools list gained write-capable tool "tool.github.default" (Agent/reviewer; declares side effects).
 medium:
 - [medium] model_change: Agent model changed (Agent/reviewer).
 ```
@@ -192,7 +194,7 @@ The bound is not over what those operations do at the far end; the trust anchor 
 - **`terfyn init`** — scaffold a `.agent`-only project (a single `main.agent` with a starter agent, policy, and workflow; no `project.yaml`)  
 - **`terfyn export --format yaml`** — materialize the compiled resource graph as YAML on demand (nothing written to disk by default; `--output DIR` writes a YAML project directory for interchange — **one-way output, not an executable source** under [ADR 007](docs/adr/007-remove-yaml-ingestion.md))  
 - **`terfyn migrate --to-agent`** — convert a project's YAML-authored resources (providers/tools/policies/environments/agents **and workflows** — steps, interpolated args, approvals, object outputs) to `.agent` source (stdout, or `--output FILE`); non-destructive, and reports only the constructs with no `.agent` form (a step-DAG that cannot linearize, a non-convention schema ref) rather than emitting lossy output  
-- **`terfyn fmt`** — format `.agent` sources to canonical form (and normalize project YAML)  
+- **`terfyn fmt`** — format `.agent` sources to canonical form (works on an `.agent`-only project; also normalizes any YAML still in the project closure)  
 - **`terfyn validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references; runs **policy lint** (ungated sensitive tools, invalid HITL config, etc.) as **advisory** output — use **`--strict`** to exit **2** on high-severity lint findings (fail-closed safety metadata still gates at **run** even when lint passes)  
 - **`terfyn plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint, effect bound, and authority delta; JSON/YAML output includes **`policyLint`**, **`deploymentBaseline`**, **`effectBound`**, and **`authority`**
 - **`terfyn apply`** — persist plan (TTY confirm or `--auto-approve` / `TERFYN_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
