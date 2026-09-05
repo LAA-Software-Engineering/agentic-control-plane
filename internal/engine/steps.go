@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Terfyn/terfyn/internal/models"
 	"github.com/Terfyn/terfyn/internal/policy"
 	"github.com/Terfyn/terfyn/internal/spec"
 	"github.com/Terfyn/terfyn/internal/telemetry"
 	"github.com/Terfyn/terfyn/internal/tools"
-	"github.com/Terfyn/terfyn/internal/tools/native"
+	"github.com/Terfyn/terfyn/internal/tools/toolerr"
 	"github.com/Terfyn/terfyn/internal/trace"
 )
 
@@ -256,14 +257,20 @@ func (e *Executor) runAgentToolLoop(
 	return nil, acc, fmt.Errorf("engine: agent %q reached maxIterations (%d)", agent.Metadata.Name, maxIter)
 }
 
-// runAgentToolCall executes one tool call from the agent loop. A per-call error — the model naming
-// an unadvertised tool, malformed arguments, or a tool MISS such as read_file on a path that does
-// not exist — is returned to the agent as a recoverable error OBSERVATION it can reason over (list
-// the directory, try a neighbor, narrow down), NOT propagated as a fatal run error (#451). Only
-// genuinely unrecoverable conditions abort the run (fatalErr non-nil): a policy/capability denial,
-// a run cancel/timeout, or an adapter misconfiguration (native.ErrFatalTool). The returned content
-// is the tool-result payload for the model (an {"error": …} object on a recoverable miss); tmeta is
-// the step metadata to fold into the loop's cost.
+// runAgentToolCall executes one tool call from the agent loop. The split between fatal and
+// recoverable is fixed and fail-closed (issue #451):
+//
+//   - PRE-execution errors are always fatal: an unadvertised tool name (ADR 002 capability boundary)
+//     and arguments that are not a JSON object are broken calls, not observations.
+//   - a policy/capability denial and a run-budget/cancel/timeout breach are always fatal.
+//   - the tool EXECUTION result is classified by toolErrorIsRecoverable: an error is handed back to
+//     the agent as an {"error": …} OBSERVATION only if the adapter deliberately marked it recoverable
+//     (toolerr.ErrRecoverable — e.g. a read_file MISS on a path that does not exist). Any UNMARKED
+//     execution error — a transport/config failure, a sandbox-escape rejection, a schema/limit
+//     rejection, a nil executor — is fatal, so an adapter diagnostic never becomes prompt text.
+//
+// The returned content is the tool-result payload for the model (a model-safe {"error": …} object on
+// a recoverable miss); tmeta is the step metadata to fold into the loop's cost.
 func (e *Executor) runAgentToolCall(
 	ctx2 context.Context,
 	runHandle *telemetry.RunHandle,
@@ -276,10 +283,11 @@ func (e *Executor) runAgentToolCall(
 	advertised map[string]string,
 	call models.ToolCall,
 ) (content string, tmeta tools.ToolCallMeta, fatalErr error) {
-	// Resolving the call name and parsing its arguments are PRE-execution: an unadvertised tool name
-	// is a capability-boundary violation (ADR 002 — no operation is agent-callable unless advertised)
-	// and malformed arguments are a broken call, both fatal. Only the tool EXECUTION below is a "tool
-	// error" #451 makes recoverable.
+	// Resolving the call name and parsing its arguments are PRE-execution and always fatal: an
+	// unadvertised tool name is a capability-boundary violation (ADR 002 — no operation is
+	// agent-callable unless advertised) and arguments that are not a JSON object are a broken call.
+	// Only the tool EXECUTION below (runToolStep) is classified by toolErrorIsRecoverable, and even
+	// there the default is fatal — an execution error is an observation only if an adapter marked it.
 	uses, err := resolveAgentToolCall(call.Name, advertised)
 	if err != nil {
 		return "", tools.ToolCallMeta{}, err
@@ -293,45 +301,57 @@ func (e *Executor) runAgentToolCall(
 	}
 	out, tmeta, err := e.runToolStep(ctx2, runHandle, pol, wf, runID, step, args, loopPctx, uses, args)
 	if err != nil {
-		if isFatalToolError(err) {
-			return "", tmeta, err
+		if toolErrorIsRecoverable(err) {
+			return recoverableToolObservation(err), tmeta, nil
 		}
-		return recoverableToolObservation(err), tmeta, nil
+		return "", tmeta, err
 	}
 	return encodeToolResultContent(out), tmeta, nil
 }
 
-// maxRecoverableObservationBytes bounds the error text handed back to the agent so a pathological
-// tool error cannot balloon the next prompt.
+// maxRecoverableObservationBytes bounds the observation text handed back to the agent so a
+// pathological tool error cannot balloon the next prompt.
 const maxRecoverableObservationBytes = 4 << 10
 
-// recoverableToolObservation renders a tool error as the {"error": …} tool result an agent receives,
-// so it can correct course (list the directory, try a neighbor) instead of the run dying on the miss
-// (issue #451). The message is bounded; the tool_execution trace event for the failed call is still
-// emitted (with success=false and a redacted reason) by runToolStep, so the audit record is intact.
+// recoverableToolObservation renders a recoverable tool error as the {"error": …} tool result an
+// agent receives, so it can correct course (try a neighbor path, narrow down) instead of the run
+// dying on a miss (issue #451). The text is the adapter-CONSTRUCTED, model-safe observation — never
+// the raw Error(), which the trace layer redacts precisely because it can embed URLs, bodies, or
+// secrets. It is bounded on a UTF-8 rune boundary (a byte cut can split a rune). The tool_execution
+// trace event for the failed call is still emitted (success=false, redacted reason) by runToolStep,
+// so the audit record is intact.
 func recoverableToolObservation(err error) string {
-	msg := err.Error()
+	msg, _ := toolerr.SafeObservation(err)
+	if msg == "" {
+		msg = "tool call failed"
+	}
 	if len(msg) > maxRecoverableObservationBytes {
-		msg = msg[:maxRecoverableObservationBytes] + "…"
+		b := maxRecoverableObservationBytes
+		for b > 0 && !utf8.RuneStart(msg[b]) {
+			b--
+		}
+		msg = msg[:b] + "…"
 	}
 	return encodeToolResultContent(map[string]any{"error": msg})
 }
 
-// isFatalToolError reports whether a tool error must ABORT the run rather than be delivered to the
-// agent as a recoverable observation: a policy/capability denial, a run cancel/timeout, or an
-// adapter misconfiguration marked by the native adapter (issue #451). Everything else — a missing
-// file, a bad argument, a failed exec, an invalid-input schema rejection — is recoverable.
-func isFatalToolError(err error) bool {
+// toolErrorIsRecoverable reports whether a tool-EXECUTION error may be delivered to the agent as a
+// recoverable observation instead of aborting the run. It is FAIL-CLOSED: an error is recoverable
+// only when an adapter deliberately marked it (toolerr.ErrRecoverable) AND it is not a denial or a
+// cancel/timeout (those are always fatal, even if somehow also marked). Everything unmarked — a
+// transport/config failure, a sandbox escape, a schema/limit rejection, a nil executor, a new
+// adapter's error type — stays fatal, so an adapter diagnostic never silently reaches the model.
+func toolErrorIsRecoverable(err error) bool {
 	if err == nil {
 		return false
 	}
 	if _, denied := policy.AsDenied(err); denied {
-		return true
+		return false
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
+		return false
 	}
-	return errors.Is(err, native.ErrFatalTool)
+	return errors.Is(err, toolerr.ErrRecoverable)
 }
 
 func (e *Executor) finishAgentTurn(

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"path/filepath"
 	"strings"
@@ -18,7 +17,7 @@ import (
 	"github.com/Terfyn/terfyn/internal/state"
 	"github.com/Terfyn/terfyn/internal/state/sqlite"
 	"github.com/Terfyn/terfyn/internal/tools"
-	"github.com/Terfyn/terfyn/internal/tools/native"
+	"github.com/Terfyn/terfyn/internal/tools/toolerr"
 	"github.com/Terfyn/terfyn/internal/trace"
 )
 
@@ -600,6 +599,22 @@ func TestRun_multiStep_priorStepCostBlocksNext(t *testing.T) {
 	}
 }
 
+// The secret-bearing string an adapter might put in a tool error's underlying cause (an HTTP 401
+// body, a URL with an api_key). The security contract is that NONE of these reach the model or the
+// audit trace, whether the error is recoverable or fatal.
+var toolErrorSecrets = []string{
+	"sk-live-SECRET99", "tok_abc", "hunter2",
+	"api_key=sk-live-SECRET99", "Bearer tok_abc", "password=hunter2",
+	"https://api.example.com/v1?api_key=",
+}
+
+func secretBearingToolError() error {
+	return errors.New("http 401 GET https://api.example.com/v1?api_key=sk-live-SECRET99 Authorization: Bearer tok_abc password=hunter2")
+}
+
+// TestRun_agentToolLoop_toolCallErrorEmitsExecution proves a RECOVERABLE tool error (issue #451):
+// the run continues past the miss, the model receives a constructed {"error": …} observation, and
+// the secret-bearing underlying cause reaches NEITHER the model (second Generate) NOR the trace.
 func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 	graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"helper"}}, spec.PolicySpec{})
 	mock := &models.MockClient{
@@ -612,13 +627,15 @@ func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 			{Content: `{"summary":"recovered"}`},
 		},
 	}
-	secretErr := errors.New("http 401 GET https://api.example.com/v1?api_key=sk-live-SECRET99 Authorization: Bearer tok_abc password=hunter2")
-	extra := &tools.MockExecutor{Err: secretErr}
+	// Recoverable, but its underlying cause carries secrets: the adapter's model-safe observation is
+	// what the agent may see, never the raw Error().
+	const observation = `helper: "framework/ablation_bench_test.go" does not exist in the workspace`
+	extra := &tools.MockExecutor{Err: toolerr.Recoverable(observation, secretBearingToolError())}
 	got, events, err := runAgentLoop(t, graph, mock, extra)
-	// A tool error is now a recoverable observation (#451): the run does not die on the miss, the
-	// loop hands the error back and proceeds to the next turn, and the run succeeds.
+	// A recoverable tool error does not die on the miss: the loop hands the observation back and
+	// proceeds to the next turn, and the run succeeds.
 	if err != nil {
-		t.Fatalf("a tool error must be recoverable, not fatal: %v", err)
+		t.Fatalf("a recoverable tool error must not be fatal: %v", err)
 	}
 	if got.Status != "succeeded" {
 		t.Fatalf("status %q, want succeeded", got.Status)
@@ -626,6 +643,23 @@ func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 	if mock.CallCount() != 2 {
 		t.Fatalf("generates %d, want 2 (the loop recovered and continued)", mock.CallCount())
 	}
+
+	// (1) Recovery is REAL: the second Generate carries a tool result for c1 that is the constructed
+	// {"error": …} observation — not an empty payload, not the raw error.
+	second := mock.Requests()[1]
+	obs := findToolResultContent(second, "c1")
+	if obs == "" {
+		t.Fatalf("second request has no tool result for c1: %+v", second.Messages)
+	}
+	if !strings.Contains(obs, `"error"`) || !strings.Contains(obs, "does not exist") {
+		t.Fatalf("recovery observation is not the constructed {\"error\":…} object: %q", obs)
+	}
+
+	// (2) The security contract: none of the secrets from the underlying error appear anywhere in the
+	// second Generate the provider sees (the channel the old test never inspected).
+	assertNoSecretsInRequest(t, second)
+
+	// (3) The audit trace still records the failure by the stable redacted token, never the raw error.
 	sel, exec := requireToolTracePair(t, events, "helper", "tool.helper.default")
 	assertNoRawToolArgs(t, sel, "s3cret", "weather", `"password"`)
 	wantDigest := argumentsDigest(map[string]any{"password": "s3cret", "q": "weather"})
@@ -633,11 +667,7 @@ func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 		t.Fatalf("argumentsDigest = %v want %s", got, wantDigest)
 	}
 	assertToolExecutionPayload(t, exec, false, toolCallFailedReason)
-	for _, secret := range []string{
-		"sk-live-SECRET99", "tok_abc", "hunter2",
-		"api_key=sk-live-SECRET99", "Bearer tok_abc", "password=hunter2",
-		"https://api.example.com/v1?api_key=",
-	} {
+	for _, secret := range toolErrorSecrets {
 		if strings.Contains(exec.DataJSON, secret) {
 			t.Fatalf("secret %q leaked into tool_execution: %s", secret, exec.DataJSON)
 		}
@@ -645,25 +675,57 @@ func TestRun_agentToolLoop_toolCallErrorEmitsExecution(t *testing.T) {
 	assertAuditChain(t, "run-loop", events)
 }
 
-// TestRun_agentToolLoop_fatalToolErrorStillAborts proves the recoverable-error change (#451) does
-// NOT swallow genuinely fatal conditions: an adapter misconfiguration (native.ErrFatalTool) aborts
-// the run on the first turn instead of being handed back as an observation.
-func TestRun_agentToolLoop_fatalToolErrorStillAborts(t *testing.T) {
+// TestRun_agentToolLoop_unmarkedToolErrorAborts proves the fail-closed default (issue #451): a tool
+// error the adapter did NOT mark recoverable (toolerr.ErrRecoverable) aborts the run on the first
+// turn instead of being handed back as an observation. Because the run never reaches a second turn,
+// the secret-bearing diagnostic never reaches the model — the reason unmarked-is-fatal is the safe
+// default. (Replaces the old native.ErrFatalTool-sentinel test.)
+func TestRun_agentToolLoop_unmarkedToolErrorAborts(t *testing.T) {
 	graph := agentLoopGraph(t, spec.AgentSpec{Tools: []string{"helper"}}, spec.PolicySpec{})
 	mock := &models.MockClient{Script: []models.MockTurn{
 		{ToolCalls: []models.ToolCall{{ID: "c1", Name: "helper", Arguments: json.RawMessage(`{}`)}}},
 		{Content: `{"summary":"unreachable"}`},
 	}}
-	extra := &tools.MockExecutor{Err: fmt.Errorf("workspace root missing: %w", native.ErrFatalTool)}
+	extra := &tools.MockExecutor{Err: secretBearingToolError()}
 	got, _, err := runAgentLoop(t, graph, mock, extra)
 	if err == nil {
-		t.Fatal("a fatal tool error (adapter misconfiguration) must abort the run, not be recovered")
+		t.Fatal("an unmarked tool error must abort the run, not be recovered")
 	}
 	if got.Status != "failed" {
 		t.Fatalf("status %q, want failed", got.Status)
 	}
 	if mock.CallCount() != 1 {
 		t.Fatalf("generates %d, want 1 (aborted on the fatal error, did not continue)", mock.CallCount())
+	}
+}
+
+// findToolResultContent returns the tool-result content for callID in req, or "" if absent.
+func findToolResultContent(req models.GenerateRequest, callID string) string {
+	for _, msg := range req.Messages {
+		for _, r := range msg.ToolResults {
+			if r.ToolCallID == callID {
+				return r.Content
+			}
+		}
+	}
+	return ""
+}
+
+// assertNoSecretsInRequest fails if any known tool-error secret appears anywhere in req — a message
+// content or a tool-result payload the provider would see.
+func assertNoSecretsInRequest(t *testing.T, req models.GenerateRequest) {
+	t.Helper()
+	for _, msg := range req.Messages {
+		for _, secret := range toolErrorSecrets {
+			if strings.Contains(msg.Content, secret) {
+				t.Fatalf("secret %q leaked to the model in message content: %s", secret, msg.Content)
+			}
+			for _, r := range msg.ToolResults {
+				if strings.Contains(r.Content, secret) {
+					t.Fatalf("secret %q leaked to the model in a tool result: %s", secret, r.Content)
+				}
+			}
+		}
 	}
 }
 
