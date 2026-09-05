@@ -340,6 +340,9 @@ func lowerConstraints(c *lang.Constraints) *spec.AgentConstraints {
 	if c.MaxIterations != nil {
 		out.MaxIterations = *c.MaxIterations
 	}
+	if c.MaxTokens != nil {
+		out.MaxTokens = *c.MaxTokens
+	}
 	if c.TimeoutSeconds != nil {
 		out.TimeoutSeconds = *c.TimeoutSeconds
 	}

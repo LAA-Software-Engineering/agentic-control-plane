@@ -89,7 +89,12 @@ type AgentSpec struct {
 }
 
 type AgentConstraints struct {
-	MaxIterations  int `yaml:"maxIterations,omitempty" json:"maxIterations,omitempty"`
+	MaxIterations int `yaml:"maxIterations,omitempty" json:"maxIterations,omitempty"`
+	// MaxTokens caps a single completion's output tokens (issue #514). Unset/zero resolves to
+	// DefaultAgentMaxTokens via ResolveMaxTokens; it is sent to the provider as max_tokens by both the
+	// Anthropic and OpenAI adapters. A coding agent that writes a whole file needs far more than the
+	// old 4096 chat-era cap, so this is author-tunable per agent.
+	MaxTokens      int `yaml:"maxTokens,omitempty" json:"maxTokens,omitempty"`
 	TimeoutSeconds int `yaml:"timeoutSeconds,omitempty" json:"timeoutSeconds,omitempty"`
 	// Temperature is a pointer so an explicit 0 (deterministic sampling) is distinct from unset
 	// (nil → provider default). Every set value, including 0, is folded into the spec hash, shown in

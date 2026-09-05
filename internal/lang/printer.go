@@ -131,6 +131,9 @@ func printConstraints(b *strings.Builder, c *Constraints) {
 	if c.MaxIterations != nil {
 		fmt.Fprintf(b, "        maxIterations %d\n", *c.MaxIterations)
 	}
+	if c.MaxTokens != nil {
+		fmt.Fprintf(b, "        maxTokens %d\n", *c.MaxTokens)
+	}
 	if c.TimeoutSeconds != nil {
 		fmt.Fprintf(b, "        timeoutSeconds %d\n", *c.TimeoutSeconds)
 	}

@@ -76,6 +76,9 @@ func mergeAgentOverride(agentSpec *AgentSpec, ovr AgentOverride) {
 		if co.MaxIterations != 0 {
 			merged.MaxIterations = co.MaxIterations
 		}
+		if co.MaxTokens != 0 {
+			merged.MaxTokens = co.MaxTokens
+		}
 		if co.TimeoutSeconds != 0 {
 			merged.TimeoutSeconds = co.TimeoutSeconds
 		}

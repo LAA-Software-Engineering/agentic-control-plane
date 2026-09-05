@@ -262,7 +262,7 @@ func (p *parser) parseConstraints() *Constraints {
 	seen := map[string]bool{}
 	for p.cur.Kind != KindRBrace && p.cur.Kind != KindEOF {
 		if p.cur.Kind != KindIdent {
-			p.errorf(p.cur.Pos, "expected a constraint field (maxIterations, timeoutSeconds, temperature, requireStructuredOutput), got %s", p.cur)
+			p.errorf(p.cur.Pos, "expected a constraint field (maxIterations, maxTokens, timeoutSeconds, temperature, requireStructuredOutput), got %s", p.cur)
 			p.syncLine()
 			continue
 		}
@@ -277,6 +277,10 @@ func (p *parser) parseConstraints() *Constraints {
 			if n, ok := p.constraintInt(field); ok {
 				c.MaxIterations = &n
 			}
+		case "maxTokens":
+			if n, ok := p.constraintInt(field); ok {
+				c.MaxTokens = &n
+			}
 		case "timeoutSeconds":
 			if n, ok := p.constraintInt(field); ok {
 				c.TimeoutSeconds = &n
@@ -290,7 +294,7 @@ func (p *parser) parseConstraints() *Constraints {
 				c.RequireStructuredOutput = &b
 			}
 		default:
-			p.errorf(fpos, "unknown constraint %q (want maxIterations, timeoutSeconds, temperature, or requireStructuredOutput)", field)
+			p.errorf(fpos, "unknown constraint %q (want maxIterations, maxTokens, timeoutSeconds, temperature, or requireStructuredOutput)", field)
 			p.syncLine()
 		}
 	}

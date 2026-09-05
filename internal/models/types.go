@@ -63,6 +63,10 @@ type GenerateRequest struct {
 	Messages   []ChatMessage `json:"messages"`
 	Tools      []ToolDef     `json:"tools,omitempty"`
 	ToolChoice string        `json:"tool_choice,omitempty"`
+	// MaxTokens caps the completion's output tokens. Zero leaves it to the adapter's own default
+	// (Anthropic requires max_tokens on every request; OpenAI omits it, taking the API default). The
+	// engine sets it from the agent's constraints.maxTokens (issue #514).
+	MaxTokens int `json:"max_tokens,omitempty"`
 	// Temperature is the sampling temperature to send to the provider. Nil leaves it unset so the
 	// provider default applies; a non-nil value (including 0 for deterministic output) is sent
 	// verbatim. Adapters translate it to the provider's request field (issue #388).

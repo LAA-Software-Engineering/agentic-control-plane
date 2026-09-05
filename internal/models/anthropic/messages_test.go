@@ -75,6 +75,40 @@ func TestMarshalRequest_temperature(t *testing.T) {
 	}
 }
 
+func TestMarshalRequest_maxTokens(t *testing.T) {
+	t.Parallel()
+	// A set value is sent verbatim.
+	body, err := marshalRequest(Request{
+		Model:     "claude-opus-4-8",
+		Messages:  []ChatMessage{{Role: "user", Content: "hi"}},
+		MaxTokens: 32000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.MaxTokens != 32000 {
+		t.Fatalf("max_tokens = %d, want 32000", got.MaxTokens)
+	}
+
+	// Unset falls back to the (raised) adapter default, never the old 4096.
+	body, err = marshalRequest(Request{Model: "claude-opus-4-8", Messages: []ChatMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.MaxTokens != defaultMaxTok || got.MaxTokens <= 4096 {
+		t.Fatalf("default max_tokens = %d, want %d (> 4096)", got.MaxTokens, defaultMaxTok)
+	}
+}
+
 func TestMarshalRequest_outputConfig(t *testing.T) {
 	t.Parallel()
 	schema := json.RawMessage(`{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"additionalProperties":false}`)

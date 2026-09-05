@@ -8,6 +8,7 @@ func TestParseAgentDescriptionAndConstraints(t *testing.T) {
 		"    description \"a helper agent\"\n" +
 		"    constraints {\n" +
 		"        maxIterations 8\n" +
+		"        maxTokens 32000\n" +
 		"        timeoutSeconds 120\n" +
 		"        temperature 0.2\n" +
 		"        requireStructuredOutput true\n" +
@@ -28,6 +29,9 @@ func TestParseAgentDescriptionAndConstraints(t *testing.T) {
 	if c.MaxIterations == nil || *c.MaxIterations != 8 {
 		t.Fatalf("maxIterations: %+v", c.MaxIterations)
 	}
+	if c.MaxTokens == nil || *c.MaxTokens != 32000 {
+		t.Fatalf("maxTokens: %+v", c.MaxTokens)
+	}
 	if c.TimeoutSeconds == nil || *c.TimeoutSeconds != 120 {
 		t.Fatalf("timeoutSeconds: %+v", c.TimeoutSeconds)
 	}
@@ -44,6 +48,7 @@ func TestParseConstraints_Diagnostics(t *testing.T) {
 		"unknown field":   "agent A {\n    constraints { nope 3 }\n}\n",
 		"duplicate":       "agent A {\n    constraints { maxIterations 3\n maxIterations 4 }\n}\n",
 		"non-int maxIter": "agent A {\n    constraints { maxIterations 3.5 }\n}\n",
+		"non-int maxTok":  "agent A {\n    constraints { maxTokens 3.5 }\n}\n",
 		"zero timeout":    "agent A {\n    constraints { timeoutSeconds 0 }\n}\n",
 		"bad bool":        "agent A {\n    constraints { requireStructuredOutput 1 }\n}\n",
 		"duplicate desc":  "agent A {\n    description \"one\"\n    description \"two\"\n}\n",

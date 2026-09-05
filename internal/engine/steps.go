@@ -234,6 +234,7 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		return nil, models.GenerateMeta{}, err
 	}
 	temperature := agentTemperature(agent)
+	maxTokens := spec.ResolveMaxTokens(agent.Spec.Constraints)
 	respFormat, err := e.agentResponseFormat(agent)
 	if err != nil {
 		return nil, models.GenerateMeta{}, err
@@ -242,11 +243,19 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		return e.finishAgentTurn(ctx, ctx2, runHandle, pol, cli, modelRef, modelID, runID, step, pctx, agent, models.GenerateRequest{
 			Model:          modelID,
 			Messages:       messages,
+			MaxTokens:      maxTokens,
 			Temperature:    temperature,
 			ResponseFormat: respFormat,
 		})
 	}
-	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName, temperature, respFormat)
+	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName, temperature, maxTokens, respFormat)
+}
+
+// maxTokensStopError is the actionable run error when a completion stops at its output-token cap
+// (issue #514). Today it fails the step (a truncated write_file would be a corrupted partial file, so
+// silently accepting the prefix is worse); the message names the cap and the constraint to raise.
+func maxTokensStopError(agentName string, cap int) error {
+	return fmt.Errorf("engine: agent %q hit its output token cap (max_tokens=%d) before completing its response; raise it with constraints { maxTokens N } on the agent", agentName, cap)
 }
 
 // agentResponseFormat returns the provider structured-output request for agent, or nil when the agent
@@ -328,6 +337,7 @@ func (e *Executor) runAgentToolLoop(
 	toolDefs []models.ToolDef,
 	advertised map[string]string,
 	temperature *float64,
+	maxTokens int,
 	respFormat *models.ResponseFormat,
 ) (map[string]any, models.GenerateMeta, error) {
 	// maxIter counts Generate turns. tool_use on the last turn fails without executing those calls
@@ -348,6 +358,7 @@ func (e *Executor) runAgentToolLoop(
 			Messages:       messages,
 			Tools:          toolDefs,
 			ToolChoice:     models.ToolChoiceAuto,
+			MaxTokens:      maxTokens,
 			Temperature:    temperature,
 			ResponseFormat: respFormat,
 		}
@@ -369,6 +380,11 @@ func (e *Executor) runAgentToolLoop(
 			} else {
 				return e.completeAgentOutput(ctx, pol, agent, step, resp.Content, acc)
 			}
+		case models.StopReasonMaxTokens:
+			// The completion was cut at the output cap; the content (a partial tool call or a truncated
+			// output object) is unusable, so fail with an actionable message rather than the opaque
+			// "stop reason ... is not end_turn or tool_use" (issue #514).
+			return nil, acc, maxTokensStopError(agent.Metadata.Name, maxTokens)
 		}
 		if resp.StopReason != models.StopReasonToolUse {
 			return nil, acc, fmt.Errorf("engine: agent %q stop reason %q is not end_turn or tool_use", agent.Metadata.Name, resp.StopReason)
@@ -527,6 +543,11 @@ func (e *Executor) finishAgentTurn(
 	}
 	if _, err := e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, resp.Meta); err != nil {
 		return nil, resp.Meta, err
+	}
+	// A single-completion agent that stops at the output cap produces a truncated (unparseable) output
+	// object; report the cap and the constraint to raise instead of a confusing JSON parse error (#514).
+	if resp.StopReason == models.StopReasonMaxTokens {
+		return nil, resp.Meta, maxTokensStopError(agent.Metadata.Name, req.MaxTokens)
 	}
 	return e.completeAgentOutput(ctx, pol, agent, step, resp.Content, resp.Meta)
 }

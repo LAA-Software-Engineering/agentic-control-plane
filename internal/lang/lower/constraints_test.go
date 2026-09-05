@@ -13,7 +13,7 @@ func TestLower_DescriptionAndConstraints(t *testing.T) {
 	src := "agent Responder {\n" +
 		"    model mock/gpt-4\n" +
 		"    description \"handles incidents\"\n" +
-		"    constraints {\n        maxIterations 8\n        timeoutSeconds 120\n    }\n" +
+		"    constraints {\n        maxIterations 8\n        maxTokens 32000\n        timeoutSeconds 120\n    }\n" +
 		"}\n\n" +
 		"workflow triage(input: Alert) -> Status\n    description \"triage an alert\"\n{\n    r = Responder(alert: input.alert)\n    return r\n}\n"
 	f, diags := lang.Parse("t.agent", src)
@@ -30,6 +30,9 @@ func TestLower_DescriptionAndConstraints(t *testing.T) {
 	}
 	if ar.Spec.Constraints == nil || ar.Spec.Constraints.MaxIterations != 8 || ar.Spec.Constraints.TimeoutSeconds != 120 {
 		t.Fatalf("agent constraints: %+v", ar.Spec.Constraints)
+	}
+	if ar.Spec.Constraints.MaxTokens != 32000 {
+		t.Fatalf("agent constraints maxTokens: %+v", ar.Spec.Constraints)
 	}
 	if res.Workflows[0].Spec.Description != "triage an alert" {
 		t.Fatalf("workflow description: %q", res.Workflows[0].Spec.Description)
