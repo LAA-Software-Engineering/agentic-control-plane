@@ -106,12 +106,15 @@ func gitCreateBranch(ctx context.Context, with map[string]any) (map[string]any, 
 	existed := branchExists(ctx, root, name)
 	switch {
 	case reset:
-		// `switch -C` creates the branch or resets an existing one to the start point.
-		args := []string{"switch", "-C", name}
-		if base != "" {
-			args = append(args, base)
+		// A reset must name an explicit start point. `switch -C <name>` with no start point resets to
+		// the CURRENT HEAD — which, in the re-run topology this op exists for (the workspace is still on
+		// the fix branch from a prior attempt), is a no-op that leaves the prior commits in place. So
+		// require `base` and fail closed rather than silently claiming a reset that did nothing (#517).
+		if base == "" {
+			return nil, fmt.Errorf("native: create_branch: reset requires base (the ref to reset the branch to, e.g. base \"main\"); resetting to the current HEAD is a no-op when already on the branch")
 		}
-		if _, err := runGit(ctx, root, args...); err != nil {
+		// `switch -C <name> <base>` creates the branch or resets an existing one to the start point.
+		if _, err := runGit(ctx, root, "switch", "-C", name, base); err != nil {
 			return nil, err
 		}
 		return map[string]any{"branch": name, "created": !existed, "reset": true}, nil

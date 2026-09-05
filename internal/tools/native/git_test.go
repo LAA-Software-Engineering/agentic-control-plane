@@ -102,7 +102,8 @@ func TestGitCreateBranch_idempotentWhenExists(t *testing.T) {
 	}
 }
 
-// reset:true force-recreates the branch at the start point, discarding a prior attempt's commit.
+// reset:true with base force-recreates the branch at the start point, discarding a prior attempt's
+// commit — including the #517 re-run topology where HEAD is STILL on the fix branch (no switch away).
 func TestGitCreateBranch_resetDiscardsPriorWork(t *testing.T) {
 	requireGit(t)
 	root := initRepoWithCommit(t)
@@ -113,7 +114,8 @@ func TestGitCreateBranch_resetDiscardsPriorWork(t *testing.T) {
 	if _, _, err := reg.Dispatch(context.Background(), "create_branch", map[string]any{"name": "fix/264"}); err != nil {
 		t.Fatal(err)
 	}
-	// A prior attempt commits onto the branch.
+	// A prior attempt commits onto the branch, and the workspace is LEFT on the fix branch (the state
+	// a re-run of the workflow actually sees — no switch back to main).
 	if err := os.WriteFile(filepath.Join(root, "attempt.txt"), []byte("wip\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -122,21 +124,37 @@ func TestGitCreateBranch_resetDiscardsPriorWork(t *testing.T) {
 	if gitCfg(t, root, "rev-parse", "HEAD") == mainSHA {
 		t.Fatal("precondition: branch should have advanced past main")
 	}
-	gitCfg(t, root, "switch", "main")
+	if cur := gitCfg(t, root, "rev-parse", "--abbrev-ref", "HEAD"); cur != "fix/264" {
+		t.Fatalf("precondition: HEAD should still be on fix/264, got %q", cur)
+	}
 
-	out, _, err := reg.Dispatch(context.Background(), "create_branch", map[string]any{"name": "fix/264", "reset": true})
+	out, _, err := reg.Dispatch(context.Background(), "create_branch", map[string]any{"name": "fix/264", "reset": true, "base": "main"})
 	if err != nil {
 		t.Fatalf("reset create_branch: %v", err)
 	}
 	if out["reset"] != true || out["created"] != false {
 		t.Fatalf("result %#v", out)
 	}
-	// The branch is back at main — the prior attempt's commit is gone.
+	// The branch is back at main — the prior attempt's commit is gone even though HEAD was on it.
 	if head := gitCfg(t, root, "rev-parse", "HEAD"); head != mainSHA {
 		t.Fatalf("HEAD = %q, want reset back to main %q", head, mainSHA)
 	}
 	if _, err := os.Stat(filepath.Join(root, "attempt.txt")); !os.IsNotExist(err) {
 		t.Fatalf("attempt.txt should be gone after reset, err=%v", err)
+	}
+}
+
+// reset:true without base is refused (a reset to the current HEAD would be a no-op that silently
+// keeps the prior attempt's commits) — fail closed rather than claim a reset that did nothing (#517).
+func TestGitCreateBranch_resetRequiresBase(t *testing.T) {
+	requireGit(t)
+	t.Setenv(envWorkspaceRoot, initRepoWithCommit(t))
+	_, _, err := NewRegistry().Dispatch(context.Background(), "create_branch", map[string]any{"name": "fix/264", "reset": true})
+	if err == nil {
+		t.Fatal("reset without base must be refused")
+	}
+	if !strings.Contains(err.Error(), "reset requires base") {
+		t.Fatalf("error should explain reset needs a base, got: %v", err)
 	}
 }
 
