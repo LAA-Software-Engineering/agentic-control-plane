@@ -182,9 +182,10 @@ func TestFormat_innerTrailingDoesNotLeakPastResource(t *testing.T) {
 		"constraints": "agent a {\n    model m/x\n    constraints {\n        maxTokens 32000 // raise\n    }\n}\npolicy p {\n    preset shell_safe\n}\n",
 		"safety":      "tool t {\n    safety {\n        trusted true // note\n    }\n}\npolicy p {\n    preset shell_safe\n}\n",
 		"execution":   "policy p {\n    execution {\n        maxTotalCostUsd 5 // budget\n    }\n    preset shell_safe\n}\nagent a {\n    model m/x\n}\n",
+		"env-overlay": "environment e {\n    overrides {\n        agents {\n            a {\n                constraints {\n                    maxTokens 32000 // raise\n                }\n            }\n        }\n    }\n}\nagent a {\n    model m/x\n}\n",
 	}
-	needle := map[string]string{"constraints": "raise", "safety": "note", "execution": "budget"}
-	nextDecl := map[string]string{"constraints": "policy p", "safety": "policy p", "execution": "agent a"}
+	needle := map[string]string{"constraints": "raise", "safety": "note", "execution": "budget", "env-overlay": "raise"}
+	nextDecl := map[string]string{"constraints": "policy p", "safety": "policy p", "execution": "agent a", "env-overlay": "agent a"}
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {
 			out, diags := Format("m.agent", src)

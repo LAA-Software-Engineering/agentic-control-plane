@@ -441,6 +441,7 @@ func printConstraintsAt(p *printer, indent string, c *Constraints) {
 	if c.RequireStructuredOutput != nil {
 		fmt.Fprintf(p, "%srequireStructuredOutput %s\n", inner, strconv.FormatBool(*c.RequireStructuredOutput))
 	}
+	p.blockTail(c.Pos.Line, inner)
 	fmt.Fprintf(p, "%s}\n", indent)
 }
 
@@ -455,6 +456,7 @@ func printExecutionAt(p *printer, indent string, e *PolicyExecutionBlock) {
 		fmt.Fprintf(p, "%smaxWallClockSeconds %d\n", inner, *e.MaxWallClockSeconds)
 	}
 	printBoolField(p, inner, "requireStructuredOutput", e.RequireStructuredOutput)
+	p.blockTail(e.Pos.Line, inner)
 	fmt.Fprintf(p, "%s}\n", indent)
 }
 
@@ -471,5 +473,6 @@ func printApprovalsAt(p *printer, indent string, a *PolicyApprovalsBlock) {
 	}
 	printBoolField(p, inner, "requireAllTools", a.RequireAllTools)
 	printBoolField(p, inner, "permissive", a.Permissive)
+	p.blockTail(a.Pos.Line, inner)
 	fmt.Fprintf(p, "%s}\n", indent)
 }
