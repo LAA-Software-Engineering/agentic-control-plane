@@ -1,12 +1,14 @@
 # Examples
 
-Short, runnable patterns for **`apiVersion: agentic.dev/v0`**. For the full YAML spec, CLI behaviour, and field semantics, see [**`DESIGN_DOC.md`**](DESIGN_DOC.md). For **`terfyn test`** fixture format, see [**`TESTING.md`**](TESTING.md).
+Short, runnable **`.agent`** patterns for the **`agentic.dev/v0`** resource model. For the full spec, CLI behaviour, and field semantics, see [**`DESIGN_DOC.md`**](DESIGN_DOC.md); for the grammar, [**`LANGUAGE.md`**](LANGUAGE.md); for **`terfyn test`** fixture format, [**`TESTING.md`**](TESTING.md).
 
-A checked-in copy of the **OpenAI `support_snippet`** project from **section 4** lives under [**`examples/example1/`**](../examples/example1/). Its **`metadata.name`** is **`example1`**, matching that folder. From the repository root, pass **`--project examples/example1`** to **`terfyn`** (or **`cd` there** and use **`--project .`**).
+Under [**ADR 007**](adr/007-remove-yaml-ingestion.md), **`.agent` is the only executable source** — every example below is authored in `.agent`, and every `examples/*` project is `.agent`-only. YAML appears here only where the compiled/interchange form is worth showing.
 
-### Formatting YAML (`terfyn fmt`)
+A checked-in **OpenAI `support_snippet`** project (**section 4**) lives under [**`examples/example1/`**](../examples/example1/); its project name is the directory (`example1`). From the repository root, pass **`--project examples/example1`** to **`terfyn`** (or **`cd` there** and use **`--project .`**).
 
-Normalize indentation (2 spaces) for **`project.yaml`** / **`project.yml`** and every file in **`spec.imports`** (same closure as validate/load). **`--check`** exits **1** if any file would change (CI). **YAML comments may be lost** on rewrite—commit or branch before running.
+### Formatting `.agent` sources (`terfyn fmt`)
+
+**`terfyn fmt`** formats every **`.agent`** source under the project root to canonical form (4-space indent, normalized spacing) and normalizes any YAML still in the project closure. **`--check`** exits **1** if any file would change (CI). **`.agent` comments are not preserved** on rewrite — commit or branch before running.
 
 ```bash
 terfyn fmt --project my-agent-system
@@ -28,89 +30,59 @@ my-agent-system/
   main.agent            # a starter agent, a `default` policy, and the hello workflow
 ```
 
-A Terfyn project is authored **entirely in `.agent`** (ADR 002 / [ADR 003](adr/003-yaml-as-compilation-output.md); [grammar reference](LANGUAGE.md)): agents, workflows, tools, and policies are all `.agent` declarations, discovered and compiled automatically from any `.agent` file under the project root. The project name is the directory name and built-in model providers need no configuration, so nothing else is required.
+A Terfyn project is authored **entirely in `.agent`** (ADR 002 / [ADR 007](adr/007-remove-yaml-ingestion.md); [grammar reference](LANGUAGE.md)): agents, workflows, tools, and policies are all `.agent` declarations, discovered and compiled automatically from any `.agent` file under the project root. The project name is the directory name and built-in model providers need no configuration, so nothing else is required.
 
-> **The YAML in sections 2–4 below is the compiled/interchange form, not the authoring surface.** `terfyn export --format yaml` emits it, and the loader still *accepts* it as a non-authoring ingress (machine-generated resources, fixtures, the export round-trip) — but you never hand-author or generate it for a project. Read those sections as a field reference for the resource model; author the equivalent `.agent` (sections **8–9** show `.agent` projects, and every `examples/*` project is `.agent`-only). To convert a legacy YAML project, run `terfyn migrate --to-agent`.
-
----
-
-## 2. Root `project.yaml` (mock model, local-only)
-
-`spec.imports` lists YAML files relative to the project root. `defaults.model` uses the form **`namespace/model_id`**, where **`namespace`** matches a key under `spec.providers.models`.
-
-Optional **`defaults.runtime`** sets where agents and workflows run: the built-in **`local`** engine (or omit for implicit local), or an external agent runtime such as **`claude-code`** (see [`EXTERNAL_RUNTIME.md`](EXTERNAL_RUNTIME.md) and section 9). Resources that omit **`spec.runtime`** inherit this value when the merged project graph is normalized.
-
-```yaml
-apiVersion: agentic.dev/v0
-kind: Project
-metadata:
-  name: my-agent-system
-spec:
-  imports:
-    - ./policies/default.yaml
-    - ./tools/helper.yaml
-    - ./workflows/hello.yaml
-  defaults:
-    policy: default
-    model: mock/gpt-4
-    runtime: local
-  providers:
-    models:
-      mock:
-        type: mock
-  limits:
-    maxToolInputBytes: 262144    # 256 KiB; truncate by default
-    maxToolOutputBytes: 262144   # 256 KiB
-    maxCheckpointBytes: 1048576  # 1 MiB; fail closed (never truncate checkpoints)
-    toolInputExceedPolicy: truncate
-    toolOutputExceedPolicy: truncate
-    checkpointExceedPolicy: fail
-```
-
-`spec.limits` bounds tool I/O and checkpoint bytes. Workflow and Tool resources may override individual fields. `maxStateBytes` is an alias for `maxCheckpointBytes`. When `truncate` is set, long string fields are shortened in-place (top-level keys are preserved); `fail` aborts the step. Checkpoint limits always fail closed.
+> **YAML is no longer a project source.** Under [ADR 007](adr/007-remove-yaml-ingestion.md) `.agent` is the only executable source: a `project.yaml` handed to `validate`/`plan`/`apply`/`run` is **refused** with a `terfyn migrate --to-agent` hint. `terfyn export --format yaml` still emits YAML, but as a **one-way** interchange output that is never re-loaded as source; machine producers build the graph through the typed **ResourceGraph** ingress instead of a second source language. To convert a legacy YAML project, run `terfyn migrate --to-agent` (it raises declaratives **and** workflows).
 
 ---
 
-## 3. Policy, native tool, tool-only workflow
+## 2. Project config: `defaults` and `limits` (`.agent`)
 
-**`policies/default.yaml`**
+A `.agent` project needs **no `Project` declaration** — the project name is the directory and built-in model providers resolve with no configuration. Two optional top-level singletons tune project-wide behaviour (declare each **at most once**, in any `.agent` file under the root).
 
-```yaml
-apiVersion: agentic.dev/v0
-kind: Policy
-metadata:
-  name: default
-spec:
-  execution:
-    maxWallClockSeconds: 300
-    maxTotalCostUsd: 5
+`defaults` sets fallbacks any agent/workflow inherits when it omits the field. `defaults.model` is **`namespace/model_id`** (a built-in namespace like `mock`/`openai`, or a `provider` alias). Optional **`defaults.runtime`** sets where a workflow runs: the built-in **`local`** engine (or omit for implicit local), or an external agent runtime such as **`claude-code`** (see [`EXTERNAL_RUNTIME.md`](EXTERNAL_RUNTIME.md) and section 9); a workflow that omits `runtime` inherits it.
+
+```
+defaults {
+    policy default
+    model mock/gpt-4
+    runtime local
+}
+
+limits {
+    maxToolInputBytes 262144       // 256 KiB; truncate by default
+    maxToolOutputBytes 262144      // 256 KiB
+    maxCheckpointBytes 1048576     // 1 MiB; fail closed (never truncate checkpoints)
+    toolInputExceedPolicy truncate
+    toolOutputExceedPolicy truncate
+    checkpointExceedPolicy fail
+}
 ```
 
-**`tools/helper.yaml`** — `type: native` uses built-in tools (see design doc for names).
+`limits` is the project-wide execution-limit baseline; a Tool's own `limits { … }` block overrides individual fields at top precedence. `maxStateBytes` is an alias for `maxCheckpointBytes`. When `truncate` is set, long string fields are shortened in-place (top-level keys preserved); `fail` aborts the step. **`checkpointExceedPolicy` must be `fail`** — truncating durable checkpoint state is rejected by `terfyn validate`.
 
-```yaml
-apiVersion: agentic.dev/v0
-kind: Tool
-metadata:
-  name: helper
-spec:
-  type: native
+---
+
+## 3. Policy, native tool, and a tool-only workflow (`.agent`)
+
+A policy, a native tool, and a workflow whose single step calls a tool — all `.agent` declarations in any `.agent` file under the project root. A tool call is `<tool>.<operation>(args)`; a workflow step is a binding or the trailing `return`.
+
 ```
+policy default {
+    execution {
+        maxWallClockSeconds 300
+        maxTotalCostUsd 5
+    }
+}
 
-**`workflows/hello.yaml`** — each step sets **exactly one** of `uses` (tool) or `agent` (LLM agent).
+tool helper {
+    type native                 // built-in operations such as echo (see the design doc for names)
+    safety { sideEffects false }
+}
 
-```yaml
-apiVersion: agentic.dev/v0
-kind: Workflow
-metadata:
-  name: hello
-spec:
-  policy: default
-  steps:
-    - id: greet
-      uses: tool.helper.echo
-      with:
-        message: "hello"
+workflow hello(input: any) policy default {
+    return helper.echo(message: "hello")
+}
 ```
 
 Run the usual loop from the parent of the project directory:
@@ -126,27 +98,26 @@ terfyn run    workflow/hello --project my-agent-system
 
 ## 3b. MCP tool over HTTP (streamable HTTP)
 
-For MCP servers exposed over **HTTP** (streamable HTTP transport: one **POST** per JSON-RPC message), set **`spec.mcp.transport: http`** and **`spec.mcp.url`** to the MCP endpoint (must be **`http://`** or **`https://`**). Optional **`spec.mcp.headers`** use the same patterns as native HTTP tools (literal values or **`env:VAR_NAME`** for secrets).
+For MCP servers exposed over **HTTP** (streamable HTTP transport: one **POST** per JSON-RPC message), give the tool an `mcp` block with **`transport "http"`** and a **`url`** (must be **`http://`** or **`https://`**). Optional **`headers`** are string key/value pairs — use **`env:VAR_NAME`** for a secret rather than an inline literal.
 
-```yaml
-apiVersion: agentic.dev/v0
-kind: Tool
-metadata:
-  name: remote_mcp
-spec:
-  type: mcp
-  mcp:
-    transport: http
-    url: https://mcp.example.com/v1/mcp
-    headers:
-      Authorization: env:MCP_BEARER_TOKEN
+```
+tool remote_mcp {
+    type mcp
+    mcp {
+        transport "http"
+        url "https://mcp.example.com/v1/mcp"
+        headers {
+            "Authorization" "env:MCP_BEARER_TOKEN"
+        }
+    }
+}
 ```
 
 **Security**
 
 - Prefer **HTTPS** in production. The default Go client performs **normal TLS certificate verification** against the system trust store; do not disable verification for MCP calls.
-- **`stdio`** and **`http`** are mutually exclusive in **`spec.mcp`**: set **`command`** only for stdio, **`url`** only for HTTP (validated at `terfyn validate`).
-- Workflow trace events for tool steps record **`uses`** and cost, not HTTP headers or resolved env values; keep custom logging of MCP traffic free of secrets.
+- **stdio** and **http** are mutually exclusive in the `mcp` block: set **`command`** only for stdio, **`url`** only for HTTP (validated at `terfyn validate`).
+- Workflow trace events for tool steps record **`uses`** and cost, not HTTP headers or resolved env values; keep custom logging of MCP traffic free of secrets. A literal secret in a header is flagged at apply/run and never resolved to a stored value.
 
 ---
 
@@ -314,8 +285,8 @@ The segment before **`/`** is a provider namespace. Built-in namespaces (`anthro
 To run **`terfyn`** on **`pull_request`** (install binary, **`validate` / `plan` / `apply` / `run`**,
 with **`--approve tool.github.pull_request.post_comment`** so a real review comment is posted), see
 [**`GITHUB_ACTIONS.md`**](GITHUB_ACTIONS.md) and the template under
-[**`examples/pr-review-github-actions/`**](../examples/pr-review-github-actions/README.md) (includes
-**`project.yaml`** with **OpenAI `gpt-4o-mini`** and the Actions template). The
+[**`examples/pr-review-github-actions/`**](../examples/pr-review-github-actions/README.md) (a `.agent`
+project — **`main.agent`** — with **OpenAI `gpt-4o-mini`** and the Actions template). The
 template also appends a **job summary** (`GITHUB_STEP_SUMMARY`), optional **Actions cache** for the
 SQLite file, and an optional **`gh pr comment`** pointer job (skipped by default when disabled). In
 this repo the PR workflow is **`.github/workflows/terfyn-pr-review.yml`**; manual publish for an
@@ -329,9 +300,9 @@ Fixture-style **`terfyn test`** (no API keys) is **[`examples/regression-test/`]
 
 [**`examples/implement-review-loop/`**](../examples/implement-review-loop/README.md) is the flagship
 `.agent` program: an **Implementer** and an independent **Reviewer** pass a structured `CodingState`
-through a bounded `while … limit 3`, authored entirely in **`.agent`** (agent prompts in
-`instructions`, typed `CodingState` input/output, and per-agent capability grants) with only tool /
-policy / project **configuration** left in YAML.
+through a bounded `while … limit 3`, authored **entirely in `.agent`** (agent prompts in
+`instructions`, typed `CodingState` input/output, the `workspace` tool, both policies, and per-agent
+capability grants) — `main.agent` plus a `schemas/CodingState.json`, no `project.yaml`.
 
 It demonstrates *deterministic bounded control around nondeterministic agents*:
 

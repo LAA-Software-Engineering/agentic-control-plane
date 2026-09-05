@@ -94,25 +94,24 @@ Expanded diagram, plan-time bounds, and closed-world caveats: [`docs/architectur
 
 This is not another orchestrator (Temporal, Dagger, LangGraph). Those schedule work. Terfyn's direction is a **plan-time effect bound** — a sound static upper bound on what an autonomous agent can do, reviewable as a diff ([#189](https://github.com/Terfyn/terfyn/issues/189) / [#191](https://github.com/Terfyn/terfyn/issues/191)). `terfyn plan` prints that bound and the authority delta vs stored deployment state.
 
-**Today** `terfyn plan` diffs **permissions**, **approvals**, **models**, **budgets**, **C1 risk items**, and **effect/capability/authority** against SQLite desired state:
+**Today** `terfyn plan` diffs **capabilities (grants)**, **approvals**, **models**, **budgets**, **C1 risk items**, and **effect/capability/authority** against SQLite desired state:
 
 ```text
 Plan: 0 to add, 3 to change, 0 to delete
 ~ update Agent/reviewer
     spec.model: "mock/gpt-4" -> "mock/gpt-4o"
-    spec.tools.1:  -> "github"
+    spec.tools.1:  -> "tool.github.default"
 ~ update Policy/default
     spec.approvals.requiredFor.0: "tool.helper.echo" -> "tool.github.issues.write"
     spec.execution.maxTotalCostUsd: 3 -> 10
 ~ update Tool/github
-    spec.permissions.allow.1:  -> "issues.write"
+    spec.safety.sideEffects: false -> true
 
 Risk delta:
 high:
 - [high] approval_removal: Approval requirements removed for "tool.helper.echo" (Policy/default).
 - [high] budget_relaxation: Cost ceiling increased (Policy/default).
-- [high] permission_widening: New write-like tool permission "issues.write" added (Tool/github).
-- [high] tool_surface_change: Agent tools list gained write-like tool "github" (Agent/reviewer).
+- [high] tool_surface_change: Agent tools list gained write-capable tool "tool.github.default" (Agent/reviewer; declares side effects).
 medium:
 - [medium] model_change: Agent model changed (Agent/reviewer).
 ```
@@ -135,7 +134,7 @@ Authority:
   autonomous  -> WIDENED
 ```
 
-Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Workflows run end-to-end, **including conditionals, loops, and dynamic fan-out** ([#199](https://github.com/Terfyn/terfyn/issues/199)/[#259](https://github.com/Terfyn/terfyn/issues/259)): a control-flow workflow lowers to the execution IR, is pinned into the deployment snapshot, and runs on the `execir` interpreter (see `examples/agent-control-flow`). YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)): the loader still accepts it (so machine-generated resources and the existing fixtures work), and `terfyn export --format yaml` materializes the compiled graph on demand. Lead on **capability**, not format.
+Agents and workflows are authored in [`.agent`](docs/LANGUAGE.md), the surface syntax fixed by [ADR 002](docs/adr/002-language-frontend-and-ir-expressiveness.md); the loader compiles `.agent` (type/effect checking + argument rebind) into the resource graph. Workflows run end-to-end, **including conditionals, loops, and dynamic fan-out** ([#199](https://github.com/Terfyn/terfyn/issues/199)/[#259](https://github.com/Terfyn/terfyn/issues/259)): a control-flow workflow lowers to the execution IR, is pinned into the deployment snapshot, and runs on the `execir` interpreter (see `examples/agent-control-flow`). `.agent` is the **sole executable source** ([ADR 007](docs/adr/007-remove-yaml-ingestion.md)): a `project.yaml` handed to `validate`/`plan`/`apply`/`run` is refused with a `terfyn migrate --to-agent` hint. Machine producers build the graph through the **typed ResourceGraph ingress**, not a second source language. YAML is a **one-way output** — `terfyn export --format yaml` materializes the compiled graph for inspection or handoff, not for re-execution. Lead on **capability**, not format.
 
 ## Examples
 
@@ -182,20 +181,20 @@ Terfyn is the **declarative governance/config layer** for agent systems — not 
 |---|---|---|---|---|---|
 | Role | Governance/config: versioned resources, plan/apply, policy | Code-first agent runtime | Code-first graph orchestration | Durable workflow execution | Infrastructure as code |
 | Durable execution / distributed scheduling | No | No | Optional checkpointers; not a durable-execution engine | Yes | N/A |
-| Code-first agent runtime | No (resource graph; `.agent` authoring, YAML compilation output) | Yes | Yes | Workflow SDK, not an agent runtime | No |
+| Code-first agent runtime | No (resource graph; `.agent` authoring, typed API for machines, one-way YAML export) | Yes | Yes | Workflow SDK, not an agent runtime | No |
 | Desired-state plan / apply | Yes (`terfyn plan` / `apply` vs SQLite) | No | No | No | Yes |
 | Plan-time effect bound | **Shipped** ([#189](https://github.com/Terfyn/terfyn/issues/189) / [#190](https://github.com/Terfyn/terfyn/issues/190) / [#191](https://github.com/Terfyn/terfyn/issues/191)): bound over the **callable operation set**, including autonomous tool selection; `terfyn plan` prints the bound and authority delta. No listed comparable. | No | No | No | No |
 
-The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/Terfyn/terfyn/issues/204)) is **enforced** at dispatch: an operation outside a tool's deployed capability manifest is denied on the policy path, so a live MCP `tools/list` can no longer expand the callable world (discovery merges only `spec.safety`, never the operation set). A resumed run enforces the manifest it started with — hydrated from its deployment snapshot ([#207](https://github.com/Terfyn/terfyn/issues/207)) — so a widening apply between suspend and resume does not widen the resumed run's authority. `terfyn plan` diffs permissions, approvals, models, budgets, C1 risk items, and effect/capability/authority.
+The bound is not over what those operations do at the far end; the trust anchor is human review of the tool manifest. Manifest pin ([#204](https://github.com/Terfyn/terfyn/issues/204)) is **enforced** at dispatch: an operation outside a tool's deployed capability manifest is denied on the policy path, so a live MCP `tools/list` can no longer expand the callable world (discovery merges only `spec.safety`, never the operation set). A resumed run enforces the manifest it started with — hydrated from its deployment snapshot ([#207](https://github.com/Terfyn/terfyn/issues/207)) — so a widening apply between suspend and resume does not widen the resumed run's authority. `terfyn plan` diffs capabilities (grants), approvals, models, budgets, C1 risk items, and effect/capability/authority.
 
 ---
 
 ## Features (MVP today)
 
 - **`terfyn init`** — scaffold a `.agent`-only project (a single `main.agent` with a starter agent, policy, and workflow; no `project.yaml`)  
-- **`terfyn export --format yaml`** — materialize the compiled resource graph as YAML on demand (nothing written to disk by default; `--output DIR` writes a loadable project)  
-- **`terfyn migrate --to-agent`** — convert a project's YAML-authored declarative resources (providers/tools/policies/environments/agents) to `.agent` source (stdout, or `--output FILE`); non-destructive, and reports any construct with no `.agent` form (e.g. a YAML-authored workflow) rather than emitting lossy output  
-- **`terfyn fmt`** — format `.agent` sources to canonical form (and normalize project YAML)  
+- **`terfyn export --format yaml`** — materialize the compiled resource graph as YAML on demand (nothing written to disk by default; `--output DIR` writes a YAML project directory for interchange — **one-way output, not an executable source** under [ADR 007](docs/adr/007-remove-yaml-ingestion.md))  
+- **`terfyn migrate --to-agent`** — convert a project's YAML-authored resources (providers/tools/policies/environments/agents **and workflows** — steps, interpolated args, approvals, object outputs) to `.agent` source (stdout, or `--output FILE`); non-destructive, and reports only the constructs with no `.agent` form (a step-DAG that cannot linearize, a non-convention schema ref) rather than emitting lossy output  
+- **`terfyn fmt`** — format `.agent` sources to canonical form (works on an `.agent`-only project; also normalizes any YAML still in the project closure)  
 - **`terfyn validate`** — load project, apply **project defaults** (`spec.defaults`), then **environment overlays** (`-e` / `--env`, `Environment` resources §7.6), then validate graph, schemas, and references; runs **policy lint** (ungated sensitive tools, invalid HITL config, etc.) as **advisory** output — use **`--strict`** to exit **2** on high-severity lint findings (fail-closed safety metadata still gates at **run** even when lint passes)  
 - **`terfyn plan`** — diff desired graph vs SQLite **deployment** state; risk hints including policy lint, effect bound, and authority delta; JSON/YAML output includes **`policyLint`**, **`deploymentBaseline`**, **`effectBound`**, and **`authority`**
 - **`terfyn apply`** — persist plan (TTY confirm or `--auto-approve` / `TERFYN_AUTO_APPROVE`); **optimistic concurrency** — if the deployment store changed after the plan snapshot (e.g. another process applied the same `--state` file while this run waited at the prompt), apply fails with **exit code 3**; re-run **plan** then **apply**  
@@ -203,7 +202,7 @@ The bound is not over what those operations do at the far end; the trust anchor 
 - **`terfyn logs`** — read **trace events** from SQLite (`--run`, `--workflow`, or recent runs)
 - **`terfyn audit verify`** — re-walk hash-linked trace chains and detect tampering (see [`docs/AUDIT_CHAIN.md`](docs/AUDIT_CHAIN.md))  
 - **Tools** — **`native`**, **`http`**, **`mock`**, and **`mcp`** — MCP supports **stdio** (subprocess) or **streamable HTTP** (`spec.mcp.transport: http`, `url`, optional `headers` with `env:` tokens)  
-- **Project defaults** — besides **`model`** and **`policy`**, optional **`runtime`** flows to **`spec.runtime`** on agents/workflows when omitted (MVP: **`local`** or unset; see spec validation)  
+- **Project defaults** — besides **`model`** and **`policy`**, optional **`runtime`** flows to **`spec.runtime`** on workflows (and the project) when omitted (MVP: **`local`** or an external target such as `claude-code`/`gemini`; per-agent `runtime` is no longer a field, see spec validation)  
 - **Output** — table, JSON, or YAML (`-o` / `--output`)  
 - **State** — single SQLite file (default `.agentic/state.db` under the project root; override with `--state`)  
 - **Tests** — unit/integration coverage, golden CLI output tests, end-to-end `init → … → logs` in `test/integration`  
@@ -295,7 +294,7 @@ workflow hello(input: string) -> string
 
 That is the whole project — no other files are needed. Add tools, agents, and policies as more `.agent` declarations (or scaffold them with **`terfyn new`**); switch models by naming a built-in provider (`model openai/gpt-4o-mini`), and only declare a `provider` alias for a custom endpoint or credential. Environment overlays, MCP/HTTP tools, and HITL gates are all `.agent` constructs — see [`docs/LANGUAGE.md`](docs/LANGUAGE.md).
 
-YAML is **not** a project-authoring format: `terfyn init` / `terfyn new` never write it, and nothing you author needs it. YAML is the **compilation output and interchange format** ([ADR 003](docs/adr/003-yaml-as-compilation-output.md)) — `terfyn export --format yaml` materializes the compiled resource graph on demand (to stdout, or a loadable directory with `--output DIR`) for inspection or handoff. The loader still *accepts* YAML resources as a non-authoring ingress so machine-generated resources, existing fixtures, and the export round-trip keep working; to convert a legacy YAML project to `.agent`, run **`terfyn migrate --to-agent`**.
+YAML is **not** a project source at all: `terfyn init` / `terfyn new` never write it, nothing you author needs it, and under [ADR 007](docs/adr/007-remove-yaml-ingestion.md) `.agent` is the **only executable source**. A `project.yaml` handed to `validate`/`plan`/`apply`/`run` is **refused** with a `terfyn migrate --to-agent` hint — there is no graph-construction path from a YAML project manifest any more. YAML survives only as a **one-way output**: `terfyn export --format yaml` materializes the compiled graph (to stdout, or a YAML project directory with `--output DIR`) for inspection or handoff, not for re-execution. Machine producers construct the graph through the **typed ResourceGraph ingress** (the same normalization/validation/effect pipeline as `.agent`), not through a second source language. To convert a legacy YAML project to `.agent`, run **`terfyn migrate --to-agent`**.
 
 Field-by-field rules, extra kinds, env overlays, MCP HTTP tools, and **`defaults.runtime`** are in [`docs/DESIGN_DOC.md`](docs/DESIGN_DOC.md). See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for Anthropic fragments, MCP over HTTP, and structured-output notes.
 
@@ -326,7 +325,7 @@ Exit codes are summarized in **section 11.2** of [`docs/DESIGN_DOC.md`](docs/DES
 
 ### User-local config (per-developer overrides)
 
-Config is resolved in this order (highest wins): **CLI flags** → **environment overlay** (`-e`) → **project YAML** → **user-local** → **built-in defaults**.
+Config is resolved in this order (highest wins): **CLI flags** → **environment overlay** (`-e`) → **project config** (the `Project` resource's `spec.defaults`/`state`/`providers`/`traces`/`telemetry`, authored in `.agent`) → **user-local** → **built-in defaults**.
 
 Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 
@@ -345,7 +344,7 @@ Optional user-local files (git-ignored, strict YAML — typos fail `validate`):
 |------|------|
 | `cmd/terfyn` | CLI entrypoint |
 | `internal/cli` | Cobra commands, flags, golden tests |
-| `internal/spec` | YAML types, normalize, validate |
+| `internal/spec` | Resource types (YAML/JSON codec), normalize, validate |
 | `internal/config` | Layered config resolution, immutable snapshot |
 | `internal/project` | Load project + imports |
 | `internal/lang` | `.agent` frontend: lexer, parser, typed AST, checker, lowering to the resource + execution IR |

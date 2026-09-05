@@ -497,22 +497,23 @@ End goal later:
 > **Authoring surface (ADR 002 / ADR 003).** Agents and workflows are authored in
 > [`.agent`](LANGUAGE.md). `.agent` files anywhere under the project root are discovered and
 > compiled through the checker (type/effect checking plus the workflow-argument rebind) into the
-> resource graph by the loader, alongside any YAML resources. `.agent` workflows execute
+> resource graph by the loader (a `project.yaml` is refused, ADR 007). `.agent` workflows execute
 > end-to-end, **including conditionals, loops, and dynamic fan-out (#199/#259)**: a control-flow
 > workflow lowers to the execution IR, is pinned into the deployment snapshot (#260), and runs on
 > the `execir` interpreter (the taken arm only) rather than the resource DAG, whose flattened arms
-> are kept only for effect analysis. **YAML is the compilation output and interchange
-> format**, not the primary authoring surface: the loader still accepts it (machine-generated
-> resources, existing fixtures, and interchange all depend on it), `terfyn export --format yaml`
-> materializes the compiled graph on demand, and nothing generated is written to disk by default.
-> Tools, policies, environments, and custom providers now all have first-class `.agent` surfaces
-> (issue #440), so a project is authored entirely in `.agent`; the `Project` config below is derived
-> (project name from the directory, built-in providers, discovered `.agent` files) rather than
-> hand-authored. The kinds and fields in this section describe the resource model both surfaces
-> compile to. A few rarely-used resource fields may still lack a `.agent` surface and remain reachable
-> only through the YAML non-authoring ingress; the common resource model — agents, workflows, tools
-> (including `mcp`/`http`/`workspace` config), policies (including `hitl`), environments, and providers
-> — is fully authorable in `.agent`.
+> are kept only for effect analysis. **YAML is a one-way output serialization**, not a source: under
+> [ADR 007](adr/007-remove-yaml-ingestion.md) `.agent` is the **only executable source** — a
+> `project.yaml` handed to `validate`/`plan`/`apply`/`run` is refused with a `terfyn migrate --to-agent`
+> hint. Machine producers build the graph through the **typed ResourceGraph ingress** (the same
+> normalization/validation/effect pipeline as `.agent`), not a YAML frontend. `terfyn export --format yaml`
+> materializes the compiled graph on demand for inspection/handoff, and nothing generated is written to
+> disk by default. Tools, policies, environments, custom providers, and workflows all have first-class
+> `.agent` surfaces (issues #440/#478/#479), so a project is authored entirely in `.agent`; the `Project`
+> config below is derived (project name from the directory, built-in providers, discovered `.agent` files)
+> rather than hand-authored. The kinds and fields in this section describe the resource model both the
+> `.agent` compiler and the typed ingress produce — agents, workflows, tools (including
+> `mcp`/`http`/`workspace` config), policies (including `hitl`), environments, and providers — which is
+> fully authorable in `.agent`.
 
 ## 7.1 Project
 
@@ -775,9 +776,11 @@ into the normalized spec hash, plan diffs, `NormalizedSpecJSON`, and the deploye
 reconstructed from applied spec (`graphFromApplied`, and the #207 snapshot). So deleting the
 `operations:` key from a locked tool is a visible plan change, and the deployed world matches what
 `CheckToolCall` enforces — closed-empty is not distinguishable from open only at runtime. The YAML
-interchange path preserves it too (ADR 003): `ToolSpec.MarshalYAML` emits an explicit
-`operations: {}` for a declared-but-empty manifest, so `terfyn export` → load round-trips to the
-same closed world rather than dropping the empty mapping.
+interchange codec preserves it too (ADR 003): `ToolSpec.MarshalYAML` emits an explicit
+`operations: {}` for a declared-but-empty manifest — so a `terfyn export` and the deployment
+snapshot both carry the closed world rather than dropping the empty mapping and silently reopening
+the callable set. (`terfyn export` is one-way output; the round-trip is through the private YAML
+codec and the applied-spec reconstruction, not a re-load of exported YAML as project source — ADR 007.)
 
 Runtime enforcement is on the policy path
 (`[policy.PolicyEvaluator.CheckToolCall]` → `ReasonOperationNotInManifest`, in **both** the
@@ -1110,33 +1113,24 @@ spec:
 
 # 8. File Layout for a User Project
 
+A project is authored **entirely in `.agent`** (ADR 007) — there is no `project.yaml` and no YAML
+resources. Every `.agent` file anywhere under the project root is discovered and compiled into one
+graph, so the split across files is organizational, not semantic; the smallest project is a single
+`main.agent`. A larger project might group declarations by concern:
+
 ```text
 my-agent-system/
-  project.yaml
-
-  agents/
-    reviewer.yaml
-    incident.yaml
-
-  tools/
-    github.yaml
-    slack.yaml
-
-  workflows/
-    pr-review.yaml
-    incident-triage.yaml
-
-  policies/
-    default.yaml
-    strict.yaml
-
-  env/
-    dev.yaml
-    prod.yaml
+  main.agent            # project `defaults` / `limits`, and the top-level workflow(s)
+  agents.agent          # agent declarations (reviewer, incident, …)
+  tools.agent           # tool declarations (github, slack, workspace, …)
+  policies.agent        # policy declarations (default, strict, …)
+  environments.agent    # environment overlays (dev, prod, …)
 
   schemas/
     pr-review-input.json
     review-output.json
+
+  .agentic/             # generated: state.db, resolved-config.json, snapshots (git-ignored)
 ```
 
 ---
@@ -1162,7 +1156,6 @@ my-agent-system/
 ## 9.3 Tool validation
 
 * exactly one transport block for the selected `type`
-* permission actions must be valid strings
 * retry values must be non-negative
 * `spec.operations` keys and `effects` identifiers match `[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*`
 * effect identifiers must not begin with `tool.`
@@ -1211,11 +1204,11 @@ Create starter project.
 terfyn init my-agent-system
 ```
 
-Creates:
+Creates an **`.agent`-only** project (ADR 007 — no `project.yaml`, no YAML resources):
 
-* `project.yaml` (config)
-* `main.agent` — the workflow, authored in the `.agent` surface (ADR 003)
-* YAML `policies/` and `tools/`
+* `main.agent` — a starter agent, a `default` policy, and the `hello` workflow, all `.agent` declarations
+
+Add tools, agents, policies, and project `defaults`/`limits` as more `.agent` declarations under the root.
 
 ### MVP
 
@@ -1230,12 +1223,13 @@ demand, never written to disk by default.
 
 ```bash
 terfyn export --format yaml            # multi-document YAML stream to stdout
-terfyn export --format yaml --output out/   # a loadable project (round-trips through the loader)
+terfyn export --format yaml --output out/   # a YAML project directory (interchange output; NOT executable source — ADR 007)
 ```
 
 The generated YAML is not the trustworthy record (applied deployment state plus the audit chain
-is) and is not committed. It round-trips: `export --output` writes a project that
-`LoadProject` reconstructs to an identical graph (positions and the import list are not identity).
+is) and is not committed. It is a **one-way output**: under [ADR 007](adr/007-remove-yaml-ingestion.md)
+`.agent` is the only executable source, so `LoadProject` refuses a `project.yaml` (`internal/project/loader.go`)
+and an exported directory is for inspection/interchange, not re-execution — see #507.
 
 ### MVP
 
@@ -1655,11 +1649,11 @@ type Operation struct {
 
 Structured `RiskItem` list (category, severity, reason, target, witness path; issue #165):
 
-* permission widening — new `tool.permissions.allow` entries (write-like is high)
 * approval removal — entries removed from `policy.approvals.requiredFor`
 * budget relaxation — `maxTotalCostUsd` / `maxWallClockSeconds` increased
 * model changes — agent `model` provider or id
-* tool surface change — tools added to an agent's `tools` list
+* tool surface change — tools added to an agent's `tools` list (write-capability risk is derived from the tool's declared `safety.sideEffects`; the removed `tool.permissions` `permission_widening` name heuristic no longer applies)
+* runtime target change — a workflow's `runtime` target changed (e.g. `local` → `claude-code`)
 
 C1 witness hops are resource-level (static). Effect-bound Workflow→step→Agent→tool.operation hops land on the same `Witness` field and table/JSON/YAML render path (`FormatPlanSection` / `ExportRisk`). Capability delta and effect delta are separate `RiskItem` categories; `authority.static` / `authority.autonomous` (`unchanged` | `widened`) are structural JSON/YAML fields so CI can gate on `AUTONOMOUS` `WIDENED`. `RiskSummary.Messages` remains the item reasons for string consumers; JSON/YAML keep `"risk": []string` and expose structured `"riskItems"`. Table output groups items under `high:` / `medium:` / `low:` (issue #166) and prints the desired effect bound plus authority delta (issue #191).
 
@@ -2551,13 +2545,12 @@ Keep dependencies conservative.
 
 ## Author
 
-User writes:
+User writes `.agent` source (ADR 007 — no `project.yaml`), e.g.:
 
-* `project.yaml`
-* `agents/reviewer.yaml`
-* `tools/github.yaml`
-* `workflows/pr-review.yaml`
-* `policies/default.yaml`
+* `main.agent` — the `pr-review` workflow (and any project `defaults`/`limits`)
+* `reviewer.agent` — the reviewer agent, the `github` tool, and the `default` policy
+
+(split across files however you like — every `.agent` file under the root compiles into one graph)
 
 ## Validate
 

@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -221,6 +222,12 @@ func FindProjectFile(dir string) (string, error) {
 	return findProjectFile(dir)
 }
 
+// ErrNoProjectManifest reports that a directory has no root project.yaml/project.yml. Under ADR 007
+// an .agent-only project is the normal case, so callers that also have an .agent path (e.g. fmt)
+// treat this as "no YAML to read" rather than a failure; findProjectFile still returns it so the
+// loader's own fallback can decide.
+var ErrNoProjectManifest = errors.New("no project.yaml or project.yml")
+
 func findProjectFile(dir string) (string, error) {
 	for _, name := range []string{"project.yaml", "project.yml"} {
 		p := filepath.Join(dir, name)
@@ -228,7 +235,7 @@ func findProjectFile(dir string) (string, error) {
 			return p, nil
 		}
 	}
-	return "", fmt.Errorf("no project.yaml or project.yml in %q", dir)
+	return "", fmt.Errorf("%w in %q", ErrNoProjectManifest, dir)
 }
 
 func expandImports(rootAbs, projPath string, imports []string) ([]string, error) {
