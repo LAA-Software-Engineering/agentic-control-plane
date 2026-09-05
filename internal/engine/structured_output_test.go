@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/Terfyn/terfyn/internal/models"
@@ -70,8 +71,8 @@ func TestStructuredOutputName(t *testing.T) {
 	}
 }
 
-// End-to-end: an agent whose constraints require structured output has its output schema sent to the
-// provider on every Generate as a response format (issue #510).
+// End-to-end, single completion (no tools): an agent whose constraints require structured output has
+// its output schema sent to the provider as a response format on the finishAgentTurn path (issue #510).
 func TestRun_agentLoop_wiresStructuredOutput(t *testing.T) {
 	graph := agentLoopGraph(t, spec.AgentSpec{
 		Instructions: "Summarize.",
@@ -86,9 +87,48 @@ func TestRun_agentLoop_wiresStructuredOutput(t *testing.T) {
 		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
 	}
 	reqs := mock.Requests()
-	if len(reqs) == 0 {
-		t.Fatal("no generate requests recorded")
+	if len(reqs) != 1 {
+		t.Fatalf("generates = %d, want 1", len(reqs))
 	}
+	assertResponseFormat(t, reqs)
+}
+
+// End-to-end, multi-turn tool loop: the response format must be set on EVERY Generate, not only the
+// no-tools finishAgentTurn path — a tool_use turn and the final end_turn turn both carry it, matching
+// the CHANGELOG's "applied on every turn of the agent tool loop" claim (issue #510). MockClient
+// records the field but does not enforce it, so this pins the engine contract, not provider behavior.
+func TestRun_agentToolLoop_wiresStructuredOutputEveryTurn(t *testing.T) {
+	graph := agentLoopGraph(t, spec.AgentSpec{
+		Instructions: "Use helper then summarize.",
+		Tools:        []string{"helper"},
+		Constraints:  &spec.AgentConstraints{RequireStructuredOutput: true},
+	}, spec.PolicySpec{})
+	mock := &models.MockClient{
+		Script: []models.MockTurn{
+			{ToolCalls: []models.ToolCall{{ID: "call_1", Name: "helper", Arguments: json.RawMessage(`{"q":"x"}`)}}},
+			{Content: `{"summary":"used helper"}`},
+		},
+	}
+	got, _, err := runAgentLoop(t, graph, mock, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "succeeded" {
+		t.Fatalf("status %q err=%q", got.Status, got.ErrorText)
+	}
+	reqs := mock.Requests()
+	if len(reqs) != 2 {
+		t.Fatalf("generates = %d, want 2 (tool_use turn + final turn)", len(reqs))
+	}
+	// The first request is the tool-loop turn (advertises the helper tool); assert it too.
+	if len(reqs[0].Tools) == 0 {
+		t.Fatalf("first request expected to advertise tools (tool-loop turn), got none")
+	}
+	assertResponseFormat(t, reqs)
+}
+
+func assertResponseFormat(t *testing.T, reqs []models.GenerateRequest) {
+	t.Helper()
 	for i, r := range reqs {
 		if r.ResponseFormat == nil {
 			t.Fatalf("request %d missing ResponseFormat", i)

@@ -29,43 +29,73 @@ func parseAgentJSONObject(content string) (map[string]any, error) {
 	return m, nil
 }
 
-// extractAgentJSONObject recovers the JSON object from an agent completion that may carry a prose
-// preamble (a leading "Perfect…") or a ```json code fence around the object (issue #510). Providers
-// do not guarantee bare JSON even for a schema-bound output, so a single stray character must not
-// fail an otherwise-successful run — the same spirit as #451, where a recoverable observation
-// replaces a hard failure. It returns the trimmed content unchanged when that already parses as JSON
-// (the clean fast path, unchanged behavior); otherwise the first balanced, string-aware {…} object in
-// the content; otherwise the trimmed content unchanged, so the caller reports the original error.
-func extractAgentJSONObject(content string) string {
+// recoverAgentJSONObject recovers the single JSON object from an agent completion that may carry a
+// prose preamble (a leading "Perfect…") or a ```json code fence around the object (issue #510).
+// Providers do not guarantee bare JSON even for a schema-bound output, so a stray leading character
+// must not fail an otherwise-successful run. But typed agent output feeds workflow state, so recovery
+// must be UNAMBIGUOUS — it never guesses which of several objects is the state:
+//
+//   - content that already parses as JSON is returned verbatim (the clean fast path);
+//   - otherwise the completion is scanned for non-overlapping, brace-balanced, string-aware {…} spans
+//     that are valid JSON objects, and:
+//   - exactly one   → that object is used;
+//   - zero          → the trimmed content is returned unchanged, so the caller reports the original
+//     parse error (recovery adds nothing to offer);
+//   - two or more   → an ambiguity error, failing closed rather than shipping the leftmost span
+//     (which could be an example object, a bare "{}", or a schema-satisfying decoy) as state.
+//
+// The #510 repro — a prose preamble or a single fenced object around one object — is exactly the
+// one-object case and still recovers. This is deliberately stricter than #451's recoverable-tool
+// observation: there an adapter marks an error recoverable; here we refuse to invent state.
+func recoverAgentJSONObject(content string) (string, error) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" || json.Valid([]byte(trimmed)) {
-		return trimmed
+		return trimmed, nil
 	}
-	if obj, ok := firstJSONObject(trimmed); ok {
-		return obj
+	objs := topLevelJSONObjects(trimmed)
+	switch len(objs) {
+	case 0:
+		return trimmed, nil
+	case 1:
+		return objs[0], nil
+	default:
+		return "", fmt.Errorf("engine: agent response is ambiguous: found %d candidate JSON objects in the completion; a schema-bound output must be a single JSON object with no other objects around it", len(objs))
 	}
-	return trimmed
 }
 
-// firstJSONObject returns the first brace-balanced {…} span in s that is itself valid JSON, scanning
-// candidate '{' positions left to right so a stray brace in a preamble ("use {x} format") is skipped
-// in favor of the real object that follows.
-func firstJSONObject(s string) (string, bool) {
-	for i := 0; i < len(s); i++ {
+// topLevelJSONObjects returns every non-overlapping, brace-balanced {…} span in s that is valid JSON,
+// left to right. Braces inside JSON string literals are ignored (a `}` in a value does not close the
+// object), and each returned span is a maximal top-level region — a nested object is part of its
+// parent span and is never counted separately.
+func topLevelJSONObjects(s string) []string {
+	var out []string
+	for i := 0; i < len(s); {
 		if s[i] != '{' {
+			i++
 			continue
 		}
-		if obj, ok := balancedObject(s[i:]); ok && json.Valid([]byte(obj)) {
-			return obj, true
+		span, end, ok := balancedObject(s[i:])
+		if !ok {
+			// No complete object starts at i (braces never balance from here); a later, independent
+			// '{' may still open one, so advance by a single byte rather than giving up.
+			i++
+			continue
 		}
+		if json.Valid([]byte(span)) {
+			out = append(out, span)
+		}
+		// Skip the whole balanced span (valid or not) so a nested object is not counted separately and
+		// an invalid span's interior is not rescanned.
+		i += end
 	}
-	return "", false
+	return out
 }
 
 // balancedObject returns the shortest prefix of s that is a brace-balanced {…} span, treating s[0] as
-// the opening '{' and ignoring braces that appear inside JSON string literals (so a `}` in a string
-// value does not close the object). ok is false when the braces never balance.
-func balancedObject(s string) (string, bool) {
+// the opening '{' and ignoring braces inside JSON string literals (so a `}` in a string value does
+// not close the object). end is the index just past the closing brace; ok is false when the braces
+// never balance.
+func balancedObject(s string) (span string, end int, ok bool) {
 	depth := 0
 	inStr := false
 	esc := false
@@ -90,11 +120,11 @@ func balancedObject(s string) (string, bool) {
 		case '}':
 			depth--
 			if depth == 0 {
-				return s[:i+1], true
+				return s[:i+1], i + 1, true
 			}
 		}
 	}
-	return "", false
+	return "", 0, false
 }
 
 func (e *Executor) runToolStep(ctx context.Context, runHandle *telemetry.RunHandle, pol policy.PolicyEvaluator, wf *spec.WorkflowResource, runID string, step spec.WorkflowStep, with map[string]any, pctx policy.RunContext, usesOverride string, withOverride map[string]any) (map[string]any, tools.ToolCallMeta, error) {
@@ -581,9 +611,13 @@ func costLimitHitData(d *policy.DeniedError, stepID string) map[string]any {
 }
 
 func (e *Executor) completeAgentOutput(ctx context.Context, pol policy.PolicyEvaluator, agent *spec.AgentResource, step spec.WorkflowStep, content string, meta models.GenerateMeta) (map[string]any, models.GenerateMeta, error) {
-	// Recover the JSON object from any prose preamble / code fence before validating and parsing, so
-	// both operate on the same bytes and a stray leading character does not fail the run (issue #510).
-	content = extractAgentJSONObject(content)
+	// Recover the single JSON object from any prose preamble / code fence before validating and
+	// parsing, so both operate on the same bytes and a stray leading character does not fail the run;
+	// an ambiguous completion (two+ candidate objects) fails closed rather than guessing (issue #510).
+	content, err := recoverAgentJSONObject(content)
+	if err != nil {
+		return nil, meta, err
+	}
 	// Validates against the pinned schema bundle on resume, or the on-disk schema on a fresh run.
 	if err := e.validateAgentOutputSchema(agent, content); err != nil {
 		return nil, meta, err
