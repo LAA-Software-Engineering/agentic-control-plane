@@ -67,6 +67,23 @@ type GenerateRequest struct {
 	// provider default applies; a non-nil value (including 0 for deterministic output) is sent
 	// verbatim. Adapters translate it to the provider's request field (issue #388).
 	Temperature *float64 `json:"temperature,omitempty"`
+	// ResponseFormat, when non-nil, asks the provider to constrain the completion to a JSON Schema
+	// ("structured outputs"). Nil leaves the output unconstrained. Adapters that support it translate
+	// it to the provider request field (Anthropic output_config.format, OpenAI response_format); the
+	// engine sets it for an agent whose constraints require structured output (issue #510).
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+}
+
+// ResponseFormat requests provider-enforced structured output: the completion must be a JSON value
+// conforming to Schema. Schema must be a JSON Schema object and, for providers that require it
+// (OpenAI, and Anthropic's strict subset), an object schema with additionalProperties:false and its
+// properties listed in required — otherwise the provider rejects the request (issue #510).
+type ResponseFormat struct {
+	// Name is a short schema identifier some providers require (OpenAI json_schema.name); adapters
+	// that do not need it (Anthropic) ignore it. It must match ^[a-zA-Z0-9_-]{1,64}$.
+	Name string `json:"name,omitempty"`
+	// Schema is the JSON Schema the completion must conform to.
+	Schema json.RawMessage `json:"schema,omitempty"`
 }
 
 // ToolChoiceOrDefault returns [ToolChoiceAuto] when ToolChoice is unset.

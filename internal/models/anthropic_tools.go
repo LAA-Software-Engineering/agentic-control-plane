@@ -24,6 +24,15 @@ func mapToAnthropicRequest(req GenerateRequest) (anthropic.Request, error) {
 		Messages:    msgs,
 		Temperature: req.Temperature,
 	}
+	if req.ResponseFormat != nil {
+		schema, err := normalizeStructuredOutputSchema(req.ResponseFormat.Schema)
+		if err != nil {
+			return anthropic.Request{}, err
+		}
+		out.OutputConfig = &anthropic.OutputConfig{
+			Format: &anthropic.OutputFormat{Type: "json_schema", Schema: schema},
+		}
+	}
 	// tool_choice is only valid alongside tools; a stray ToolChoice on a
 	// plain completion is ignored so existing two-field call sites stay valid.
 	if len(req.Tools) > 0 {

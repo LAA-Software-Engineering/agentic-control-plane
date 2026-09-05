@@ -204,14 +204,70 @@ func (e *Executor) runAgentStep(ctx context.Context, runHandle *telemetry.RunHan
 		return nil, models.GenerateMeta{}, err
 	}
 	temperature := agentTemperature(agent)
+	respFormat, err := e.agentResponseFormat(agent)
+	if err != nil {
+		return nil, models.GenerateMeta{}, err
+	}
 	if len(toolDefs) == 0 {
 		return e.finishAgentTurn(ctx, ctx2, runHandle, pol, cli, modelRef, modelID, runID, step, pctx, agent, models.GenerateRequest{
-			Model:       modelID,
-			Messages:    messages,
-			Temperature: temperature,
+			Model:          modelID,
+			Messages:       messages,
+			Temperature:    temperature,
+			ResponseFormat: respFormat,
 		})
 	}
-	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName, temperature)
+	return e.runAgentToolLoop(ctx, ctx2, runHandle, pol, wf, cli, modelRef, modelID, runID, step, pctx, agent, messages, toolDefs, usesByName, temperature, respFormat)
+}
+
+// agentResponseFormat returns the provider structured-output request for agent, or nil when the agent
+// does not require it. It is set only when constraints.requireStructuredOutput is true, wiring that
+// flag — previously a silent no-op — to provider structured outputs so the model cannot emit a
+// non-conforming completion (issue #510). The schema the provider must enforce is the agent's output
+// schema; requireStructuredOutput without an output schema has nothing to constrain and is a run
+// error rather than a silent skip. On a pinned resume whose snapshot did not capture the schema,
+// resolveSchemaContent returns nil (gradual/absent) and structured output is left off.
+func (e *Executor) agentResponseFormat(agent *spec.AgentResource) (*models.ResponseFormat, error) {
+	if agent == nil || agent.Spec.Constraints == nil || !agent.Spec.Constraints.RequireStructuredOutput {
+		return nil, nil
+	}
+	sref := ""
+	if agent.Spec.Output != nil {
+		sref = strings.TrimSpace(agent.Spec.Output.Schema)
+	}
+	if sref == "" {
+		return nil, fmt.Errorf("engine: agent %q sets constraints.requireStructuredOutput but declares no output schema to enforce", agent.Metadata.Name)
+	}
+	content, err := e.resolveSchemaContent(sref)
+	if err != nil {
+		return nil, fmt.Errorf("engine: agent %q structured output: %w", agent.Metadata.Name, err)
+	}
+	if len(content) == 0 {
+		return nil, nil
+	}
+	return &models.ResponseFormat{Name: structuredOutputName(agent.Metadata.Name), Schema: content}, nil
+}
+
+// structuredOutputName renders an agent name as a provider-safe schema identifier (OpenAI requires
+// json_schema.name to match ^[a-zA-Z0-9_-]+$). Disallowed runes collapse to '_'; an empty result
+// falls back to "output".
+func structuredOutputName(agentName string) string {
+	var b strings.Builder
+	for _, r := range agentName {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	name := strings.Trim(b.String(), "_")
+	if name == "" {
+		return "output"
+	}
+	if len(name) > 64 {
+		name = name[:64]
+	}
+	return name
 }
 
 // agentTemperature returns the sampling temperature to send for agent, or nil to leave the provider
@@ -242,6 +298,7 @@ func (e *Executor) runAgentToolLoop(
 	toolDefs []models.ToolDef,
 	advertised map[string]string,
 	temperature *float64,
+	respFormat *models.ResponseFormat,
 ) (map[string]any, models.GenerateMeta, error) {
 	// maxIter counts Generate turns. tool_use on the last turn fails without executing those calls
 	// (maxIterations: 1 is a single completion; tools never run). HITL interrupt is not consulted
@@ -257,11 +314,12 @@ func (e *Executor) runAgentToolLoop(
 			return nil, acc, err
 		}
 		req := models.GenerateRequest{
-			Model:       modelID,
-			Messages:    messages,
-			Tools:       toolDefs,
-			ToolChoice:  models.ToolChoiceAuto,
-			Temperature: temperature,
+			Model:          modelID,
+			Messages:       messages,
+			Tools:          toolDefs,
+			ToolChoice:     models.ToolChoiceAuto,
+			Temperature:    temperature,
+			ResponseFormat: respFormat,
 		}
 		resp, err := e.generateAgentTurn(ctx, ctx2, runHandle, cli, modelRef, runID, step, req)
 		if err != nil {

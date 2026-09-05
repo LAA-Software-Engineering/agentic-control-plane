@@ -23,6 +23,20 @@ type Request struct {
 	ToolChoice *ToolChoice
 	// Temperature is sent verbatim when non-nil; nil leaves the Messages API default (issue #388).
 	Temperature *float64
+	// OutputConfig requests structured output (output_config.format); nil leaves it unset (issue #510).
+	OutputConfig *OutputConfig
+}
+
+// OutputConfig is the Messages API output_config object. Only the structured-output format is modeled.
+type OutputConfig struct {
+	Format *OutputFormat `json:"format,omitempty"`
+}
+
+// OutputFormat is output_config.format for JSON structured outputs: type "json_schema" plus the
+// JSON Schema the completion must conform to. The model returns the JSON in a normal text block.
+type OutputFormat struct {
+	Type   string          `json:"type"`
+	Schema json.RawMessage `json:"schema"`
 }
 
 // Response is a decoded Messages API result.
@@ -124,20 +138,22 @@ func marshalRequest(req Request) ([]byte, error) {
 		return nil, fmt.Errorf("anthropic: empty model")
 	}
 	payload := struct {
-		Model       string        `json:"model"`
-		MaxTokens   int           `json:"max_tokens"`
-		System      string        `json:"system,omitempty"`
-		Messages    []ChatMessage `json:"messages"`
-		Tools       []Tool        `json:"tools,omitempty"`
-		ToolChoice  *ToolChoice   `json:"tool_choice,omitempty"`
-		Temperature *float64      `json:"temperature,omitempty"`
+		Model        string        `json:"model"`
+		MaxTokens    int           `json:"max_tokens"`
+		System       string        `json:"system,omitempty"`
+		Messages     []ChatMessage `json:"messages"`
+		Tools        []Tool        `json:"tools,omitempty"`
+		ToolChoice   *ToolChoice   `json:"tool_choice,omitempty"`
+		Temperature  *float64      `json:"temperature,omitempty"`
+		OutputConfig *OutputConfig `json:"output_config,omitempty"`
 	}{
-		Model:       req.Model,
-		MaxTokens:   defaultMaxTok,
-		System:      strings.TrimSpace(req.System),
-		Tools:       req.Tools,
-		ToolChoice:  req.ToolChoice,
-		Temperature: req.Temperature,
+		Model:        req.Model,
+		MaxTokens:    defaultMaxTok,
+		System:       strings.TrimSpace(req.System),
+		Tools:        req.Tools,
+		ToolChoice:   req.ToolChoice,
+		Temperature:  req.Temperature,
+		OutputConfig: req.OutputConfig,
 	}
 	for _, m := range req.Messages {
 		role := strings.ToLower(strings.TrimSpace(m.Role))
