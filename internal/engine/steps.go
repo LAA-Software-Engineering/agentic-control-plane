@@ -404,7 +404,11 @@ func (e *Executor) runAgentToolLoop(
 					"toolCallIds": toolCallIDs(resp.ToolCalls),
 				})
 			}
-			return nil, acc, fmt.Errorf("engine: agent %q reached maxIterations (%d)", agent.Metadata.Name, maxIter)
+			// Graceful finalization (issue #518): the agent wants more tool calls but its iteration
+			// budget is spent. Rather than failing the run, force one final tool-free completion so it
+			// returns its best output from what it has already gathered. The pending tool_use is
+			// intentionally NOT executed — the budget is spent — and the run continues with the result.
+			return e.finalizeAgentAtCap(ctx, ctx2, runHandle, pol, cli, modelRef, modelID, runID, step, pctx, agent, messages, temperature, maxTokens, respFormat, acc)
 		}
 
 		results := make([]models.ToolResult, 0, len(resp.ToolCalls))
@@ -427,6 +431,57 @@ func (e *Executor) runAgentToolLoop(
 		)
 	}
 	return nil, acc, fmt.Errorf("engine: agent %q reached maxIterations (%d)", agent.Metadata.Name, maxIter)
+}
+
+// maxIterationsFinalizePrompt is the user turn appended when an agent hits its iteration budget: it
+// tells the agent to stop calling tools and return its output now, from what it has gathered (#518).
+const maxIterationsFinalizePrompt = "You have reached your tool-use iteration budget. Do not call any more tools. Using everything you have gathered so far, provide your final answer now in the required output format."
+
+// finalizeAgentAtCap runs one final, tool-free completion after an agent reaches maxIterations, so the
+// run degrades gracefully to the agent's best output instead of dying at the cap (issue #518). It
+// appends a finalize instruction and generates WITHOUT tools (tool use disabled), keeping the same
+// temperature, max_tokens, and structured-output schema as the loop; the accumulated loop cost is
+// carried into the returned meta. If the forced turn still fails to produce a valid output (a
+// max_tokens stop, or output that does not parse/validate), that error propagates — the same spirit
+// as #514/#451, where a limit is a signal to wrap up, but an unusable result still fails.
+func (e *Executor) finalizeAgentAtCap(
+	ctx, ctx2 context.Context,
+	runHandle *telemetry.RunHandle,
+	pol policy.PolicyEvaluator,
+	cli models.ModelClient,
+	modelRef, modelID, runID string,
+	step spec.WorkflowStep,
+	pctx policy.RunContext,
+	agent *spec.AgentResource,
+	messages []models.ChatMessage,
+	temperature *float64,
+	maxTokens int,
+	respFormat *models.ResponseFormat,
+	acc models.GenerateMeta,
+) (map[string]any, models.GenerateMeta, error) {
+	final := make([]models.ChatMessage, len(messages), len(messages)+1)
+	copy(final, messages)
+	final = append(final, models.ChatMessage{Role: "user", Content: maxIterationsFinalizePrompt})
+	// No Tools and no ToolChoice: a plain, tool-free completion the agent must answer directly.
+	req := models.GenerateRequest{
+		Model:          modelID,
+		Messages:       final,
+		MaxTokens:      maxTokens,
+		Temperature:    temperature,
+		ResponseFormat: respFormat,
+	}
+	resp, err := e.generateAgentTurn(ctx, ctx2, runHandle, cli, modelRef, runID, step, req)
+	if err != nil {
+		return nil, acc, err
+	}
+	addGenerateMeta(&acc, resp.Meta)
+	if _, err := e.checkAgentLoopRun(ctx2, pol, runID, step.ID, pctx, acc); err != nil {
+		return nil, acc, err
+	}
+	if resp.StopReason == models.StopReasonMaxTokens {
+		return nil, acc, maxTokensStopError(agent.Metadata.Name, maxTokens)
+	}
+	return e.completeAgentOutput(ctx, pol, agent, step, resp.Content, acc)
 }
 
 // runAgentToolCall executes one tool call from the agent loop. The split between fatal and
